@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     search_position_weight_beta: float = 0.3
     # ── Level 2 chunk search sizes ──
     bm25_coarse_top_k: int = 30
-    dense_refine_top_k: int = 1024
+    dense_refine_top_k: int = 256
 
     # ── Search — Level 2 RRF fusion (C2) ──
     search_rrf_k: int = 60
