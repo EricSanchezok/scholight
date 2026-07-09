@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     # 0.0 = no position boost, >0 = boost later chunks (results/conclusion).
     search_position_weight_beta: float = 0.3
     # ── Level 2 chunk search sizes ──
-    bm25_coarse_top_k: int = 200
+    bm25_coarse_top_k: int = 30
     dense_refine_top_k: int = 1024
 
     # ── Search — Level 2 RRF fusion (C2) ──
