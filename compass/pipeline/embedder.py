@@ -1,4 +1,4 @@
-"""Embedder: generates embeddings via faro-hosted Qwen3-Embedding-0.6B API.
+"""Embedder: generates embeddings via SiliconFlow Qwen3-Embedding-0.6B API.
 
 OpenAI-compatible ``/v1/embeddings`` endpoint.  Supports single-text, batch,
 and chunk-pipeline embedding with configurable concurrency.
@@ -19,7 +19,7 @@ logger = structlog.get_logger(__name__)
 
 
 class Embedder:
-    """Async embedding client for faro-hosted Qwen3-Embedding-0.6B.
+    """Async embedding client for SiliconFlow Qwen3-Embedding-0.6B.
 
     Usage::
 
