@@ -247,6 +247,7 @@ class HealthChecker:
         self.deep = deep
         self.dims = dims
         self.fix = fix
+        self._deploy_mode: str = "unknown"
         self.report = HealthReport()
 
     def _should_run(self, name: str) -> bool:
@@ -272,7 +273,7 @@ class HealthChecker:
             )
             return layer  # can't proceed
 
-        # 0b — Server version
+        # ── 0b — Server version & deploy mode detection ──
         try:
             ver_info = (
                 client.get_server_version(detail=True)
@@ -281,8 +282,8 @@ class HealthChecker:
             )
             if isinstance(ver_info, dict):
                 version = ver_info.get("version", "unknown")
-                deploy_mode = ver_info.get("deploy_mode", "unknown")
-                detail = f"v{version}, mode={deploy_mode}"
+                self._deploy_mode = ver_info.get("deploy_mode", "unknown")
+                detail = f"v{version}, mode={self._deploy_mode}"
             else:
                 detail = f"v{ver_info}"
             layer.checks.append(
@@ -459,23 +460,53 @@ class HealthChecker:
         layer = LayerResult(layer="L3 Segments")
         client = get_client()
 
+        # Zilliz Cloud Serverless denies GetQuerySegmentInfo / GetPersistentSegmentInfo.
+        if self._deploy_mode == "Cloud":
+            layer.checks.append(
+                CheckResult(
+                    HealthStatus.PASS,
+                    "segments/skipped",
+                    "skipped — segment APIs not available on Zilliz Cloud Serverless",
+                )
+            )
+            return layer
+
         for name in self._COLLECTIONS:
             if not client.has_collection(name):
                 continue
 
+            loaded: list[Any] = []
+            persistent: list[Any] = []
             try:
                 loaded = client.list_loaded_segments(name)
             except Exception as exc:
+                if "deny api" in str(exc).lower():
+                    layer.checks.append(
+                        CheckResult(
+                            HealthStatus.PASS,
+                            f"{name}/segments",
+                            "skipped — segment APIs not available",
+                        )
+                    )
+                    continue
                 layer.checks.append(
                     CheckResult(
                         HealthStatus.WARN, f"{name}/segments", f"list_loaded_segments failed: {exc}"
                     )
                 )
-                loaded = []
 
             try:
                 persistent = client.list_persistent_segments(name)
             except Exception as exc:
+                if "deny api" in str(exc).lower():
+                    layer.checks.append(
+                        CheckResult(
+                            HealthStatus.PASS,
+                            f"{name}/segments",
+                            "skipped — segment APIs not available",
+                        )
+                    )
+                    continue
                 layer.checks.append(
                     CheckResult(
                         HealthStatus.WARN,

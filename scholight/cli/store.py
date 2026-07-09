@@ -194,6 +194,22 @@ def health(
 
     dim_list = list(dims) if dims else None
 
+    if deep:
+        client = connect()
+        try:
+            stats = client.get_collection_stats("arxiv_papers")
+            row_count = stats.get("row_count", 0)
+            if row_count > 100_000:
+                click.echo(
+                    f"\n⚠  Deep mode will scan ~{row_count:,} rows (cursor-based full traversal).\n"
+                    f"   This may take several minutes and incur Zilliz Cloud CU costs.\n"
+                    f"   Consider using quick mode or filtering by dimension (-d) instead.\n",
+                    err=True,
+                )
+                click.confirm("Continue with deep scan?", abort=True)
+        except Exception:
+            pass  # if stats fails, proceed anyway
+
     click.echo("Running health check…", err=True)
     report = run_health_check(deep=deep, dims=dim_list, fix=fix)
 
