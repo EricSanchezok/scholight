@@ -462,6 +462,10 @@ async def _embed_and_ingest(papers: list[dict[str, Any]]) -> int:
                 idx = p["authors"].index(a)
                 p["authors"][idx] = _truncate_bytes(a, 256)
         p["updated_history"] = [_truncate_bytes(d, 16) for d in p.get("updated_history", []) if d]
+        # BM25 auto-populated by Zilliz Cloud Function — strip empty dict
+        # to avoid overwriting existing sparse vectors on upsert.
+        if p.get("abstract_bm25") == {} or not p.get("abstract_bm25"):
+            p.pop("abstract_bm25", None)
 
     # Write
     insert_arxiv_papers_concurrent(papers, concurrency=_WRITE_CONCURRENCY)
