@@ -59,18 +59,6 @@ class Storage:
     def markdown_path(self, arxiv_id: str, created: str) -> Path:
         return self._paper_dir(arxiv_id, created) / "paper.md"
 
-    def content_list_path(self, arxiv_id: str, created: str) -> Path:
-        return self._paper_dir(arxiv_id, created) / "content_list.json"
-
-    def meta_path(self, arxiv_id: str, created: str) -> Path:
-        return self._paper_dir(arxiv_id, created) / "meta.json"
-
-    def abstract_path(self, arxiv_id: str, created: str) -> Path:
-        return self._paper_dir(arxiv_id, created) / "abstract.txt"
-
-    def images_dir(self, arxiv_id: str, created: str) -> Path:
-        return self._paper_dir(arxiv_id, created) / "images"
-
     # ── Directory creation ────────────────────────────────────────────
 
     def paper_dir(self, arxiv_id: str, created: str) -> Path:

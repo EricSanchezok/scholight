@@ -19,6 +19,7 @@ Deployment: ``compass service chunk-ingest`` (or cron/systemd timer).
 
 from __future__ import annotations
 
+import shutil
 import asyncio
 from typing import Any
 
@@ -146,6 +147,12 @@ class ChunkIngestDaemon(BaseDaemon):
 
         # ── Insert ────────────────────────────────────────────────
         upsert_arxiv_chunks(chunk_dicts)
+
+        # ── 清理本地中间产物（chunk 已入库 Zilliz，不再需要） ──
+        paper_dir = storage._paper_dir(aid, created)
+        if paper_dir.exists():
+            shutil.rmtree(paper_dir)
+
         return True
 
     # ── Work fetch ────────────────────────────────────────────────────
