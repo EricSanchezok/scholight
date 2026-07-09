@@ -1,22 +1,9 @@
 """Markdown chunker — recursive character split for plain-Markdown text.
 
-Unlike ``content_list_chunker`` (which needs structured ``content_list``
-with ``text_level`` fields), this module operates on **raw Markdown strings**:
+This module operates on **raw Markdown strings**:
 
 - ``latex.md`` from pandoc (clean ATX headings, LaTeX math intact)
 - ``pdf.md`` from pymupdf4llm (messy headings, math replaced by picture placeholders)
-
-Strategy (backed by literature):
-    Recursive Character Split (512-token / ~1500-char target) is the most
-    reliable chunking method for academic papers when structural metadata is
-    absent.  Vecta's 2026 benchmark (50 papers) placed it at 69% accuracy vs
-    54% for semantic chunking.  We keep the force-split + merge post-processing
-    from the existing content_list chunker.
-
-References:
-    - Vecta (Feb 2026): "We benchmarked 7 chunking strategies — most advice was wrong"
-    - NAACL 2025 Findings: semantic chunking costs not justified by consistent gains
-    - S2 Chunking (arXiv 2025): spatial+semantic hybrid needs bounding box data
 """
 
 from __future__ import annotations

@@ -11,9 +11,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from scholight.pipeline.chunkers import (
-        Chunk as Chunk,
         MdChunk as MdChunk,
-        chunk_content_list as chunk_content_list,
         chunk_markdown as chunk_markdown,
     )
     from scholight.pipeline.embedder import Embedder as Embedder
@@ -38,8 +36,6 @@ def __getattr__(name: str) -> object:
     import importlib
 
     _MODULES = {
-        "Chunk": "scholight.pipeline.chunkers",
-        "chunk_content_list": "scholight.pipeline.chunkers",
         "Embedder": "scholight.pipeline.embedder",
         "LatexMdError": "scholight.pipeline.latex_md",
         "latex_to_markdown": "scholight.pipeline.latex_md",
@@ -60,14 +56,12 @@ def __getattr__(name: str) -> object:
 
 
 __all__ = [
-    "Chunk",
     "Embedder",
     "LatexMdError",
     "MdChunk",
     "MinerUParseError",
     "MinerUTimeoutError",
     "PDFMdError",
-    "chunk_content_list",
     "chunk_markdown",
     "content_list_to_markdown",
     "latex_to_markdown",

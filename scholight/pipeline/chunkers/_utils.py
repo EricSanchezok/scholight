@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-TARGET_CHARS = 2500  # global ideal chunk size (used only by content_list_chunker)
+TARGET_CHARS = 2500  # global ideal chunk size
 
 
 def _force_split_text(text: str, target: int = TARGET_CHARS) -> list[str]:
