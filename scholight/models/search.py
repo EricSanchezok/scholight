@@ -23,10 +23,9 @@ class SearchRequest(BaseModel):
     level: int = Field(default=1, ge=1, le=3)  # 1=paper, 2=+chunks, 3=+figures/tables
 
     # ── Pipeline stage toggles (default: all OFF — caller opts in) ──
-    enable_rocchio: bool = False
     enable_fusion: bool = False
 
-    # ── Named strategy (overrides enable_rocchio / enable_fusion when set) ──
+    # ── Named strategy (overrides enable_fusion when set) ──
     strategy: str | None = None
 
     # ── Filters ──

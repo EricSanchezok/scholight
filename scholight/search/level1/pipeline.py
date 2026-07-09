@@ -10,7 +10,6 @@ class Level1Pipeline(Pipeline):
     """Composed Level 1 paper search pipeline.
 
     Phases run in order: embed → ANN search → fusion.
-    Rocchio removed after Zilliz Cloud migration — BM25 is now a built-in Function.
     Custom phase lists can be injected for strategy-based configuration.
     """
 

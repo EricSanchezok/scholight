@@ -38,11 +38,6 @@ class Settings(BaseSettings):
     search_hybrid_dense_weight: float = 0.60
     search_hybrid_bm25_weight: float = 0.40
 
-    # ── Search — Phase 2.5 Rocchio query expansion hyperparameters ──
-    search_rocchio_pos_k: int = 3
-    search_rocchio_max_terms: int = 8
-    search_rocchio_idf_floor: float = 3.5
-    search_rocchio_max_query_len: int = 512
     # ── Search — Phase 3 abstract-length quality penalty ──
     search_abstract_len_midpoint: int = 120
     search_abstract_len_steepness: float = 10.0

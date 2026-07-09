@@ -94,11 +94,10 @@ def _score_bar(score: float, width: int = 40) -> str:
 # ── Pipeline stage toggles ──
 @click.option(
     "--strategy",
-    type=click.Choice(["fast", "hybrid_fusion", "hybrid_fusion_rocchio"]),
+    type=click.Choice(["fast", "hybrid_fusion"]),
     default=None,
-    help="Named search strategy (overrides --fusion/--rocchio when set)",
+    help="Named search strategy (overrides --fusion when set)",
 )
-@click.option("--rocchio", is_flag=True, help="Enable Rocchio query expansion (Phase 2.5)")
 @click.option("--fusion", is_flag=True, help="Enable multi-signal score fusion (Phase 3)")
 # ── Filters ──
 @click.option("-c", "--categories", multiple=True, help="arXiv category filter (repeatable)")
@@ -112,7 +111,6 @@ def search_cmd(
     top_k: int,
     level: int,
     strategy: str | None,
-    rocchio: bool,
     fusion: bool,
     categories: tuple[str, ...],
     authors: tuple[str, ...],
@@ -123,12 +121,7 @@ def search_cmd(
 ) -> None:
     """Search papers with detailed diagnostics.
 
-    Pipeline stage toggles (--rocchio / --fusion) default to OFF.
-    Enable the stages you need for your use case:
-
-    \b
-    • --rocchio — Phase 2.5: expand query with IDF keywords from top results
-    • --fusion  — Phase 3: re-rank with 5-feature z-score fusion
+    Use --fusion to enable multi-signal score fusion re-ranking.
     """
     _log_path = storage.log_path("search", "cli.log")
     configure_logging(
@@ -142,7 +135,6 @@ def search_cmd(
         top_k=top_k,
         level=level,
         strategy=strategy,
-        enable_rocchio=rocchio,
         enable_fusion=fusion,
         date_from=date_from or None,
         date_to=date_to or None,
@@ -241,8 +233,6 @@ def _print_report(result: SearchResult, request: SearchRequest) -> None:
         # Stage toggles
         stages: list[str] = []
         for p in stats.phases:
-            if p.phase == "paper_search" and p.metadata.get("rocchio") == "applied":
-                stages.append("rocchio")
             if p.phase == "score_fusion" and p.metadata.get("enabled"):
                 stages.append("fusion")
         _emit("Active stages", ", ".join(stages) if stages else "(none)")
