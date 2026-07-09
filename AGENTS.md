@@ -11,7 +11,7 @@ scholight/
 ├── scholight/                 源码根包
 │   ├── __init__.py          版本号
 │   ├── config.py            Pydantic Settings（SCHOLIGHT_ 前缀）
-│   ├── constants.py         全局常量（Embedding 维度、默认 topK 等）
+│   ├── storage.py           arXiv 数据目录布局（_papers_root 等路径解析）
 │   ├── logging/             structlog 日志系统
 │   │   ├── __init__.py
 │   │   ├── config.py        configure_logging() — ProcessorFormatter 统一门面
@@ -19,65 +19,98 @@ scholight/
 │   │   └── middleware.py    FastAPI 请求追踪中间件（RequestContext + Timing）
 │   ├── models/              数据模型（依赖根：其他包依赖它，不反向）
 │   │   ├── __init__.py
-│   │   ├── paper.py         PaperRecord — 论文元数据
-│   │   ├── chunk.py         Chunk — 段落块（文本 + 章节路径 + embedding ref）
-│   │   ├── citation.py      Citation — 引用关系
-│   │   └── search.py        SearchRequest / SearchHit / SearchResult
+│   │   ├── search.py        SearchRequest / SearchHit / SearchResult
+│   │   └── history.py       搜索历史记录模型
 │   ├── sources/             数据源连接器（仅 arXiv）
 │   │   ├── __init__.py
-│   │   ├── base.py          SourceConnector ABC
-│   │   └── arxiv.py         ArxivConnector — bulk tar 读取 + OAI-PMH 增量
+│   │   └── arxiv.py         ArxivConnector — OAI-PMH 增量 + bulk tar 读取
+│   │   └── tests/           test_arxiv_id.py
 │   ├── pipeline/            全文解析 + chunking + embedding
-│   │   ├── __init__.py
-│   │   ├── parser.py        PDF → 纯文本 PDF 解析
-│   │   ├── chunker.py       章节检测 + 段落切分
-│   │   └── embedder.py      HTTP API embedding（tenacity retry）
-│   ├── store/               Milvus 交互层
+│   │   ├── __init__.py      延迟导入门面
+│   │   ├── parser.py        PDF → 纯文本（MinerU API）
+│   │   ├── pdf_md.py        PDF → Markdown（pymupdf / pymupdf4llm）
+│   │   ├── latex_md.py      LaTeX 源码 → Markdown（pandoc 管线）
+│   │   ├── embedder.py      HTTP API embedding（tenacity retry）
+│   │   └── chunkers/        段落切分
+│   │       ├── md_chunker.py     章节检测 + 段落切分（默认）
+│   │       └── content_list_chunker.py  备用切分策略
+│   │   └── tests/           test_md_chunker.py
+│   ├── store/               Zilliz Cloud 交互层
 │   │   ├── __init__.py
 │   │   ├── client.py        连接管理 + collection 生命周期
-│   │   ├── schema.py        Collection schema 定义（papers / chunks / citations）
+│   │   ├── schema.py        Collection schema 定义 + 索引管理
+│   │   ├── fields.py        标量 / 向量字段常量
 │   │   ├── ingest.py        写入操作（insert / upsert / delete）
-│   │   └── query.py         读取操作（search / query / get）
+│   │   ├── query.py         读取操作（search / query / get）
+│   │   ├── concurrent.py    并行 ingest worker（多 MilvusClient 实例）
+│   │   ├── export.py        逻辑导出 / 恢复（cursor-scan JSONL）
+│   │   ├── health.py        7 层渐进健康检查（HealthChecker）
+│   │   └── tests/           test_ingest / test_fields / test_guard / test_health
 │   ├── search/              搜索引擎（多阶段召回+重排）
 │   │   ├── __init__.py
-│   │   ├── engine.py        SearchEngine — 编排多阶段管线
-│   │   ├── retriever.py     Retriever — ANN 粗排 + 标量过滤
-│   │   └── reranker.py      Reranker — Cross-encoder 精排 HTTP API
+│   │   ├── engine.py        SearchEngine — 编排管道
+│   │   ├── base.py          Phase / Pipeline / PipelineContext ABC
+│   │   ├── level1/          Level 1 — 粗排（ANN + BM25）
+│   │   │   ├── phases.py    EmbedPhase / AnnSearchPhase / FusionPhase
+│   │   │   ├── pipeline.py  Level1 管道构建
+│   │   │   └── strategies.py  策略字典
+│   │   ├── level2/          Level 2 — 精排（chunk aggregation / RRF / position）
+│   │   │   ├── phases.py    ChunkAggPhase / RrfPhase / PositionPhase
+│   │   │   ├── pipeline.py  Level2 管道构建
+│   │   │   ├── strategies.py  策略字典
+│   │   │   └── tests/       test_phases.py
+│   │   ├── level3/          占位（预留）
+│   │   ├── common/          共享组件
+│   │   │   ├── aggregation.py  MaxP / SumP 聚合
+│   │   │   ├── fusion.py    RRF 融合 + 矩阵构建
+│   │   │   └── tests/       test_aggregation.py
+│   │   └── tests/           test_score_fusion.py
 │   ├── api/                 FastAPI 搜索接口
 │   │   ├── __init__.py
-│   │   ├── app.py           FastAPI app 工厂 + lifespan
-│   │   ├── routes.py        POST /search 路由
-│   │   └── deps.py          依赖注入（get_milvus_client, get_search_engine）
+│   │   ├── app.py           FastAPI app 工厂 + lifespan + auth
+│   │   ├── deps.py          依赖注入（get_milvus_client, get_search_engine, get_current_user）
+│   │   ├── routes/
+│   │   │   └── search.py    POST /search
+│   │   └── middleware/
+│   │       └── cors.py      setup_cors()
+│   ├── db/                  PostgreSQL 访问层（asyncpg）
+│   │   ├── __init__.py
+│   │   ├── client.py        连接池管理（create_pool / get_pool / close_pool）
+│   │   ├── migrate.py       数据库迁移
+│   │   └── queries_history.py  搜索历史查询
 │   ├── scheduler/           摄入编排
 │   │   ├── __init__.py
 │   │   ├── arxiv_paper_sync.py  每日 OAI-PMH 元数据同步（双源容错）
-│   │   ├── orchestrator.py  ingest_paper() — 全管线串联
-│   │   └── monitor.py       数据目录监听 + 增量触发
+│   │   ├── pdf_download.py  arXiv PDF 下载
+│   │   ├── md_parse.py      PDF/LaTeX → Markdown 解析调度
+│   │   ├── chunk_ingest.py  Markdown → chunks → Milvus 全管线
+│   │   └── base.py          BatchScheduler ABC
 │   ├── cli/                  Click CLI 子命令集
-│   │   ├── __init__.py       CLI 入口注册
+│   │   ├── __init__.py       CLI 入口注册（lazy-import 子命令）
 │   │   ├── search.py         scholight search
-│   │   ├── scheduler.py      scholight scheduler (paper-sync/pdf-daemon/md-daemon/chunk-daemon/status)
-│   │   └── store.py          scholight store (init/status/drop)
+│   │   ├── scheduler.py      scholight scheduler（paper-sync / pdf-daemon / md-daemon / chunk-daemon / status）
+│   │   └── store.py          scholight store（init / status / drop / backup / restore / health）
+│   └── utils/               公共工具
+│       ├── http.py          HTTP 请求重试 / 指数退避
+│       └── marker.py        Marker BlockType 转换工具
+├── cloud-auth/              共享 Auth SDK（独立 repo，.gitignore）
 ├── scripts/                 运维脚本
 │   ├── audit_duplicates.py   论文去重审计
 │   ├── audit_orphan_pdfs.py  磁盘孤儿 PDF 检测
-│   ├── import_pre2007.py     从 arxiv_archive 导入 1991-2006 元数据
 │   ├── check_env.py          环境快照采集
 │   ├── test_extract_pipeline.py  抽取管线对比测试
-│   └── benchmark/            检索评测基准
-├── tests/
-│   ├── conftest.py          共享 fixtures
-│   ├── unit/                单元测试
-│   └── integration/         集成测试
-│   └── 各子包 tests/：      scholight/store/tests/, scholight/search/tests/ 等
+│   └── benchmark/            检索评测基准（runners / tuning / run.py）
+├── migrations/              PostgreSQL 迁移 SQL
+│   └── 005_create_search_history.sql
 ├── docker/
-│   ├── milvus/              已归档 — 自建 Milvus 2.6 镜像（迁移至 Zilliz Cloud）
-│   └── scholight/             应用镜像（后续）
-├── docs/
-│   ├── research/            调研材料（.gitignore 排除）
-│   └── schema/              Milvus Collection Schema 设计文档
+│   └── scholight-api/       API 服务 Dockerfile + start.py
 ├── pyproject.toml           依赖 + CLI 入口
+├── _typos.toml              代码拼写检查字典
+├── global-bundle.pem        AWS RDS SSL 证书
 ├── .env.example             环境变量模板
+├── .pre-commit-config.yaml
+├── docker-compose.yml
+├── run_sync_daemon.sh
 ├── .gitignore
 └── AGENTS.md                本文件
 ```
@@ -112,17 +145,17 @@ uv run pre-commit install    # pre-commit 阶段
 uv run pre-commit install --hook-type commit-msg   # 提交信息检查
 ```
 
-共 11 个 hook：
+共 20 个 hook：
 
 | Hook | 说明 |
 |---|---|
+| `pre-commit-hooks` | 基础卫生：YAML/TOML/JSON 验证、行尾空格、合并冲突、大文件、私钥检测等 |
+| `typos` | 代码拼写检查 |
 | `ruff-check` + `ruff-format` | Lint + 格式化（line-length=100） |
 | `mypy` | 静态类型检查（`strict = true`） |
-| `typos` | 代码拼写检查 |
 | `bandit` | AST 安全扫描 |
 | `vulture` | 死代码检测 |
 | `gitlint` | 提交信息规范（feat/fix/docs/refactor/perf/test/chore/ci） |
-| `pre-commit-hooks` | 基础卫生：YAML/TOML 验证、行尾空格、合并冲突、大文件、私钥检测等 |
 
 ### Ruff 规则集（pyproject.toml）
 
@@ -134,6 +167,8 @@ uv run pre-commit install --hook-type commit-msg   # 提交信息检查
 - `scripts/`：允许 `print()`、中文注释
 - 全局忽略：大写数学变量名（如 `T`/`N`）、异常字符串字面量、`__all__` 逻辑分组排序
 
+`scripts/archive/` 已在 ruff/bandit/vulture 中全局排除。
+
 ### 手动检查命令
 
 ```bash
@@ -141,7 +176,7 @@ uv run ruff check              # Lint
 uv run ruff format --check     # 格式化检查
 uv run mypy scholight            # 类型检查
 uv run bandit -c pyproject.toml -r scholight/   # 安全扫描
-uv run vulture scholight/ scripts/   # 死代码检测
+uv run vulture scholight/         # 死代码检测
 uv run pip-audit               # 依赖漏洞扫描（需网络）
 ```
 
