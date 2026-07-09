@@ -81,8 +81,8 @@ def _curl_download(url: str, dest: Path) -> str | None:
             text=False,
             timeout=_MAX_TIME + 10,
         )
-        code_b = proc.stdout.strip() if proc.stdout else b""
-        code = code_b.decode() if isinstance(code_b, bytes) else str(code_b)
+        code_b = proc.stdout.strip()
+        code = code_b.decode()
 
         if proc.returncode == 0 and _pdf_ok(dest):
             return None
@@ -128,8 +128,8 @@ def _curl_download_src(url: str, dest: Path) -> str | None:
             text=False,
             timeout=_MAX_TIME + 10,
         )
-        code_b = proc.stdout.strip() if proc.stdout else b""
-        code = code_b.decode() if isinstance(code_b, bytes) else str(code_b)
+        code_b = proc.stdout.strip()
+        code = code_b.decode()
 
         if proc.returncode == 0 and dest.exists() and dest.stat().st_size > 0:
             return None

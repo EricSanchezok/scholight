@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     )
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> object:
     """Lazy import — only load submodules when actually accessed."""
     import importlib
 

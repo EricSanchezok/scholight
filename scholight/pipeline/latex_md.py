@@ -225,7 +225,7 @@ _INPUT_RE = re.compile(
 
 
 def _flatten_inputs(
-    content: str, tex_dir: Path, _depth: int = 0, _seen: frozenset[str] | None = None
+    content: str, tex_dir: Path, _depth: int = 0, _seen: frozenset[Path] | None = None
 ) -> str:
     """Recursively inline ``\\input{}`` and ``\\include{}`` references.
 

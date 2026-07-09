@@ -273,6 +273,6 @@ class RRFFusionPhase(Phase):
         merged.sort(key=lambda h: h.get("rrf_score", 0.0), reverse=True)
         ctx.raw_hits = merged
         ctx.metadata["rrf_paper_count"] = len(merged)
-        c_only = sum(1 for h in merged if h.get("chunk_only"))  # type: ignore[arg-type]
+        c_only = sum(1 for h in merged if h.get("chunk_only"))
         ctx.metadata["rrf_chunk_only_papers"] = c_only
         logger.debug("rrf fusion complete", papers=len(merged), chunk_only=c_only)

@@ -100,7 +100,7 @@ def _normalised_embeddings(candidates: list[dict[str, Any]]) -> np.ndarray | Non
     mat = np.array(emb, dtype=np.float32)
     norms = np.linalg.norm(mat, axis=1, keepdims=True)
     norms[norms == 0] = 1.0
-    return mat / norms
+    return np.asarray(mat / norms)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

@@ -9,6 +9,8 @@ Per-item isolation: a failure on paper X never blocks paper Y.
 
 from __future__ import annotations
 
+from typing import Any
+
 import structlog
 
 from scholight.pipeline.latex_md import latex_to_markdown
@@ -67,7 +69,7 @@ class MdParseDaemon(BaseDaemon):
 
     # ── Work fetch ───────────────────────────────────────────────────
 
-    def _fetch_work(self) -> list[dict]:
+    def _fetch_work(self) -> list[dict[str, Any]]:
         client = get_client()
         rows = client.query(
             "arxiv_papers",
@@ -79,7 +81,7 @@ class MdParseDaemon(BaseDaemon):
 
     # ── Single paper ─────────────────────────────────────────────────
 
-    def _parse_one(self, aid: str, paper: dict) -> bool:
+    def _parse_one(self, aid: str, paper: dict[str, Any]) -> bool:
         """Convert one paper to markdown.  Returns False when neither
         PDF nor LaTeX source is actually available."""
         created = paper["created"]
