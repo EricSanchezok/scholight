@@ -139,7 +139,7 @@ def process_one(args: tuple) -> dict:
         from marker.converters.pdf import PdfConverter
         from marker.models import create_model_dict
         from marker.output import text_from_rendered
-        from compass.utils.marker import marker_block_to_content
+        from scholight.utils.marker import marker_block_to_content
 
         assert torch.cuda.is_available(), "CUDA not available!"
         gpu_name = torch.cuda.get_device_name(0)

@@ -76,7 +76,7 @@ def _should_recover(arxiv_id: str) -> bool:
 def _import_schema():
     from pymilvus import CollectionSchema
 
-    from compass.store.schema import ARXIV_CHUNKS_SCHEMA
+    from scholight.store.schema import ARXIV_CHUNKS_SCHEMA
 
     fields = [f for f in ARXIV_CHUNKS_SCHEMA.fields if f.name != "content_bm25"]
     return CollectionSchema(fields=fields, description="arxiv_chunks import")
@@ -133,7 +133,7 @@ def _valid_segments(seg_dir: Path) -> list[Path]:
 def recover_chunks(output_dir: Path) -> None:
     from pymilvus.bulk_writer import BulkFileType, LocalBulkWriter
 
-    from compass.config import settings
+    from scholight.config import settings
 
     # ── Pre-flight schema audit ──
     expected = _import_fields()

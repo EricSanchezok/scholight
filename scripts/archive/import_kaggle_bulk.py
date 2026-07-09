@@ -38,11 +38,11 @@ import structlog
 _project_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_project_root))
 
-from compass.config import settings  # noqa: E402
-from compass.logging import configure_logging  # noqa: E402
-from compass.pipeline.embedder import Embedder  # noqa: E402
-from compass.storage import storage  # noqa: E402
-from compass.store.concurrent import insert_arxiv_papers_concurrent  # noqa: E402
+from scholight.config import settings  # noqa: E402
+from scholight.logging import configure_logging  # noqa: E402
+from scholight.pipeline.embedder import Embedder  # noqa: E402
+from scholight.storage import storage  # noqa: E402
+from scholight.store.concurrent import insert_arxiv_papers_concurrent  # noqa: E402
 
 _LOG_FILE = storage.log_path("kaggle_import", "import.log")
 
@@ -224,7 +224,7 @@ def convert_row(row: dict[str, Any]) -> dict[str, Any]:
     """Convert one Kaggle parquet row to Milvus arxiv_papers dict."""
     created, updated, vcount, version_dates = _parse_versions(row)
     # noinspection PyUnresolvedReferences
-    from compass.sources.arxiv import canonicalize_arxiv_id
+    from scholight.sources.arxiv import canonicalize_arxiv_id
 
     aid = canonicalize_arxiv_id(row.get("id"))
     if aid is None:

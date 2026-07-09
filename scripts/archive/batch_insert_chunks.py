@@ -1,16 +1,24 @@
 import os
+
 """Batch insert arxiv_chunks from Parquet into Zilliz Cloud."""
-import sys, time
+import sys
+import time
 from pathlib import Path
-import pandas as pd, numpy as np
+
+import numpy as np
+import pandas as pd
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-TOKEN = os.environ.get("COMPASS_ZILLIZ_TOKEN", "")
+TOKEN = os.environ.get("SCHOLIGHT_ZILLIZ_TOKEN", "")
 URI = "https://in05-d432d46d6c77308.serverless.ali-cn-hangzhou.cloud.zilliz.com.cn"
 from pymilvus import MilvusClient
+
 c = MilvusClient(uri=URI, token=TOKEN)
 
-CHUNKS = Path("/inspire/qb-ilm/project/multi-agent/niexiaohang-25130061/academic-data/zilliz-import/arxiv_chunks")
+CHUNKS = Path(
+    "/inspire/qb-ilm/project/multi-agent/niexiaohang-25130061/academic-data/zilliz-import/arxiv_chunks"
+)
 files = sorted([f for f in CHUNKS.rglob("*.parquet") if not f.name.endswith(".bak")])
 print(f"Files: {len(files)}, starting insert...", flush=True)
 
@@ -39,12 +47,14 @@ for fi, pf in enumerate(files):
             res = c.insert("arxiv_chunks", batch)
             ok += res["insert_count"]
         except Exception as ex:
-            print(f"FAIL [{fi+1}]@{s}: {ex}", flush=True)
+            print(f"FAIL [{fi + 1}]@{s}: {ex}", flush=True)
     if (fi + 1) % 200 == 0:
         elapsed = time.monotonic() - t0
         rate = ok / max(elapsed, 0.1)
-        print(f"[{fi+1}/{len(files)}] ok={ok:,} rows ({elapsed:.0f}s, {rate:.0f} r/s)", flush=True)
+        print(
+            f"[{fi + 1}/{len(files)}] ok={ok:,} rows ({elapsed:.0f}s, {rate:.0f} r/s)", flush=True
+        )
 
 elapsed = time.monotonic() - t0
 rate = ok / max(elapsed, 0.1)
-print(f"\nDONE: {ok:,} rows in {elapsed:.0f}s ({elapsed/60:.1f}min, {rate:.0f} r/s)", flush=True)
+print(f"\nDONE: {ok:,} rows in {elapsed:.0f}s ({elapsed / 60:.1f}min, {rate:.0f} r/s)", flush=True)

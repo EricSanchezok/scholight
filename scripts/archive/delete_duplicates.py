@@ -19,7 +19,7 @@ logger = structlog.get_logger("delete-duplicates")
 
 
 def run() -> None:
-    from compass.store.client import get_client
+    from scholight.store.client import get_client
 
     ids = [line.strip() for line in _INPUT.open() if line.strip()]
     logger.info("loaded delete targets", count=len(ids))

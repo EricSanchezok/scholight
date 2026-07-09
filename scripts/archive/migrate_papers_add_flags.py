@@ -24,11 +24,11 @@ import structlog
 _project_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_project_root))
 
-from compass.config import settings  # noqa: E402
-from compass.logging import configure_logging  # noqa: E402
-from compass.storage import storage  # noqa: E402
-from compass.store.client import get_client  # noqa: E402
-from compass.store.schema import ARXIV_PAPERS_SCHEMA  # noqa: E402
+from scholight.config import settings  # noqa: E402
+from scholight.logging import configure_logging  # noqa: E402
+from scholight.storage import storage  # noqa: E402
+from scholight.store.client import get_client  # noqa: E402
+from scholight.store.schema import ARXIV_PAPERS_SCHEMA  # noqa: E402
 
 _LOG_FILE = storage.log_path("migrate_flags", "migrate.log")
 configure_logging(
@@ -134,7 +134,7 @@ def recreate_collection(client) -> None:
         consistency_level="Strong",
     )
 
-    from compass.store.schema import _build_arxiv_papers_indexes, _wait_for_index
+    from scholight.store.schema import _build_arxiv_papers_indexes, _wait_for_index
 
     indexes = _build_arxiv_papers_indexes()
     client.create_index("arxiv_papers", index_params=indexes)
@@ -231,7 +231,7 @@ _ZERO_VEC: list[float] = []
 
 
 def _init():
-    from compass.config import settings
+    from scholight.config import settings
 
     global _ZERO_VEC
     _ZERO_VEC = [0.0] * settings.embedding_dim

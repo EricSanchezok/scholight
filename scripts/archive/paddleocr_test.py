@@ -7,10 +7,10 @@ API, and saves markdown + raw JSON output for comparison with MinerU results.
 
 from __future__ import annotations
 
-import os
 import argparse
 import base64
 import json
+import os
 import sys
 import time
 from pathlib import Path

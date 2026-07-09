@@ -40,7 +40,7 @@ def _is_short(aid: str) -> bool:
 
 
 def audit() -> None:
-    from compass.store.client import get_client
+    from scholight.store.client import get_client
 
     client = get_client()
     lines: list[str] = []

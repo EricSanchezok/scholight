@@ -1,13 +1,17 @@
 import os
+
 """Batch insert arxiv_papers from Parquet into Zilliz Cloud — direct insert, no BulkWriter."""
 
-import sys, time
+import sys
+import time
 from pathlib import Path
-import pandas as pd, numpy as np
+
+import numpy as np
+import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-TOKEN = os.environ.get("COMPASS_ZILLIZ_TOKEN", "")
+TOKEN = os.environ.get("SCHOLIGHT_ZILLIZ_TOKEN", "")
 URI = "https://in05-d432d46d6c77308.serverless.ali-cn-hangzhou.cloud.zilliz.com.cn"
 from pymilvus import MilvusClient
 

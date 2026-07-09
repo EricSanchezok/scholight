@@ -43,23 +43,23 @@ def _parse_args():
 # ── Path ─────────────────────────────────────────────────────────────────────
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from compass.logging import configure_logging  # noqa: E402
-from compass.utils import parse_arxiv_id  # noqa: E402
+from scholight.logging import configure_logging  # noqa: E402
+from scholight.utils import parse_arxiv_id  # noqa: E402
 
 # ── Config ───────────────────────────────────────────────────────────────────
 
 ARXIV_BULK_DIR = Path(os.environ["ARXIV_BULK_DIR"])
 DATA_ROOT = os.environ.get(
-    "COMPASS_DATA_ROOT",
+    "SCHOLIGHT_DATA_ROOT",
     "/inspire/qb-ilm/project/multi-agent/niexiaohang-25130061/academic-data",
 )
-OUTPUT_DIR = Path(os.environ.get("COMPASS_MARKER_OUTPUT_DIR", f"{DATA_ROOT}/parsed"))
+OUTPUT_DIR = Path(os.environ.get("SCHOLIGHT_MARKER_OUTPUT_DIR", f"{DATA_ROOT}/parsed"))
 PET_NODE_RANK = int(os.environ.get("PET_NODE_RANK", "0"))
 PET_NNODES = int(os.environ.get("PET_NNODES", "1"))
-GPU_WORKERS = int(os.environ.get("COMPASS_GPU_WORKERS", "2"))
-BATCH_FLUSH = int(os.environ.get("COMPASS_BATCH_FLUSH", "1000"))
-HEARTBEAT_SEC = int(os.environ.get("COMPASS_HEARTBEAT_SEC", "60"))
-TMP_DIR = Path(os.environ.get("COMPASS_TMP_DIR", str(OUTPUT_DIR / "tmp")))
+GPU_WORKERS = int(os.environ.get("SCHOLIGHT_GPU_WORKERS", "2"))
+BATCH_FLUSH = int(os.environ.get("SCHOLIGHT_BATCH_FLUSH", "1000"))
+HEARTBEAT_SEC = int(os.environ.get("SCHOLIGHT_HEARTBEAT_SEC", "60"))
+TMP_DIR = Path(os.environ.get("SCHOLIGHT_TMP_DIR", str(OUTPUT_DIR / "tmp")))
 
 # ── Logger (module-level, configured in main()) ──────────────────────────────
 
@@ -290,7 +290,7 @@ def _parse_pdf(
     """Parse one PDF — called from GPU worker subprocess."""
     from marker.output import text_from_rendered
 
-    from compass.utils.marker import marker_block_to_content
+    from scholight.utils.marker import marker_block_to_content
 
     t0 = time.monotonic()
     document = converter.build_document(pdf_path)
@@ -333,8 +333,8 @@ def main() -> None:
             f"{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}.log"
         )
     configure_logging(
-        log_level=os.environ.get("COMPASS_LOG_LEVEL", "INFO"),
-        use_json=os.environ.get("COMPASS_LOG_JSON") == "1" or not sys.stderr.isatty(),
+        log_level=os.environ.get("SCHOLIGHT_LOG_LEVEL", "INFO"),
+        use_json=os.environ.get("SCHOLIGHT_LOG_JSON") == "1" or not sys.stderr.isatty(),
         file_handler=(str(log_path), 100_000_000, 10),
     )
     global log

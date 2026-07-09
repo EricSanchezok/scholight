@@ -28,11 +28,11 @@ import structlog
 _project_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_project_root))
 
-from compass.config import settings  # noqa: E402
-from compass.logging import configure_logging  # noqa: E402
-from compass.pipeline.sparse_encoder import SparseEncoder  # noqa: E402
-from compass.storage import storage  # noqa: E402
-from compass.store.client import get_client  # noqa: E402
+from scholight.config import settings  # noqa: E402
+from scholight.logging import configure_logging  # noqa: E402
+from scholight.pipeline.sparse_encoder import SparseEncoder  # noqa: E402
+from scholight.storage import storage  # noqa: E402
+from scholight.store.client import get_client  # noqa: E402
 
 _LOGGER = structlog.get_logger(__name__)
 
@@ -265,7 +265,7 @@ def main() -> None:
         use_json=True,
         file_handler=(str(storage.log_path("sparse_backfill")), 50_000_000, 3),
     )
-    # 3rd-party loggers are already silenced in compass.logging.cleanup
+    # 3rd-party loggers are already silenced in scholight.logging.cleanup
 
     if args.command == "fit":
         run_fit(args)

@@ -40,7 +40,7 @@ TOPK_EVAL = 30
 _CATEGORY_TOP_K = 10
 
 SCORE_FUSION_PATH = (
-    Path(__file__).resolve().parent.parent.parent / "compass" / "search" / "common" / "fusion.py"
+    Path(__file__).resolve().parent.parent.parent / "scholight" / "search" / "common" / "fusion.py"
 )
 
 
@@ -135,11 +135,11 @@ def _load_wide_queries() -> list[tuple[str, str, set[str]]]:
 
 
 async def fetch_features(concurrency: int = 8) -> None:
-    from compass.pipeline.embedder import Embedder
-    from compass.search.common.bm25 import ensure_bm25_encoder
-    from compass.store.client import get_client
-    from compass.store.fields import PAPER_SEARCH_WITH_EMBEDDING
-    from compass.store.query import hybrid_search_arxiv_papers
+    from scholight.pipeline.embedder import Embedder
+    from scholight.search.common.bm25 import ensure_bm25_encoder
+    from scholight.store.client import get_client
+    from scholight.store.fields import PAPER_SEARCH_WITH_EMBEDDING
+    from scholight.store.query import hybrid_search_arxiv_papers
 
     queries = _load_wide_queries()
     print(f"Loaded {len(queries)} wide queries")
@@ -277,7 +277,7 @@ def tune(trials: int = 5000) -> None:
     gt_dict: dict[str, set[str]] = cache["ground_truth"]
 
     # Import current defaults for comparison
-    from compass.search.common.fusion import _DEFAULT_WEIGHTS
+    from scholight.search.common.fusion import _DEFAULT_WEIGHTS
 
     current = {k: v for k, v in _DEFAULT_WEIGHTS.items() if k in FEATURE_NAMES}
     total = sum(current.values())

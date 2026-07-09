@@ -81,9 +81,9 @@ def _parse_metrics(stdout: str) -> dict:
 def _run_one(d: float, t: float, a: float, label: str) -> dict:
     """Set env vars, run benchmark, return metrics dict."""
     env = os.environ.copy()
-    env["COMPASS_SEARCH_HYBRID_DENSE_WEIGHT"] = str(d)
-    env["COMPASS_SEARCH_HYBRID_TITLE_WEIGHT"] = str(t)
-    env["COMPASS_SEARCH_HYBRID_ABSTRACT_WEIGHT"] = str(a)
+    env["SCHOLIGHT_SEARCH_HYBRID_DENSE_WEIGHT"] = str(d)
+    env["SCHOLIGHT_SEARCH_HYBRID_TITLE_WEIGHT"] = str(t)
+    env["SCHOLIGHT_SEARCH_HYBRID_ABSTRACT_WEIGHT"] = str(a)
 
     cmd = [
         sys.executable,

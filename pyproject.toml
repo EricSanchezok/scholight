@@ -1,5 +1,9 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
-name = "academic-compass"
+name = "scholight"
 version = "0.1.0"
 description = "AI-focused academic paper search engine — arXiv as single data source, passage-level vector search"
 requires-python = ">=3.11"
@@ -33,10 +37,10 @@ dev = [
 ]
 
 [project.scripts]
-compass = "compass.cli:cli"
+scholight = "scholight.cli:cli"
 
 [tool.setuptools.packages.find]
-include = ["compass*"]
+include = ["scholight*"]
 
 
 # ── Ruff ─────────────────────────────────────────────────────────────
@@ -88,7 +92,7 @@ max-complexity = 14
 
 [tool.ruff.lint.isort]
 combine-as-imports = true
-known-first-party = ["compass"]
+known-first-party = ["scholight"]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]                    # re-exports are intentional
@@ -120,7 +124,7 @@ exclude_dirs = ["tests", ".venv"]
 # ── Vulture ───────────────────────────────────────────────────────────
 
 [tool.vulture]
-paths = ["compass/", "scripts/"]
+paths = ["scholight/", "scripts/"]
 exclude = ["*test_*.py", "*__init__.py"]
 min_confidence = 80
 
@@ -138,7 +142,7 @@ filterwarnings = ["error"]
 
 [tool.coverage.run]
 branch = true
-source_pkgs = ["compass"]
+source_pkgs = ["scholight"]
 
 [tool.coverage.report]
 exclude_also = [
@@ -155,7 +159,7 @@ dev = [
 
 [tool.uv.sources]
 # cloud-auth SDK — SanchezCloud 统一用户认证/配额系统
-#   • 本地开发时: 使用 path 依赖（需要 cloud-auth 目录在 compass 根目录下）
+#   • 本地开发时: 使用 path 依赖（需要 cloud-auth 目录在 scholight 根目录下）
 #   • 部署模式时: 用 git SSH（需配 SSH key: ssh-keygen -t ed25519 → GitHub Deploy Keys）
 # cloud-auth = { git = "ssh://git@github.com/EricSanchezok/cloud-auth.git", branch = "main" }
 cloud-auth = { path = "cloud-auth", editable = true }

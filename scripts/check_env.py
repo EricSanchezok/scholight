@@ -91,7 +91,7 @@ if os.path.exists(inspire_path):
 else:
     kv("inspire_exists", "NO - path missing!")
     # Try to find it
-    alt = run("find /inspire -maxdepth 3 -name 'academic-compass' -type d 2>/dev/null | head -3")
+    alt = run("find /inspire -maxdepth 3 -name 'scholight' -type d 2>/dev/null | head -3")
     if alt:
         kv("alt_inspire_found", alt)
 
@@ -133,7 +133,7 @@ for pkg in [
 # 6. 项目路径
 # ============================================================
 h("6. 项目 & 数据")
-project = "/inspire/hdd/project/multi-agent/niexiaohang-25130061/academic-compass"
+project = "/inspire/hdd/project/multi-agent/niexiaohang-25130061/scholight"
 if os.path.isdir(project):
     pdfs = sorted(Path(project, "data").glob("*.pdf"))
     kv("project_dir", f"✅ {project}")

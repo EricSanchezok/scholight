@@ -32,9 +32,9 @@ from pathlib import Path
 
 import structlog
 
-from compass.logging import configure_logging
-from compass.storage import storage
-from compass.store.client import _WRITE_LOCK, _resolve_token, _resolve_uri
+from scholight.logging import configure_logging
+from scholight.storage import storage
+from scholight.store.client import _WRITE_LOCK, _resolve_token, _resolve_uri
 
 # ── Constants ────────────────────────────────────────────────────────────────
 

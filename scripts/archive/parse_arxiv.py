@@ -15,9 +15,9 @@ parse_arxiv.py — 大规模 arXiv PDF 解析 (MinerU2.5-Pro + vLLM async engine
   OUTPUT_DIR              parquet + checkpoint 输出目录
 
 可选:
-  COMPASS_LOG_LEVEL       日志级别 (默认 INFO)
-  COMPASS_BATCH_FLUSH     checkpoint 批量落盘条数 (默认 1000)
-  COMPASS_HEARTBEAT_SEC   心跳间隔秒数 (默认 60)
+  SCHOLIGHT_LOG_LEVEL       日志级别 (默认 INFO)
+  SCHOLIGHT_BATCH_FLUSH     checkpoint 批量落盘条数 (默认 1000)
+  SCHOLIGHT_HEARTBEAT_SEC   心跳间隔秒数 (默认 60)
 """
 
 from __future__ import annotations
@@ -48,12 +48,12 @@ _args = _parser.parse_args()
 # ── Logging ─────────────────────────────────────────────────────────────────
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from compass.logging import configure_logging  # noqa: E402
-from compass.utils import parse_arxiv_id  # noqa: E402
+from scholight.logging import configure_logging  # noqa: E402
+from scholight.utils import parse_arxiv_id  # noqa: E402
 
 configure_logging(
-    log_level=os.environ.get("COMPASS_LOG_LEVEL", "INFO"),
-    use_json=os.environ.get("COMPASS_LOG_JSON") == "1" or not sys.stderr.isatty(),
+    log_level=os.environ.get("SCHOLIGHT_LOG_LEVEL", "INFO"),
+    use_json=os.environ.get("SCHOLIGHT_LOG_JSON") == "1" or not sys.stderr.isatty(),
     file_handler=None,
 )
 log = structlog.get_logger("parse_arxiv")
@@ -63,21 +63,21 @@ log = structlog.get_logger("parse_arxiv")
 MODEL_PATH = Path(os.environ["MINERU_MODEL_PATH"])
 ARXIV_BULK_DIR = Path(os.environ["ARXIV_BULK_DIR"])
 _data_root = os.environ.get(
-    "COMPASS_DATA_ROOT", "/inspire/qb-ilm/project/multi-agent/niexiaohang-25130061/academic-data"
+    "SCHOLIGHT_DATA_ROOT", "/inspire/qb-ilm/project/multi-agent/niexiaohang-25130061/academic-data"
 )
 OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", f"{_data_root}/parsed"))
 
 PET_NODE_RANK = int(os.environ.get("PET_NODE_RANK", "0"))
 PET_NNODES = int(os.environ.get("PET_NNODES", "1"))
 
-PAGE_BATCH_SIZE = int(os.environ.get("COMPASS_PAGE_BATCH_SIZE", "64"))
-PAPER_BATCH_SIZE = int(os.environ.get("COMPASS_PAPER_BATCH_SIZE", "8"))
-RENDER_WORKERS = int(os.environ.get("COMPASS_RENDER_WORKERS", "8"))
+PAGE_BATCH_SIZE = int(os.environ.get("SCHOLIGHT_PAGE_BATCH_SIZE", "64"))
+PAPER_BATCH_SIZE = int(os.environ.get("SCHOLIGHT_PAPER_BATCH_SIZE", "8"))
+RENDER_WORKERS = int(os.environ.get("SCHOLIGHT_RENDER_WORKERS", "8"))
 VLLM_PORT = int(os.environ.get("VLLM_PORT", "8000"))
-MAX_MODEL_LEN = int(os.environ.get("COMPASS_MAX_MODEL_LEN", "8192"))
-MAX_CONCURRENCY = int(os.environ.get("COMPASS_MAX_CONCURRENCY", "100"))
-BATCH_FLUSH = int(os.environ.get("COMPASS_BATCH_FLUSH", "1000"))
-HEARTBEAT_SEC = int(os.environ.get("COMPASS_HEARTBEAT_SEC", "60"))
+MAX_MODEL_LEN = int(os.environ.get("SCHOLIGHT_MAX_MODEL_LEN", "8192"))
+MAX_CONCURRENCY = int(os.environ.get("SCHOLIGHT_MAX_CONCURRENCY", "100"))
+BATCH_FLUSH = int(os.environ.get("SCHOLIGHT_BATCH_FLUSH", "1000"))
+HEARTBEAT_SEC = int(os.environ.get("SCHOLIGHT_HEARTBEAT_SEC", "60"))
 
 # ── GPU detection (lazy — CUDA init must be deferred for vLLM V1 multiproc) ──
 

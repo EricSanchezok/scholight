@@ -122,9 +122,9 @@ class BaseRunner(ABC):
     async def _batch_search(
         self, queries: list[Query], top_k: int, level: int = 1, concurrency: int = 32
     ) -> list[QueryResult]:
-        from compass.models.search import SearchRequest
-        from compass.pipeline.embedder import Embedder
-        from compass.search.engine import SearchEngine
+        from scholight.models.search import SearchRequest
+        from scholight.pipeline.embedder import Embedder
+        from scholight.search.engine import SearchEngine
 
         engine = SearchEngine()
         texts = [q.text for q in queries]
@@ -139,7 +139,7 @@ class BaseRunner(ABC):
 
         bm25_vectors: list[dict[int, float] | None]
         try:
-            from compass.search.common.bm25 import ensure_bm25_encoder
+            from scholight.search.common.bm25 import ensure_bm25_encoder
 
             enc = ensure_bm25_encoder()
             bm25_vectors = [enc.encode_query(t) for t in texts] if enc else [None] * len(queries)

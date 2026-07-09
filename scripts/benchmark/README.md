@@ -1,6 +1,6 @@
 # Benchmark Runner
 
-Evaluate **Academic Compass** retrieval quality on standardized benchmarks.
+Evaluate **Scholight** retrieval quality on standardized benchmarks.
 
 ## Quick Start
 

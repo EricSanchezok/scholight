@@ -1,22 +1,24 @@
 import os
+
 """Upload all arxiv_chunks Parquet files to Zilliz Managed Volume volume-sii.
 Resume-safe + per-file timeout via ThreadPoolExecutor (handles C extensions).
 Shared VolumeFileManager for speed; fresh one only on hang.
 """
 
-import sys, time
-from pathlib import Path
+import sys
+import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from pymilvus.bulk_writer.volume_file_manager import VolumeFileManager
 
-TOKEN = os.environ.get("COMPASS_ZILLIZ_TOKEN", "")
+TOKEN = os.environ.get("SCHOLIGHT_ZILLIZ_TOKEN", "")
 CHUNKS = Path(
     "/inspire/qb-ilm/project/multi-agent/niexiaohang-25130061/academic-data/zilliz-import/arxiv_chunks"
 )
 LOG_FILE = Path(
-    "/inspire/hdd/project/multi-agent/niexiaohang-25130061/academic-compass/logs/upload_chunks.log"
+    "/inspire/hdd/project/multi-agent/niexiaohang-25130061/scholight/logs/upload_chunks.log"
 )
 FILE_TIMEOUT = 120  # seconds per file
 

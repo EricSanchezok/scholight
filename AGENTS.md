@@ -1,16 +1,16 @@
-# AGENTS.md — Academic Compass 项目规范
+# AGENTS.md — Scholight 项目规范
 
 ## 项目概述
 
-Academic Compass 是面向人工智能领域的学术论文搜索引擎，**以 arXiv 为唯一数据源**，使用 **Zilliz Cloud** 作为唯一存储引擎。
+Scholight 是面向人工智能领域的学术论文搜索引擎，**以 arXiv 为唯一数据源**，使用 **Zilliz Cloud** 作为唯一存储引擎。
 
 ## 目录结构
 
 ```
-academic-compass/
-├── compass/                 源码根包
+scholight/
+├── scholight/                 源码根包
 │   ├── __init__.py          版本号
-│   ├── config.py            Pydantic Settings（COMPASS_ 前缀）
+│   ├── config.py            Pydantic Settings（SCHOLIGHT_ 前缀）
 │   ├── constants.py         全局常量（Embedding 维度、默认 topK 等）
 │   ├── logging/             structlog 日志系统
 │   │   ├── __init__.py
@@ -55,9 +55,9 @@ academic-compass/
 │   │   └── monitor.py       数据目录监听 + 增量触发
 │   ├── cli/                  Click CLI 子命令集
 │   │   ├── __init__.py       CLI 入口注册
-│   │   ├── search.py         compass search
-│   │   ├── service.py        compass service (sync/fetch/parse/status)
-│   │   └── store.py          compass store (init/status/drop)
+│   │   ├── search.py         scholight search
+│   │   ├── scheduler.py      scholight scheduler (paper-sync/pdf-daemon/md-daemon/chunk-daemon/status)
+│   │   └── store.py          scholight store (init/status/drop)
 ├── scripts/                 运维脚本
 │   ├── ingest_bulk.py       批量摄入 arXiv PDF tar
 │   ├── import_kaggle_bulk.py 从 HuggingFace 批量导入 2007-2026 元数据
@@ -69,10 +69,10 @@ academic-compass/
 │   ├── conftest.py          共享 fixtures
 │   ├── unit/                单元测试
 │   └── integration/         集成测试
-│   └── 各子包 tests/：      compass/store/tests/, compass/search/tests/ 等
+│   └── 各子包 tests/：      scholight/store/tests/, scholight/search/tests/ 等
 ├── docker/
 │   ├── milvus/              已归档 — 自建 Milvus 2.6 镜像（迁移至 Zilliz Cloud）
-│   └── compass/             应用镜像（后续）
+│   └── scholight/             应用镜像（后续）
 ├── docs/
 │   ├── research/            调研材料（.gitignore 排除）
 │   └── schema/              Milvus Collection Schema 设计文档
@@ -93,11 +93,11 @@ academic-compass/
 Zilliz Cloud 是托管的 Milvus 服务。应用通过以下环境变量连接：
 
 ```bash
-COMPASS_ZILLIZ_URI=https://in05-d432d46d6c77308.serverless.ali-cn-hangzhou.cloud.zilliz.com.cn
-COMPASS_ZILLIZ_TOKEN=your_api_key
+SCHOLIGHT_ZILLIZ_URI=https://in05-d432d46d6c77308.serverless.ali-cn-hangzhou.cloud.zilliz.com.cn
+SCHOLIGHT_ZILLIZ_TOKEN=your_api_key
 ```
 
-这些配置在 `compass/config.py` 中通过 Pydantic Settings 加载，由 `compass/store/client.py` 的 `_resolve_uri()`/`_resolve_token()` 解析。
+这些配置在 `scholight/config.py` 中通过 Pydantic Settings 加载，由 `scholight/store/client.py` 的 `_resolve_uri()`/`_resolve_token()` 解析。
 
 ## 代码质量工具链
 
@@ -139,9 +139,9 @@ uv run pre-commit install --hook-type commit-msg   # 提交信息检查
 ```bash
 uv run ruff check              # Lint
 uv run ruff format --check     # 格式化检查
-uv run mypy compass            # 类型检查
-uv run bandit -c pyproject.toml -r compass/   # 安全扫描
-uv run vulture compass/ scripts/   # 死代码检测
+uv run mypy scholight            # 类型检查
+uv run bandit -c pyproject.toml -r scholight/   # 安全扫描
+uv run vulture scholight/ scripts/   # 死代码检测
 uv run pip-audit               # 依赖漏洞扫描（需网络）
 ```
 
@@ -150,14 +150,14 @@ uv run pip-audit               # 依赖漏洞扫描（需网络）
 日志系统基于 `structlog` + `ProcessorFormatter` 统一门面，具体架构：
 
 - **`configure_logging()`** — 一次调用配置全应用，支持 JSON/Console 双模式自动检测
-- **JSON 模式自动启用**：`COMPASS_LOG_JSON=1` 或 stdout 非 TTY 时（生产/容器环境）
+- **JSON 模式自动启用**：`SCHOLIGHT_LOG_JSON=1` 或 stdout 非 TTY 时（生产/容器环境）
 - **请求追踪**：`RequestContextMiddleware` 自动注入 `request_id`/`method`/`path`，通过 `contextvars` 传播到所有下游调用
-- **第三方库静音**：`cleanup.py` 默认静音 pymilvus/httpx/asyncpg/uvicorn，可通过 `COMPASS_LOG_{LIBRARY}=DEBUG` 覆盖
+- **第三方库静音**：`cleanup.py` 默认静音 pymilvus/httpx/asyncpg/uvicorn，可通过 `SCHOLIGHT_LOG_{LIBRARY}=DEBUG` 覆盖
 - **使用方式**：`logger = structlog.get_logger(__name__)`，用 keyword args 绑定上下文
 
 入口点调用示例：
 ```python
-from compass.logging import configure_logging
+from scholight.logging import configure_logging
 configure_logging(log_level="INFO", use_json=True)  # server
 configure_logging(log_level="DEBUG", use_json=False) # CLI
 configure_logging(log_level="INFO", use_json=True, file_handler=("app.log", 50_000_000, 20))
@@ -181,10 +181,10 @@ configure_logging(log_level="INFO", use_json=True, file_handler=("app.log", 50_0
 ## Python 环境规范
 
 - **虚拟环境**：项目使用 `.venv` 目录（`uv venv`），**禁止污染系统 Python**。
-- **运行时**：所有命令通过 `uv run` 执行（如 `uv run compass service sync`），自动激活 `.venv`。
-- **CLI 入口**：`compass` 命令由 `pyproject.toml` 的 `[project.scripts]` 注册，指向 `compass.cli:cli`。
+- **运行时**：所有命令通过 `uv run` 执行（如 `uv run scholight scheduler paper-sync`），自动激活 `.venv`。
+- **CLI 入口**：`scholight` 命令由 `pyproject.toml` 的 `[project.scripts]` 注册，指向 `scholight.cli:cli`。
 - **依赖管理**：全部依赖声明在 `pyproject.toml`，`uv.lock` 锁定版本，不单独使用 `requirements.txt`。
-- **环境变量**：配置通过 `COMPASS_` 前缀的环境变量注入，模板在 `.env.example`。
+- **环境变量**：配置通过 `SCHOLIGHT_` 前缀的环境变量注入，模板在 `.env.example`。
 
 ## 测试规范（TDD）
 
@@ -195,7 +195,7 @@ configure_logging(log_level="INFO", use_json=True, file_handler=("app.log", 50_0
 每个子包都有自己的 `tests/` 目录，与源码同层：
 
 ```
-compass/store/
+scholight/store/
 ├── client.py
 ├── ingest.py
 ├── ...
@@ -216,20 +216,20 @@ compass/store/
 ### 运行测试
 
 ```bash
-uv run pytest compass/store/tests/ -v      # 某个子包的测试
-uv run pytest compass/ -v                  # 全部测试
-uv run pytest compass/ -v --tb=short       # 失败时简洁 traceback
+uv run pytest scholight/store/tests/ -v      # 某个子包的测试
+uv run pytest scholight/ -v                  # 全部测试
+uv run pytest scholight/ -v --tb=short       # 失败时简洁 traceback
 ```
 
 ### 示例：`maybe_mark_arxiv_pending` 的 TDD 流程
 
-1. 创建 `compass/store/tests/test_ingest.py`
+1. 创建 `scholight/store/tests/test_ingest.py`
 2. 写 5 个测试函数，每个 mock `get_client()` 返回假的 `query()`/`insert()`：
    - `test_insert_new_arxiv_id` — 首次插入返回 True
    - `test_skip_same_version` — 相同 updated 返回 False
    - `test_update_different_version` — 不同 updated 删除再插入
    - `test_query_failure_raises` — Milvus 异常时 raise StoreError
    - `test_insert_failure_after_delete` — delete 成功但 insert 失败时的行为
-3. `uv run pytest compass/store/tests/test_ingest.py -v` → 5 个 FAIL
+3. `uv run pytest scholight/store/tests/test_ingest.py -v` → 5 个 FAIL
 4. 实现 `maybe_mark_arxiv_pending` 直到 5 个 PASS
 5. Commit（实现 + 测试一起提交）

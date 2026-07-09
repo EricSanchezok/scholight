@@ -25,11 +25,11 @@ from pathlib import Path
 
 import structlog
 
-from compass.logging import configure_logging
-from compass.storage import storage
-from compass.store.client import _WRITE_LOCK, _resolve_token, _resolve_uri
+from scholight.logging import configure_logging
+from scholight.storage import storage
+from scholight.store.client import _WRITE_LOCK, _resolve_token, _resolve_uri
 
-OUTPUT_DIR = Path("/inspire/hdd/project/multi-agent/niexiaohang-25130061/academic-compass/data")
+OUTPUT_DIR = Path("/inspire/hdd/project/multi-agent/niexiaohang-25130061/scholight/data")
 GATHER_PAGE = 10000
 FIX_WORKERS = 4  # Thread count for I/O check (disk access)
 MILVUS_BATCH = 100  # partial_update batch size

@@ -57,7 +57,7 @@ def _repair(aid: str) -> str | None:
 
 
 def scan() -> None:
-    from compass.store.client import get_client
+    from scholight.store.client import get_client
 
     client = get_client()
 

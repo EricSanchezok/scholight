@@ -34,9 +34,9 @@ from pathlib import Path
 
 import structlog
 
-from compass.logging import configure_logging
-from compass.storage import storage
-from compass.store.ingest import update_arxiv_paper
+from scholight.logging import configure_logging
+from scholight.storage import storage
+from scholight.store.ingest import update_arxiv_paper
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -64,7 +64,7 @@ logger = structlog.get_logger(__name__)
 
 def _gather_work() -> list[dict[str, str]]:
     """Cursor-scan all has_pdf=False papers from Milvus."""
-    from compass.store.client import get_client
+    from scholight.store.client import get_client
 
     client = get_client()
     papers: list[dict[str, str]] = []
@@ -156,14 +156,13 @@ def _curl_get(url: str, dest: Path, timeout: int) -> str | None:
 
         if code == "404":
             return "404"
-        elif code in ("429", "503"):
+        if code in ("429", "503"):
             return "rate_limit"
-        elif code and code != "200":
+        if code and code != "200":
             return f"http_{code}"
-        elif proc.returncode != 0:
+        if proc.returncode != 0:
             return f"curl_{proc.returncode}"
-        else:
-            return "invalid_pdf"
+        return "invalid_pdf"
 
     except subprocess.TimeoutExpired:
         if dest.exists():
@@ -268,7 +267,7 @@ def _batch_update_has_pdf(arxiv_ids: list[str]) -> int:
         except Exception:
             # Fallback: include ARRAY fields for pymilvus 3.0 + Milvus 2.6 compat
             try:
-                from compass.store.client import get_client, _WRITE_LOCK
+                from scholight.store.client import _WRITE_LOCK, get_client
 
                 client = get_client()
                 rows = client.query(
@@ -456,7 +455,7 @@ def run(
 
         except KeyboardInterrupt:
             logger.warning("interrupt")
-        except Exception as e:
+        except Exception:
             logger.exception("unexpected error")
         finally:
             pool.terminate()
@@ -501,7 +500,7 @@ def run(
 
 
 def show_status() -> None:
-    from compass.store.ingest import count_papers_without
+    from scholight.store.ingest import count_papers_without
 
     remaining = count_papers_without("has_pdf")
     print(f"\n{'=' * 50}")
@@ -521,7 +520,7 @@ def show_status() -> None:
         print(f"  Remaining (net):      {max(0, remaining - done):>10,}")
         print()
         if metrics:
-            print(f"  Last run:")
+            print("  Last run:")
             for k in ("downloaded", "no_pdf", "transient", "milvus"):
                 if k in metrics:
                     print(f"    {k:12s}  {int(metrics[k]):>8,}")

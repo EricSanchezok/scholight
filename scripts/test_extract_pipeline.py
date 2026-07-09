@@ -27,11 +27,11 @@ from pathlib import Path
 import structlog
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from compass.logging import configure_logging  # noqa: E402
-from compass.pipeline.latex_md import LatexMdError, latex_to_markdown  # noqa: E402
-from compass.pipeline.pdf_md import PDFMdError, pdf_to_markdown  # noqa: E402
-from compass.storage import storage  # noqa: E402
-from compass.store.client import QUERY_CONSISTENCY, get_client  # noqa: E402
+from scholight.logging import configure_logging
+from scholight.pipeline.latex_md import LatexMdError, latex_to_markdown
+from scholight.pipeline.pdf_md import PDFMdError, pdf_to_markdown
+from scholight.storage import storage
+from scholight.store.client import QUERY_CONSISTENCY, get_client
 
 logger = structlog.get_logger(__name__)
 
@@ -43,7 +43,7 @@ _args = _parser.parse_args()
 
 DATA_ROOT = Path(
     os.environ.get(
-        "COMPASS_DATA_ROOT",
+        "SCHOLIGHT_DATA_ROOT",
         "/inspire/qb-ilm/project/multi-agent/niexiaohang-25130061/academic-data",
     )
 )
@@ -136,14 +136,14 @@ def main() -> None:
     print(f"{'=' * 60}")
     print(f"  对比论文数: {done}")
     print()
-    print(f"  LaTeX 路线 (latex_to_markdown):")
+    print("  LaTeX 路线 (latex_to_markdown):")
     print(f"    ✅ {latex_ok:>3}   ❌ {latex_fail:>3}   ⏭ {latex_skip:>3}")
     print()
-    print(f"  PDF   路线 (pdf_to_markdown):")
+    print("  PDF   路线 (pdf_to_markdown):")
     print(f"    ✅ {pdf_ok:>3}   ❌ {pdf_fail:>3}   ⏭ {pdf_skip:>3}")
     print()
     print(f"  📂 output: {TEST_DIR}")
-    print(f"     每篇 = {{id}}/latex.md + {{id}}/pdf.md")
+    print("     每篇 = {id}/latex.md + {id}/pdf.md")
     print(f"{'=' * 60}")
 
 

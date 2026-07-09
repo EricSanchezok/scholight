@@ -30,7 +30,7 @@ import numpy as np
 import pandas as pd
 import structlog
 
-# Ensure project root is on sys.path so compass.* imports resolve.
+# Ensure project root is on sys.path so scholight.* imports resolve.
 _project_root = Path(__file__).resolve().parents[1]
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
@@ -103,7 +103,7 @@ def _build_import_schema() -> CollectionSchema:
     """Return a CollectionSchema for arxiv_papers **without** abstract_bm25."""
     from pymilvus import CollectionSchema
 
-    from compass.store.schema import ARXIV_PAPERS_SCHEMA
+    from scholight.store.schema import ARXIV_PAPERS_SCHEMA
 
     fields = [f for f in ARXIV_PAPERS_SCHEMA.fields if f.name != "abstract_bm25"]
     return CollectionSchema(fields=fields, description="arxiv_papers import")
@@ -289,7 +289,7 @@ def _validate_import_schema_coverage() -> None:
 
 def _verify_output(output_dir: Path, expected_total: int) -> None:
     """Read back generated Parquet files — verify row count, columns, vector dim."""
-    from compass.config import settings
+    from scholight.config import settings
 
     import_schema_names = _import_field_names()
     total_read: int = 0
@@ -343,7 +343,7 @@ def recover_papers(
     """
     from pymilvus.bulk_writer import BulkFileType, LocalBulkWriter
 
-    from compass.config import settings
+    from scholight.config import settings
 
     _validate_import_schema_coverage()
 

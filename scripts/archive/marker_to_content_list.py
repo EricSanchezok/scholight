@@ -26,7 +26,7 @@ from pathlib import Path
 from marker.converters.pdf import PdfConverter
 from marker.models import create_model_dict
 
-from compass.utils.marker import marker_block_to_content
+from scholight.utils.marker import marker_block_to_content
 
 
 def dump_content_list(pdf_path: Path, output_dir: Path) -> tuple[Path, int]:

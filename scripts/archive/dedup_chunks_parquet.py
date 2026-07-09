@@ -1,8 +1,9 @@
 """Deduplicate arxiv_chunks Parquet by chunk_id (PK), keeping first occurrence.
 Only acts on files that actually contain duplicates (9 of 6218). Originals renamed to *.bak."""
 
-import sys, time
+import time
 from pathlib import Path
+
 import pandas as pd
 
 CHUNKS = Path(

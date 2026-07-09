@@ -23,8 +23,8 @@ download_arxiv_latex.py — 从 HuggingFace TIGER-Lab/arxiv-latex-5T 下载 arXi
 
 环境变量:
   HF_TOKEN             HuggingFace token (必需，否则共享 IP 会 429)
-  COMPASS_DATA_ROOT    数据根目录 (默认 /inspire/qb-ilm/.../academic-data)
-  COMPASS_LOG_LEVEL    日志级别 (默认 INFO)
+  SCHOLIGHT_DATA_ROOT    数据根目录 (默认 /inspire/qb-ilm/.../academic-data)
+  SCHOLIGHT_LOG_LEVEL    日志级别 (默认 INFO)
 """
 
 from __future__ import annotations
@@ -49,7 +49,7 @@ from tenacity import (
 
 # ── Path setup ─────────────────────────────────────────────────────────────────
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from compass.logging import configure_logging
+from scholight.logging import configure_logging
 
 # ── CLI ────────────────────────────────────────────────────────────────────────
 _parser = argparse.ArgumentParser(description="下载 arXiv LaTeX 源文件 tar (HF buf dataset)")
@@ -69,12 +69,12 @@ _HF_ENDPOINT = os.environ.get("HF_ENDPOINT", "https://hf-mirror.com")
 
 DATA_ROOT = Path(
     os.environ.get(
-        "COMPASS_DATA_ROOT",
+        "SCHOLIGHT_DATA_ROOT",
         "/inspire/qb-ilm/project/multi-agent/niexiaohang-25130061/academic-data",
     )
 )
 DOWNLOAD_DIR = Path(
-    os.environ.get("COMPASS_DOWNLOAD_DIR", str(DATA_ROOT / "arxiv_latex_src" / "tars"))
+    os.environ.get("SCHOLIGHT_DOWNLOAD_DIR", str(DATA_ROOT / "arxiv_latex_src" / "tars"))
 )
 LOG_DIR = DATA_ROOT / "logs" / "download_arxiv_latex"
 CHECKPOINT_DIR = DOWNLOAD_DIR / ".checkpoints"
@@ -112,8 +112,8 @@ def _setup_logging() -> structlog.BoundLogger:
         shutil.move(str(log_file), str(archive))
 
     configure_logging(
-        log_level=os.environ.get("COMPASS_LOG_LEVEL", "INFO"),
-        use_json=os.environ.get("COMPASS_LOG_JSON") == "1" or not sys.stderr.isatty(),
+        log_level=os.environ.get("SCHOLIGHT_LOG_LEVEL", "INFO"),
+        use_json=os.environ.get("SCHOLIGHT_LOG_JSON") == "1" or not sys.stderr.isatty(),
         file_handler=(str(log_file), 50_000_000, 20),
     )
     return structlog.get_logger("download_arxiv_latex")

@@ -75,7 +75,7 @@ while true; do
     RUN_LOG="$LOG_DIR/run_$(date '+%Y%m%d_%H%M%S').log"
     log "running sync → $RUN_LOG"
     export PYTHONDONTWRITEBYTECODE=1
-    cd "$ROOT" && uv run compass service sync > "$RUN_LOG" 2>&1
+    cd "$ROOT" && uv run scholight scheduler paper-sync > "$RUN_LOG" 2>&1
     log "sync finished (rc=$?)"
     $ONCE && log "once mode: exiting" && break
     log "sleeping ${LOOP_SLEEP}s until next cycle"

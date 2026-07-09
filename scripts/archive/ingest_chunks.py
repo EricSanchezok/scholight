@@ -31,7 +31,6 @@ import re
 import signal
 import sys
 import time
-import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -40,8 +39,8 @@ import structlog
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from compass.logging import configure_logging  # noqa: E402
-from compass.storage import storage  # noqa: E402
+from scholight.logging import configure_logging
+from scholight.storage import storage
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
@@ -139,8 +138,8 @@ def _detect_source(md_text: str) -> str:
 
 def _process_one_paper(aid: str, created: str) -> tuple[list[dict], str | None]:
     """读 paper.md → chunk_markdown。若MD文件缺失则用PDF fast模式补齐。"""
-    from compass.pipeline.chunkers.md_chunker import chunk_markdown
-    from compass.pipeline.pdf_md import pdf_to_markdown as _pdf_to_md
+    from scholight.pipeline.chunkers.md_chunker import chunk_markdown
+    from scholight.pipeline.pdf_md import pdf_to_markdown as _pdf_to_md
 
     md_path = storage.markdown_path(aid, created)
 
@@ -198,7 +197,7 @@ def _process_one_paper(aid: str, created: str) -> tuple[list[dict], str | None]:
 
 
 async def _embed_chunks(texts: list[str]) -> list[list[float]]:
-    from compass.pipeline.embedder import Embedder
+    from scholight.pipeline.embedder import Embedder
 
     async with Embedder() as e:
         return await e.embed_many(texts)
@@ -213,7 +212,7 @@ def _get_sparse_encoder() -> Any:
     global _sparse_encoder
     if _sparse_encoder is not None:
         return _sparse_encoder
-    from compass.pipeline.sparse_encoder import SparseEncoder
+    from scholight.pipeline.sparse_encoder import SparseEncoder
 
     ckpt_path = str(storage.checkpoint_path("bm25", "arxiv.pkl"))
     if not Path(ckpt_path).exists():
@@ -227,7 +226,7 @@ def _get_sparse_encoder() -> Any:
 
 def _safe_insert_chunks_for_paper(client: Any, paper_chunks: list[dict]) -> int:
     """Upsert chunks — store 层安全方法，单次原子操作。"""
-    from compass.store.ingest import upsert_arxiv_chunks
+    from scholight.store.ingest import upsert_arxiv_chunks
 
     upsert_arxiv_chunks(paper_chunks)
     return len(paper_chunks)
@@ -257,7 +256,7 @@ def _worker_init(ckpt_dir: str):
     structlog.configure(wrapper_class=structlog.make_filtering_bound_logger(40))
 
     # Milvus client
-    from compass.store.client import get_client
+    from scholight.store.client import get_client
 
     _worker_client = get_client()
 
@@ -354,7 +353,7 @@ def _process_batch(papers: list[dict]) -> BatchResult:
         c["paper_title"] = title_map.get(c["arxiv_id"], "")
 
     # ── Step 5: 按论文入库 ─────────────────────────────────────────────
-    from compass.store.ingest import update_arxiv_paper
+    from scholight.store.ingest import update_arxiv_paper
 
     by_paper: dict[str, list[dict]] = {}
     for c in all_chunks:
@@ -449,7 +448,7 @@ def main() -> None:
         log.info("worker_pool_created", workers=args.num_workers)
 
     # ── Cursor-scan ──────────────────────────────────────────────────────
-    from compass.store.client import QUERY_CONSISTENCY, escape_sql, get_client
+    from scholight.store.client import QUERY_CONSISTENCY, escape_sql, get_client
 
     client = get_client()
     log.info("cursor_scan_start")
@@ -618,7 +617,7 @@ def main() -> None:
         pool.join()
 
     log.info("done", stats=stats.summary())
-    print(f"\n  ingest_chunks finished")
+    print("\n  ingest_chunks finished")
     print(f"  {stats.summary()}")
     print(f"  ckpt done:   {cp._done_file}  ({len(cp.done):,} entries)")
     print(f"  ckpt failed: {cp._failed_file}  ({len(cp.failed):,} entries)")

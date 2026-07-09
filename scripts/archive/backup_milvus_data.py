@@ -12,7 +12,7 @@
     python scripts/backup_milvus_data.py restore /path/to/backup   # 恢复
     python scripts/backup_milvus_data.py status         # 检查备份时间戳
 
-与 ``compass store backup`` 的区别：
+与 ``scholight store backup`` 的区别：
   - 文件级：完整快照，用于灾难恢复，必须停服
   - 逻辑级：在线导出 JSONL，可选择性恢复，无需停服
 """
@@ -32,17 +32,17 @@ from pathlib import Path
 # Default paths — overridable via environment variables for portability.
 _GPFS_MILVUS_DATA = Path(
     os.environ.get(
-        "COMPASS_MILVUS_DATA_DIR",
+        "SCHOLIGHT_MILVUS_DATA_DIR",
         "/inspire/qb-ilm/project/multi-agent/niexiaohang-25130061/academic-data/milvus-data",
     )
 )
 _DEFAULT_BACKUP_ROOT = Path(
     os.environ.get(
-        "COMPASS_MILVUS_BACKUP_DIR",
+        "SCHOLIGHT_MILVUS_BACKUP_DIR",
         "/inspire/qb-ilm/project/multi-agent/niexiaohang-25130061/academic-data/milvus-backups",
     )
 )
-_MILVUS_PORT = int(os.environ.get("COMPASS_MILVUS_PORT", "19530"))
+_MILVUS_PORT = int(os.environ.get("SCHOLIGHT_MILVUS_PORT", "19530"))
 
 
 def _milvus_ip() -> str | None:

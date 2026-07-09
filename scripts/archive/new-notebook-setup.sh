@@ -7,7 +7,7 @@
 set -uo pipefail  # 不用 -e，apt lock 时不要直接炸，继续走 fallback
 
 echo "╔══════════════════════════════════════════════╗"
-echo "║  Academic Compass - New Notebook Setup       ║"
+echo "║  Scholight - New Notebook Setup       ║"
 echo "╚══════════════════════════════════════════════╝"
 
 # ---- Step 0: 基础工具包 ---------------------------------
@@ -140,7 +140,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "📦 [5/5] 验证共享存储路径..."
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-PROJECT_DIR="/inspire/hdd/project/multi-agent/niexiaohang-25130061/academic-compass"
+PROJECT_DIR="/inspire/hdd/project/multi-agent/niexiaohang-25130061/scholight"
 
 echo ">>> 检查 $PROJECT_DIR ..."
 if [ -d "$PROJECT_DIR" ]; then

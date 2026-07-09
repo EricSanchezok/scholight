@@ -117,7 +117,7 @@ def _cmd_diff(args: argparse.Namespace) -> None:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Run retrieval benchmarks against Compass SearchEngine."
+        description="Run retrieval benchmarks against Scholight SearchEngine."
     )
     sub = parser.add_subparsers(dest="command", help="Subcommand")
 

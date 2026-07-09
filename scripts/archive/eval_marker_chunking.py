@@ -16,7 +16,7 @@ from pathlib import Path
 PROJECT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT))
 
-from compass.pipeline.chunkers.content_list_chunker import chunk_content_list  # noqa: E402
+from scholight.pipeline.chunkers.content_list_chunker import chunk_content_list  # noqa: E402
 
 
 def load_json(path: Path) -> list:

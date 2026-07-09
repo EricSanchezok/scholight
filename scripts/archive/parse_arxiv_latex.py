@@ -21,7 +21,7 @@ parse_arxiv_latex.py — 从 arXiv LaTeX tar 提取源文件到 latex_dir
   python scripts/parse_arxiv_latex.py --dry-run                    # 预览
 
 环境变量:
-  COMPASS_DATA_ROOT / COMPASS_MILVUS_IP_FILE / COMPASS_LOG_LEVEL
+  SCHOLIGHT_DATA_ROOT / SCHOLIGHT_MILVUS_IP_FILE / SCHOLIGHT_LOG_LEVEL
 """
 
 from __future__ import annotations
@@ -39,16 +39,15 @@ import tarfile
 import time
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import NamedTuple
 
 import structlog
 from pymilvus import MilvusClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from compass.logging import configure_logging  # noqa: E402
-from compass.storage import storage  # noqa: E402
-from compass.sources.arxiv import canonicalize_arxiv_id  # noqa: E402
-from compass.store.ingest import update_arxiv_paper  # noqa: E402
+from scholight.logging import configure_logging
+from scholight.sources.arxiv import canonicalize_arxiv_id
+from scholight.storage import storage
+from scholight.store.ingest import update_arxiv_paper
 
 # ── CLI ────────────────────────────────────────────────────────────────────────
 _parser = argparse.ArgumentParser(
@@ -64,7 +63,7 @@ _args = _parser.parse_args()
 # ── Constants ──────────────────────────────────────────────────────────────────
 DATA_ROOT = Path(
     os.environ.get(
-        "COMPASS_DATA_ROOT",
+        "SCHOLIGHT_DATA_ROOT",
         "/inspire/qb-ilm/project/multi-agent/niexiaohang-25130061/academic-data",
     )
 )
@@ -99,8 +98,8 @@ def _setup_logging() -> structlog.BoundLogger:
         ts = datetime.fromtimestamp(lf.stat().st_mtime, tz=UTC)
         shutil.move(str(lf), str(LOG_DIR / f"parse_{ts.strftime('%Y%m%d_%H%M%S')}.log"))
     configure_logging(
-        log_level=os.environ.get("COMPASS_LOG_LEVEL", "INFO"),
-        use_json=os.environ.get("COMPASS_LOG_JSON") == "1" or not sys.stderr.isatty(),
+        log_level=os.environ.get("SCHOLIGHT_LOG_LEVEL", "INFO"),
+        use_json=os.environ.get("SCHOLIGHT_LOG_JSON") == "1" or not sys.stderr.isatty(),
         file_handler=(str(lf), 50_000_000, 20),
     )
     return structlog.get_logger("parse_arxiv_latex")
@@ -244,11 +243,11 @@ class Checkpoint:
 # ── Milvus ─────────────────────────────────────────────────────────────────────
 def _get_client() -> MilvusClient:
     ip_file = os.environ.get(
-        "COMPASS_MILVUS_IP_FILE",
+        "SCHOLIGHT_MILVUS_IP_FILE",
         "/inspire/qb-ilm/project/multi-agent/niexiaohang-25130061/academic-data/milvus-data/milvus_ip.txt",
     )
     ip = Path(ip_file).read_text().strip()
-    port = int(os.environ.get("COMPASS_MILVUS_PORT", "19530"))
+    port = int(os.environ.get("SCHOLIGHT_MILVUS_PORT", "19530"))
     log.info("milvus  uri=http://%s:%s", ip, port)
     return MilvusClient(uri=f"http://{ip}:{port}")
 

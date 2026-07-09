@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Hyperparameter grid evaluation for Academic Compass L1/L2 search.
+"""Hyperparameter grid evaluation for Scholight L1/L2 search.
 
 Uses the Python SearchEngine API directly — no subprocess overhead.
 
@@ -58,7 +58,7 @@ def _round1_l2() -> list[Trial]:
             f"bm25={bm25}_refine=1024",
             level=2,
             top_k=10,
-            env={"COMPASS_BM25_COARSE_TOP_K": str(bm25), "COMPASS_DENSE_REFINE_TOP_K": "1024"},
+            env={"SCHOLIGHT_BM25_COARSE_TOP_K": str(bm25), "SCHOLIGHT_DENSE_REFINE_TOP_K": "1024"},
         )
         for bm25 in [50, 100, 200, 300, 400]
     ]
@@ -71,8 +71,8 @@ def _round2_l2() -> list[Trial]:
             level=2,
             top_k=10,
             env={
-                "COMPASS_SEARCH_RRF_PAPER_WEIGHT": f"{pw:.1f}",
-                "COMPASS_SEARCH_RRF_CHUNK_WEIGHT": f"{1.0 - pw:.1f}",
+                "SCHOLIGHT_SEARCH_RRF_PAPER_WEIGHT": f"{pw:.1f}",
+                "SCHOLIGHT_SEARCH_RRF_CHUNK_WEIGHT": f"{1.0 - pw:.1f}",
             },
         )
         for pw in [0.3, 0.4, 0.5, 0.6, 0.7]
@@ -85,7 +85,7 @@ def _round3_l2() -> list[Trial]:
             f"alpha={alpha:.2f}",
             level=2,
             top_k=10,
-            env={"COMPASS_SEARCH_CHUNK_AGGREGATION_ALPHA": f"{alpha:.2f}"},
+            env={"SCHOLIGHT_SEARCH_CHUNK_AGGREGATION_ALPHA": f"{alpha:.2f}"},
         )
         for alpha in [0.0, 0.25, 0.5, 0.75, 1.0]
     ]
@@ -97,7 +97,7 @@ def _round4_l2() -> list[Trial]:
             f"level=({pl},{cl})",
             level=2,
             top_k=10,
-            env={"COMPASS_SEARCH_LEVEL": str(pl), "COMPASS_CHUNK_SEARCH_LEVEL": str(cl)},
+            env={"SCHOLIGHT_SEARCH_LEVEL": str(pl), "SCHOLIGHT_CHUNK_SEARCH_LEVEL": str(cl)},
         )
         for pl, cl in [(1, 1), (3, 1), (3, 3), (5, 3), (5, 5)]
     ]
@@ -171,7 +171,7 @@ _engine: Any = None
 def _get_engine():
     global _engine
     if _engine is None:
-        from compass.search.engine import SearchEngine
+        from scholight.search.engine import SearchEngine
 
         _engine = SearchEngine()
     return _engine
@@ -179,11 +179,11 @@ def _get_engine():
 
 def _apply_env_overrides(env: dict[str, str]) -> dict[str, Any]:
     """Apply trial env overrides in-place. Returns snapshot dict for rollback."""
-    from compass.config import settings
+    from scholight.config import settings
 
     snapshot: dict[str, Any] = {}
     for key, val in env.items():
-        field_name = key.removeprefix("COMPASS_").lower()
+        field_name = key.removeprefix("SCHOLIGHT_").lower()
         if hasattr(settings, field_name):
             snapshot[field_name] = getattr(settings, field_name)
             try:
@@ -198,14 +198,14 @@ def _rollback_overrides(snapshot: dict[str, Any]) -> None:
     """Restore settings fields from snapshot."""
     if not snapshot:
         return
-    from compass.config import settings
+    from scholight.config import settings
 
     for field_name, original in snapshot.items():
         object.__setattr__(settings, field_name, original)
 
 
 def run_search(query: str, trial: Trial) -> tuple[list[dict[str, Any]], float]:
-    from compass.models.search import SearchRequest
+    from scholight.models.search import SearchRequest
 
     snapshot = _apply_env_overrides(trial.env)
     try:
@@ -436,7 +436,7 @@ def _parse_rounds_arg(rounds: str) -> tuple[list[Trial], list[list[Trial]]]:
 def main() -> None:
     import argparse
 
-    p = argparse.ArgumentParser(description="Academic Compass hyperparameter grid evaluation")
+    p = argparse.ArgumentParser(description="Scholight hyperparameter grid evaluation")
     p.add_argument("--rounds", type=str, default="all")
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--output-dir", type=str, default=str(RESULTS_DIR))

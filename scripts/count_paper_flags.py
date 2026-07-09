@@ -2,7 +2,7 @@
 
 import time
 
-from compass.store.client import QUERY_CONSISTENCY, get_client
+from scholight.store.client import QUERY_CONSISTENCY, get_client
 
 
 def count_with_filter(client, filter_expr: str, label: str) -> int:

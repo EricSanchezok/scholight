@@ -1,14 +1,14 @@
 """Random-search tuner for Rocchio hyperparameters.
 
 .. deprecated::
-    Rocchio parameters now live in ``compass/config.py`` Pydantic Settings
-    (``COMPASS_SEARCH_ROCCHIO_*`` env vars).  The monkeypatch approach used
+    Rocchio parameters now live in ``scholight/config.py`` Pydantic Settings
+    (``SCHOLIGHT_SEARCH_ROCCHIO_*`` env vars).  The monkeypatch approach used
     by this script is no longer functional — ``refine()`` reads directly
     from ``settings`` instead of module globals.
 
     Use::
-        COMPASS_SEARCH_ROCCHIO_POS_K=5 \
-        COMPASS_SEARCH_ROCCHIO_MAX_TERMS=12 \
+        SCHOLIGHT_SEARCH_ROCCHIO_POS_K=5 \
+        SCHOLIGHT_SEARCH_ROCCHIO_MAX_TERMS=12 \
         uv run python scripts/benchmark/run.py run autoresearchbench --type wide
 
     This script is retained for reference until a config-based tuner is written.
@@ -31,7 +31,7 @@ import numpy as np
 BENCHMARK_DIR = Path(__file__).resolve().parent.parent.parent / "benchmark" / "autoresearchbench"
 GT_FILE = BENCHMARK_DIR / "input_data" / "AutoResearchBench.jsonl"
 REFINER_PATH = (
-    Path(__file__).resolve().parent.parent.parent / "compass" / "search" / "common" / "rocchio.py"
+    Path(__file__).resolve().parent.parent.parent / "scholight" / "search" / "common" / "rocchio.py"
 )
 RESULT_PATH = BENCHMARK_DIR / ".rocchio_tune_results.json"
 
@@ -95,7 +95,7 @@ def _patch_file(params: dict[str, Any]) -> None:
 
 def _patch_runtime(params: dict[str, Any]) -> None:
     """Monkeypatch rocchio module globals so running SearchEngine picks them up."""
-    import compass.search.common.rocchio as qr
+    import scholight.search.common.rocchio as qr
 
     qr._PCA_DEFLATE = int(params["pca_deflate"])
     qr._POS_K = int(params["pos_k"])
@@ -108,8 +108,8 @@ def _patch_runtime(params: dict[str, Any]) -> None:
 
 
 async def _evaluate(eval_queries: list[tuple[str, set[str]]]) -> float:
-    from compass.models.search import SearchRequest
-    from compass.search.engine import SearchEngine
+    from scholight.models.search import SearchRequest
+    from scholight.search.engine import SearchEngine
 
     engine = SearchEngine()
 

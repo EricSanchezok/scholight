@@ -19,11 +19,11 @@ from pathlib import Path
 
 import structlog
 
-from compass.logging import configure_logging
-from compass.storage import storage
-from compass.store.client import _resolve_token, _resolve_uri
+from scholight.logging import configure_logging
+from scholight.storage import storage
+from scholight.store.client import _resolve_token, _resolve_uri
 
-OUTPUT_PATH = Path("/inspire/hdd/project/multi-agent/niexiaohang-25130061/academic-compass/data")
+OUTPUT_PATH = Path("/inspire/hdd/project/multi-agent/niexiaohang-25130061/scholight/data")
 BATCH_SIZE = 1000  # Milvus id-in[...] batch
 
 logger = structlog.get_logger(__name__)
@@ -48,7 +48,7 @@ def main() -> None:
 
     configure_logging(log_level="INFO", use_json=True)
 
-    papers_root = str(storage._papers_root)  # noqa: SLF001
+    papers_root = str(storage._papers_root)
     logger.info("starting find pipeline", root=papers_root)
 
     # ── Launch find (stdout → Python pipe) ──

@@ -14,17 +14,17 @@ from pathlib import Path
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
 PDF_PATHS = [
-    "/inspire/hdd/project/multi-agent/niexiaohang-25130061/academic-compass/data/2508.20033v2.pdf",
-    "/inspire/hdd/project/multi-agent/niexiaohang-25130061/academic-compass/data/2510.03120v2.pdf",
-    "/inspire/hdd/project/multi-agent/niexiaohang-25130061/academic-compass/data/2512.22716.pdf",
-    "/inspire/hdd/project/multi-agent/niexiaohang-25130061/academic-compass/data/2601.03192.pdf",
-    "/inspire/hdd/project/multi-agent/niexiaohang-25130061/academic-compass/data/2601.15307v1.pdf",
-    "/inspire/hdd/project/multi-agent/niexiaohang-25130061/academic-compass/data/2602.20493.pdf",
-    "/inspire/hdd/project/multi-agent/niexiaohang-25130061/academic-compass/data/2603.28428.pdf",
-    "/inspire/hdd/project/multi-agent/niexiaohang-25130061/academic-compass/data/2605.08374v3.pdf",
+    "/inspire/hdd/project/multi-agent/niexiaohang-25130061/scholight/data/2508.20033v2.pdf",
+    "/inspire/hdd/project/multi-agent/niexiaohang-25130061/scholight/data/2510.03120v2.pdf",
+    "/inspire/hdd/project/multi-agent/niexiaohang-25130061/scholight/data/2512.22716.pdf",
+    "/inspire/hdd/project/multi-agent/niexiaohang-25130061/scholight/data/2601.03192.pdf",
+    "/inspire/hdd/project/multi-agent/niexiaohang-25130061/scholight/data/2601.15307v1.pdf",
+    "/inspire/hdd/project/multi-agent/niexiaohang-25130061/scholight/data/2602.20493.pdf",
+    "/inspire/hdd/project/multi-agent/niexiaohang-25130061/scholight/data/2603.28428.pdf",
+    "/inspire/hdd/project/multi-agent/niexiaohang-25130061/scholight/data/2605.08374v3.pdf",
 ]
 OUTPUT_DIR = Path(
-    "/inspire/hdd/project/multi-agent/niexiaohang-25130061/academic-compass/data/marker_output"
+    "/inspire/hdd/project/multi-agent/niexiaohang-25130061/scholight/data/marker_output"
 )
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 NUM_GPUS = 4
@@ -42,7 +42,7 @@ def process_one(args: tuple) -> dict:
         from marker.models import create_model_dict
         from marker.output import text_from_rendered
 
-        from compass.utils.marker import marker_block_to_content
+        from scholight.utils.marker import marker_block_to_content
 
         assert torch.cuda.is_available(), "CUDA not available!"
         gpu_name = torch.cuda.get_device_name(0)

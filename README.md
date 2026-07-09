@@ -1,11 +1,11 @@
-# Academic Compass
+# Scholight
 
 AI-focused academic paper search engine — arXiv as single data source, passage-level vector search and survey generation.
 
 ## Architecture
 
 ```
-academic-compass/
+scholight/
 │   ├── api/          FastAPI REST API (search, survey, auth via cloud-auth)
 │   ├── clients/      HTTP clients (OSS, RDC, Gateway)
 │   ├── search/       Multi-stage retrieval + rerank pipeline
@@ -16,7 +16,7 @@ academic-compass/
 │   ├── cli/          Click CLI (search, service, store)
 │   ├── models/       Pydantic data models
 │   └── db/           PostgreSQL queries (search/survey history)
-├── cloud-auth/       Shared auth SDK (independent repo — gitignored in compass)
+├── cloud-auth/       Shared auth SDK (independent repo — gitignored in scholight)
 ├── migrations/       PostgreSQL schema migrations
 ├── scripts/          Data ingestion + maintenance scripts
 ├── docker/           Docker deployment (API server)
@@ -36,26 +36,26 @@ academic-compass/
 
 ```bash
 # Clone
-git clone git@github.com:EricSanchezok/academic-compass.git
-cd academic-compass
+git clone git@github.com:EricSanchezok/scholight.git
+cd scholight
 
 # Install (requires SSH key for cloud-auth private repo)
 uv sync
 
-export COMPASS_ZILLIZ_URI=https://in05-xxxxx.serverless.ali-cn-hangzhou.cloud.zilliz.com.cn
-export COMPASS_ZILLIZ_TOKEN=your-api-token
+export SCHOLIGHT_ZILLIZ_URI=https://in05-xxxxx.serverless.ali-cn-hangzhou.cloud.zilliz.com.cn
+export SCHOLIGHT_ZILLIZ_TOKEN=your-api-token
 
 # Run database migrations
-uv run compass store init       # Zilliz Cloud collections
+uv run scholight store init       # Zilliz Cloud collections
 # cloud-auth migrations: see cloud-auth README
 
 # Start API server
-uv run uvicorn compass.api.app:create_app --factory --host 0.0.0.0 --port 8000
+uv run uvicorn scholight.api.app:create_app --factory --host 0.0.0.0 --port 8000
 ```
 
 ### Configuration
 
-All settings are read via `COMPASS_`-prefixed env vars. Copy `.env.example`:
+All settings are read via `SCHOLIGHT_`-prefixed env vars. Copy `.env.example`:
 ```bash
 cp .env.example .env
 ```
@@ -63,13 +63,13 @@ cp .env.example .env
 Key variables:
 | Variable | Required | Purpose |
 |---|---|---|
-| `COMPASS_PG_*` | ✅ | PostgreSQL connection |
-| `COMPASS_ZILLIZ_*` | ✅ | Zilliz Cloud (vector DB) |
-| `COMPASS_AUTH_JWT_SECRET` | ✅ | JWT signing key |
-| `COMPASS_OSS_*` | ✅ | Aliyun OSS for survey output |
+| `SCHOLIGHT_PG_*` | ✅ | PostgreSQL connection |
+| `SCHOLIGHT_ZILLIZ_*` | ✅ | Zilliz Cloud (vector DB) |
+| `SCHOLIGHT_AUTH_JWT_SECRET` | ✅ | JWT signing key |
+| `SCHOLIGHT_OSS_*` | ✅ | Aliyun OSS for survey output |
 | `DEEPSEEK_API_KEY` | ✅ | Survey LLM — passed to RCM subprocess |
 | `OPENAI_API_KEY` | — | Survey figure — optional, skips if missing |
-| `COMPASS_SURVEY_*` | — | Survey pipeline tuning |
+| `SCHOLIGHT_SURVEY_*` | — | Survey pipeline tuning |
 
 ### Survey Output
 
@@ -97,7 +97,7 @@ The daily arXiv sync pipeline runs on the host instance — **never** in the con
 ```bash
 # 1. Copy and fill in the production env file
 cp .env.production.example .env.production
-# Edit .env.production — COMPASS_AUTH_JWT_SECRET, ZILLIZ_TOKEN, PG_PASSWORD etc.
+# Edit .env.production — SCHOLIGHT_AUTH_JWT_SECRET, ZILLIZ_TOKEN, PG_PASSWORD etc.
 
 # 2. Build
 docker compose build
@@ -114,7 +114,7 @@ mode (RCM subprocess) is not supported inside Docker.
 
 | Component | Where | Why |
 |---|---|---|
-| arXiv paper sync | Host | Downloads PDFs to local disk (`COMPASS_DATA_ROOT`) |
+| arXiv paper sync | Host | Downloads PDFs to local disk (`SCHOLIGHT_DATA_ROOT`) |
 | PDF daemon | Host | Converts PDFs to markdown on local disk |
 | Markdown daemon | Host | Chunks and embeds on local disk |
 | Chunk daemon | Host | Ingests to Zilliz Cloud from host |
@@ -126,9 +126,9 @@ access — all best run on the host instance alongside the Docker container.
 
 ```bash
 uv run pre-commit install            # Git hooks
-uv run ruff check compass/           # Lint
-uv run mypy compass                  # Type check
-uv run pytest compass/ -v            # Run tests
+uv run ruff check scholight/           # Lint
+uv run mypy scholight                  # Type check
+uv run pytest scholight/ -v            # Run tests
 ```
 
 ## License

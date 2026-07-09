@@ -1,19 +1,25 @@
 import os
+
 """Batch insert arxiv_papers from Parquet into Zilliz Cloud."""
-import sys, time, gc
+import sys
+import time
 from pathlib import Path
-import pandas as pd
+
 import numpy as np
+import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-TOKEN = os.environ.get("COMPASS_ZILLIZ_TOKEN", "")
+TOKEN = os.environ.get("SCHOLIGHT_ZILLIZ_TOKEN", "")
 URI = "https://in05-d432d46d6c77308.serverless.ali-cn-hangzhou.cloud.zilliz.com.cn"
 
 from pymilvus import MilvusClient
+
 c = MilvusClient(uri=URI, token=TOKEN)
 
-PAPERS = Path("/inspire/qb-ilm/project/multi-agent/niexiaohang-25130061/academic-data/zilliz-import/arxiv_papers")
+PAPERS = Path(
+    "/inspire/qb-ilm/project/multi-agent/niexiaohang-25130061/academic-data/zilliz-import/arxiv_papers"
+)
 files = sorted([f for f in PAPERS.rglob("*.parquet") if not f.name.endswith(".bak")])
 
 BATCH = 1000
@@ -47,11 +53,14 @@ for fi, pf in enumerate(files):
             ok += result["insert_count"]
             total += result["insert_count"]
         except Exception as e:
-            print(f"FAIL [{fi+1}/{len(files)}] batch start={start}: {e}", flush=True)
+            print(f"FAIL [{fi + 1}/{len(files)}] batch start={start}: {e}", flush=True)
     total += 0  # already counted
     if (fi + 1) % 10 == 0:
         elapsed = time.monotonic() - t0
-        print(f"[{fi+1}/{len(files)}] inserted={ok:,} rows ({elapsed:.0f}s, {ok/elapsed:.0f} rows/s)", flush=True)
+        print(
+            f"[{fi + 1}/{len(files)}] inserted={ok:,} rows ({elapsed:.0f}s, {ok / elapsed:.0f} rows/s)",
+            flush=True,
+        )
 
 elapsed = time.monotonic() - t0
-print(f"\nDONE: {ok:,} rows in {elapsed:.0f}s ({elapsed/60:.1f}min, {ok/elapsed:.0f} rows/s)")
+print(f"\nDONE: {ok:,} rows in {elapsed:.0f}s ({elapsed / 60:.1f}min, {ok / elapsed:.0f} rows/s)")

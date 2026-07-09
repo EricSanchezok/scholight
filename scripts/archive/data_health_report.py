@@ -17,7 +17,7 @@ from typing import Any
 _project_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_project_root))
 
-from compass.store.client import get_client  # noqa: E402
+from scholight.store.client import get_client  # noqa: E402
 
 
 def esc(s: str) -> str:

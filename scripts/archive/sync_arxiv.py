@@ -31,10 +31,10 @@ PDF 存储: PDF_DIR/YYYY/MM/{arxiv_id}.pdf  (与 parquet 同目录体系)
   python scripts/sync_arxiv.py --resume TOKEN_STRING
 
 环境变量:
-  COMPASS_MINERU_API_KEY   MinerU API key
+  SCHOLIGHT_MINERU_API_KEY   MinerU API key
   OUTPUT_DIR               parquet 输出目录 (与 parse_arxiv.py 共用)
   PDF_DIR                  PDF 下载目录 (默认 OUTPUT_DIR/../pdfs)
-  COMPASS_LOG_LEVEL        日志级别 (默认 INFO)
+  SCHOLIGHT_LOG_LEVEL        日志级别 (默认 INFO)
 """
 
 from __future__ import annotations
@@ -59,8 +59,8 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from compass.config import settings  # noqa: E402
-from compass.logging import configure_logging  # noqa: E402
+from scholight.config import settings  # noqa: E402
+from scholight.logging import configure_logging  # noqa: E402
 
 configure_logging(log_level=settings.log_level)
 
@@ -224,7 +224,7 @@ def arxiv_to_path(arxiv_id: str) -> tuple[int, int, Path]:
 
     "2501.00001" → (2025, 1, OUTPUT_DIR/2025/01/2501.00001.parquet)
     """
-    from compass.utils import parse_arxiv_id
+    from scholight.utils import parse_arxiv_id
 
     year, month = parse_arxiv_id(arxiv_id)
     out_dir = OUTPUT_DIR / str(year) / f"{month:02d}"
@@ -234,7 +234,7 @@ def arxiv_to_path(arxiv_id: str) -> tuple[int, int, Path]:
 
 def pdf_path_for(arxiv_id: str) -> Path:
     """Return the PDF storage path: PDF_DIR/YYYY/MM/{arxiv_id}.pdf"""
-    from compass.utils import parse_arxiv_id
+    from scholight.utils import parse_arxiv_id
 
     year, month = parse_arxiv_id(arxiv_id)
     out_dir = PDF_DIR / str(year) / f"{month:02d}"
@@ -303,7 +303,7 @@ def download_pdf(arxiv_id: str, url: str) -> Path:
 
 def parse_with_mineru_api(pdf_path: Path, arxiv_id: str) -> list[dict]:
     """Call MinerU API to parse PDF → content_list."""
-    from compass.pipeline.parser import parse_pdf as _parse_pdf
+    from scholight.pipeline.parser import parse_pdf as _parse_pdf
 
     tmp_dir = OUTPUT_DIR / ".tmp_mineru"
     tmp_dir.mkdir(parents=True, exist_ok=True)

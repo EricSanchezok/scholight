@@ -42,9 +42,8 @@ import structlog
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from compass.logging import configure_logging  # noqa: E402
-from compass.storage import storage  # noqa: E402
-
+from scholight.logging import configure_logging
+from scholight.storage import storage
 
 # ── Shard helper ────────────────────────────────────────────────────────────
 
@@ -82,14 +81,14 @@ class WorkerResult:
 def _process_one(args: tuple[str, Path, bool]) -> WorkerResult:
     """Pure computation: read PDF → markdown string.
 
-    Delegates to ``compass.pipeline.pdf_md.pdf_to_markdown``.
+    Delegates to ``scholight.pipeline.pdf_md.pdf_to_markdown``.
     No Milvus, no file writes, no logging — everything goes into WorkerResult.
 
     Args:
         args: (arxiv_id, pdf_path, fast) — fast=True uses pymupdf.get_text()
               (~0.05s/paper), fast=False uses pymupdf4llm (~20s/paper).
     """
-    from compass.pipeline.pdf_md import PDFMdError, pdf_to_markdown  # noqa: E402
+    from scholight.pipeline.pdf_md import PDFMdError, pdf_to_markdown
 
     aid, pdf_path, fast = args
     t0 = time.monotonic()
@@ -229,7 +228,7 @@ class Checkpoint:
 
 def _update_one(aid: str, log: Any) -> bool:
     """Update has_markdown=True in Milvus with retry.  Returns True on success."""
-    from compass.store.ingest import update_arxiv_paper  # noqa: F811
+    from scholight.store.ingest import update_arxiv_paper
 
     for attempt in range(1, 4):
         try:
@@ -334,7 +333,7 @@ def main() -> None:
     chunksize = max(1, min(200, 10000 // args.workers))
 
     # ── Cursor-scan Milvus + process in batches ────────────────────────
-    from compass.store.client import QUERY_CONSISTENCY, get_client  # noqa: E402
+    from scholight.store.client import QUERY_CONSISTENCY, get_client
 
     client = get_client()
     log.info("gathering_start", max_rows=args.max_rows or "∞")

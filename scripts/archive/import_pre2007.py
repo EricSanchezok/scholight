@@ -34,11 +34,11 @@ import structlog
 _project_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_project_root))
 
-from compass.config import settings  # noqa: E402
-from compass.logging import configure_logging  # noqa: E402
-from compass.pipeline.embedder import Embedder  # noqa: E402
-from compass.storage import storage  # noqa: E402
-from compass.store.concurrent import insert_arxiv_papers_concurrent  # noqa: E402
+from scholight.config import settings  # noqa: E402
+from scholight.logging import configure_logging  # noqa: E402
+from scholight.pipeline.embedder import Embedder  # noqa: E402
+from scholight.storage import storage  # noqa: E402
+from scholight.store.concurrent import insert_arxiv_papers_concurrent  # noqa: E402
 
 # ── Logging ──────────────────────────────────────────────────────────────
 
@@ -111,7 +111,7 @@ def convert_row(row: pd.Series) -> dict[str, Any]:
     cat_text = str(row.get("categories", "") or "")
     categories = [c.strip() for c in cat_text.split(",") if c.strip()] if cat_text else []
 
-    from compass.sources.arxiv import canonicalize_arxiv_id
+    from scholight.sources.arxiv import canonicalize_arxiv_id
 
     aid = canonicalize_arxiv_id(row.get("arxiv_id"))
     if aid is None:
@@ -393,7 +393,7 @@ def main() -> None:
     # Load all existing arxiv_ids for dedup (Kaggle 优先级)
     existing_ids: set[str] = set()
     if not args.no_skip_existing:
-        from compass.store.client import get_client
+        from scholight.store.client import get_client
 
         client = get_client()
         logger.info("loading existing arxiv_ids for dedup...")

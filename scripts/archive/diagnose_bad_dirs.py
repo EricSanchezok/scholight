@@ -22,12 +22,12 @@ from pathlib import Path
 
 import structlog
 
-from compass.logging import configure_logging
-from compass.sources.arxiv import canonicalize_arxiv_id
-from compass.storage import storage
-from compass.store.client import _WRITE_LOCK, _resolve_token, _resolve_uri
+from scholight.logging import configure_logging
+from scholight.sources.arxiv import canonicalize_arxiv_id
+from scholight.storage import storage
+from scholight.store.client import _WRITE_LOCK, _resolve_token, _resolve_uri
 
-OUTPUT_DIR = Path("/inspire/hdd/project/multi-agent/niexiaohang-25130061/academic-compass/data")
+OUTPUT_DIR = Path("/inspire/hdd/project/multi-agent/niexiaohang-25130061/scholight/data")
 
 logger = structlog.get_logger(__name__)
 

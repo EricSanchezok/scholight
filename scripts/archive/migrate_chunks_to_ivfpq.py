@@ -23,10 +23,10 @@ from pymilvus.orm.utility import index_building_progress
 _project_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_project_root))
 
-from compass.config import settings  # noqa: E402
-from compass.logging import configure_logging  # noqa: E402
-from compass.storage import storage  # noqa: E402
-from compass.store.client import get_client  # noqa: E402
+from scholight.config import settings  # noqa: E402
+from scholight.logging import configure_logging  # noqa: E402
+from scholight.storage import storage  # noqa: E402
+from scholight.store.client import get_client  # noqa: E402
 
 _LOG_FILE = storage.log_path("migrate_ivfpq", "migrate.log")
 configure_logging(
