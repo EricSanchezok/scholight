@@ -5,7 +5,7 @@ import time
 from scholight.store.client import QUERY_CONSISTENCY, get_client
 
 
-def count_with_filter(client, filter_expr: str, label: str) -> int:
+def count_with_filter(client, filter_expr: str, label: str = "") -> int:  # noqa: ARG001
     """Count ALL papers matching filter_expr using query_iterator, return count."""
     it = client.query_iterator(
         collection_name="arxiv_papers",

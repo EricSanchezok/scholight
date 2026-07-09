@@ -31,8 +31,8 @@ configure_logging(
 )
 
 # ── Now safe to import modules that call get_logger(__name__) ───────
-import uvicorn
-from scholight.api.app import create_app
+import uvicorn  # noqa: E402, I001
+from scholight.api.app import create_app  # noqa: E402
 
 app = create_app()
 

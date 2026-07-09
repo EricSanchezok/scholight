@@ -72,60 +72,58 @@ def main() -> None:
 
     out_file = OUTPUT_PATH / "orphan_pdfs.txt"
     out_file.parent.mkdir(parents=True, exist_ok=True)
-    fout = open(out_file, "w")
-    fout.write("arxiv_id\tpath\tsize_bytes\n")
+    with open(out_file, "w") as fout:
+        fout.write("arxiv_id\tpath\tsize_bytes\n")
 
-    for line in find_proc.stdout:
-        path_str = line.rstrip("\n")
-        # Path: .../papers/YYYY/MM/DD/{safe_id}/paper.pdf
-        safe_id = path_str.rsplit("/", 2)[-2]
-        arxiv_id = safe_id.replace("_", "/")
-        batch.append((arxiv_id, path_str))
-        total_disk += 1
+        for line in find_proc.stdout:
+            path_str = line.rstrip("\n")
+            # Path: .../papers/YYYY/MM/DD/{safe_id}/paper.pdf
+            safe_id = path_str.rsplit("/", 2)[-2]
+            arxiv_id = safe_id.replace("_", "/")
+            batch.append((arxiv_id, path_str))
+            total_disk += 1
 
-        if len(batch) >= BATCH_SIZE:
+            if len(batch) >= BATCH_SIZE:
+                batch_ids = [b[0] for b in batch]
+                in_db = _check_batch(client, batch_ids)
+
+                for aid, pth in batch:
+                    if aid not in in_db:
+                        orphan_count += 1
+                        try:
+                            size = Path(pth).stat().st_size
+                        except OSError:
+                            size = -1
+                        fout.write(f"{aid}\t{pth}\t{size}\n")
+                        if args.dry_run and orphan_count >= 100:
+                            break
+
+                elapsed = time.monotonic() - t0
+                logger.info(
+                    "progress",
+                    scanned=total_disk,
+                    orphans=orphan_count,
+                    elapsed_m=f"{elapsed / 60:.1f}",
+                )
+
+                batch = []
+                if args.dry_run and orphan_count >= 100:
+                    find_proc.kill()
+                    break
+
+        # Final flush
+        if batch:
             batch_ids = [b[0] for b in batch]
             in_db = _check_batch(client, batch_ids)
-
             for aid, pth in batch:
                 if aid not in in_db:
                     orphan_count += 1
-                    # Get file size
                     try:
                         size = Path(pth).stat().st_size
                     except OSError:
                         size = -1
                     fout.write(f"{aid}\t{pth}\t{size}\n")
-                    if args.dry_run and orphan_count >= 100:
-                        break
 
-            elapsed = time.monotonic() - t0
-            logger.info(
-                "progress",
-                scanned=total_disk,
-                orphans=orphan_count,
-                elapsed_m=f"{elapsed / 60:.1f}",
-            )
-
-            batch = []
-            if args.dry_run and orphan_count >= 100:
-                find_proc.kill()
-                break
-
-    # Final flush
-    if batch:
-        batch_ids = [b[0] for b in batch]
-        in_db = _check_batch(client, batch_ids)
-        for aid, pth in batch:
-            if aid not in in_db:
-                orphan_count += 1
-                try:
-                    size = Path(pth).stat().st_size
-                except OSError:
-                    size = -1
-                fout.write(f"{aid}\t{pth}\t{size}\n")
-
-    fout.close()
     find_proc.wait(timeout=10)
 
     elapsed = time.monotonic() - t0
