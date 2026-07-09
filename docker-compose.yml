@@ -5,10 +5,10 @@
 # The daily arXiv sync daemons run on the host — NEVER in this container.
 #
 # Quick start:
-#   1. cp .env.production.example .env.production
-#   2. Fill in the empty values in .env.production
-#   3. docker compose --env-file .env.production build
-#   4. docker compose --env-file .env.production up -d
+#   1. cp .env.example .env
+#   2. Fill in the empty values in .env
+#   3. docker compose --env-file .env build
+#   4. docker compose --env-file .env up -d
 
 services:
   api:
@@ -20,7 +20,7 @@ services:
     ports:
       - "${SCHOLIGHT_SERVER_PORT:-8000}:8000"
     env_file:
-      - .env.production
+      - .env
     restart: unless-stopped
     # No volumes — the API never touches local disk.
     # No depends_on — Zilliz and PG are external services.

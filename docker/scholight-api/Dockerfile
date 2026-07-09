@@ -1,6 +1,6 @@
 # Scholight — API Server Docker Image
 # ============================================
-# This image only runs the FastAPI server (search, survey, auth, projects).
+# This image only runs the FastAPI server (search, auth).
 # The daily arXiv sync pipeline runs on the host instance — never containerized.
 #
 # Build:
@@ -8,7 +8,7 @@
 #   (cloud-auth is installed from the local clone — no SSH forwarding needed)
 #
 # Run:
-#   docker compose --env-file .env.production up -d
+#   docker compose --env-file .env up -d
 
 FROM python:3.11-slim-bookworm
 

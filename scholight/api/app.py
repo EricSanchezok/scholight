@@ -43,7 +43,7 @@ def create_app() -> FastAPI:
 
     app = FastAPI(
         title="Scholight API",
-        description="AI-powered academic paper search and survey engine",
+        description="AI-powered academic paper search engine",
         version=__version__,
         lifespan=lifespan,
     )

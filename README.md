@@ -1,21 +1,20 @@
 # Scholight
 
-AI-focused academic paper search engine — arXiv as single data source, passage-level vector search and survey generation.
+AI-focused academic paper search engine — arXiv as single data source, passage-level vector search.
 
 ## Architecture
 
 ```
 scholight/
-│   ├── api/          FastAPI REST API (search, survey, auth via cloud-auth)
-│   ├── clients/      HTTP clients (OSS, RDC, Gateway)
+│   ├── api/          FastAPI REST API (search, auth via cloud-auth)
 │   ├── search/       Multi-stage retrieval + rerank pipeline
 │   ├── store/        Zilliz Cloud interaction layer (papers, chunks, citations)
 │   ├── pipeline/     PDF parsing, chunking, embedding
 │   ├── sources/      arXiv data connectors (bulk tar + OAI-PMH)
 │   ├── scheduler/    Ingestion orchestration + daily sync
-│   ├── cli/          Click CLI (search, service, store)
+│   ├── cli/          Click CLI (search, scheduler, store)
 │   ├── models/       Pydantic data models
-│   └── db/           PostgreSQL queries (search/survey history)
+│   └── db/           PostgreSQL queries (search history, auth)
 ├── cloud-auth/       Shared auth SDK (independent repo — gitignored in scholight)
 ├── migrations/       PostgreSQL schema migrations
 ├── scripts/          Data ingestion + maintenance scripts
@@ -27,10 +26,8 @@ scholight/
 
 - **cloud-auth** — shared user auth & quota system (private repo)
 - **Zilliz Cloud** — managed vector database (Milvus-compatible)
-- **PostgreSQL** — search/survey history + user data (via cloud-auth)
+- **PostgreSQL** — search history + user data (via cloud-auth)
 - **arXiv** — single data source (bulk PDF tar + OAI-PMH API)
-- **Aliyun OSS** — survey output storage (via `alibabacloud-oss-v2`)
-- **RDC** — Research Data Center (survey job queue + lifecycle backend)
 
 ## Quick Start
 
@@ -56,59 +53,45 @@ uv run uvicorn scholight.api.app:create_app --factory --host 0.0.0.0 --port 8000
 ### Configuration
 
 All settings are read via `SCHOLIGHT_`-prefixed env vars. Copy `.env.example`:
+
 ```bash
 cp .env.example .env
 ```
 
 Key variables:
+
 | Variable | Required | Purpose |
 |---|---|---|
 | `SCHOLIGHT_PG_*` | ✅ | PostgreSQL connection |
 | `SCHOLIGHT_ZILLIZ_*` | ✅ | Zilliz Cloud (vector DB) |
 | `SCHOLIGHT_AUTH_JWT_SECRET` | ✅ | JWT signing key |
-| `SCHOLIGHT_OSS_*` | ✅ | Aliyun OSS for survey output |
-| `DEEPSEEK_API_KEY` | ✅ | Survey LLM — passed to RCM subprocess |
-| `OPENAI_API_KEY` | — | Survey figure — optional, skips if missing |
-| `SCHOLIGHT_SURVEY_*` | — | Survey pipeline tuning |
-
-### Survey Output
-
-Survey results are stored hierarchically on OSS:
-```
-sanchez-research/
-└── surveys/{user_id}/{YYYY-MM}/{survey_id}/
-    ├── 08_survey.md       ← final English survey
-    └── 08_survey.zh.md    ← Chinese translation
-```
-Download via `GET /survey/{id}/download?lang=en|zh` — returns a time-limited presigned OSS URL.
+| `SCHOLIGHT_EMBEDDING_*` | ✅ | Embedding API |
 
 ## Service Endpoints
 
 | Service | Port | Path |
 |---|---|---|
-| FastAPI server | 8000 | `/search`, `/survey`, `/auth/*`, `/user/*` |
+| FastAPI server | 8000 | `/search`, `/auth/*`, `/user/*` |
 
 ## Docker Deployment
 
-The API server can run in a single Docker container.  All databases (Zilliz Cloud,
+The API server can run in a single Docker container. All databases (Zilliz Cloud,
 AWS RDS PostgreSQL) are external services configured via environment variables.
 The daily arXiv sync pipeline runs on the host instance — **never** in the container.
 
 ```bash
-# 1. Copy and fill in the production env file
-cp .env.production.example .env.production
-# Edit .env.production — SCHOLIGHT_AUTH_JWT_SECRET, ZILLIZ_TOKEN, PG_PASSWORD etc.
+# 1. Copy and fill in the env file
+cp .env.example .env
+# Edit .env — SCHOLIGHT_AUTH_JWT_SECRET, ZILLIZ_TOKEN, PG_PASSWORD etc.
 
 # 2. Build
 docker compose build
 
 # 3. Start
-docker compose --env-file .env.production up -d
+docker compose --env-file .env up -d
 ```
 
 The container bundles the AWS RDS SSL cert at `/etc/ssl/certs/global-bundle.pem`.
-Survey runs in production mode only (delegated to Gateway + RDC); local survey
-mode (RCM subprocess) is not supported inside Docker.
 
 ### What's NOT in Docker
 

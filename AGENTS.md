@@ -59,12 +59,12 @@ scholight/
 │   │   ├── scheduler.py      scholight scheduler (paper-sync/pdf-daemon/md-daemon/chunk-daemon/status)
 │   │   └── store.py          scholight store (init/status/drop)
 ├── scripts/                 运维脚本
-│   ├── ingest_bulk.py       批量摄入 arXiv PDF tar
-│   ├── import_kaggle_bulk.py 从 HuggingFace 批量导入 2007-2026 元数据
+│   ├── audit_duplicates.py   论文去重审计
+│   ├── audit_orphan_pdfs.py  磁盘孤儿 PDF 检测
 │   ├── import_pre2007.py     从 arxiv_archive 导入 1991-2006 元数据
-│   ├── data_health_report.py 数据库健康检查报告
-│   ├── migrate_papers_add_flags.py 迁移脚本—arxiv_papers 新增资源 flag
-│   └── archive/              历史脚本归档（Marker/MinerU 解析、环境检测等）
+│   ├── check_env.py          环境快照采集
+│   ├── test_extract_pipeline.py  抽取管线对比测试
+│   └── benchmark/            检索评测基准
 ├── tests/
 │   ├── conftest.py          共享 fixtures
 │   ├── unit/                单元测试
