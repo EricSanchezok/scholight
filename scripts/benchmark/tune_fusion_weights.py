@@ -136,18 +136,12 @@ def _load_wide_queries() -> list[tuple[str, str, set[str]]]:
 
 async def fetch_features(concurrency: int = 8) -> None:
     from scholight.pipeline.embedder import Embedder
-    from scholight.search.common.bm25 import ensure_bm25_encoder
     from scholight.store.client import get_client
     from scholight.store.fields import PAPER_SEARCH_WITH_EMBEDDING
     from scholight.store.query import hybrid_search_arxiv_papers
 
     queries = _load_wide_queries()
     print(f"Loaded {len(queries)} wide queries")
-
-    bm25 = ensure_bm25_encoder()
-    if bm25 is None:
-        print("ERROR: BM25 checkpoint not found")
-        sys.exit(1)
 
     get_client()
     print("Milvus connected")
@@ -165,10 +159,8 @@ async def fetch_features(concurrency: int = 8) -> None:
                 async with Embedder() as emb:
                     qv_raw = await emb.embed_single(text)
                 qv = np.array(qv_raw, dtype=np.float32)
-                sv = bm25.encode_query(text)
                 raw = hybrid_search_arxiv_papers(
                     query_vector=qv_raw,
-                    sparse_vector=sv,
                     top_k=TOPK_CANDIDATES,
                     output_fields=list(PAPER_SEARCH_WITH_EMBEDDING),
                 )

@@ -137,15 +137,7 @@ class BaseRunner(ABC):
             logger.warning("batch embed failed — falling back to per-query embedding")
             query_vectors = [None] * len(queries)
 
-        bm25_vectors: list[dict[int, float] | None]
-        try:
-            from scholight.search.common.bm25 import ensure_bm25_encoder
-
-            enc = ensure_bm25_encoder()
-            bm25_vectors = [enc.encode_query(t) for t in texts] if enc else [None] * len(queries)
-        except Exception:
-            logger.warning("batch BM25 encode failed — falling back")
-            bm25_vectors = [None] * len(queries)
+        bm25_vectors: list[dict[int, float] | None] = [None] * len(queries)
 
         sem = asyncio.Semaphore(concurrency)
         t_batch = time.perf_counter()
