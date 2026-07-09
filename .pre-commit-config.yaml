@@ -1,0 +1,98 @@
+# pre-commit-config.yaml — Academic Compass
+#
+# Install:  uv run pre-commit install
+# Run all:  uv run pre-commit run --all-files
+
+default_language_version:
+  python: python3.11
+
+repos:
+  # ═══════════════════════════════════════════════════════════
+  # Basic hygiene
+  # ═══════════════════════════════════════════════════════════
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-yaml
+        args: [--unsafe]
+      - id: check-toml
+      - id: check-json
+      - id: check-ast
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=500]
+      - id: debug-statements
+      - id: detect-private-key
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: check-case-conflict
+      - id: no-commit-to-branch
+        args: [--branch, main]
+
+  # ═══════════════════════════════════════════════════════════
+  # Spell check
+  # ═══════════════════════════════════════════════════════════
+  - repo: https://github.com/crate-ci/typos
+    rev: v1.46.3
+    hooks:
+      - id: typos
+        args: []
+
+  # ═══════════════════════════════════════════════════════════
+  # Lint + Format — the one and only
+  # ═══════════════════════════════════════════════════════════
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.14
+    hooks:
+      - id: ruff-check
+        args: [--fix, --exit-non-zero-on-fix]
+        types_or: [python, pyi]
+      - id: ruff-format
+        types_or: [python, pyi]
+
+  # ═══════════════════════════════════════════════════════════
+  # Type checking
+  # ═══════════════════════════════════════════════════════════
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy
+        entry: uv run mypy compass
+        language: system
+        types: [python]
+        pass_filenames: false
+
+  # ═══════════════════════════════════════════════════════════
+  # Security — code
+  # ═══════════════════════════════════════════════════════════
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.8.2
+    hooks:
+      - id: bandit
+        args: [-c, pyproject.toml]
+        additional_dependencies: ["bandit[toml]"]
+
+  # ═══════════════════════════════════════════════════════════
+  # Dead code detection
+  # ═══════════════════════════════════════════════════════════
+  - repo: https://github.com/jendrikseipp/vulture
+    rev: v2.16
+    hooks:
+      - id: vulture
+
+  # ═══════════════════════════════════════════════════════════
+  # Commit message lint
+  # ═══════════════════════════════════════════════════════════
+  - repo: https://github.com/jorisroovers/gitlint
+    rev: v0.19.1
+    hooks:
+      - id: gitlint
+        args: [--staged, --msg-filename]
+        stages: [commit-msg]
+
+# Hooks that need network access — skipped on pre-commit.ci
+ci:
+  skip: [pip-audit]

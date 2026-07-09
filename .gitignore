@@ -1,0 +1,89 @@
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.venv/
+*.egg
+
+# Secrets
+.env
+.env.production
+
+# Logs
+logs/
+
+# Data (top-level only)
+data/
+*.parquet
+
+# IDE
+.vscode/
+.idea/
+
+# Ruff
+.ruff_cache/
+
+# Mypy
+.mypy_cache/
+
+# Cache databases
+cache.*.db
+*.db-shm
+*.db-wal
+
+# OS
+.DS_Store
+
+# Research outputs
+docs/research/
+
+# Benchmarks — track scripts, ignore data and results
+benchmark/autoresearchbench/input_data/
+benchmark/logs/
+benchmark/results/
+benchmark/deepresearch-gym/
+
+# SII platform
+.sii/
+
+# Temp
+.scout-tmp/
+
+# Auto-generated marker batch launcher
+scripts/_marker_batch_runner.py
+
+# Migration runtime artifacts (large, generated)
+scripts/tar_index.db
+scripts/gcs_checkpoint.db*
+scripts/gcs_orphan_checkpoint.db*
+scripts/arxiv_dl_checkpoint.db*
+scripts/export_dl_checkpoint.db*
+scripts/.migrate_pdf_checkpoint.json
+
+# Core dumps
+core.[0-9]*
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# tmux client logs (accidental workspace litter)
+tmux-client-*.log
+*.whl
+
+# ── module tables / project management ──
+.xxx/
+nosql_*
+module_table*
+.NOSQL*
+
+# Cloned external repos
+rdc/
+RCM/
+# Independent repos (under academic-compass directory but tracked separately)
+cloud-auth/
+
+# SSL certs
+*.pem

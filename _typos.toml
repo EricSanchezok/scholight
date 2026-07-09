@@ -1,0 +1,9 @@
+# Academic Compass — typos whitelist
+#
+# Words here are project-specific identifiers, domain terms, or
+# compound words that typos flags as false positives.
+
+[default.extend-identifiers]
+
+[default.extend-words]
+mis = "mis"
