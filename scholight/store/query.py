@@ -582,14 +582,18 @@ def bm25_search_all_chunks(
 def batch_get_arxiv_papers(
     arxiv_ids: list[str],
     *,
+    categories: list[str] | None = None,
+    authors: list[str] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
     output_fields: list[str] | None = None,
     timeout: float | None = None,
 ) -> dict[str, dict[str, Any]]:
-    """Batch-fetch paper metadata for *arxiv_ids* via Zilliz IN-filter query.
+    """Batch-fetch paper metadata for candidate *arxiv_ids*.
 
-    Uses ``client.query()`` with an ``arxiv_id in [...]`` filter, batching
-    500 ids per call (``_ARXIV_ID_BATCH_SIZE``).  Returns a dict keyed by
-    arxiv_id — missing papers are simply absent from the result.
+    Uses ``client.query()`` with the same paper-level scalar filters as public
+    search, batching 500 ids per call (``_ARXIV_ID_BATCH_SIZE``). Returns a
+    dict keyed by arxiv_id; missing or ineligible papers are absent.
     """
     if not arxiv_ids:
         return {}
@@ -597,7 +601,13 @@ def batch_get_arxiv_papers(
     fields = output_fields if output_fields is not None else list(PAPER_SEARCH_FIELDS)
     results: dict[str, dict[str, Any]] = {}
     for batch in _batched(arxiv_ids, _ARXIV_ID_BATCH_SIZE):
-        expr = _build_filter(arxiv_ids=batch)
+        expr = _build_filter(
+            categories=categories,
+            authors=authors,
+            date_from=date_from,
+            date_to=date_to,
+            arxiv_ids=batch,
+        )
         rows = cast(
             "list[dict[str, Any]]",
             client.query(

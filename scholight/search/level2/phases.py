@@ -99,7 +99,7 @@ class ChunkSearchPhase(Phase):
             timeout=settings.search_level2_rpc_timeout_seconds,
         )
         # Deduplicate to unique paper IDs
-        candidate_ids = list({h["arxiv_id"] for h in bm25_hits})
+        candidate_ids = list(dict.fromkeys(h["arxiv_id"] for h in bm25_hits))
         ctx.metadata["bm25_chunk_candidates"] = len(bm25_hits)
         ctx.metadata["bm25_paper_candidates"] = len(candidate_ids)
         logger.debug(
@@ -107,6 +107,21 @@ class ChunkSearchPhase(Phase):
             chunks=len(bm25_hits),
             papers=len(candidate_ids),
         )
+
+        request = ctx.request
+        if any((request.categories, request.authors, request.date_from, request.date_to)):
+            eligible_papers = await asyncio.to_thread(
+                batch_get_arxiv_papers,
+                candidate_ids,
+                categories=request.categories,
+                authors=request.authors,
+                date_from=request.date_from,
+                date_to=request.date_to,
+                output_fields=["arxiv_id"],
+                timeout=settings.search_level2_rpc_timeout_seconds,
+            )
+            candidate_ids = [aid for aid in candidate_ids if aid in eligible_papers]
+        ctx.metadata["filtered_chunk_paper_candidates"] = len(candidate_ids)
 
         # ── Stage 2: Dense refine on candidates ──────────────────
         if not candidate_ids:

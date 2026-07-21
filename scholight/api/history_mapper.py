@@ -2,20 +2,68 @@
 
 from __future__ import annotations
 
+from datetime import date
+from typing import Literal
+
+from pydantic import ValidationError
+
 from scholight.api.models.history import PublicSearchHistoryItem, PublicSearchHistoryPage
 from scholight.api.models.search import PublicSearchFilters, SearchStrength
 from scholight.models.history import SearchHistoryEntry, SearchHistoryPage
 
 
+def _map_list_filter(
+    source: dict[str, object],
+    field_name: Literal["categories", "authors"],
+) -> list[str]:
+    raw_values = source.get(field_name)
+    if not isinstance(raw_values, list):
+        return []
+
+    normalized: list[str] = []
+    for raw_value in raw_values:
+        if not isinstance(raw_value, str):
+            continue
+        try:
+            candidate = PublicSearchFilters.model_validate({field_name: [raw_value]})
+        except ValidationError:
+            continue
+        value = candidate.categories[0] if field_name == "categories" else candidate.authors[0]
+        if value not in normalized:
+            normalized.append(value)
+        if len(normalized) == 10:
+            break
+    return normalized
+
+
+def _map_date_filter(
+    source: dict[str, object],
+    field_name: Literal["date_from", "date_to"],
+) -> date | None:
+    raw_value = source.get(field_name)
+    if not isinstance(raw_value, str):
+        return None
+    try:
+        candidate = PublicSearchFilters.model_validate({field_name: raw_value})
+    except ValidationError:
+        return None
+    return candidate.date_from if field_name == "date_from" else candidate.date_to
+
+
 def _map_filters(filters: dict[str, object] | None) -> PublicSearchFilters:
     source = filters or {}
-    return PublicSearchFilters.model_validate(
-        {
-            "categories": source.get("categories", []),
-            "authors": source.get("authors", []),
-            "date_from": source.get("date_from"),
-            "date_to": source.get("date_to"),
-        }
+    categories = _map_list_filter(source, "categories")
+    authors = _map_list_filter(source, "authors")
+    date_from = _map_date_filter(source, "date_from")
+    date_to = _map_date_filter(source, "date_to")
+    if date_from is not None and date_to is not None and date_from > date_to:
+        date_from = None
+        date_to = None
+    return PublicSearchFilters(
+        categories=categories,
+        authors=authors,
+        date_from=date_from,
+        date_to=date_to,
     )
 
 

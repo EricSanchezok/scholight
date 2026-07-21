@@ -32,6 +32,7 @@ from scholight.search.errors import (
 from scholight.search.level1 import LEVEL1_STRATEGIES, Level1Pipeline
 from scholight.search.level2 import LEVEL2_STRATEGIES, Level2Pipeline
 from scholight.store.client import get_client
+from scholight.utils.http import is_transient
 
 logger = structlog.get_logger(__name__)
 
@@ -199,7 +200,7 @@ class SearchEngine:
 
 def _is_operational_search_error(exc: Exception) -> bool:
     """Return whether a required search dependency failed operationally."""
-    return isinstance(exc, (MilvusException, OSError, TimeoutError))
+    return isinstance(exc, (MilvusException, OSError, TimeoutError)) or is_transient(exc)
 
 
 # ── Hit construction ─────────────────────────────────────────────────────────

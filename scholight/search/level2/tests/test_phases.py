@@ -79,6 +79,58 @@ class TestChunkSearchPhase:
         ) == (dense_fake, 1, 1, 1, "bm25+dense", 1.5, 1.5)
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("request_filter", "request_value"),
+        [
+            ("categories", ["cs.AI"]),
+            ("authors", ["Ada Lovelace"]),
+            ("date_from", "2024-01-01"),
+            ("date_to", "2024-12-31"),
+        ],
+    )
+    async def test_public_filters_exclude_ineligible_chunk_candidates_before_dense_refine(
+        self,
+        request_filter: str,
+        request_value: object,
+    ) -> None:
+        phase = ChunkSearchPhase()
+        ctx = _ctx()
+        setattr(ctx.request, request_filter, request_value)
+        bm25_fake = [
+            {"chunk_id": "excluded", "arxiv_id": "B"},
+            {"chunk_id": "eligible", "arxiv_id": "A"},
+        ]
+
+        with (
+            patch("scholight.search.level2.phases._ensure_chunks_loaded"),
+            patch(
+                "scholight.search.level2.phases.bm25_search_all_chunks",
+                return_value=bm25_fake,
+            ),
+            patch(
+                "scholight.search.level2.phases.batch_get_arxiv_papers",
+                return_value={"A": {"arxiv_id": "A"}},
+            ) as filter_candidates,
+            patch(
+                "scholight.search.level2.phases.search_arxiv_chunks",
+                return_value=[],
+            ) as dense_search,
+        ):
+            await phase.execute(ctx)
+
+        assert filter_candidates.call_args.kwargs == {
+            "categories": ctx.request.categories,
+            "authors": ctx.request.authors,
+            "date_from": ctx.request.date_from,
+            "date_to": ctx.request.date_to,
+            "output_fields": ["arxiv_id"],
+            "timeout": 1.5,
+        }
+        assert filter_candidates.call_args.args == (["B", "A"],)
+        assert dense_search.call_args.kwargs["arxiv_ids"] == ["A"]
+        assert ctx.metadata["filtered_chunk_paper_candidates"] == 1
+
+    @pytest.mark.asyncio
     async def test_blocking_search_calls_run_off_event_loop(self):
         phase = ChunkSearchPhase()
         ctx = _ctx()

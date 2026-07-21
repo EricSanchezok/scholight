@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from typing import Any, ClassVar
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 from pymilvus.exceptions import MilvusException
 
@@ -105,6 +106,65 @@ async def test_operational_level1_failure_raises_search_unavailable() -> None:
             await engine.search(request)
 
     assert (exc_info.value.phase_name, exc_info.value.cause) == ("paper_search", failure)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "failure",
+    [
+        httpx.ReadTimeout("timed out"),
+        httpx.ConnectError("connection failed"),
+        httpx.RemoteProtocolError("peer disconnected"),
+        httpx.HTTPStatusError(
+            "rate limited",
+            request=httpx.Request("POST", "https://embedding.test/embeddings"),
+            response=httpx.Response(
+                429,
+                request=httpx.Request("POST", "https://embedding.test/embeddings"),
+            ),
+        ),
+        httpx.HTTPStatusError(
+            "upstream unavailable",
+            request=httpx.Request("POST", "https://embedding.test/embeddings"),
+            response=httpx.Response(
+                503,
+                request=httpx.Request("POST", "https://embedding.test/embeddings"),
+            ),
+        ),
+    ],
+    ids=["timeout", "network", "protocol", "rate-limit", "server-error"],
+)
+async def test_transient_embedding_failure_raises_search_unavailable(
+    failure: Exception,
+) -> None:
+    request = SearchRequest(query="test", level=1, top_k=10)
+    engine = SearchEngine()
+
+    with patch.object(engine, "_resolve_l1_pipeline", return_value=FailingLevel1Pipeline(failure)):
+        with pytest.raises(SearchUnavailable) as exc_info:
+            await engine.search(request)
+
+    assert (exc_info.value.phase_name, exc_info.value.cause) == ("paper_search", failure)
+
+
+@pytest.mark.asyncio
+async def test_non_transient_embedding_http_failure_remains_a_phase_error() -> None:
+    request = SearchRequest(query="test", level=1, top_k=10)
+    engine = SearchEngine()
+    http_request = httpx.Request("POST", "https://embedding.test/embeddings")
+    failure = httpx.HTTPStatusError(
+        "invalid request",
+        request=http_request,
+        response=httpx.Response(400, request=http_request),
+    )
+
+    with (
+        patch.object(engine, "_resolve_l1_pipeline", return_value=FailingLevel1Pipeline(failure)),
+        pytest.raises(PhaseError) as exc_info,
+    ):
+        await engine.search(request)
+
+    assert exc_info.value.cause is failure
 
 
 @pytest.mark.asyncio

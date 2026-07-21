@@ -87,6 +87,38 @@ async def test_history_returns_public_page_and_normalizes_query(
 
 
 @pytest.mark.asyncio
+async def test_history_sanitizes_malformed_legacy_filters_without_failing_page(
+    api_app: FastAPI,
+    api_client: httpx.AsyncClient,
+    active_user: object,
+) -> None:
+    _authenticate(api_app, active_user)
+    entry = _history_entry()
+    entry.filters = {
+        "categories": ["cs.AI", "", "invalid!", 7],
+        "authors": ["Ada Lovelace", "x" * 201, None],
+        "date_from": "not-a-date",
+        "date_to": "2024-12-31",
+    }
+    page = SimpleNamespace(items=[entry], total=1, legacy_level3_count=0)
+
+    with patch(
+        "scholight.api.routes.search.get_search_history",
+        new_callable=AsyncMock,
+        return_value=page,
+    ):
+        response = await api_client.get("/search/history")
+
+    assert response.status_code == 200
+    assert response.json()["items"][0]["filters"] == {
+        "categories": ["cs.AI"],
+        "authors": ["Ada Lovelace"],
+        "date_from": None,
+        "date_to": "2024-12-31",
+    }
+
+
+@pytest.mark.asyncio
 async def test_history_empty_q_is_normalized_to_none(
     api_app: FastAPI,
     api_client: httpx.AsyncClient,

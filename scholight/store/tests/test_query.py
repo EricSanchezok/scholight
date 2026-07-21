@@ -47,3 +47,27 @@ def test_batch_get_arxiv_papers_uses_one_bounded_query_for_public_fields() -> No
         consistency_level=QUERY_CONSISTENCY,
         timeout=1.5,
     )
+
+
+def test_batch_get_arxiv_papers_combines_candidate_ids_with_public_filters() -> None:
+    client = MagicMock()
+    client.query.return_value = [{"arxiv_id": "A"}]
+
+    with patch("scholight.store.query.get_client", return_value=client):
+        papers = batch_get_arxiv_papers(
+            ["A", "B"],
+            categories=["cs.AI"],
+            authors=["Ada Lovelace"],
+            date_from="2024-01-01",
+            date_to="2024-12-31",
+            output_fields=["arxiv_id"],
+            timeout=1.5,
+        )
+
+    assert papers == {"A": {"arxiv_id": "A"}}
+    assert client.query.call_args.kwargs["filter"] == (
+        '(array_contains(categories, "cs.AI")) and '
+        '(array_contains(authors, "Ada Lovelace")) and '
+        'created >= "2024-01-01" and created <= "2024-12-31" and '
+        '(arxiv_id in ["A", "B"])'
+    )
