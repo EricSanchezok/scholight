@@ -93,10 +93,11 @@ def _validate_paper_full_upsert(paper: dict[str, Any]) -> None:
         )
 
     # 2. Every vector field must be present AND non-empty.
+    #    abstract_bm25 is skipped — auto-populated by Zilliz Cloud BM25 Function.
     for field in PAPER_VECTOR_FIELDS:
+        if field == "abstract_bm25":
+            continue
         val = paper.get(field)
-        # val is None → key is entirely absent from the dict
-        # val is [] or {} → key is present but empty
         if val is None:
             raise StoreError(
                 f"Paper {arxiv_id!r}: vector field {field!r} is missing — "

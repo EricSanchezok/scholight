@@ -63,11 +63,10 @@ class TestGuardRejects:
         with pytest.raises(StoreError, match="abstract_embedding"):
             _validate_paper_full_upsert(paper)
 
-    def test_empty_sparse_dict(self) -> None:
-        """abstract_bm25={} → StoreError (present but empty)."""
+    def test_bm25_skipped(self) -> None:
+        """abstract_bm25={} → pass (Zilliz Function auto-populates it)."""
         paper = {**_TEMPLATE, "abstract_bm25": {}}
-        with pytest.raises(StoreError, match="abstract_bm25"):
-            _validate_paper_full_upsert(paper)
+        _validate_paper_full_upsert(paper)  # does not raise
 
     def test_vector_key_entirely_absent(self) -> None:
         """abstract_embedding key not in dict at all → StoreError.
@@ -83,7 +82,7 @@ class TestGuardRejects:
             _validate_paper_full_upsert(paper)
 
     def test_all_vectors_empty(self) -> None:
-        """All vector fields empty → StoreError."""
+        """abstract_embedding empty → StoreError; bm25 skipped."""
         paper = {**_TEMPLATE, "abstract_embedding": [], "abstract_bm25": {}}
         with pytest.raises(StoreError):
             _validate_paper_full_upsert(paper)
