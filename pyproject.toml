@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "AI-focused academic paper search engine — arXiv as single data source, passage-level vector search"
 requires-python = ">=3.11"
 dependencies = [
-    "cloud-auth",
+    "cloud-auth[aliyun]",
     "click>=8",
     "httpx>=0.27",
     "pydantic[email]>=2",
