@@ -1,0 +1,118 @@
+"""Atomic PostgreSQL reservations for anonymous daily search quotas."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import date
+
+import asyncpg
+import structlog
+
+from scholight.db.client import DBError, get_pool
+
+logger = structlog.get_logger(__name__)
+
+_RESERVE_SQL = """
+INSERT INTO public.anonymous_daily_search_usage AS usage (
+    quota_date,
+    ip_digest,
+    search_level,
+    used_count,
+    created_at,
+    updated_at
+)
+SELECT
+    (statement_timestamp() AT TIME ZONE 'UTC')::date,
+    $1::bytea,
+    $2::smallint,
+    1,
+    statement_timestamp(),
+    statement_timestamp()
+WHERE $3::integer > 0
+ON CONFLICT (quota_date, ip_digest, search_level)
+DO UPDATE
+SET
+    used_count = usage.used_count + 1,
+    updated_at = statement_timestamp()
+WHERE usage.used_count < $3::integer
+RETURNING quota_date, used_count
+"""
+
+_DECREMENT_SQL = """
+UPDATE public.anonymous_daily_search_usage
+SET
+    used_count = used_count - 1,
+    updated_at = statement_timestamp()
+WHERE quota_date = $1
+  AND ip_digest = $2
+  AND search_level = $3
+  AND used_count > 0
+RETURNING used_count
+"""
+
+
+@dataclass(frozen=True, slots=True)
+class AnonymousQuotaReservation:
+    """Identity required to compensate one successful anonymous reservation."""
+
+    quota_date: date
+    ip_digest: bytes
+    search_level: int
+    used_count: int
+
+
+def _validate_reservation_input(ip_digest: bytes, search_level: int, limit: int) -> None:
+    if len(ip_digest) != 32:
+        raise ValueError("ip_digest must contain exactly 32 bytes")
+    if search_level not in (1, 2):
+        raise ValueError("search_level must be 1 or 2")
+    if isinstance(limit, bool) or limit <= 0:
+        raise ValueError("limit must be a positive integer")
+
+
+async def reserve_anonymous_daily_quota(
+    ip_digest: bytes,
+    *,
+    search_level: int,
+    limit: int,
+) -> AnonymousQuotaReservation | None:
+    """Atomically reserve one daily slot, or return ``None`` when exhausted."""
+    _validate_reservation_input(ip_digest, search_level, limit)
+    try:
+        async with get_pool().acquire() as connection:
+            row = await connection.fetchrow(_RESERVE_SQL, ip_digest, search_level, limit)
+    except asyncpg.PostgresError as exc:
+        logger.error("anonymous_quota_reserve_failed", error_type=type(exc).__name__)
+        raise DBError("Failed to reserve anonymous search quota") from exc
+
+    if row is None:
+        return None
+    return AnonymousQuotaReservation(
+        quota_date=row["quota_date"],
+        ip_digest=ip_digest,
+        search_level=search_level,
+        used_count=row["used_count"],
+    )
+
+
+async def decrement_anonymous_daily_quota(reservation: AnonymousQuotaReservation) -> bool:
+    """Best-effort compensation primitive for one reservation; never retries."""
+    try:
+        async with get_pool().acquire() as connection:
+            used_count = await connection.fetchval(
+                _DECREMENT_SQL,
+                reservation.quota_date,
+                reservation.ip_digest,
+                reservation.search_level,
+            )
+    except asyncpg.PostgresError as exc:
+        logger.warning("anonymous_quota_decrement_failed", error_type=type(exc).__name__)
+        raise DBError("Failed to decrement anonymous search quota") from exc
+    return used_count is not None
+
+
+__all__ = [
+    "AnonymousQuotaReservation",
+    "decrement_anonymous_daily_quota",
+    "reserve_anonymous_daily_quota",
+]

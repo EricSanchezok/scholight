@@ -70,3 +70,17 @@ async def test_run_migrations_holds_advisory_lock_and_owns_transaction(tmp_path:
         call.args == (migration.read_text(encoding="utf-8"),)
         for call in conn.execute.await_args_list
     )
+
+
+def test_anonymous_quota_migration_has_exact_additive_schema() -> None:
+    migration = Path(__file__).parents[3] / "migrations/006_create_anonymous_daily_search_usage.sql"
+
+    sql = migration.read_text(encoding="utf-8")
+
+    assert "CREATE TABLE public.anonymous_daily_search_usage" in sql
+    assert "PRIMARY KEY (quota_date, ip_digest, search_level)" in sql
+    assert "CHECK (octet_length(ip_digest) = 32)" in sql
+    assert "CHECK (search_level IN (1, 2))" in sql
+    assert "CHECK (used_count >= 0)" in sql
+    assert "IF NOT EXISTS" not in sql
+    assert "CREATE INDEX" not in sql

@@ -138,9 +138,12 @@ min_confidence = 80
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = ["-rXs", "--strict-config", "--strict-markers"]
+addopts = ["-rXs", "--strict-config", "--strict-markers", "-m", "not pg_integration"]
 xfail_strict = true
 filterwarnings = ["error"]
+markers = [
+    "pg_integration: requires SCHOLIGHT_TEST_DATABASE_URL pointing to an isolated PostgreSQL database",
+]
 
 
 # ── Coverage ──────────────────────────────────────────────────────────
