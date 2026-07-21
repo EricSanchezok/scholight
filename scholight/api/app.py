@@ -81,6 +81,7 @@ async def _is_zilliz_ready() -> bool:
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """Startup / shutdown lifecycle for database connections."""
+    from scholight.api.history_tasks import drain_search_history_tasks
     from scholight.db.client import close_pool, create_pool
     from scholight.store.client import get_client
 
@@ -91,6 +92,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        await drain_search_history_tasks()
         await close_pool()
 
 

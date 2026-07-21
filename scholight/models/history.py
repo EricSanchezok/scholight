@@ -35,7 +35,16 @@ class SearchHistoryEntry(BaseModel):
     created_at: datetime | None = None
 
 
+class SearchHistoryPage(BaseModel):
+    """One consistent history snapshot returned by the query layer."""
+
+    items: list[SearchHistoryEntry]
+    total: int
+    legacy_level3_count: int
+
+
 __all__ = [
     "SearchHistoryEntry",
+    "SearchHistoryPage",
     "SearchHistoryRecord",
 ]

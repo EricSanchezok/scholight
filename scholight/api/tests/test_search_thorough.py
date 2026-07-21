@@ -43,9 +43,8 @@ async def test_thorough_operational_failure_returns_503_and_compensates_once(
             side_effect=failure,
         ),
         patch(
-            "scholight.api.routes.search.log_search",
-            new_callable=AsyncMock,
-        ) as log_history,
+            "scholight.api.routes.search.schedule_search_history_write",
+        ) as schedule_history,
     ):
         response = await api_client.post(
             "/search", json={"query": "retrieval", "strength": "thorough"}
@@ -63,7 +62,7 @@ async def test_thorough_operational_failure_returns_503_and_compensates_once(
         },
     )
     compensate.assert_awaited_once_with(reservation)
-    log_history.assert_not_awaited()
+    schedule_history.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -134,9 +133,8 @@ async def test_pre_commit_program_or_cancel_failure_returns_500_and_compensates_
             side_effect=failure,
         ),
         patch(
-            "scholight.api.routes.search.log_search",
-            new_callable=AsyncMock,
-        ) as log_history,
+            "scholight.api.routes.search.schedule_search_history_write",
+        ) as schedule_history,
     ):
         response = await api_client.post(
             "/search", json={"query": "retrieval", "strength": "thorough"}
@@ -147,4 +145,4 @@ async def test_pre_commit_program_or_cancel_failure_returns_500_and_compensates_
         {"detail": "Search service error"},
     )
     compensate.assert_awaited_once_with(reservation)
-    log_history.assert_not_awaited()
+    schedule_history.assert_not_called()

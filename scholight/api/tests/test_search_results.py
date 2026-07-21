@@ -216,9 +216,8 @@ async def test_post_commit_enrichment_program_error_returns_500_without_compensa
             new_callable=AsyncMock,
         ) as compensate,
         patch(
-            "scholight.api.routes.search.log_search",
-            new_callable=AsyncMock,
-        ) as log_history,
+            "scholight.api.routes.search.schedule_search_history_write",
+        ) as schedule_history,
     ):
         response = await api_client.post("/search", json={"query": "retrieval"})
 
@@ -227,7 +226,7 @@ async def test_post_commit_enrichment_program_error_returns_500_without_compensa
         {"detail": "Search service error"},
     )
     compensate.assert_not_awaited()
-    log_history.assert_not_awaited()
+    schedule_history.assert_not_called()
 
 
 @pytest.mark.asyncio
