@@ -16,6 +16,7 @@ from scholight.api.search_access import compensate_search_quota, reserve_search_
 from scholight.api.search_mapper import map_search_response
 from scholight.db.queries_history import get_search_history, log_search, soft_delete_search_entry
 from scholight.models.history import SearchHistoryEntry
+from scholight.search.errors import SearchUnavailable, ThoroughSearchUnavailable
 
 logger = structlog.get_logger(__name__)
 
@@ -47,6 +48,44 @@ async def search(
     engine = SearchEngine()
     try:
         result = await engine.search(internal_request)
+    except asyncio.CancelledError as exc:
+        await compensate_search_quota(reservation)
+        logger.error("search_cancelled", strength=body.strength)
+        raise HTTPException(status_code=500, detail="Search service error") from exc
+    except ThoroughSearchUnavailable as exc:
+        await compensate_search_quota(reservation)
+        logger.warning(
+            "thorough_search_unavailable",
+            strength=body.strength,
+            phase=exc.phase_name,
+            error_type=type(exc.cause).__name__,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "thorough_search_unavailable",
+                "message": "Thorough search is temporarily unavailable.",
+                "retryable": True,
+            },
+            headers={"Retry-After": "5"},
+        ) from exc
+    except SearchUnavailable as exc:
+        await compensate_search_quota(reservation)
+        logger.warning(
+            "search_unavailable",
+            strength=body.strength,
+            phase=exc.phase_name,
+            error_type=type(exc.cause).__name__,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "search_unavailable",
+                "message": "Search is temporarily unavailable.",
+                "retryable": True,
+            },
+            headers={"Retry-After": "5"},
+        ) from exc
     except Exception as exc:
         await compensate_search_quota(reservation)
         logger.exception("search_failed", strength=body.strength)

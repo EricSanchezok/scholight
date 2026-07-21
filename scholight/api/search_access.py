@@ -105,6 +105,7 @@ class SearchQuotaReservation:
     operation: str
     user_id: int | None = None
     user_quota_date: date | None = None
+    user_quota_completed_date: date | None = None
     anonymous: AnonymousQuotaReservation | None = None
     compensated: bool = False
 
@@ -128,10 +129,12 @@ async def reserve_search_quota(
                 message="Search quota service is temporarily unavailable.",
                 retry_after=5,
             ) from exc
+        quota_completed_date = _utc_now().date()
         reservation = SearchQuotaReservation(
             operation=operation,
             user_id=current_user.id,
             user_quota_date=quota_date,
+            user_quota_completed_date=quota_completed_date,
         )
         if result.allowed:
             return reservation
@@ -190,7 +193,15 @@ async def compensate_search_quota(reservation: SearchQuotaReservation) -> None:
         except DBError:
             logger.warning("anonymous_search_quota_compensation_failed")
         return
-    if reservation.user_id is None or reservation.user_quota_date != _utc_now().date():
+    if reservation.user_id is None:
+        return
+    if reservation.user_quota_date != reservation.user_quota_completed_date:
+        logger.warning(
+            "user_search_quota_compensation_skipped",
+            reason="quota_check_crossed_utc_date",
+        )
+        return
+    if reservation.user_quota_completed_date != _utc_now().date():
         logger.warning("user_search_quota_compensation_skipped", reason="utc_date_changed")
         return
     await decrement_quota(get_pool, reservation.user_id, reservation.operation)

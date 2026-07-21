@@ -31,6 +31,18 @@ def _ctx(raw=None, chunks=None):
     )
 
 
+def _paper_metadata(arxiv_id: str) -> dict[str, object]:
+    return {
+        "arxiv_id": arxiv_id,
+        "title": f"Paper {arxiv_id}",
+        "authors": ["Author"],
+        "categories": ["cs.AI"],
+        "created": "2024-01-01",
+        "updated": "2024-02-01",
+        "version": 1,
+    }
+
+
 # ── ChunkSearchPhase — two-stage BM25→Dense ──
 
 
@@ -249,11 +261,19 @@ class TestRRFFusionPhase:
         phase = RRFFusionPhase()
         ctx = _ctx(raw=[{"arxiv_id": "A", "score": 0.9, "title": "A", "abstract": ""}])
         ctx.metadata["chunk_paper_scores"] = {"B": 0.95}
-        await phase.execute(ctx)
-        assert len(ctx.raw_hits) == 2
+
+        with patch(
+            "scholight.search.level2.phases.batch_get_arxiv_papers",
+            return_value={"B": _paper_metadata("B")},
+        ):
+            await phase.execute(ctx)
+
         b = next(h for h in ctx.raw_hits if h["arxiv_id"] == "B")
-        assert b["chunk_only"] is True
-        assert ctx.metadata["rrf_chunk_only_papers"] == 1
+        assert (len(ctx.raw_hits), b["chunk_only"], ctx.metadata["rrf_chunk_only_papers"]) == (
+            2,
+            True,
+            1,
+        )
 
     @pytest.mark.asyncio
     async def test_metadata_backfill_runs_off_event_loop(self):
@@ -275,6 +295,48 @@ class TestRRFFusionPhase:
             await phase.execute(ctx)
 
         assert worker_threads[0] != event_loop_thread
+
+    @pytest.mark.asyncio
+    async def test_missing_chunk_only_metadata_excludes_candidate_without_forged_title(self):
+        phase = RRFFusionPhase()
+        ctx = _ctx(raw=[{"arxiv_id": "A", "score": 0.9, "title": "A"}])
+        ctx.metadata["chunk_paper_scores"] = {"B": 0.95}
+
+        with (
+            patch("scholight.search.level2.phases.batch_get_arxiv_papers", return_value={}),
+            patch.object(phases_module.logger, "warning") as warning,
+        ):
+            await phase.execute(ctx)
+
+        assert (
+            [hit["arxiv_id"] for hit in ctx.raw_hits],
+            ctx.metadata["rrf_chunk_only_papers"],
+            warning.call_args.args,
+            warning.call_args.kwargs,
+        ) == (
+            ["A"],
+            0,
+            ("level2_metadata_backfill_missing",),
+            {"arxiv_id": "B"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_metadata_backfill_operational_failure_is_a_phase_error(self):
+        phase = RRFFusionPhase()
+        ctx = _ctx(raw=[])
+        ctx.metadata["chunk_paper_scores"] = {"B": 0.95}
+        failure = MilvusException(message="unavailable", code=1)
+
+        with (
+            patch(
+                "scholight.search.level2.phases.batch_get_arxiv_papers",
+                side_effect=failure,
+            ),
+            pytest.raises(PhaseError) as exc_info,
+        ):
+            await phase(ctx)
+
+        assert (exc_info.value.phase_name, exc_info.value.cause) == ("rrf_fusion", failure)
 
     @pytest.mark.asyncio
     async def test_preserves_paper_score(self):

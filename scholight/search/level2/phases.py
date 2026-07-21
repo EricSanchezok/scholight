@@ -273,29 +273,33 @@ class RRFFusionPhase(Phase):
         )
 
         for aid in chunk_rank:
-            if aid not in existing:
-                paper = paper_map.get(aid, {})
-                merged.append(
-                    {
-                        "arxiv_id": aid,
-                        "score": rrf.get(aid, 0.0),
-                        "rrf_score": rrf.get(aid, 0.0),
-                        "paper_score": 0.0,
-                        "title": paper.get("title", aid),
-                        "abstract": paper.get("abstract", ""),
-                        "authors": paper.get("authors", []),
-                        "categories": paper.get("categories", []),
-                        "created": paper.get("created", ""),
-                        "updated": paper.get("updated", ""),
-                        "version": paper.get("version", 0),
-                        "license": paper.get("license", ""),
-                        "comments": paper.get("comments", ""),
-                        "doi": paper.get("doi", ""),
-                        "journal_ref": paper.get("journal_ref", ""),
-                        "acm_class": paper.get("acm_class", ""),
-                        "chunk_only": True,
-                    }
-                )
+            if aid in existing:
+                continue
+            paper = paper_map.get(aid)
+            if paper is None:
+                logger.warning("level2_metadata_backfill_missing", arxiv_id=aid)
+                continue
+            merged.append(
+                {
+                    "arxiv_id": aid,
+                    "score": rrf.get(aid, 0.0),
+                    "rrf_score": rrf.get(aid, 0.0),
+                    "paper_score": 0.0,
+                    "title": paper.get("title", ""),
+                    "abstract": paper.get("abstract", ""),
+                    "authors": paper.get("authors", []),
+                    "categories": paper.get("categories", []),
+                    "created": paper.get("created", ""),
+                    "updated": paper.get("updated", ""),
+                    "version": paper.get("version", 0),
+                    "license": paper.get("license", ""),
+                    "comments": paper.get("comments", ""),
+                    "doi": paper.get("doi", ""),
+                    "journal_ref": paper.get("journal_ref", ""),
+                    "acm_class": paper.get("acm_class", ""),
+                    "chunk_only": True,
+                }
+            )
 
         merged.sort(key=lambda h: h.get("rrf_score", 0.0), reverse=True)
         ctx.raw_hits = merged

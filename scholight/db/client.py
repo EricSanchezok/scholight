@@ -27,10 +27,10 @@ _pool: asyncpg.Pool | None = None
 
 
 async def create_pool() -> asyncpg.Pool:
-    """Create and store the asyncpg connection pool.  Safe to call multiple
-    times — subsequent calls return the existing pool.
+    """Create a reusable asyncpg pool with every session fixed to UTC.
 
-    Configures SSL context from ``settings.pg_ssl_root_cert``.
+    Safe to call multiple times; subsequent calls return the existing pool.
+    SSL is configured from ``settings.pg_ssl_root_cert``.
     """
     global _pool
 
@@ -64,6 +64,7 @@ async def create_pool() -> asyncpg.Pool:
         timeout=settings.pg_pool_acquire_timeout,
         command_timeout=settings.pg_pool_command_timeout,
         max_inactive_connection_lifetime=settings.pg_pool_max_inactive_lifetime,
+        server_settings={"TimeZone": "UTC"},
     )
 
     logger.info("postgres pool created")

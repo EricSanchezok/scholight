@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import math
 import time
+from datetime import date
 from typing import Any
 
 import structlog
@@ -22,6 +24,11 @@ from scholight.models.search import (
     SearchStats,
 )
 from scholight.search.base import PhaseError
+from scholight.search.errors import (
+    SearchInvariantError,
+    SearchUnavailable,
+    ThoroughSearchUnavailable,
+)
 from scholight.search.level1 import LEVEL1_STRATEGIES, Level1Pipeline
 from scholight.search.level2 import LEVEL2_STRATEGIES, Level2Pipeline
 from scholight.store.client import get_client
@@ -45,44 +52,43 @@ class SearchEngine:
 
         # ── Level 1: paper search always runs first ──────────────────
         l1_pipeline = self._resolve_l1_pipeline(request)
-        l1_ctx = await l1_pipeline.run(request)
+        try:
+            l1_ctx = await l1_pipeline.run(request)
+        except PhaseError as exc:
+            if not _is_operational_search_error(exc.cause):
+                raise
+            raise SearchUnavailable(phase_name=exc.phase_name, cause=exc.cause) from exc
 
         level1_phases = [p.name for p in l1_pipeline.phases]
 
-        # ── Level 2: best-effort chunk pathway + RRF fusion ──────────
+        # ── Level 2: strict chunk pathway + RRF fusion ──────────────
         chunk_evidence = None
         if request.level >= 2:
             l2_pipeline = self._resolve_l2_pipeline(request)
             l2_ctx = copy.deepcopy(l1_ctx)
-            fallback_reason: str | None = None
             try:
                 await asyncio.wait_for(
                     l2_pipeline.run(request, ctx=l2_ctx),
                     timeout=settings.search_level2_timeout_seconds,
                 )
-            except TimeoutError:
-                fallback_reason = "timeout"
+            except TimeoutError as exc:
+                raise ThoroughSearchUnavailable(phase_name="level2", cause=exc) from exc
             except PhaseError as exc:
-                if not _is_operational_l2_error(exc.cause):
+                if not _is_operational_search_error(exc.cause):
                     raise
-                fallback_reason = type(exc.cause).__name__
+                raise ThoroughSearchUnavailable(
+                    phase_name=exc.phase_name,
+                    cause=exc.cause,
+                ) from exc
 
-            if fallback_reason is None:
-                l1_ctx = l2_ctx
-                chunk_evidence = l1_ctx.metadata.get("chunk_evidence")
-                logger.info(
-                    "l2 fusion complete",
-                    rrf_papers=l1_ctx.metadata.get("rrf_paper_count", 0),
-                    chunk_only=l1_ctx.metadata.get("rrf_chunk_only_papers", 0),
-                    evidence_count=len(chunk_evidence) if chunk_evidence else 0,
-                )
-            else:
-                l1_ctx.metadata["l2_fallback_reason"] = fallback_reason
-                logger.warning(
-                    "l2 fallback to level1",
-                    reason=fallback_reason,
-                    timeout_seconds=settings.search_level2_timeout_seconds,
-                )
+            l1_ctx = l2_ctx
+            chunk_evidence = l1_ctx.metadata.get("chunk_evidence")
+            logger.info(
+                "l2_fusion_complete",
+                rrf_papers=l1_ctx.metadata.get("rrf_paper_count", 0),
+                chunk_only=l1_ctx.metadata.get("rrf_chunk_only_papers", 0),
+                evidence_count=len(chunk_evidence) if chunk_evidence else 0,
+            )
 
         # ── Recover metadata for stats ──────────────────────────────
         ctx = l1_ctx
@@ -97,8 +103,9 @@ class SearchEngine:
         n_chunks = ctx.metadata.get("chunk_candidates", 0)
         n_chunk_papers = ctx.metadata.get("chunk_paper_count", 0)
 
-        # ── Assemble result ──────────────────────────────────────────
-        hits = _build_hits(ctx.raw_hits, request.top_k, chunk_evidence)
+        # ── Validate, deterministically order, then truncate ────────
+        candidates = _validate_and_sort_candidates(ctx.raw_hits)
+        hits = _build_hits(candidates, request.top_k, chunk_evidence)
 
         phases = [
             PhaseTiming(phase="embed_query", duration_ms=round(embed_ms, 2)),
@@ -126,11 +133,6 @@ class SearchEngine:
                     metadata={
                         "candidates": n_chunks,
                         "mode": ctx.metadata.get("chunk_mode", "dense"),
-                        **(
-                            {"fallback": str(ctx.metadata["l2_fallback_reason"])}
-                            if "l2_fallback_reason" in ctx.metadata
-                            else {}
-                        ),
                     },
                 )
             )
@@ -195,8 +197,8 @@ class SearchEngine:
         return Level2Pipeline(extra_phases=list(LEVEL2_STRATEGIES["rrf"]))
 
 
-def _is_operational_l2_error(exc: Exception) -> bool:
-    """Return whether an L2 failure should degrade to the completed L1 result."""
+def _is_operational_search_error(exc: Exception) -> bool:
+    """Return whether a required search dependency failed operationally."""
     return isinstance(exc, (MilvusException, OSError, TimeoutError))
 
 
@@ -209,6 +211,46 @@ def _is_operational_l2_error(exc: Exception) -> bool:
 # to reduce Zilliz Read vCU.  They will be empty strings in search results
 # until the caller fetches full metadata via a secondary O(1) ``client.query()``
 # by arxiv_id.
+
+
+def _validate_and_sort_candidates(raw_hits: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Validate final core fields and return the full deterministic ordering."""
+    candidates: list[dict[str, Any]] = []
+    for index, raw in enumerate(raw_hits):
+        raw_score = raw.get("score")
+        if isinstance(raw_score, bool) or not isinstance(raw_score, (int, float)):
+            raise SearchInvariantError(f"candidate {index} must have a finite score")
+        score = float(raw_score)
+        if not math.isfinite(score):
+            raise SearchInvariantError(f"candidate {index} must have a finite score")
+
+        arxiv_id = raw.get("arxiv_id")
+        if not isinstance(arxiv_id, str) or not arxiv_id.strip():
+            raise SearchInvariantError(f"candidate {index} has invalid arxiv_id")
+        title = raw.get("title")
+        if not isinstance(title, str) or not title.strip():
+            raise SearchInvariantError(f"candidate {index} has invalid title")
+
+        for field_name in ("created", "updated"):
+            raw_date = raw.get(field_name)
+            if not isinstance(raw_date, str) or len(raw_date) != 10:
+                raise SearchInvariantError(f"candidate {index} has invalid {field_name}")
+            try:
+                parsed_date = date.fromisoformat(raw_date)
+            except ValueError as exc:
+                raise SearchInvariantError(f"candidate {index} has invalid {field_name}") from exc
+            if parsed_date.isoformat() != raw_date:
+                raise SearchInvariantError(f"candidate {index} has invalid {field_name}")
+
+        version = raw.get("version")
+        if isinstance(version, bool) or not isinstance(version, int) or version < 1:
+            raise SearchInvariantError(f"candidate {index} has invalid version")
+
+        candidate = dict(raw)
+        candidate["score"] = score
+        candidates.append(candidate)
+
+    return sorted(candidates, key=lambda candidate: (-candidate["score"], candidate["arxiv_id"]))
 
 
 def _build_hits(

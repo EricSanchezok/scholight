@@ -1,4 +1,4 @@
-"""Unit tests for SearchEngine Level 2 fallback behavior."""
+"""Unit tests for strict SearchEngine execution and result invariants."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import asyncio
 import threading
 import time
 from types import SimpleNamespace
-from typing import ClassVar
+from typing import Any, ClassVar
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -16,21 +16,31 @@ from scholight.models.search import SearchRequest
 from scholight.search import engine as engine_module
 from scholight.search.base import PhaseError, PipelineContext
 from scholight.search.engine import SearchEngine
+from scholight.search.errors import (
+    SearchInvariantError,
+    SearchUnavailable,
+    ThoroughSearchUnavailable,
+)
+
+
+def _paper(arxiv_id: str, score: float, *, title: str | None = None) -> dict[str, Any]:
+    return {
+        "arxiv_id": arxiv_id,
+        "score": score,
+        "title": title or f"Paper {arxiv_id}",
+        "authors": ["Author"],
+        "categories": ["cs.AI"],
+        "created": "2024-01-01",
+        "updated": "2024-02-01",
+        "version": 1,
+    }
 
 
 def _level1_context(request: SearchRequest) -> PipelineContext:
     return PipelineContext(
         request=request,
         query_vector=[0.0] * 1024,
-        raw_hits=[
-            {
-                "arxiv_id": "A",
-                "score": 0.9,
-                "title": "Level 1",
-                "authors": ["Author"],
-            }
-        ],
-        metadata={"mode": "dense"},
+        raw_hits=[_paper("A", 0.9, title="Level 1")],
     )
 
 
@@ -45,6 +55,16 @@ class StubLevel1Pipeline:
 
     async def run(self, _request: SearchRequest) -> PipelineContext:
         return self.context
+
+
+class FailingLevel1Pipeline:
+    phases: ClassVar[list[SimpleNamespace]] = [SimpleNamespace(name="paper_search")]
+
+    def __init__(self, cause: Exception) -> None:
+        self.cause = cause
+
+    async def run(self, _request: SearchRequest) -> PipelineContext:
+        raise PhaseError("paper_search", self.cause)
 
 
 class SlowLevel2Pipeline:
@@ -75,7 +95,20 @@ class FailingLevel2Pipeline:
 
 
 @pytest.mark.asyncio
-async def test_slow_level2_returns_unchanged_level1_hits_within_budget() -> None:
+async def test_operational_level1_failure_raises_search_unavailable() -> None:
+    request = SearchRequest(query="test", level=1, top_k=10)
+    engine = SearchEngine()
+    failure = MilvusException(message="unavailable", code=1)
+
+    with patch.object(engine, "_resolve_l1_pipeline", return_value=FailingLevel1Pipeline(failure)):
+        with pytest.raises(SearchUnavailable) as exc_info:
+            await engine.search(request)
+
+    assert (exc_info.value.phase_name, exc_info.value.cause) == ("paper_search", failure)
+
+
+@pytest.mark.asyncio
+async def test_slow_level2_raises_strict_unavailable_within_budget() -> None:
     request = SearchRequest(query="test", level=2, top_k=10)
     level1_context = _level1_context(request)
     engine = SearchEngine()
@@ -86,30 +119,21 @@ async def test_slow_level2_returns_unchanged_level1_hits_within_budget() -> None
         ),
         patch.object(engine, "_resolve_l2_pipeline", return_value=SlowLevel2Pipeline()),
         patch("scholight.search.engine.settings.search_level2_timeout_seconds", 0.02),
-        patch(
-            "scholight.search.engine._collection_row_counts",
-            new_callable=AsyncMock,
-            return_value=(None, None),
-        ),
     ):
         started = time.perf_counter()
-        search_result = await engine.search(request)
+        with pytest.raises(ThoroughSearchUnavailable) as exc_info:
+            await engine.search(request)
         elapsed = time.perf_counter() - started
 
-    assert elapsed < 0.2
-    assert [(hit.arxiv_id, hit.score) for hit in search_result.hits] == [("A", 0.9)]
-    assert level1_context.raw_hits == [
-        {
-            "arxiv_id": "A",
-            "score": 0.9,
-            "title": "Level 1",
-            "authors": ["Author"],
-        }
-    ]
+    assert (elapsed < 0.2, exc_info.value.phase_name, level1_context.raw_hits) == (
+        True,
+        "level2",
+        [_paper("A", 0.9, title="Level 1")],
+    )
 
 
 @pytest.mark.asyncio
-async def test_operational_level2_failure_returns_unchanged_level1_hits() -> None:
+async def test_operational_level2_failure_raises_strict_unavailable() -> None:
     request = SearchRequest(query="test", level=2, top_k=10)
     level1_context = _level1_context(request)
     engine = SearchEngine()
@@ -120,15 +144,11 @@ async def test_operational_level2_failure_returns_unchanged_level1_hits() -> Non
             engine, "_resolve_l1_pipeline", return_value=StubLevel1Pipeline(level1_context)
         ),
         patch.object(engine, "_resolve_l2_pipeline", return_value=FailingLevel2Pipeline(failure)),
-        patch(
-            "scholight.search.engine._collection_row_counts",
-            new_callable=AsyncMock,
-            return_value=(None, None),
-        ),
     ):
-        search_result = await engine.search(request)
+        with pytest.raises(ThoroughSearchUnavailable) as exc_info:
+            await engine.search(request)
 
-    assert [(hit.arxiv_id, hit.score) for hit in search_result.hits] == [("A", 0.9)]
+    assert (exc_info.value.phase_name, exc_info.value.cause) == ("chunk_search", failure)
 
 
 @pytest.mark.asyncio
@@ -149,6 +169,77 @@ async def test_level2_programming_error_is_not_swallowed() -> None:
     ):
         with pytest.raises(PhaseError, match="bad invariant"):
             await engine.search(request)
+
+
+@pytest.mark.asyncio
+async def test_equal_scores_sort_by_arxiv_id_before_limit_and_rank() -> None:
+    request = SearchRequest(query="test", level=1, top_k=2)
+    context = _level1_context(request)
+    context.raw_hits = [
+        _paper("C", 1.0),
+        _paper("A", 1.0),
+        _paper("B", 1.0),
+        _paper("Z", 0.5),
+    ]
+    engine = SearchEngine()
+
+    with (
+        patch.object(engine, "_resolve_l1_pipeline", return_value=StubLevel1Pipeline(context)),
+        patch(
+            "scholight.search.engine._collection_row_counts",
+            new_callable=AsyncMock,
+            return_value=(None, None),
+        ),
+    ):
+        result = await engine.search(request)
+
+    assert [(hit.rank, hit.arxiv_id, hit.score) for hit in result.hits] == [
+        (1, "A", 1.0),
+        (2, "B", 1.0),
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("score", [float("nan"), float("inf"), float("-inf")])
+async def test_non_finite_candidate_score_violates_core_invariant(score: float) -> None:
+    request = SearchRequest(query="test", level=1, top_k=10)
+    context = _level1_context(request)
+    context.raw_hits = [_paper("A", score)]
+    engine = SearchEngine()
+
+    with (
+        patch.object(engine, "_resolve_l1_pipeline", return_value=StubLevel1Pipeline(context)),
+        pytest.raises(SearchInvariantError, match="finite score"),
+    ):
+        await engine.search(request)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("field", "invalid_value"),
+    [
+        ("arxiv_id", ""),
+        ("title", "   "),
+        ("created", "20240101"),
+        ("updated", "not-a-date"),
+        ("version", 0),
+    ],
+)
+async def test_missing_or_invalid_candidate_metadata_violates_core_invariant(
+    field: str, invalid_value: object
+) -> None:
+    request = SearchRequest(query="test", level=1, top_k=10)
+    context = _level1_context(request)
+    candidate = _paper("A", 1.0)
+    candidate[field] = invalid_value
+    context.raw_hits = [candidate]
+    engine = SearchEngine()
+
+    with (
+        patch.object(engine, "_resolve_l1_pipeline", return_value=StubLevel1Pipeline(context)),
+        pytest.raises(SearchInvariantError, match=field),
+    ):
+        await engine.search(request)
 
 
 @pytest.mark.asyncio
