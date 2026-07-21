@@ -1,6 +1,6 @@
 """Pydantic Settings for Scholight — all config via SCHOLIGHT_ env vars."""
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -50,8 +50,8 @@ class Settings(BaseSettings):
     # ── Level 2 chunk search sizes ──
     bm25_coarse_top_k: int = 30
     dense_refine_top_k: int = 256
-    # Level 2 is a best-effort quality enhancement.  Bound the full
-    # pipeline and each underlying blocking Zilliz RPC independently.
+    # Strict Level 2 has a bounded total deadline; timeout is surfaced to callers.
+    # Each underlying blocking Zilliz RPC is bounded independently.
     search_level2_timeout_seconds: float = 2.0
     search_level2_rpc_timeout_seconds: float = 1.5
 
@@ -100,6 +100,12 @@ class Settings(BaseSettings):
     account_lockout_threshold: int = 5
     account_lockout_duration_minutes: int = 15
 
+    # ── Anonymous public search ──
+    anonymous_rate_limit_per_minute: int = Field(default=30, gt=0)
+    anonymous_standard_daily_limit: int = Field(default=100, gt=0)
+    anonymous_thorough_daily_limit: int = Field(default=30, gt=0)
+    anonymous_quota_hmac_secret: str = ""
+
     # ── Aliyun DirectMail ──
     aliyun_dm_access_key_id: str = ""
     aliyun_dm_access_key_secret: str = ""
@@ -108,10 +114,28 @@ class Settings(BaseSettings):
     aliyun_dm_reply_to_address: bool = True
 
     # ── CORS ──
-    cors_allow_origins: list[str] = ["*"]
+    cors_allow_origins: list[str] = []
     # ── Server ──
     server_host: str = "127.0.0.1"
     server_port: int = 8000
+    proxy_headers: bool = False
+    forwarded_allow_ips: str = "127.0.0.1"
 
 
 settings = Settings()
+
+
+def validate_api_runtime_settings() -> None:
+    """Validate secrets and trust boundaries required only by the HTTP API."""
+    if len(settings.jwt_secret.strip().encode("utf-8")) < 32:
+        raise ValueError("SCHOLIGHT_AUTH_JWT_SECRET must contain at least 32 UTF-8 bytes")
+    if len(settings.anonymous_quota_hmac_secret.encode("utf-8")) < 32:
+        raise ValueError(
+            "SCHOLIGHT_ANONYMOUS_QUOTA_HMAC_SECRET must contain at least 32 UTF-8 bytes"
+        )
+    if settings.proxy_headers and settings.forwarded_allow_ips.strip() == "*":
+        raise ValueError(
+            "SCHOLIGHT_FORWARDED_ALLOW_IPS must not be '*' when proxy headers are enabled"
+        )
+    if "*" in settings.cors_allow_origins:
+        raise ValueError("SCHOLIGHT_CORS_ALLOW_ORIGINS must list explicit origins for the API")

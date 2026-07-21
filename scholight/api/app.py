@@ -109,13 +109,19 @@ async def _limit_body_size(request: Request) -> None:
 
 def create_app() -> FastAPI:
     """Build and return the configured FastAPI application."""
+    from slowapi.errors import RateLimitExceeded
+    from slowapi.middleware import SlowAPIMiddleware
+
     from scholight import __version__
     from scholight.api.middleware.cors import setup_cors
-    from scholight.config import settings
+    from scholight.api.search_access import (
+        anonymous_rate_limit_exceeded_handler,
+        anonymous_search_limiter,
+    )
+    from scholight.config import settings, validate_api_runtime_settings
     from scholight.logging.middleware import RequestContextMiddleware, TimingMiddleware
 
-    if len(settings.jwt_secret.strip().encode("utf-8")) < 32:
-        raise ValueError("SCHOLIGHT_AUTH_JWT_SECRET must contain at least 32 UTF-8 bytes")
+    validate_api_runtime_settings()
 
     app = FastAPI(
         title="Scholight API",
@@ -125,8 +131,9 @@ def create_app() -> FastAPI:
     )
 
     setup_cors(app)
-    app.add_middleware(RequestContextMiddleware)
-    app.add_middleware(TimingMiddleware)
+    app.state.limiter = anonymous_search_limiter
+    app.add_exception_handler(RateLimitExceeded, anonymous_rate_limit_exceeded_handler)
+    app.add_middleware(SlowAPIMiddleware)
 
     @app.middleware("http")
     async def body_size_middleware(
@@ -137,6 +144,9 @@ def create_app() -> FastAPI:
         except ValueError as exc:
             return JSONResponse(status_code=413, content={"detail": str(exc)})
         return await call_next(request)
+
+    app.add_middleware(TimingMiddleware)
+    app.add_middleware(RequestContextMiddleware)
 
     # ── Route routers ──
     from cloud_auth.config import AuthConfig

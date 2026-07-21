@@ -21,6 +21,9 @@ pytestmark = pytest.mark.filterwarnings(
 @pytest.fixture(autouse=True)
 def reset_readiness_cache() -> None:
     app_module._reset_dependency_probe_cache()
+    settings.anonymous_quota_hmac_secret = "h" * 32
+    settings.proxy_headers = False
+    settings.cors_allow_origins = ["http://localhost:3000"]
 
 
 @pytest.fixture

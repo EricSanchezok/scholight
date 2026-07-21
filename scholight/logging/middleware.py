@@ -1,9 +1,8 @@
 """FastAPI middleware for request-scoped logging context.
 
 Two middlewares:
-  - RequestContextMiddleware: binds request_id, method, path, peer
-    to structlog contextvars so every log entry during the request
-    automatically carries these fields.
+  - RequestContextMiddleware: binds request_id, method, and path
+    to structlog contextvars and returns X-Request-ID.
   - TimingMiddleware: logs request latency; warns on slow requests.
 """
 
@@ -34,13 +33,15 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
         clear_contextvars()
+        request_id = str(uuid.uuid4())
         bind_contextvars(
-            request_id=str(uuid.uuid4()),
+            request_id=request_id,
             method=request.method,
             path=request.url.path,
-            peer=request.client.host if request.client else "unknown",
         )
-        return await call_next(request)
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+        return response
 
 
 class TimingMiddleware(BaseHTTPMiddleware):

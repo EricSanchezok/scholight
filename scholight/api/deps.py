@@ -9,15 +9,11 @@ from cloud_auth.config import AuthConfig
 from cloud_auth.db.asyncpg import AsyncpgUserDatabase
 from cloud_auth.dependencies import create_get_current_user as _create_get_current_user
 from cloud_auth.models.user import UserRecord
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 
-security = HTTPBearer()
-
-# ── 慢速API限流器（Scholight 管理） ──
-limiter = Limiter(key_func=get_remote_address)
+security = HTTPBearer(scheme_name="BearerAuth")
+optional_security = HTTPBearer(auto_error=False, scheme_name="BearerAuth")
 
 # ── 延迟绑定：cloud-auth SDK ──
 # cloud-auth's create_get_current_user returns an async callable that
@@ -36,15 +32,38 @@ def wire_dependencies(*, db: AsyncpgUserDatabase, auth_config: AuthConfig) -> No
     )
 
 
+async def _resolve_current_user(
+    credentials: HTTPAuthorizationCredentials,
+) -> UserRecord:
+    if _get_current_user_callable is None:
+        raise RuntimeError("Dependencies not wired — call wire_dependencies() in create_app()")
+    try:
+        return await _get_current_user_callable(credentials=credentials)
+    except HTTPException as exc:
+        if exc.status_code != 401:
+            raise
+        headers = dict(exc.headers or {})
+        headers.setdefault("WWW-Authenticate", "Bearer")
+        raise HTTPException(status_code=401, detail=exc.detail, headers=headers) from exc
+
+
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> UserRecord:
-    """所有受保护路由的 Depends 入口。"""
-    if _get_current_user_callable is None:
-        raise RuntimeError("Dependencies not wired — call wire_dependencies() in create_app()")
-    return await _get_current_user_callable(credentials=credentials)
+    return await _resolve_current_user(credentials)
 
 
-def api_error(status_code: int, detail: str) -> HTTPException:
-    """Shorthand for HTTPException."""
-    return HTTPException(status_code=status_code, detail=detail)
+async def get_optional_current_user(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(optional_security),
+) -> UserRecord | None:
+    """Return anonymous only when the Authorization header is completely absent."""
+    if "authorization" not in request.headers:
+        return None
+    if credentials is None or credentials.scheme.lower() != "bearer" or not credentials.credentials:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid access token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return await _resolve_current_user(credentials)

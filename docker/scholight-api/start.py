@@ -33,14 +33,16 @@ configure_logging(
 # ── Now safe to import modules that call get_logger(__name__) ───────
 import uvicorn  # noqa: E402, I001
 from scholight.api.app import create_app  # noqa: E402
+from scholight.config import settings  # noqa: E402
 
 app = create_app()
 
 if __name__ == "__main__":
     uvicorn.run(
         app,
-        host=os.environ.get("SCHOLIGHT_SERVER_HOST", "0.0.0.0"),
-        port=int(os.environ.get("SCHOLIGHT_SERVER_PORT", "8000")),
-        proxy_headers=os.environ.get("SCHOLIGHT_PROXY_HEADERS", "false").lower() == "true",
-        forwarded_allow_ips=os.environ.get("SCHOLIGHT_FORWARDED_ALLOW_IPS", "127.0.0.1"),
+        host=settings.server_host,
+        port=settings.server_port,
+        proxy_headers=settings.proxy_headers,
+        forwarded_allow_ips=settings.forwarded_allow_ips,
+        access_log=False,
     )

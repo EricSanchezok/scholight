@@ -13,6 +13,13 @@ pytestmark = pytest.mark.filterwarnings(
 )
 
 
+@pytest.fixture(autouse=True)
+def valid_non_jwt_api_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "anonymous_quota_hmac_secret", "h" * 32)
+    monkeypatch.setattr(settings, "proxy_headers", False)
+    monkeypatch.setattr(settings, "cors_allow_origins", ["http://localhost:3000"])
+
+
 def test_create_app_rejects_missing_jwt_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
