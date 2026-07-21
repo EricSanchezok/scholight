@@ -6,6 +6,7 @@ import warnings
 from datetime import UTC, datetime
 
 import pytest
+from fastapi.routing import APIRoute
 from pydantic import ValidationError
 
 from scholight.api.models.search import (
@@ -29,7 +30,7 @@ def test_public_search_request_accepts_strength(strength: SearchStrength) -> Non
 
 
 def test_public_search_request_normalizes_nullable_filters() -> None:
-    request = PublicSearchRequest(query="test", filters=None)
+    request = PublicSearchRequest.model_validate({"query": "test", "filters": None})
 
     assert request.filters == PublicSearchFilters()
 
@@ -92,20 +93,22 @@ def test_public_search_filters_reject_invalid_values(field: str, value: list[str
 
 def test_public_search_filters_reject_inverted_date_range() -> None:
     with pytest.raises(ValidationError):
-        PublicSearchFilters(date_from="2025-01-02", date_to="2025-01-01")
+        PublicSearchFilters.model_validate({"date_from": "2025-01-02", "date_to": "2025-01-01"})
 
 
 def test_public_request_maps_to_fixed_internal_search_request() -> None:
-    public = PublicSearchRequest(
-        query="test",
-        strength="thorough",
-        limit=20,
-        filters={
-            "categories": ["cs.AI"],
-            "authors": ["Ada Lovelace"],
-            "date_from": "2020-01-01",
-            "date_to": "2025-01-01",
-        },
+    public = PublicSearchRequest.model_validate(
+        {
+            "query": "test",
+            "strength": "thorough",
+            "limit": 20,
+            "filters": {
+                "categories": ["cs.AI"],
+                "authors": ["Ada Lovelace"],
+                "date_from": "2020-01-01",
+                "date_to": "2025-01-01",
+            },
+        }
     )
 
     internal = public.to_internal()
@@ -127,19 +130,21 @@ def test_public_request_maps_to_fixed_internal_search_request() -> None:
 
 
 def test_public_search_hit_serializes_raw_score_null_abstract_and_urls() -> None:
-    hit = PublicSearchHit(
-        rank=1,
-        score=12.75,
-        arxiv_id="2401.12345",
-        title="A Paper",
-        authors=["Author"],
-        abstract=None,
-        categories=["cs.AI"],
-        submitted_at=datetime(2024, 1, 20, tzinfo=UTC),
-        updated_at=datetime(2024, 3, 5, tzinfo=UTC),
-        version=2,
-        arxiv_url="https://arxiv.org/abs/2401.12345",
-        pdf_url="https://arxiv.org/pdf/2401.12345",
+    hit = PublicSearchHit.model_validate(
+        {
+            "rank": 1,
+            "score": 12.75,
+            "arxiv_id": "2401.12345",
+            "title": "A Paper",
+            "authors": ["Author"],
+            "abstract": None,
+            "categories": ["cs.AI"],
+            "submitted_at": datetime(2024, 1, 20, tzinfo=UTC),
+            "updated_at": datetime(2024, 3, 5, tzinfo=UTC),
+            "version": 2,
+            "arxiv_url": "https://arxiv.org/abs/2401.12345",
+            "pdf_url": "https://arxiv.org/pdf/2401.12345",
+        }
     )
 
     dumped = hit.model_dump(mode="json")
@@ -153,7 +158,7 @@ def test_public_search_hit_serializes_raw_score_null_abstract_and_urls() -> None
 def test_public_search_response_excludes_internal_diagnostics() -> None:
     response = PublicSearchResponse(
         query="test",
-        strength="standard",
+        strength=SearchStrength.STANDARD,
         degraded=False,
         hits=[],
         result_count=0,
@@ -170,6 +175,27 @@ def test_public_search_response_excludes_internal_diagnostics() -> None:
     }
 
 
+def test_public_search_schema_documents_examples_and_score_semantics() -> None:
+    request_schema = PublicSearchRequest.model_json_schema()
+    hit_schema = PublicSearchHit.model_json_schema()
+    response_schema = PublicSearchResponse.model_json_schema()
+
+    assert request_schema["examples"][0] == {
+        "query": "retrieval augmented generation",
+        "strength": "standard",
+        "limit": 10,
+        "filters": {
+            "categories": ["cs.AI", "cs.IR"],
+            "authors": [],
+            "date_from": "2020-01-01",
+            "date_to": None,
+        },
+    }
+    assert "authoritative" in hit_schema["properties"]["rank"]["description"].lower()
+    assert "current response" in hit_schema["properties"]["score"]["description"].lower()
+    assert response_schema["examples"][0]["hits"][0]["abstract"] is None
+
+
 def test_search_route_uses_only_public_contract_models() -> None:
     with warnings.catch_warnings():
         warnings.filterwarnings(
@@ -180,6 +206,8 @@ def test_search_route_uses_only_public_contract_models() -> None:
         from scholight.api.routes.search import router
 
     route = next(route for route in router.routes if getattr(route, "path", None) == "")
+    assert isinstance(route, APIRoute)
+    assert route.body_field is not None
 
     assert route.body_field.field_info.annotation is PublicSearchRequest
     assert route.response_model is PublicSearchResponse

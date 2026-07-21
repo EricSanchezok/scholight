@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import asyncpg
 import pytest
 from cloud_auth.models.user import QuotaResult, UserRecord
 from fastapi import HTTPException, Request
 
 from scholight.api.search_access import compensate_search_quota, reserve_search_quota
+from scholight.config import settings
 from scholight.db import client as db_client
 from scholight.db.queries_anonymous_quota import AnonymousQuotaReservation
 
@@ -65,8 +68,10 @@ async def test_anonymous_search_routes_to_independent_daily_bucket(
         reservation = await reserve_search_quota(_request(), None, search_level=search_level)
 
     assert reservation.anonymous is token
-    assert reserve_anonymous.await_args.kwargs == {"search_level": search_level, "limit": limit}
-    assert len(reserve_anonymous.await_args.args[0]) == 32
+    anonymous_call = reserve_anonymous.await_args
+    assert anonymous_call is not None
+    assert anonymous_call.kwargs == {"search_level": search_level, "limit": limit}
+    assert len(anonymous_call.args[0]) == 32
     reserve_user.assert_not_awaited()
 
 
@@ -80,14 +85,13 @@ async def test_anonymous_daily_limit_returns_stable_429() -> None:
         with pytest.raises(HTTPException) as exc_info:
             await reserve_search_quota(_request(), None, search_level=1)
 
-    assert (exc_info.value.status_code, exc_info.value.detail) == (
-        429,
-        {
-            "code": "anonymous_daily_limit_exceeded",
-            "message": "Anonymous daily search limit exceeded.",
-            "retryable": True,
-        },
-    )
+    assert exc_info.value.status_code == 429
+    assert cast(dict[str, object], exc_info.value.detail) == {
+        "code": "anonymous_daily_limit_exceeded",
+        "message": "Anonymous daily search limit exceeded.",
+        "retryable": True,
+    }
+    assert exc_info.value.headers is not None
     assert int(exc_info.value.headers["Retry-After"]) > 0
 
 
@@ -184,11 +188,13 @@ async def test_postgres_pool_sets_every_session_to_utc(
     pool = MagicMock()
     create = AsyncMock(return_value=pool)
     monkeypatch.setattr(db_client, "_pool", None)
-    monkeypatch.setattr(db_client.asyncpg, "create_pool", create)
-    monkeypatch.setattr(db_client.settings, "pg_ssl_root_cert", "disable")
+    monkeypatch.setattr(asyncpg, "create_pool", create)
+    monkeypatch.setattr(settings, "pg_ssl_root_cert", "disable")
 
     created = await db_client.create_pool()
     db_client._pool = None
 
     assert created is pool
-    assert create.await_args.kwargs["server_settings"] == {"TimeZone": "UTC"}
+    create_call = create.await_args
+    assert create_call is not None
+    assert create_call.kwargs["server_settings"] == {"TimeZone": "UTC"}

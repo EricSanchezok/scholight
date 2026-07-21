@@ -86,7 +86,7 @@ router = APIRouter()
 @router.post(
     "",
     response_model=PublicSearchResponse,
-    openapi_extra={"security": [{"BearerAuth": []}, {}]},
+    openapi_extra={"security": [{}]},
 )
 async def search(
     request: Request,

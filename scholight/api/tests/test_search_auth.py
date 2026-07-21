@@ -30,6 +30,12 @@ def auth_app(monkeypatch: pytest.MonkeyPatch) -> tuple[FastAPI, AsyncMock]:
     return app, resolver
 
 
+def test_search_openapi_allows_bearer_or_anonymous(api_app: FastAPI) -> None:
+    operation = api_app.openapi()["paths"]["/search"]["post"]
+
+    assert operation["security"] == [{"BearerAuth": []}, {}]
+
+
 @pytest.mark.asyncio
 async def test_missing_authorization_is_anonymous_without_auth_lookup(
     auth_app: tuple[FastAPI, AsyncMock],
@@ -75,7 +81,9 @@ async def test_bearer_authorization_reuses_cloud_auth_resolver(
         response = await client.get("/", headers={"Authorization": "Bearer access-token"})
 
     assert response.json() == {"identity": "user", "user_id": 42}
-    credentials = resolver.await_args.kwargs["credentials"]
+    resolver_call = resolver.await_args
+    assert resolver_call is not None
+    credentials = resolver_call.kwargs["credentials"]
     assert (credentials.scheme, credentials.credentials) == ("Bearer", "access-token")
 
 

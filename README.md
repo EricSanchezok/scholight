@@ -57,8 +57,16 @@ uv run scholight search -q "attention mechanism"   # 测试搜索
 | `SCHOLIGHT_EMBEDDING_API_KEY` | ✅ | Embedding API 密钥 |
 | `SCHOLIGHT_EMBEDDING_BASE_URL` | ✅ | Embedding API 端点 |
 | `SCHOLIGHT_PG_HOST/PORT/DATABASE/USER/PASSWORD` | ✅ | PostgreSQL 连接 |
-| `SCHOLIGHT_AUTH_JWT_SECRET` | ✅ | JWT 签名密钥（留空则每次重启自动生成） |
+| `SCHOLIGHT_AUTH_JWT_SECRET` | API ✅ | 固定 JWT 密钥，API 启动要求至少 32 UTF-8 bytes |
+| `SCHOLIGHT_ANONYMOUS_QUOTA_HMAC_SECRET` | API ✅ | 匿名 IP 摘要密钥，至少 32 UTF-8 bytes，独立于 JWT 密钥并跨实例/重启保持一致 |
+| `SCHOLIGHT_ANONYMOUS_RATE_LIMIT_PER_MINUTE` | | 匿名共享分钟桶，默认 30 attempts/IP |
+| `SCHOLIGHT_ANONYMOUS_STANDARD_DAILY_LIMIT` | | 匿名 Standard UTC 日额度，默认 100/IP |
+| `SCHOLIGHT_ANONYMOUS_THOROUGH_DAILY_LIMIT` | | 匿名 Thorough UTC 日额度，默认 30/IP |
+| `SCHOLIGHT_CORS_ALLOW_ORIGINS` | API ✅ | 明确的前端 origin JSON 列表；生产环境禁止 `*` |
+| `SCHOLIGHT_PROXY_HEADERS` / `SCHOLIGHT_FORWARDED_ALLOW_IPS` | API ✅ | 反向代理信任设置；启用时必须列出明确代理 IP/CIDR，禁止 `*` |
 | `SCHOLIGHT_DATA_ROOT` | | 论文 PDF 和日志的本地存储路径（默认 `./data`） |
+
+API-only 校验只在 `create_app()` 执行；migration、scheduler 和内部 CLI 不需要匿名 HMAC 密钥。
 
 ---
 
@@ -66,15 +74,15 @@ uv run scholight search -q "attention mechanism"   # 测试搜索
 
 ### 两级检索管线
 
-| | Level 1（默认） | Level 2 |
+| | Standard（内部 Level 1） | Thorough（内部 Level 2） |
 |---|---|---|
 | **范围** | 论文元数据（标题 + 摘要） | 论文元数据 + 段落全文 |
 | **集合** | `arxiv_papers`（303 万） | `arxiv_papers` + `arxiv_chunks`（1.72 亿） |
-| **算法** | Dense + BM25 hybrid → WeightedRanker(0.6/0.4) | Level 1 全部 + Chunk 粗召回 → Dense 精排 → MaxP 聚合 → RRF 融合 |
+| **算法** | Dense + BM25 hybrid → WeightedRanker(0.6/0.4) | Standard 全部 + Chunk 粗召回 → Dense 精排 → MaxP 聚合 → RRF 融合 |
 | **延迟** | ~300ms | ~1s |
-| **适用场景** | 日常检索 | 深度搜索、需要段落证据 |
+| **适用场景** | 日常检索 | 深度全文检索 |
 
-Level 2 能发现标题/摘要不匹配但正文强烈相关的论文（chunk-only discover），并附带每个命中的 top-3 段落作为佐证。
+Thorough 是严格模式：Level 2 或其核心 metadata backfill 未完整成功时返回 `503`，不会回退并伪装成 Standard 成功。CLI 和 benchmark 仍使用内部 `level/top_k` DTO；只有 HTTP API 使用下述公共契约。
 
 ### 调用方式
 
@@ -82,18 +90,76 @@ Level 2 能发现标题/摘要不匹配但正文强烈相关的论文（chunk-on
 
 ```bash
 uv run scholight search -q "your query"              # Level 1，10 条结果
-uv run scholight search -q "your query" --level 2    # Level 2，带段落证据
-uv run scholight search -q "your query" -k 20         # 20 条结果
-uv run scholight search -q "your query" --json         # JSON 输出
+uv run scholight search -q "your query" --level 2    # Level 2，内部诊断可含段落证据
+uv run scholight search -q "your query" -k 20        # 20 条结果
+uv run scholight search -q "your query" --json       # JSON 输出
 ```
 
-**API（POST /search）：**
+**公共 API（`POST /search`）：**
+
+`Authorization` 完全缺失时按匿名搜索处理；有效 active access Bearer token 使用登录用户额度。Header 存在但无效、过期、不是 Bearer 或是 refresh token 时返回 `401`，不会降级为匿名。
 
 ```json
-{ "query": "attention mechanism", "level": 1, "top_k": 10 }
+{
+  "query": "retrieval augmented generation",
+  "strength": "standard",
+  "limit": 10,
+  "filters": {
+    "categories": ["cs.AI", "cs.IR"],
+    "authors": [],
+    "date_from": "2020-01-01",
+    "date_to": null
+  }
+}
 ```
 
-Level 2 的返回在 `SearchHit.chunks` 中附带段落证据（`[{chunk_id, chunk_idx, score}]`），Level 1 的 `chunks` 为空列表。
+这是 breaking contract：旧 HTTP 字段 `level`、`top_k`、`strategy`、`enable_fusion`、vectors 等均返回 `422`。调用方必须与后端同一 release 切换，不提供双轨解析或 `/v1/search`。
+
+```json
+{
+  "query": "retrieval augmented generation",
+  "strength": "standard",
+  "degraded": false,
+  "hits": [
+    {
+      "rank": 1,
+      "score": 12.75,
+      "arxiv_id": "2401.12345",
+      "title": "A Paper About Retrieval",
+      "authors": ["Example Author"],
+      "abstract": "The full abstract...",
+      "categories": ["cs.AI", "cs.IR"],
+      "submitted_at": "2024-01-20T00:00:00Z",
+      "updated_at": "2024-03-05T00:00:00Z",
+      "version": 2,
+      "arxiv_url": "https://arxiv.org/abs/2401.12345",
+      "pdf_url": "https://arxiv.org/pdf/2401.12345"
+    }
+  ],
+  "result_count": 1,
+  "elapsed_ms": 842.37
+}
+```
+
+`rank` 是响应内的权威顺序。`score` 是未归一化原始信号，只能在当前响应内比较，不能跨 query、strength、索引、模型或时间比较。最终 abstract enrichment 失败或缺行时仍返回 `200`，对应 `abstract=null` 且 `degraded=true`；内部 chunks、vectors、strategy 和阶段诊断不会公开。
+
+### 匿名额度与错误
+
+- Standard/Thorough 共享 `30 attempts/min/IP`；分钟桶统计尝试，失败或验证错误不回滚。
+- UTC 日额度独立分桶：Standard 默认 100/IP，Thorough 默认 30/IP。
+- 匿名 IP 仅以 HMAC-SHA256 摘要进入 PostgreSQL；原始 IP、完整摘要和密钥不得进入日志或 metrics。
+- 分钟或日额度耗尽返回结构化 `429` 并带 `Retry-After`；依赖暂不可用返回结构化 `503`，默认 `Retry-After: 5`。
+- 搜索核心 commit 前失败会 best-effort 补偿一次日额度；公开 enrichment 或历史异步写失败发生在 commit 后，不补偿。
+
+### 搜索历史 API
+
+所有历史 endpoint 均要求 active Bearer token：
+
+- `GET /search/history?limit=20&offset=0&q=retrieval`：返回 `{items,total,limit,offset}`。`q` 是 query 文本的大小写不敏感 literal substring；total 与 page 来自同一只读 `REPEATABLE READ` snapshot。
+- `POST /search/history/bulk-delete`，body `{"ids":[1,2,3]}`：单条 owner-scoped SQL 批量软删除，返回 `{"deleted":2}`；未知、其他用户或已删除 ID 不计数，重放返回 0。
+- `DELETE /search/history/{entry_id}`：保留原有 `200 {"message":"Deleted"}` 和 404 行为。
+
+登录搜索只有在最终响应为 `200` 时才安排历史写。历史写是最终一致的；写入失败不会改变搜索响应或额度，并会被后台任务消费和结构化记录。关闭 API 时会先 drain 未完成历史任务再关闭 PostgreSQL pool。
 
 ### 可调超参数
 
@@ -107,8 +173,6 @@ Level 2 的返回在 `SearchHit.chunks` 中附带段落证据（`[{chunk_id, chu
 | `SCHOLIGHT_BM25_COARSE_TOP_K` | 30 | Level 2 BM25 粗召回 Top-K |
 | `SCHOLIGHT_DENSE_REFINE_TOP_K` | 256 | Level 2 Dense 精排 Top-K |
 | `SCHOLIGHT_SEARCH_LEVEL` | 3 | 论文级 AUTOINDEX 召回率（3≈95%） |
-
----
 
 ## CLI 命令
 
@@ -159,12 +223,42 @@ uv run scholight scheduler status         # 调度任务状态
 ## Docker 部署
 
 ```bash
-cp .env.example .env   # 填入所有必填配置
+cp .env.example .env   # 填入所有必填配置和明确的前端/代理值
 docker compose --env-file .env build
-docker compose --env-file .env up -d
+
+# 由 release operator 在生产 precheck 后显式执行；API 启动不会自动迁移
+docker compose --env-file .env --profile migrate run --rm migrate
+docker compose --env-file .env up -d api
 ```
 
-容器只运行 FastAPI 服务器。arXiv 同步守护进程（paper-sync、PDF 下载、段落切分、向量入库）运行在宿主机上，不进入容器。
+反向代理只应信任明确的 Caddy IP/CIDR，不能把 `SCHOLIGHT_FORWARDED_ALLOW_IPS` 设为 `*`；不要公开路由 `/livez` 或 `/readyz`。生产 CORS 必须使用实际前端 origin 列表，`.env.example` 的 localhost 仅为占位值。匿名 HMAC 配置只注入 API service，不注入 migrate 或 scheduler。
+
+Migration 006 只新增 `public.anonymous_daily_search_usage`，不修改已上线的 migration 005 或 `search_history`。不得由开发流程连接或迁移生产 RDS；release operator 使用以下检查：
+
+```sql
+-- precheck：必须是 005/history 存在，006 表不存在
+SELECT version, name FROM public._migrations WHERE version = 5;
+SELECT to_regclass('public.search_history');
+SELECT to_regclass('public.anonymous_daily_search_usage');
+
+-- migration runner 完成后的 postcheck
+SELECT version, name FROM public._migrations WHERE version = 6;
+SELECT column_name, data_type, is_nullable
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND table_name = 'anonymous_daily_search_usage'
+ORDER BY ordinal_position;
+SELECT conname, pg_get_constraintdef(oid)
+FROM pg_constraint
+WHERE conrelid = 'public.anonymous_daily_search_usage'::regclass
+ORDER BY conname;
+```
+
+Precheck 必须确认 version 5/history 存在且新表不存在；postcheck 必须确认 version 6、精确列/约束以及没有 raw-IP 列。随后在回滚事务中用合成 32-byte digest 验证 runtime 角色可 reserve/decrement；不得使用真实 IP。
+
+应用回滚应切回上一套完整、协调的前后端 release，并保留 migration 006 表及 tracking；旧代码不会引用该表。不要把 `DROP TABLE` 当作普通回滚，也不要因应用回滚轮换 HMAC 密钥。同一 UTC 日内所有 API 实例必须使用相同 HMAC 密钥。
+
+容器只运行 FastAPI 服务器。arXiv 同步守护进程（paper-sync、PDF 下载、段落切分、向量入库）运行在宿主机或独立 scheduler profile，不进入 API 容器。
 
 ---
 

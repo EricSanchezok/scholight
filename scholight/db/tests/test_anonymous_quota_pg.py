@@ -11,6 +11,7 @@ from urllib.parse import unquote, urlsplit
 import asyncpg
 import pytest
 
+from scholight.config import settings
 from scholight.db import client as db_client
 from scholight.db.migrate import run_migrations
 from scholight.db.queries_anonymous_quota import reserve_anonymous_daily_quota
@@ -50,14 +51,14 @@ def _copy_migration(directory: Path, *, broken: bool = False) -> None:
 async def test_application_pool_sessions_use_utc(monkeypatch: pytest.MonkeyPatch) -> None:
     parsed = urlsplit(_database_url())
     monkeypatch.setattr(db_client, "_pool", None)
-    monkeypatch.setattr(db_client.settings, "pg_host", parsed.hostname or "127.0.0.1")
-    monkeypatch.setattr(db_client.settings, "pg_port", parsed.port or 5432)
-    monkeypatch.setattr(db_client.settings, "pg_database", parsed.path.lstrip("/") or "postgres")
-    monkeypatch.setattr(db_client.settings, "pg_user", unquote(parsed.username or "postgres"))
-    monkeypatch.setattr(db_client.settings, "pg_password", unquote(parsed.password or ""))
-    monkeypatch.setattr(db_client.settings, "pg_ssl_root_cert", "disable")
-    monkeypatch.setattr(db_client.settings, "pg_pool_min_size", 1)
-    monkeypatch.setattr(db_client.settings, "pg_pool_max_size", 1)
+    monkeypatch.setattr(settings, "pg_host", parsed.hostname or "127.0.0.1")
+    monkeypatch.setattr(settings, "pg_port", parsed.port or 5432)
+    monkeypatch.setattr(settings, "pg_database", parsed.path.lstrip("/") or "postgres")
+    monkeypatch.setattr(settings, "pg_user", unquote(parsed.username or "postgres"))
+    monkeypatch.setattr(settings, "pg_password", unquote(parsed.password or ""))
+    monkeypatch.setattr(settings, "pg_ssl_root_cert", "disable")
+    monkeypatch.setattr(settings, "pg_pool_min_size", 1)
+    monkeypatch.setattr(settings, "pg_pool_max_size", 1)
 
     pool = await db_client.create_pool()
     try:

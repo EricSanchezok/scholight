@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import httpx
 import pytest
 from fastapi import FastAPI
@@ -15,7 +17,9 @@ from scholight.api.search_access import anonymous_search_limiter
 async def test_app_registers_complete_slowapi_stack(api_app: FastAPI) -> None:
     assert api_app.state.limiter is anonymous_search_limiter
     assert RateLimitExceeded in api_app.exception_handlers
-    assert any(middleware.cls is SlowAPIMiddleware for middleware in api_app.user_middleware)
+    assert any(
+        cast(object, middleware.cls) is SlowAPIMiddleware for middleware in api_app.user_middleware
+    )
 
 
 @pytest.mark.asyncio

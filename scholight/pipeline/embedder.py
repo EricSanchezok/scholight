@@ -38,7 +38,7 @@ class Embedder:
         )
         return self
 
-    async def __aexit__(self, *args: object) -> None:
+    async def __aexit__(self, *_args: object) -> None:
         if self._client is not None:
             await self._client.aclose()
             self._client = None

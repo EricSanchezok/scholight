@@ -120,7 +120,7 @@ async def test_history_query_validation_returns_422(
     api_app: FastAPI,
     api_client: httpx.AsyncClient,
     active_user: object,
-    params: dict[str, object],
+    params: dict[str, str | int],
 ) -> None:
     _authenticate(api_app, active_user)
 

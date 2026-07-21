@@ -84,7 +84,24 @@ class PublicSearchFilters(BaseModel):
 class PublicSearchRequest(BaseModel):
     """Stable public search input, isolated from internal pipeline controls."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "examples": [
+                {
+                    "query": "retrieval augmented generation",
+                    "strength": "standard",
+                    "limit": 10,
+                    "filters": {
+                        "categories": ["cs.AI", "cs.IR"],
+                        "authors": [],
+                        "date_from": "2020-01-01",
+                        "date_to": None,
+                    },
+                }
+            ]
+        },
+    )
 
     query: StrictString
     strength: SearchStrength = SearchStrength.STANDARD
@@ -130,8 +147,14 @@ class PublicSearchHit(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    rank: int = Field(ge=1)
-    score: float = Field(allow_inf_nan=False)
+    rank: int = Field(ge=1, description="Authoritative order within this response.")
+    score: float = Field(
+        allow_inf_nan=False,
+        description=(
+            "Unnormalized retrieval signal; compare only within the current response, never "
+            "across queries, strengths, indexes, models, or time."
+        ),
+    )
     arxiv_id: str = Field(min_length=1)
     title: str = Field(min_length=1)
     authors: list[str]
@@ -147,7 +170,36 @@ class PublicSearchHit(BaseModel):
 class PublicSearchResponse(BaseModel):
     """Public search response; rank is authoritative and score is unnormalized."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "examples": [
+                {
+                    "query": "retrieval augmented generation",
+                    "strength": "standard",
+                    "degraded": True,
+                    "hits": [
+                        {
+                            "rank": 1,
+                            "score": 12.75,
+                            "arxiv_id": "2401.12345",
+                            "title": "A Paper About Retrieval",
+                            "authors": ["Example Author"],
+                            "abstract": None,
+                            "categories": ["cs.AI", "cs.IR"],
+                            "submitted_at": "2024-01-20T00:00:00Z",
+                            "updated_at": "2024-03-05T00:00:00Z",
+                            "version": 2,
+                            "arxiv_url": "https://arxiv.org/abs/2401.12345",
+                            "pdf_url": "https://arxiv.org/pdf/2401.12345",
+                        }
+                    ],
+                    "result_count": 1,
+                    "elapsed_ms": 842.37,
+                }
+            ]
+        },
+    )
 
     query: str
     strength: SearchStrength
