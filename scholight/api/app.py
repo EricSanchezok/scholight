@@ -2,11 +2,80 @@
 
 from __future__ import annotations
 
+import asyncio
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
+
+_DEPENDENCY_TIMEOUT_SECONDS = 2.0
+_DEPENDENCY_CACHE_TTL_SECONDS = 2.0
+_dependency_probe_cache: dict[str, tuple[float, bool]] = {}
+_dependency_probe_locks: dict[str, asyncio.Lock] = {}
+
+
+def _reset_dependency_probe_cache() -> None:
+    """Clear process-local dependency probe state (used at startup and by tests)."""
+    _dependency_probe_cache.clear()
+    _dependency_probe_locks.clear()
+
+
+async def _cached_probe(name: str, probe: Callable[[], Awaitable[bool]]) -> bool:
+    now = time.monotonic()
+    cached = _dependency_probe_cache.get(name)
+    if cached is not None and now - cached[0] < _DEPENDENCY_CACHE_TTL_SECONDS:
+        return cached[1]
+
+    lock = _dependency_probe_locks.setdefault(name, asyncio.Lock())
+    async with lock:
+        now = time.monotonic()
+        cached = _dependency_probe_cache.get(name)
+        if cached is not None and now - cached[0] < _DEPENDENCY_CACHE_TTL_SECONDS:
+            return cached[1]
+        result = await probe()
+        _dependency_probe_cache[name] = (time.monotonic(), result)
+        return result
+
+
+async def _probe_postgres() -> bool:
+    from scholight.db.client import get_pool
+
+    async def execute_probe() -> None:
+        pool = get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute("SELECT 1")
+
+    try:
+        await asyncio.wait_for(execute_probe(), timeout=_DEPENDENCY_TIMEOUT_SECONDS)
+    except Exception:
+        return False
+    return True
+
+
+def _list_zilliz_collections() -> None:
+    from scholight.store.client import get_client
+
+    get_client().list_collections(timeout=_DEPENDENCY_TIMEOUT_SECONDS)
+
+
+async def _probe_zilliz() -> bool:
+    try:
+        await asyncio.wait_for(
+            asyncio.to_thread(_list_zilliz_collections), timeout=_DEPENDENCY_TIMEOUT_SECONDS
+        )
+    except Exception:
+        return False
+    return True
+
+
+async def _is_postgres_ready() -> bool:
+    return await _cached_probe("postgres", _probe_postgres)
+
+
+async def _is_zilliz_ready() -> bool:
+    return await _cached_probe("zilliz", _probe_zilliz)
 
 
 @asynccontextmanager
@@ -15,11 +84,14 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     from scholight.db.client import close_pool, create_pool
     from scholight.store.client import get_client
 
+    _reset_dependency_probe_cache()
     await create_pool()
     with suppress(Exception):
         get_client()
-    yield
-    await close_pool()
+    try:
+        yield
+    finally:
+        await close_pool()
 
 
 _ONE_MB = 1_048_576
@@ -39,7 +111,11 @@ def create_app() -> FastAPI:
     """Build and return the configured FastAPI application."""
     from scholight import __version__
     from scholight.api.middleware.cors import setup_cors
+    from scholight.config import settings
     from scholight.logging.middleware import RequestContextMiddleware, TimingMiddleware
+
+    if len(settings.jwt_secret.strip().encode("utf-8")) < 32:
+        raise ValueError("SCHOLIGHT_AUTH_JWT_SECRET must contain at least 32 UTF-8 bytes")
 
     app = FastAPI(
         title="Scholight API",
@@ -71,7 +147,6 @@ def create_app() -> FastAPI:
 
     from scholight.api.deps import get_current_user, wire_dependencies
     from scholight.api.routes.search import router as search_router
-    from scholight.config import settings
     from scholight.db.client import get_pool
 
     auth_config = AuthConfig(
@@ -113,24 +188,32 @@ def create_app() -> FastAPI:
         tags=["user"],
     )
 
+    @app.get("/livez")
+    async def livez() -> dict[str, str]:
+        return {"status": "ok"}
+
+    @app.get("/readyz")
+    async def readyz() -> JSONResponse:
+        postgres_ready, zilliz_ready = await asyncio.gather(
+            _is_postgres_ready(), _is_zilliz_ready()
+        )
+        is_ready = postgres_ready and zilliz_ready
+        return JSONResponse(
+            status_code=200 if is_ready else 503,
+            content={
+                "status": "ready" if is_ready else "unavailable",
+                "postgres": "up" if postgres_ready else "down",
+                "zilliz": "up" if zilliz_ready else "down",
+            },
+        )
+
     @app.get("/health")
     async def health() -> dict[str, str | None]:
-        from asyncio import wait_for
-
-        from scholight.db.client import get_pool
-
-        status = "ok"
-        pg_error: str | None = None
-
-        try:
-            pool = get_pool()
-            async with pool.acquire() as conn:
-                await wait_for(conn.execute("SELECT 1"), timeout=2.0)
-        except Exception:
-            status = "degraded"
-            pg_error = "PostgreSQL unreachable"
-
-        return {"status": status, "pg": pg_error}
+        postgres_ready = await _is_postgres_ready()
+        return {
+            "status": "ok" if postgres_ready else "degraded",
+            "pg": None if postgres_ready else "PostgreSQL unreachable",
+        }
 
     app.include_router(search_router, prefix="/search", tags=["search"])
 

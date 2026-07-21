@@ -36,8 +36,9 @@ from scholight.config import settings  # noqa: E402
 from scholight.logging import configure_logging  # noqa: E402
 from scholight.pipeline.embedder import Embedder  # noqa: E402
 from scholight.storage import storage  # noqa: E402
-from scholight.store.client import escape_sql  # noqa: E402
+from scholight.store.client import _WRITE_LOCK, batched, escape_sql  # noqa: E402
 from scholight.store.concurrent import insert_arxiv_papers_concurrent  # noqa: E402
+from scholight.store.ingest import delete_arxiv_chunks_by_paper  # noqa: E402
 
 # ── Logging ──────────────────────────────────────────────────────────────
 
@@ -245,6 +246,7 @@ def _parse_oai_record(record_xml: str) -> dict[str, Any] | None:
         "created": created,
         "updated": updated,
         "version": len(version_dates) if version_dates else 1,
+        "_version_available": bool(version_dates),
         "updated_history": [_normalize_date(d) if " " in d else d for d in version_dates],
         "license": _tag("license", ""),
         "comments": _tag("comments", ""),
@@ -346,6 +348,7 @@ def _parse_api_entry(entry_xml: str) -> dict[str, Any] | None:
     if not id_m:
         return None
     raw_id = id_m.group(1).strip()
+    version_m = re.search(r"v(\d+)$", raw_id)
     raw_id = re.sub(r"v\d+$", "", raw_id)
     arxiv_id = canonicalize_arxiv_id(raw_id)
     if arxiv_id is None:
@@ -372,6 +375,21 @@ def _parse_api_entry(entry_xml: str) -> dict[str, Any] | None:
     published = _normalize_date(_tag("published"))
     updated = _normalize_date(_tag("updated"))
 
+    metadata_fields = {
+        "arxiv_id",
+        "title",
+        "abstract",
+        "authors",
+        "categories",
+        "created",
+        "updated",
+        "comments",
+        "doi",
+        "journal_ref",
+    }
+    if version_m:
+        metadata_fields.add("version")
+
     return {
         "arxiv_id": arxiv_id,
         "title": _tag("title")[:2048],
@@ -380,7 +398,9 @@ def _parse_api_entry(entry_xml: str) -> dict[str, Any] | None:
         "categories": categories,
         "created": published,
         "updated": updated,
-        "version": 1,  # Standard API doesn't expose version count
+        "version": int(version_m.group(1)) if version_m else 1,
+        "_version_available": version_m is not None,
+        "_metadata_fields": metadata_fields,
         "updated_history": [updated] if updated else [],
         "license": "",
         "comments": _tag("comment"),
@@ -404,6 +424,125 @@ def _truncate_bytes(s: str, max_b: int) -> str:
     if len(encoded) <= max_b:
         return s
     return encoded[:max_b].decode("utf-8", errors="ignore")
+
+
+_RESOURCE_FLAGS = frozenset({"has_latex", "has_pdf", "has_markdown", "has_chunks"})
+_SYNC_INTERNAL_FIELDS = frozenset({"_version_available", "_metadata_fields"})
+_EXISTING_OUTPUT_FIELDS = ["arxiv_id", "created", "updated", "version", *_RESOURCE_FLAGS]
+
+
+def _has_source_changed(paper: dict[str, Any], existing: dict[str, Any]) -> bool:
+    if paper.get("_version_available", True):
+        version = paper.get("version")
+        existing_version = existing.get("version")
+        if version not in (None, "") and existing_version not in (None, ""):
+            return version != existing_version
+    return paper.get("updated") != existing.get("updated")
+
+
+def _metadata_update(paper: dict[str, Any]) -> dict[str, Any]:
+    available_fields = paper.get("_metadata_fields")
+    return {
+        key: field
+        for key, field in paper.items()
+        if key not in _RESOURCE_FLAGS
+        and key not in _SYNC_INTERNAL_FIELDS
+        and (available_fields is None or key in available_fields)
+    }
+
+
+def _resource_invalidation(arxiv_id: str) -> dict[str, Any]:
+    return {"arxiv_id": arxiv_id, **dict.fromkeys(_RESOURCE_FLAGS, False)}
+
+
+def _cleanup_changed_paper(arxiv_id: str, created: str) -> bool:
+    delete_arxiv_chunks_by_paper(arxiv_id)
+    try:
+        storage.remove_paper_dir(arxiv_id, created)
+    except OSError as exc:
+        logger.warning(
+            "failed to remove stale local paper resources",
+            arxiv_id=arxiv_id,
+            error=str(exc),
+        )
+        return False
+    return True
+
+
+def _write_synced_papers(papers: list[dict[str, Any]]) -> None:
+    client = get_client()
+    existing_papers: dict[str, dict[str, Any]] = {}
+    for paper_batch in batched(papers):
+        rows = client.get(
+            "arxiv_papers",
+            ids=[paper["arxiv_id"] for paper in paper_batch],
+            output_fields=_EXISTING_OUTPUT_FIELDS,
+            consistency_level="Strong",
+        )
+        existing_papers.update({str(row["arxiv_id"]): row for row in rows})
+
+    new_papers: list[dict[str, Any]] = []
+    unchanged_updates: list[dict[str, Any]] = []
+    changed_papers: list[tuple[dict[str, Any], str]] = []
+    for paper in papers:
+        arxiv_id = str(paper["arxiv_id"])
+        existing = existing_papers.get(arxiv_id)
+        if existing is None:
+            new_papers.append(
+                {key: field for key, field in paper.items() if key not in _SYNC_INTERNAL_FIELDS}
+            )
+            continue
+        if _has_source_changed(paper, existing):
+            changed_papers.append((paper, str(existing["created"])))
+        else:
+            unchanged_updates.append(_metadata_update(paper))
+
+    if unchanged_updates:
+        with _WRITE_LOCK:
+            for update_batch in batched(unchanged_updates):
+                client.upsert(
+                    "arxiv_papers",
+                    data=update_batch,
+                    partial_update=True,
+                    consistency_level="Strong",
+                )
+
+    for paper, _created in changed_papers:
+        arxiv_id = str(paper["arxiv_id"])
+        with storage.generation_lock(arxiv_id):
+            current_rows = client.get(
+                "arxiv_papers",
+                ids=[arxiv_id],
+                output_fields=_EXISTING_OUTPUT_FIELDS,
+                consistency_level="Strong",
+            )
+            if not current_rows:
+                continue
+            current = current_rows[0]
+            if not _has_source_changed(paper, current):
+                continue
+            created = str(current["created"])
+            with _WRITE_LOCK:
+                client.upsert(
+                    "arxiv_papers",
+                    data=[_resource_invalidation(arxiv_id)],
+                    partial_update=True,
+                    consistency_level="Strong",
+                )
+            if not _cleanup_changed_paper(arxiv_id, created):
+                continue
+            final_update = _metadata_update(paper)
+            final_update.update(dict.fromkeys(_RESOURCE_FLAGS, False))
+            with _WRITE_LOCK:
+                client.upsert(
+                    "arxiv_papers",
+                    data=[final_update],
+                    partial_update=True,
+                    consistency_level="Strong",
+                )
+
+    if new_papers:
+        insert_arxiv_papers_concurrent(new_papers, concurrency=_WRITE_CONCURRENCY)
 
 
 async def _embed_and_ingest(papers: list[dict[str, Any]]) -> int:
@@ -468,7 +607,7 @@ async def _embed_and_ingest(papers: list[dict[str, Any]]) -> int:
             p.pop("abstract_bm25", None)
 
     # Write
-    insert_arxiv_papers_concurrent(papers, concurrency=_WRITE_CONCURRENCY)
+    _write_synced_papers(papers)
     return len(papers)
 
 

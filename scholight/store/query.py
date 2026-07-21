@@ -101,6 +101,7 @@ def _search_dense(
     filter_expr: str,
     output_fields: list[str],
     level: int,
+    timeout: float | None = None,
 ) -> list[dict[str, Any]]:
     """Run a single dense vector search and return normalised hits."""
     t0 = time.perf_counter()
@@ -113,6 +114,7 @@ def _search_dense(
         filter=filter_expr,
         output_fields=output_fields,
         consistency_level=SEARCH_CONSISTENCY,
+        timeout=timeout,
     )
     hits = results[0]
     elapsed_ms = round((time.perf_counter() - t0) * 1000, 1)
@@ -139,6 +141,7 @@ def _search_dense_batched(
     output_fields: list[str],
     level: int,
     dedup_key: str = "arxiv_id",
+    timeout: float | None = None,
 ) -> list[dict[str, Any]]:
     """Run dense search across multiple filter expressions, deduplicate, merge.
 
@@ -158,6 +161,7 @@ def _search_dense_batched(
             filter_expr=expr,
             output_fields=output_fields,
             level=level,
+            timeout=timeout,
         )
         for hit in hits:
             key = hit.get(dedup_key)
@@ -333,6 +337,7 @@ def search_arxiv_chunks(
     top_k: int = 20,
     *,
     output_fields: list[str] | None = None,
+    timeout: float | None = None,
 ) -> list[dict[str, Any]]:
     """Phase 2: Dense vector search on arxiv_chunks, filtered to given *arxiv_ids*."""
     client = get_client()
@@ -357,6 +362,7 @@ def search_arxiv_chunks(
             output_fields=fields,
             level=settings.chunk_search_level,
             dedup_key="chunk_id",
+            timeout=timeout,
         )
 
     filter_expr = _build_filter(arxiv_ids=arxiv_ids)
@@ -369,6 +375,7 @@ def search_arxiv_chunks(
         filter_expr=filter_expr,
         output_fields=fields,
         level=settings.chunk_search_level,
+        timeout=timeout,
     )
 
 
@@ -539,6 +546,7 @@ def bm25_search_all_chunks(
     top_k: int = 1024,
     *,
     output_fields: list[str] | None = None,
+    timeout: float | None = 120,
 ) -> list[dict[str, Any]]:
     """BM25 sparse search across ALL arxiv_chunks via Zilliz BM25 Function.
 
@@ -558,7 +566,7 @@ def bm25_search_all_chunks(
         limit=top_k,
         output_fields=fields,
         consistency_level=SEARCH_CONSISTENCY,
-        timeout=120,
+        timeout=timeout,
     )
     hits = [_to_hit(h) for h in results[0]]
     elapsed_ms = round((time.perf_counter() - t0) * 1000, 1)
@@ -575,6 +583,7 @@ def batch_get_arxiv_papers(
     arxiv_ids: list[str],
     *,
     output_fields: list[str] | None = None,
+    timeout: float | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Batch-fetch paper metadata for *arxiv_ids* via Zilliz IN-filter query.
 
@@ -596,6 +605,7 @@ def batch_get_arxiv_papers(
                 filter=expr,
                 output_fields=fields,
                 consistency_level=QUERY_CONSISTENCY,
+                timeout=timeout,
             ),
         )
         for row in rows:

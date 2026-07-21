@@ -15,10 +15,13 @@ the full collection and suffered from 0.3~27s latency fluctuation
 
 from __future__ import annotations
 
+import asyncio
+import threading
 from collections import defaultdict
 from typing import Any
 
 import structlog
+from pymilvus.exceptions import MilvusException
 
 from scholight.config import settings
 from scholight.search.base import Phase, PipelineContext
@@ -33,6 +36,7 @@ from scholight.store.query import (
 logger = structlog.get_logger(__name__)
 
 _CHUNK_LOADED: bool = False
+_CHUNK_LOAD_LOCK = threading.Lock()
 _CHUNK_OUTPUT_FIELDS: list[str] = list(CHUNK_SEARCH_FIELDS)
 
 
@@ -40,16 +44,27 @@ def _ensure_chunks_loaded() -> None:
     global _CHUNK_LOADED
     if _CHUNK_LOADED:
         return
-    client = get_client()
-    try:
-        if client.get_load_state("arxiv_chunks").get("state") == "LoadStateLoaded":
-            _CHUNK_LOADED = True
+
+    with _CHUNK_LOAD_LOCK:
+        if _CHUNK_LOADED:
             return
-    except Exception:
-        pass
-    logger.info("loading arxiv_chunks collection")
-    client.load_collection("arxiv_chunks")
-    _CHUNK_LOADED = True
+
+        client = get_client()
+        try:
+            if (
+                client.get_load_state(
+                    "arxiv_chunks", timeout=settings.search_level2_rpc_timeout_seconds
+                ).get("state")
+                == "LoadStateLoaded"
+            ):
+                _CHUNK_LOADED = True
+                return
+        except (MilvusException, OSError, TimeoutError):
+            pass
+
+        logger.info("loading arxiv_chunks collection")
+        client.load_collection("arxiv_chunks", timeout=settings.search_level2_rpc_timeout_seconds)
+        _CHUNK_LOADED = True
 
 
 class ChunkSearchPhase(Phase):
@@ -72,14 +87,16 @@ class ChunkSearchPhase(Phase):
         if not ctx.request.query:
             raise ValueError("query text required for BM25 coarse search")
 
-        _ensure_chunks_loaded()
+        await asyncio.to_thread(_ensure_chunks_loaded)
         query_text = ctx.request.query
 
         # ── Stage 1: BM25 coarse recall ──────────────────────────
-        bm25_hits = bm25_search_all_chunks(
+        bm25_hits = await asyncio.to_thread(
+            bm25_search_all_chunks,
             query_text=query_text,
             top_k=settings.bm25_coarse_top_k,
             output_fields=["chunk_id", "arxiv_id"],
+            timeout=settings.search_level2_rpc_timeout_seconds,
         )
         # Deduplicate to unique paper IDs
         candidate_ids = list({h["arxiv_id"] for h in bm25_hits})
@@ -97,11 +114,13 @@ class ChunkSearchPhase(Phase):
             ctx.metadata["chunk_candidates"] = 0
             return
 
-        chunks = search_arxiv_chunks(
+        chunks = await asyncio.to_thread(
+            search_arxiv_chunks,
             query_vector=ctx.query_vector,
             arxiv_ids=candidate_ids,
             top_k=settings.dense_refine_top_k,
             output_fields=_CHUNK_OUTPUT_FIELDS,
+            timeout=settings.search_level2_rpc_timeout_seconds,
         )
 
         ctx.chunk_hits = chunks
@@ -243,7 +262,15 @@ class RRFFusionPhase(Phase):
 
         # Collect arxiv_ids that need metadata backfill
         missing_ids = [aid for aid in chunk_rank if aid not in existing]
-        paper_map = batch_get_arxiv_papers(missing_ids) if missing_ids else {}
+        paper_map = (
+            await asyncio.to_thread(
+                batch_get_arxiv_papers,
+                missing_ids,
+                timeout=settings.search_level2_rpc_timeout_seconds,
+            )
+            if missing_ids
+            else {}
+        )
 
         for aid in chunk_rank:
             if aid not in existing:

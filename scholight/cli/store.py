@@ -1,5 +1,4 @@
-"""CLI: ``scholight store init``, ``scholight store status``, ``scholight store drop``,
-``scholight store backup``, ``scholight store restore``, ``scholight store health``."""
+"""CLI commands for Zilliz administration and Scholight PostgreSQL migrations."""
 
 from __future__ import annotations
 
@@ -17,7 +16,26 @@ _COLLECTIONS = ("arxiv_papers", "arxiv_chunks")
 
 @click.group("store")
 def store_group() -> None:
-    """Manage the Milvus store — init, status, health, backup, restore, drop."""
+    """Manage Zilliz storage and Scholight PostgreSQL migrations."""
+
+
+@store_group.command()
+def migrate() -> None:
+    """Apply pending Scholight PostgreSQL migrations."""
+    import asyncio
+
+    from scholight.db.client import close_pool, create_pool
+    from scholight.db.migrate import run_migrations
+
+    async def migrate_postgres() -> None:
+        try:
+            pool = await create_pool()
+            await run_migrations(pool)
+        finally:
+            await close_pool()
+
+    asyncio.run(migrate_postgres())
+    click.echo("Scholight PostgreSQL migrations applied.")
 
 
 @store_group.command()

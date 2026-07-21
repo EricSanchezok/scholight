@@ -5,10 +5,13 @@ Dispatches to level-specific ``Pipeline`` implementations.
 
 from __future__ import annotations
 
+import asyncio
+import copy
 import time
 from typing import Any
 
 import structlog
+from pymilvus.exceptions import MilvusException
 
 from scholight.config import settings
 from scholight.models.search import (
@@ -18,11 +21,17 @@ from scholight.models.search import (
     SearchResult,
     SearchStats,
 )
+from scholight.search.base import PhaseError
 from scholight.search.level1 import LEVEL1_STRATEGIES, Level1Pipeline
 from scholight.search.level2 import LEVEL2_STRATEGIES, Level2Pipeline
 from scholight.store.client import get_client
 
 logger = structlog.get_logger(__name__)
+
+_COLLECTION_STATS_TIMEOUT_SECONDS = 0.1
+_COLLECTION_STATS_CACHE_SECONDS = 60.0
+_collection_stats_cache: tuple[float, tuple[int | None, int | None]] | None = None
+_collection_stats_lock: asyncio.Lock | None = None
 
 
 class SearchEngine:
@@ -40,18 +49,40 @@ class SearchEngine:
 
         level1_phases = [p.name for p in l1_pipeline.phases]
 
-        # ── Level 2: independent chunk pathway + RRF fusion ──────────
+        # ── Level 2: best-effort chunk pathway + RRF fusion ──────────
         chunk_evidence = None
         if request.level >= 2:
             l2_pipeline = self._resolve_l2_pipeline(request)
-            await l2_pipeline.run(request, ctx=l1_ctx)
-            chunk_evidence = l1_ctx.metadata.get("chunk_evidence")
-            logger.info(
-                "l2 fusion complete",
-                rrf_papers=l1_ctx.metadata.get("rrf_paper_count", 0),
-                chunk_only=l1_ctx.metadata.get("rrf_chunk_only_papers", 0),
-                evidence_count=len(chunk_evidence) if chunk_evidence else 0,
-            )
+            l2_ctx = copy.deepcopy(l1_ctx)
+            fallback_reason: str | None = None
+            try:
+                await asyncio.wait_for(
+                    l2_pipeline.run(request, ctx=l2_ctx),
+                    timeout=settings.search_level2_timeout_seconds,
+                )
+            except TimeoutError:
+                fallback_reason = "timeout"
+            except PhaseError as exc:
+                if not _is_operational_l2_error(exc.cause):
+                    raise
+                fallback_reason = type(exc.cause).__name__
+
+            if fallback_reason is None:
+                l1_ctx = l2_ctx
+                chunk_evidence = l1_ctx.metadata.get("chunk_evidence")
+                logger.info(
+                    "l2 fusion complete",
+                    rrf_papers=l1_ctx.metadata.get("rrf_paper_count", 0),
+                    chunk_only=l1_ctx.metadata.get("rrf_chunk_only_papers", 0),
+                    evidence_count=len(chunk_evidence) if chunk_evidence else 0,
+                )
+            else:
+                l1_ctx.metadata["l2_fallback_reason"] = fallback_reason
+                logger.warning(
+                    "l2 fallback to level1",
+                    reason=fallback_reason,
+                    timeout_seconds=settings.search_level2_timeout_seconds,
+                )
 
         # ── Recover metadata for stats ──────────────────────────────
         ctx = l1_ctx
@@ -95,6 +126,11 @@ class SearchEngine:
                     metadata={
                         "candidates": n_chunks,
                         "mode": ctx.metadata.get("chunk_mode", "dense"),
+                        **(
+                            {"fallback": str(ctx.metadata["l2_fallback_reason"])}
+                            if "l2_fallback_reason" in ctx.metadata
+                            else {}
+                        ),
                     },
                 )
             )
@@ -121,7 +157,7 @@ class SearchEngine:
             phases=phases,
         )
 
-        total_papers, total_chunks = _collection_row_counts()
+        total_papers, total_chunks = await _collection_row_counts()
         total_ms = (time.perf_counter() - t_start) * 1000
 
         logger.info(
@@ -157,6 +193,11 @@ class SearchEngine:
     def _resolve_l2_pipeline(_request: SearchRequest) -> Level2Pipeline:
         """Resolve Level 2 pipeline using RRF strategy (default)."""
         return Level2Pipeline(extra_phases=list(LEVEL2_STRATEGIES["rrf"]))
+
+
+def _is_operational_l2_error(exc: Exception) -> bool:
+    """Return whether an L2 failure should degrade to the completed L1 result."""
+    return isinstance(exc, (MilvusException, OSError, TimeoutError))
 
 
 # ── Hit construction ─────────────────────────────────────────────────────────
@@ -231,30 +272,59 @@ def _coerce_int(value: object) -> int:
         return 0
 
 
-def _collection_row_counts() -> tuple[int | None, int | None]:
+async def _collection_row_counts() -> tuple[int | None, int | None]:
+    global _collection_stats_cache, _collection_stats_lock
+
+    now = time.monotonic()
+    if (
+        _collection_stats_cache is not None
+        and now - _collection_stats_cache[0] < _COLLECTION_STATS_CACHE_SECONDS
+    ):
+        return _collection_stats_cache[1]
+
+    if _collection_stats_lock is None:
+        _collection_stats_lock = asyncio.Lock()
+    async with _collection_stats_lock:
+        now = time.monotonic()
+        if (
+            _collection_stats_cache is not None
+            and now - _collection_stats_cache[0] < _COLLECTION_STATS_CACHE_SECONDS
+        ):
+            return _collection_stats_cache[1]
+
+        try:
+            row_counts = await asyncio.wait_for(
+                asyncio.to_thread(_fetch_collection_row_counts),
+                timeout=_COLLECTION_STATS_TIMEOUT_SECONDS,
+            )
+        except TimeoutError:
+            logger.debug("collection stats timed out")
+            row_counts = (None, None)
+
+        _collection_stats_cache = (time.monotonic(), row_counts)
+        return row_counts
+
+
+def _fetch_collection_row_counts() -> tuple[int | None, int | None]:
     try:
         client = get_client()
     except Exception:
         logger.debug("Zilliz Cloud client unavailable for collection stats")
         return None, None
 
-    total_papers: int | None = None
-    total_chunks: int | None = None
-
-    for coll_name in ("arxiv_papers", "arxiv_chunks"):
+    row_counts: list[int | None] = []
+    for collection_name in ("arxiv_papers", "arxiv_chunks"):
         try:
-            coll_stats = client.get_collection_stats(coll_name)
-            row_count: int = coll_stats.get("row_count", 0)
+            collection_stats = client.get_collection_stats(
+                collection_name,
+                timeout=_COLLECTION_STATS_TIMEOUT_SECONDS,
+            )
+            row_counts.append(int(collection_stats.get("row_count", 0)))
         except Exception:
-            logger.debug("failed to get collection stats", collection=coll_name)
-            row_count = 0
+            logger.debug("failed to get collection stats", collection=collection_name)
+            row_counts.append(None)
 
-        if coll_name == "arxiv_papers":
-            total_papers = row_count
-        elif coll_name == "arxiv_chunks":
-            total_chunks = row_count
-
-    return total_papers, total_chunks
+    return row_counts[0], row_counts[1]
 
 
 __all__ = ["SearchEngine"]

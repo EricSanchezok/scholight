@@ -90,7 +90,7 @@ cli.add_command(
         "store_group",
         "store",
         group=True,
-        help="Manage the Milvus store — init, status, drop",
+        help="Manage Zilliz storage and Scholight PostgreSQL migrations",
     )
 )
 cli.add_command(

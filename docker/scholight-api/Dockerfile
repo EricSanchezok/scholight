@@ -1,62 +1,64 @@
-# Scholight — API Server Docker Image
-# ============================================
-# This image only runs the FastAPI server (search, auth).
-# The daily arXiv sync pipeline runs on the host instance — never containerized.
-#
-# Build:
-#   DOCKER_BUILDKIT=1 docker compose build
-#   (cloud-auth is installed from the local clone — no SSH forwarding needed)
-#
-# Run:
-#   docker compose --env-file .env up -d
+# Scholight — reproducible shared API and scheduler image.
+# cloud-auth is fetched from an immutable reviewed Git revision; local ignored
+# working trees never enter the production image.
 
-FROM python:3.11-slim-bookworm
+ARG PYTHON_IMAGE=python:3.11-slim-bookworm@sha256:b18992999dbe963a45a8a4da40ac2b1975be1a776d939d098c647482bcad5cba
+FROM ${PYTHON_IMAGE} AS builder
 
-# System deps: curl for healthcheck, ca-certificates for HTTPS
+ARG PRIVATE_DEP_ARCHIVE=https://api.github.com/repos/EricSanchezok/cloud-auth/tarball
+ARG PRIVATE_DEP_REVISION=2660acaa8666b40d02f62e221bb400d120ccbb7b
+
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        curl \
-        ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && python -m pip install --no-cache-dir uv==0.9.2
 
-# ── uv (fast Python package manager) ────────────────────────────
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
-
-# ── Non-root user ───────────────────────────────────────────────
-RUN useradd --create-home --uid 1000 scholight
 WORKDIR /app
-
-# ── Dependency layer (cached unless pyproject.toml/uv.lock change) ──
-# cloud-auth is declared as a git+ssh dependency in pyproject.toml.
-# We install it from the local clone to avoid SSH forwarding in Docker.
-# --no-install-package cloud-auth skips the git remote entirely;
-# then uv pip install adds it from the local copy into the same venv.
-COPY cloud-auth/ /app/cloud-auth/
+RUN --mount=type=secret,id=github_token \
+    mkdir -p /app/cloud-auth \
+    && curl --fail --location --silent --show-error \
+        --header "Authorization: Bearer $(tr -d '\n' </run/secrets/github_token)" \
+        --header "X-GitHub-Api-Version: 2022-11-28" \
+        --output /tmp/cloud-auth.tar.gz \
+        "${PRIVATE_DEP_ARCHIVE}/${PRIVATE_DEP_REVISION}" \
+    && tar -xzf /tmp/cloud-auth.tar.gz --strip-components=1 -C /app/cloud-auth \
+    && rm /tmp/cloud-auth.tar.gz
 
 COPY pyproject.toml uv.lock /app/
-
-RUN uv sync --frozen --no-dev --no-install-package cloud-auth \
+RUN uv sync --frozen --no-dev --no-install-project --no-install-package cloud-auth \
     && uv pip install /app/cloud-auth/
 
-# ── Application source ──────────────────────────────────────────
 COPY scholight/ /app/scholight/
+COPY migrations/ /app/migrations/
+COPY docker/scholight-api/start.py /app/start.py
+RUN uv pip install --no-deps /app
 
-# ── AWS RDS SSL certificate ─────────────────────────────────────
-# Bundled at a fixed absolute path; override SCHOLIGHT_PG_SSL_ROOT_CERT
-# only if you need a different cert.
+FROM ${PYTHON_IMAGE} AS runtime
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl pandoc \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home --uid 1000 scholight \
+    && mkdir -p /app /data \
+    && chown scholight:scholight /data
+
+WORKDIR /app
+COPY --from=builder /app/.venv/ /app/.venv/
+COPY --from=builder /app/cloud-auth/ /app/cloud-auth/
+COPY --from=builder /app/scholight/ /app/scholight/
+COPY --from=builder /app/migrations/ /app/migrations/
+COPY --from=builder /app/start.py /app/start.py
 COPY global-bundle.pem /etc/ssl/certs/global-bundle.pem
 
-# ── Startup script ──────────────────────────────────────────────
-COPY docker/scholight-api/start.py /app/start.py
-
-# ── Runtime ─────────────────────────────────────────────────────
 USER scholight
 EXPOSE 8000
 
+ENV SCHOLIGHT_DATA_ROOT=/data
+ENV SCHOLIGHT_PG_SSL_ROOT_CERT=/etc/ssl/certs/global-bundle.pem
 ENV SCHOLIGHT_SERVER_HOST=0.0.0.0
 ENV SCHOLIGHT_SERVER_PORT=8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-    CMD curl --fail http://localhost:8000/health || exit 1
+    CMD curl --fail --silent http://localhost:8000/livez || exit 1
 
-CMD ["uv", "run", "python", "/app/start.py"]
+CMD ["/app/.venv/bin/python", "/app/start.py"]

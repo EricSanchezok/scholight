@@ -49,18 +49,26 @@ class MdParseDaemon(BaseDaemon):
         failed_set = self._load_failed_checkpoint()
         for paper in papers:
             aid = paper["arxiv_id"]
-            if aid in done or aid in failed_set:
+            version = paper.get("version")
+            updated = paper.get("updated", "")
+            if self._is_checkpointed(done, aid, version, updated) or self._is_checkpointed(
+                failed_set, aid, version, updated
+            ):
                 result.skipped += 1
                 continue
             try:
-                ok = self._parse_one(aid, paper)
-                if ok:
-                    update_arxiv_paper(aid, {"has_markdown": True})
-                    self._save_checkpoint(aid)
-                    result.processed += 1
-                else:
-                    self._failed_checkpoint(aid)
-                    result.failed += 1
+                with storage.generation_lock(aid):
+                    if not self._generation_is_current(aid, version, updated):
+                        result.skipped += 1
+                        continue
+                    ok = self._parse_one(aid, paper)
+                    if ok:
+                        update_arxiv_paper(aid, {"has_markdown": True})
+                        self._save_checkpoint(aid, version, updated)
+                        result.processed += 1
+                    else:
+                        self._failed_checkpoint(aid, version, updated)
+                        result.failed += 1
             except Exception:
                 assert self._log is not None
                 self._log.exception("parse failed, deferring", arxiv_id=aid)
@@ -75,7 +83,7 @@ class MdParseDaemon(BaseDaemon):
             "arxiv_papers",
             filter="has_markdown == false and (has_pdf == true or has_latex == true)",
             limit=self.batch_size,
-            output_fields=["arxiv_id", "created", "has_pdf", "has_latex"],
+            output_fields=["arxiv_id", "created", "updated", "version", "has_pdf", "has_latex"],
         )
         return rows if rows else []
 

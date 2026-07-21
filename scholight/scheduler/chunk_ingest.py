@@ -72,18 +72,26 @@ class ChunkIngestDaemon(BaseDaemon):
 
         for paper in papers:
             aid = str(paper["arxiv_id"])
-            if aid in done or aid in failed_set:
+            version = paper.get("version")
+            updated = str(paper.get("updated", ""))
+            if self._is_checkpointed(done, aid, version, updated) or self._is_checkpointed(
+                failed_set, aid, version, updated
+            ):
                 result.skipped += 1
                 continue
             try:
-                ok = asyncio.run(self._process_one(aid, paper))
-                if ok:
-                    update_arxiv_paper(aid, {"has_chunks": True})
-                    self._save_checkpoint(aid)
-                    result.processed += 1
-                else:
-                    self._failed_checkpoint(aid)
-                    result.failed += 1
+                with storage.generation_lock(aid):
+                    if not self._generation_is_current(aid, version, updated):
+                        result.skipped += 1
+                        continue
+                    ok = asyncio.run(self._process_one(aid, paper))
+                    if ok:
+                        update_arxiv_paper(aid, {"has_chunks": True})
+                        self._save_checkpoint(aid, version, updated)
+                        result.processed += 1
+                    else:
+                        self._failed_checkpoint(aid, version, updated)
+                        result.failed += 1
             except Exception:
                 assert self._log is not None
                 self._log.exception("ingest failed, deferring", arxiv_id=aid)
@@ -167,7 +175,7 @@ class ChunkIngestDaemon(BaseDaemon):
             get_client().query(
                 "arxiv_papers",
                 filter="has_markdown == true and has_chunks == false",
-                output_fields=["arxiv_id", "title", "created"],
+                output_fields=["arxiv_id", "title", "created", "updated", "version"],
                 limit=ChunkIngestDaemon.batch_size,
             ),
         )

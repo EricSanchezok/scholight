@@ -2,7 +2,6 @@
 -- Description: Search query history with filters and timing metadata
 -- Depends on: cloud-auth 002_create_users
 
-BEGIN;
 
 CREATE TABLE IF NOT EXISTS search_history (
     id              BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -25,5 +24,3 @@ CREATE INDEX IF NOT EXISTS idx_search_history_user_time
 -- Analytics: aggregate by creation date
 CREATE INDEX IF NOT EXISTS idx_search_history_created
     ON search_history (created_at);
-
-COMMIT;

@@ -1,7 +1,5 @@
 """Pydantic Settings for Scholight — all config via SCHOLIGHT_ env vars."""
 
-import secrets
-
 from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
@@ -52,6 +50,10 @@ class Settings(BaseSettings):
     # ── Level 2 chunk search sizes ──
     bm25_coarse_top_k: int = 30
     dense_refine_top_k: int = 256
+    # Level 2 is a best-effort quality enhancement.  Bound the full
+    # pipeline and each underlying blocking Zilliz RPC independently.
+    search_level2_timeout_seconds: float = 2.0
+    search_level2_rpc_timeout_seconds: float = 1.5
 
     # ── Search — Level 2 RRF fusion (C2) ──
     search_rrf_k: int = 60
@@ -81,7 +83,7 @@ class Settings(BaseSettings):
     pg_pool_max_inactive_lifetime: float = 300.0
 
     # ── JWT ──
-    auth_jwt_secret: str = secrets.token_urlsafe(64)
+    auth_jwt_secret: str = ""
     jwt_secret: str = ""
     jwt_access_token_ttl_minutes: int = 15
     jwt_refresh_token_ttl_days: int = 7
@@ -108,7 +110,7 @@ class Settings(BaseSettings):
     # ── CORS ──
     cors_allow_origins: list[str] = ["*"]
     # ── Server ──
-    server_host: str = "0.0.0.0"
+    server_host: str = "127.0.0.1"
     server_port: int = 8000
 
 

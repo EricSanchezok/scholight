@@ -22,6 +22,7 @@ import structlog
 
 from scholight.logging import configure_logging
 from scholight.storage import storage
+from scholight.store.client import get_client
 
 
 @dataclass
@@ -153,22 +154,65 @@ class BaseDaemon(ABC):
         return storage.checkpoint_dir(self.name)
 
     def _load_checkpoint(self) -> set[str]:
-        """Return the set of already-processed arXiv IDs."""
+        """Return the set of already-processed checkpoint keys."""
         p = self._checkpoint_dir() / "done.txt"
         return self._read_ids(p)
 
-    def _save_checkpoint(self, arxiv_id: str) -> None:
-        """Mark *arxiv_id* as successfully processed (append + fsync)."""
-        self._append_id(self._checkpoint_dir() / "done.txt", arxiv_id)
+    def _save_checkpoint(
+        self, arxiv_id: str, version: object | None = None, updated: str | None = None
+    ) -> None:
+        """Mark one paper version as successfully processed (append + fsync)."""
+        key = self._checkpoint_key(arxiv_id, version, updated)
+        self._append_id(self._checkpoint_dir() / "done.txt", key)
 
-    def _failed_checkpoint(self, arxiv_id: str) -> None:
-        """Mark *arxiv_id* as permanently failed (append + fsync)."""
-        self._append_id(self._checkpoint_dir() / "failed.txt", arxiv_id)
+    def _failed_checkpoint(
+        self, arxiv_id: str, version: object | None = None, updated: str | None = None
+    ) -> None:
+        """Mark one paper version as permanently failed (append + fsync)."""
+        key = self._checkpoint_key(arxiv_id, version, updated)
+        self._append_id(self._checkpoint_dir() / "failed.txt", key)
 
     def _load_failed_checkpoint(self) -> set[str]:
-        """Return the set of permanently failed arXiv IDs."""
+        """Return the set of permanently failed checkpoint keys."""
         p = self._checkpoint_dir() / "failed.txt"
         return self._read_ids(p)
+
+    @staticmethod
+    def _checkpoint_key(
+        arxiv_id: str, version: object | None = None, updated: str | None = None
+    ) -> str:
+        parts = [arxiv_id]
+        if version not in (None, ""):
+            parts.append(f"version={version}")
+        if updated:
+            parts.append(f"updated={updated}")
+        return "\t".join(parts)
+
+    @classmethod
+    def _is_checkpointed(
+        cls,
+        entries: set[str],
+        arxiv_id: str,
+        version: object | None = None,
+        updated: str | None = None,
+    ) -> bool:
+        return cls._checkpoint_key(arxiv_id, version, updated) in entries
+
+    @staticmethod
+    def _generation_is_current(arxiv_id: str, version: object | None, updated: str | None) -> bool:
+        """Strongly verify that fetched work still belongs to the current paper generation."""
+        rows = get_client().get(
+            "arxiv_papers",
+            ids=[arxiv_id],
+            output_fields=["arxiv_id", "version", "updated"],
+            consistency_level="Strong",
+        )
+        if not rows:
+            return False
+        current = rows[0]
+        return current.get("version") == version and str(current.get("updated", "")) == str(
+            updated or ""
+        )
 
     # ── Status reporting (provided by base) ─────────────────────────
 

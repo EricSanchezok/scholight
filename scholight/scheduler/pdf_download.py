@@ -15,6 +15,9 @@ Design
 
 from __future__ import annotations
 
+import gzip
+import io
+import shutil
 import subprocess
 import tarfile
 import time
@@ -41,6 +44,13 @@ _TIER2_DELAY = 1.0  # export.arxiv.org
 
 _CONNECT_TIMEOUT = 10
 _MAX_TIME = 120
+_MAX_SOURCE_ARCHIVE_BYTES = 100 * 1024 * 1024
+_MAX_ARCHIVE_MEMBERS = 10_000
+_MAX_ARCHIVE_MEMBER_BYTES = 50 * 1024 * 1024
+_MAX_ARCHIVE_TOTAL_BYTES = 500 * 1024 * 1024
+# Includes tar headers, PAX/GNU metadata records, padding, and file payloads.
+_MAX_ARCHIVE_STREAM_BYTES = 600 * 1024 * 1024
+_EXTRACT_CHUNK_BYTES = 1024 * 1024
 
 # ── PDF validation ──────────────────────────────────────────────────────
 
@@ -120,6 +130,8 @@ def _curl_download_src(url: str, dest: Path) -> str | None:
                 str(_CONNECT_TIMEOUT),
                 "--max-time",
                 str(_MAX_TIME),
+                "--max-filesize",
+                str(_MAX_SOURCE_ARCHIVE_BYTES),
                 "-w",
                 "%{http_code}",
                 url,
@@ -131,7 +143,11 @@ def _curl_download_src(url: str, dest: Path) -> str | None:
         code_b = proc.stdout.strip()
         code = code_b.decode()
 
-        if proc.returncode == 0 and dest.exists() and dest.stat().st_size > 0:
+        if (
+            proc.returncode == 0
+            and dest.exists()
+            and 0 < dest.stat().st_size <= _MAX_SOURCE_ARCHIVE_BYTES
+        ):
             return None
 
         if dest.exists():
@@ -153,14 +169,91 @@ def _curl_download_src(url: str, dest: Path) -> str | None:
         return "timeout"
 
 
-def _extract_tarball(tar_path: Path, dest_dir: Path) -> bool:
-    """Extract tar.gz to *dest_dir*.  Returns ``True`` on success."""
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    try:
-        with tarfile.open(tar_path, "r:gz") as tf:
-            tf.extractall(path=dest_dir)
+class _LimitedArchiveStream(io.RawIOBase):
+    """Bound all decompressed tar bytes, including parser-only metadata records."""
+
+    def __init__(self, stream: gzip.GzipFile, limit: int) -> None:
+        super().__init__()
+        self._stream = stream
+        self._remaining = limit
+
+    def readable(self) -> bool:
         return True
-    except (tarfile.ReadError, OSError):
+
+    def read(self, size: int = -1) -> bytes:
+        if size < 0:
+            size = _EXTRACT_CHUNK_BYTES
+        size = min(size, _EXTRACT_CHUNK_BYTES, self._remaining + 1)
+        chunk = self._stream.read(size)
+        self._remaining -= len(chunk)
+        if self._remaining < 0:
+            raise ValueError("archive decompressed stream limit exceeded")
+        return chunk
+
+
+def _extract_tarball(tar_path: Path, dest_dir: Path) -> bool:
+    """Extract an arXiv source archive within strict path and resource limits."""
+    dest_root = dest_dir.resolve()
+    staging = dest_root.with_name(f"{dest_root.name}.extracting")
+    shutil.rmtree(staging, ignore_errors=True)
+    member_count = 0
+    total_written = 0
+
+    try:
+        staging.mkdir(parents=True)
+        with (
+            gzip.open(tar_path, "rb") as compressed,
+            tarfile.open(
+                fileobj=_LimitedArchiveStream(compressed, _MAX_ARCHIVE_STREAM_BYTES),
+                mode="r|",
+            ) as archive,
+        ):
+            for member in archive:
+                member_count += 1
+                if member_count > _MAX_ARCHIVE_MEMBERS:
+                    raise ValueError("archive member limit exceeded")
+
+                target = (staging / member.name).resolve()
+                if (
+                    not target.is_relative_to(staging)
+                    or member.issym()
+                    or member.islnk()
+                    or member.isdev()
+                    or not (member.isdir() or member.isfile())
+                ):
+                    raise ValueError("unsafe archive member")
+                if member.size > _MAX_ARCHIVE_MEMBER_BYTES:
+                    raise ValueError("archive member size limit exceeded")
+                if total_written + member.size > _MAX_ARCHIVE_TOTAL_BYTES:
+                    raise ValueError("archive total size limit exceeded")
+
+                if member.isdir():
+                    target.mkdir(parents=True, exist_ok=True)
+                    continue
+
+                source = archive.extractfile(member)
+                if source is None:
+                    raise ValueError("archive member is unreadable")
+                target.parent.mkdir(parents=True, exist_ok=True)
+                member_written = 0
+                with source, target.open("wb") as output:
+                    while chunk := source.read(_EXTRACT_CHUNK_BYTES):
+                        member_written += len(chunk)
+                        total_written += len(chunk)
+                        if (
+                            member_written > _MAX_ARCHIVE_MEMBER_BYTES
+                            or total_written > _MAX_ARCHIVE_TOTAL_BYTES
+                        ):
+                            raise ValueError("archive expanded size limit exceeded")
+                        output.write(chunk)
+                if member_written != member.size:
+                    raise ValueError("archive member size mismatch")
+
+        shutil.rmtree(dest_root, ignore_errors=True)
+        staging.replace(dest_root)
+        return True
+    except (tarfile.ReadError, OSError, ValueError):
+        shutil.rmtree(staging, ignore_errors=True)
         return False
 
 
@@ -195,8 +288,12 @@ class PdfDownloadDaemon(BaseDaemon):
         for paper in papers:
             aid = paper["arxiv_id"]
             created = paper.get("created", "")
+            version = paper.get("version")
+            updated = paper.get("updated", "")
 
-            if aid in done or aid in failed_set:
+            if self._is_checkpointed(done, aid, version, updated) or self._is_checkpointed(
+                failed_set, aid, version, updated
+            ):
                 result.skipped += 1
                 continue
 
@@ -207,22 +304,26 @@ class PdfDownloadDaemon(BaseDaemon):
                 continue
 
             try:
-                status = self._download_one(aid, created)
+                with storage.generation_lock(aid):
+                    if not self._generation_is_current(aid, version, updated):
+                        result.skipped += 1
+                        continue
+                    status = self._download_one(aid, created)
 
-                if status == "pdf":
-                    update_arxiv_paper(aid, {"has_pdf": True})
-                    self._save_checkpoint(aid)
-                    result.processed += 1
-                elif status == "latex":
-                    update_arxiv_paper(aid, {"has_latex": True})
-                    self._save_checkpoint(aid)
-                    result.processed += 1
-                elif status == "permanent_failure":
-                    self._failed_checkpoint(aid)
-                    result.failed += 1
-                else:  # "transient"
-                    result.failed += 1
-                    # No checkpoint — will retry next poll
+                    if status == "pdf":
+                        update_arxiv_paper(aid, {"has_pdf": True})
+                        self._save_checkpoint(aid, version, updated)
+                        result.processed += 1
+                    elif status == "latex":
+                        update_arxiv_paper(aid, {"has_latex": True})
+                        self._save_checkpoint(aid, version, updated)
+                        result.processed += 1
+                    elif status == "permanent_failure":
+                        self._failed_checkpoint(aid, version, updated)
+                        result.failed += 1
+                    else:  # "transient"
+                        result.failed += 1
+                        # No checkpoint — will retry next poll
 
             except Exception:
                 if log:
@@ -241,7 +342,7 @@ class PdfDownloadDaemon(BaseDaemon):
         rows = client.query(
             "arxiv_papers",
             filter="has_pdf == false and has_latex == false",
-            output_fields=["arxiv_id", "created"],
+            output_fields=["arxiv_id", "created", "updated", "version"],
             limit=PdfDownloadDaemon.batch_size,
             timeout=30,
         )

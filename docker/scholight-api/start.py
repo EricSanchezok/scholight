@@ -41,6 +41,6 @@ if __name__ == "__main__":
         app,
         host=os.environ.get("SCHOLIGHT_SERVER_HOST", "0.0.0.0"),
         port=int(os.environ.get("SCHOLIGHT_SERVER_PORT", "8000")),
-        proxy_headers=True,
-        forwarded_allow_ips="*",
+        proxy_headers=os.environ.get("SCHOLIGHT_PROXY_HEADERS", "false").lower() == "true",
+        forwarded_allow_ips=os.environ.get("SCHOLIGHT_FORWARDED_ALLOW_IPS", "127.0.0.1"),
     )

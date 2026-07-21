@@ -12,6 +12,11 @@ in filesystem paths, keeping Milvus IDs unchanged.
 
 from __future__ import annotations
 
+import fcntl
+import hashlib
+import shutil
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from scholight.config import settings
@@ -38,6 +43,7 @@ class Storage:
         self._papers_root = self._root / "papers"
         self._checkpoints_root = self._root / "checkpoints"
         self._backups_root = self._root / "backups"
+        self._generation_locks_root = self._root / "locks" / "paper-generations"
 
     @property
     def root(self) -> Path:
@@ -66,6 +72,29 @@ class Storage:
         p = self._paper_dir(arxiv_id, created)
         p.mkdir(parents=True, exist_ok=True)
         return p
+
+    def remove_paper_dir(self, arxiv_id: str, created: str) -> None:
+        """Remove all local resources owned by a paper."""
+        paper_dir = self._paper_dir(arxiv_id, created)
+        if paper_dir.exists():
+            shutil.rmtree(paper_dir)
+
+    @contextmanager
+    def generation_lock(self, arxiv_id: str) -> Iterator[None]:
+        """Serialize one paper generation across scheduler containers.
+
+        The lock file lives on the shared data volume, so paper sync and all
+        derived-artifact workers use the same cross-process critical section.
+        """
+        digest = hashlib.sha256(arxiv_id.encode("utf-8")).hexdigest()
+        self._generation_locks_root.mkdir(parents=True, exist_ok=True)
+        lock_path = self._generation_locks_root / f"{digest}.lock"
+        with lock_path.open("a+b") as lock_file:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
     def ensure_log(self, subdir: str) -> Path:
         _validate_path_component(subdir, label="log subdir")
