@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import UTC, date, datetime, time
 
 from pydantic import AnyHttpUrl
@@ -14,14 +15,18 @@ def _utc_midnight(value: str) -> datetime:
     return datetime.combine(date.fromisoformat(value), time.min, tzinfo=UTC)
 
 
-def _map_hit(hit: SearchHit) -> PublicSearchHit:
+def _map_hit(
+    hit: SearchHit,
+    abstracts: Mapping[str, str | None] | None,
+) -> PublicSearchHit:
+    abstract = hit.abstract or None if abstracts is None else abstracts.get(hit.arxiv_id)
     return PublicSearchHit(
         rank=hit.rank,
         score=hit.score,
         arxiv_id=hit.arxiv_id,
         title=hit.title,
         authors=hit.authors,
-        abstract=hit.abstract or None,
+        abstract=abstract,
         categories=hit.categories,
         submitted_at=_utc_midnight(hit.created),
         updated_at=_utc_midnight(hit.updated),
@@ -37,9 +42,10 @@ def map_search_response(
     strength: SearchStrength,
     elapsed_ms: float,
     degraded: bool = False,
+    abstracts: Mapping[str, str | None] | None = None,
 ) -> PublicSearchResponse:
-    """Preserve core order and expose only the stable public fields."""
-    hits = [_map_hit(hit) for hit in result.hits]
+    """Preserve core order while joining optional public abstract metadata."""
+    hits = [_map_hit(hit, abstracts) for hit in result.hits]
     return PublicSearchResponse(
         query=result.query,
         strength=strength,

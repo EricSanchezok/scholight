@@ -75,8 +75,8 @@ def _build_filter(
 
 
 def _escape_dq(val: str) -> str:
-    """Escape double-quotes in *val* for safe use in Zilliz Cloud IN-filter expressions."""
-    return val.replace('"', '\\"')
+    """Escape backslashes and double quotes in Milvus string literals."""
+    return val.replace("\\", "\\\\").replace('"', '\\"')
 
 
 def _batched(iterable: list[Any], n: int) -> Generator[list[Any], None, None]:
