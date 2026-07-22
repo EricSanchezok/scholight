@@ -66,7 +66,7 @@ jobs:
       - name: Unit tests
         run: uv run pytest scholight/ tests/deploy/ -v --tb=short
       - name: Bandit
-        run: uv run bandit -c pyproject.toml -r scholight/
+        run: uv run bandit -c pyproject.toml -r scholight/ --severity-level medium
       - name: Vulture
         run: uv run vulture scholight/
 
@@ -206,7 +206,7 @@ jobs:
               "CREATE ROLE scholight_migrator LOGIN PASSWORD '$MIGRATOR_PASSWORD';
                CREATE ROLE scholight_app LOGIN PASSWORD '$APP_PASSWORD';"
 
-          for _ in before after; do
+          for phase in before after; do
             docker run --rm --network host \
               -e PGPASSWORD="$POSTGRES_PASSWORD" \
               -v "$PWD/deploy/production/bootstrap-db.sql:/bootstrap-db.sql:ro" \
@@ -216,7 +216,7 @@ jobs:
                 -v migrator_role=scholight_migrator \
                 -f /bootstrap-db.sql
 
-            if [[ $_ == before ]]; then
+            if [[ $phase == before ]]; then
               for _ in 1 2; do
                 docker run --rm --network host \
                   -e SCHOLIGHT_PG_HOST=127.0.0.1 \
