@@ -1,7 +1,7 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 
 import { LoadingScreen } from "../components/LoadingScreen";
-import { useAuth } from "./AuthProvider";
+import { useAuth } from "./context";
 
 export function ProtectedRoute() {
   const { status } = useAuth();
@@ -18,8 +18,4 @@ export function AnonymousOnlyRoute() {
   const { status } = useAuth();
   if (status === "checking") return <LoadingScreen />;
   return status === "authenticated" ? <Navigate to="/" replace /> : <Outlet />;
-}
-
-export function safeReturnTo(value: string | null): string {
-  return value && /^\/(?!\/)/.test(value) ? value : "/";
 }

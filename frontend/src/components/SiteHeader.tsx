@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 
-import { useAuth } from "../auth/AuthProvider";
+import { useAuth } from "../auth/context";
 import styles from "../styles/app.module.css";
 import { AccountMenu } from "./AccountMenu";
 import { CloseIcon, MenuIcon } from "./icons";

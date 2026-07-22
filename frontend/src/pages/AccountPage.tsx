@@ -8,7 +8,7 @@ import { z } from "zod";
 import { accountApi, authApi } from "../api/domain";
 import { ApiError } from "../api/errors";
 import { queryKeys } from "../app/queryKeys";
-import { useAuth } from "../auth/AuthProvider";
+import { useAuth } from "../auth/context";
 import { clearSession } from "../auth/session";
 import { formatDate } from "../lib/format";
 import styles from "../styles/app.module.css";

@@ -6,8 +6,8 @@ import { z } from "zod";
 
 import { authApi } from "../api/domain";
 import { ApiError } from "../api/errors";
-import { useAuth } from "../auth/AuthProvider";
-import { safeReturnTo } from "../auth/routes";
+import { useAuth } from "../auth/context";
+import { safeReturnTo } from "../auth/redirect";
 import styles from "../styles/app.module.css";
 
 const emailSchema = z.object({ email: z.email("Enter a valid email address.") });

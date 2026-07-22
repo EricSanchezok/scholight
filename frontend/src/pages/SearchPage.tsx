@@ -6,7 +6,7 @@ import { searchApi } from "../api/domain";
 import { ApiError } from "../api/errors";
 import type { SearchFilters, SearchHit, SearchRequest } from "../api/types";
 import { queryKeys } from "../app/queryKeys";
-import { useAuth } from "../auth/AuthProvider";
+import { useAuth } from "../auth/context";
 import { SearchForm } from "../components/SearchForm";
 import { citationFor, formatAuthors, formatDate, parseSearchParameters } from "../lib/format";
 import styles from "../styles/app.module.css";

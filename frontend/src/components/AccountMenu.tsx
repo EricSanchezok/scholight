@@ -1,7 +1,7 @@
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Link, useNavigate } from "react-router-dom";
 
-import { useAuth } from "../auth/AuthProvider";
+import { useAuth } from "../auth/context";
 import { avatarInitials } from "../lib/format";
 import styles from "../styles/app.module.css";
 import { ChevronDownIcon } from "./icons";
