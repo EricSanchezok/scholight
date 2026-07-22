@@ -10,4 +10,4 @@ npm run dev
 
 Run the complete frontend quality gate with `npm run verify`. The generated OpenAPI schema and TypeScript declarations are committed; `npm run api:check` fails if the current backend contract has drifted.
 
-The production Docker image builds the static app and serves it through nginx. nginx proxies `/api/` to the Compose service named `api` and falls back to `index.html` for client routes.
+The production Docker image builds the static app and serves it as a non-root nginx process on port `8080`. nginx proxies `/api/` to the Compose service named `api`, exposes `/healthz` for container liveness, and falls back to `index.html` for client routes.

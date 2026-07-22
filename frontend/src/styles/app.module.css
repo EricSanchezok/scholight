@@ -222,6 +222,55 @@
   right: 13px;
   pointer-events: none;
 }
+.filterToggle {
+  min-height: 54px;
+  padding: 0 16px;
+  border: 1px solid var(--line-soft);
+  border-radius: 5px;
+  color: var(--ink-soft);
+  background: var(--surface-raised);
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+}
+.filterToggle:hover,
+.filterToggle[aria-expanded="true"] {
+  border-color: var(--brand);
+  color: var(--brand-link);
+}
+.searchFilters {
+  display: grid;
+  padding: 18px 0 8px;
+  border-top: 1px solid var(--line-soft);
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 18px;
+}
+.searchFilters label {
+  display: flex;
+  color: var(--ink-soft);
+  flex-direction: column;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.searchFilters input {
+  width: 100%;
+  min-height: 43px;
+  padding: 9px 11px;
+  border: 1px solid var(--input-line);
+  border-radius: 5px;
+  color: var(--ink);
+  background: var(--surface);
+  font: inherit;
+  font-size: 14px;
+}
+.filterToggle:focus-visible,
+.searchFilters input:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--focus) 32%, transparent);
+  outline-offset: 2px;
+}
 .primaryButton,
 .authSubmit,
 .authSubmitLink {
@@ -1083,6 +1132,12 @@
   }
   .searchActions .primaryButton {
     min-width: 100px;
+  }
+  .filterToggle {
+    flex: 1;
+  }
+  .searchFilters {
+    grid-template-columns: 1fr;
   }
   .resultsPage {
     padding-top: 18px;

@@ -7,6 +7,7 @@ const CHANNEL_NAME = "scholight-auth";
 let accessToken: string | null = null;
 let refreshFlight: Promise<string> | null = null;
 const channel = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel(CHANNEL_NAME) : null;
+const localListeners = new Set<() => void>();
 
 export function getAccessToken(): string | null {
   return accessToken;
@@ -22,10 +23,17 @@ export function establishSession(tokens: TokenResponse, announce = true): void {
   if (announce) channel?.postMessage({ type: "session-changed" });
 }
 
+function notifyLocalListeners(): void {
+  localListeners.forEach((listener) => listener());
+}
+
 export function clearSession(announce = true): void {
   accessToken = null;
   localStorage.removeItem(REFRESH_TOKEN_KEY);
-  if (announce) channel?.postMessage({ type: "signed-out" });
+  if (announce) {
+    notifyLocalListeners();
+    channel?.postMessage({ type: "signed-out" });
+  }
 }
 
 async function rotateRefreshToken(): Promise<string> {
@@ -62,6 +70,7 @@ export function refreshAccessToken(): Promise<string> {
 }
 
 export function subscribeToSessionChanges(listener: () => void): () => void {
+  localListeners.add(listener);
   const storageListener = (event: StorageEvent) => {
     if (event.key === REFRESH_TOKEN_KEY) listener();
   };
@@ -69,6 +78,7 @@ export function subscribeToSessionChanges(listener: () => void): () => void {
   window.addEventListener("storage", storageListener);
   channel?.addEventListener("message", channelListener);
   return () => {
+    localListeners.delete(listener);
     window.removeEventListener("storage", storageListener);
     channel?.removeEventListener("message", channelListener);
   };

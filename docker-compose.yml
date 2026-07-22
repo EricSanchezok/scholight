@@ -45,7 +45,7 @@ services:
     depends_on:
       - api
     ports:
-      - "${SCHOLIGHT_BIND_ADDRESS:-127.0.0.1}:${SCHOLIGHT_FRONTEND_PORT:-3000}:80"
+      - "${SCHOLIGHT_BIND_ADDRESS:-127.0.0.1}:${SCHOLIGHT_FRONTEND_PORT:-3000}:8080"
     networks:
       scholight:
         ipv4_address: 172.30.0.10

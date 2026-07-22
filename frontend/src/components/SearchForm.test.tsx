@@ -29,6 +29,28 @@ describe("SearchForm", () => {
     );
   });
 
+  it("serializes category author and date filters from the form", async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <SearchForm />
+        <Location />
+      </MemoryRouter>,
+    );
+
+    await user.type(screen.getByRole("textbox", { name: "Search research papers" }), "agents");
+    await user.click(screen.getByRole("button", { name: "Filters" }));
+    await user.type(screen.getByRole("textbox", { name: "Categories" }), "cs.AI, cs.LG");
+    await user.type(screen.getByRole("textbox", { name: "Authors" }), "Ada Lovelace");
+    await user.type(screen.getByLabelText("From date"), "2024-01-01");
+    await user.type(screen.getByLabelText("To date"), "2024-12-31");
+    await user.click(screen.getByRole("button", { name: "Search" }));
+
+    expect(screen.getByTestId("location")).toHaveTextContent(
+      "/search?q=agents&strength=standard&category=cs.AI&category=cs.LG&author=Ada+Lovelace&from=2024-01-01&to=2024-12-31",
+    );
+  });
+
   it("shows a query validation error without navigating", async () => {
     const user = userEvent.setup();
     render(
