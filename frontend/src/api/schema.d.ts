@@ -140,6 +140,57 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/auth/sessions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Sessions */
+    get: operations["get_sessions_auth_sessions_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/auth/sessions/revoke-others": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Revoke Others */
+    post: operations["revoke_others_auth_sessions_revoke_others_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/auth/sessions/{session_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Delete Session */
+    delete: operations["delete_session_auth_sessions__session_id__delete"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/auth/verify-email": {
     parameters: {
       query?: never;
@@ -276,6 +327,59 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/user/access-keys": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Keys */
+    get: operations["get_keys_user_access_keys_get"];
+    put?: never;
+    /** Create Key */
+    post: operations["create_key_user_access_keys_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/user/access-keys/{key_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Delete Key */
+    delete: operations["delete_key_user_access_keys__key_id__delete"];
+    options?: never;
+    head?: never;
+    /** Patch Key */
+    patch: operations["patch_key_user_access_keys__key_id__patch"];
+    trace?: never;
+  };
+  "/user/account": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Delete Account */
+    delete: operations["delete_account_user_account_delete"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/user/profile": {
     parameters: {
       query?: never;
@@ -312,10 +416,122 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/user/usage/export.csv": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Usage Export */
+    get: operations["usage_export_user_usage_export_csv_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/user/usage/latency": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Usage Latency */
+    get: operations["usage_latency_user_usage_latency_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/user/usage/records": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Usage Records */
+    get: operations["usage_records_user_usage_records_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/user/usage/summary": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Usage Summary */
+    get: operations["usage_summary_user_usage_summary_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/user/usage/volume": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Usage Volume */
+    get: operations["usage_volume_user_usage_volume_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    /** AccessKeyResponse */
+    AccessKeyResponse: {
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Expires At */
+      expires_at: string | null;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Last4 */
+      last4: string;
+      /** Last Used At */
+      last_used_at: string | null;
+      /** Name */
+      name: string;
+      /** Prefix */
+      prefix: string;
+      /** Revoked At */
+      revoked_at: string | null;
+      /** Scopes */
+      scopes: "search"[];
+    };
     /**
      * BulkDeleteSearchHistoryRequest
      * @description Strict owner-scoped history IDs, stably deduplicated.
@@ -339,6 +555,60 @@ export interface components {
       /** New Password */
       new_password: string;
     };
+    /** CreateAccessKeyRequest */
+    CreateAccessKeyRequest: {
+      /** Expires At */
+      expires_at?: string | null;
+      /** Name */
+      name: string;
+      /** Scopes */
+      scopes?: "search"[];
+    };
+    /** CreatedAccessKeyResponse */
+    CreatedAccessKeyResponse: {
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Expires At */
+      expires_at: string | null;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Key */
+      key: string;
+      /** Last4 */
+      last4: string;
+      /** Last Used At */
+      last_used_at: string | null;
+      /** Name */
+      name: string;
+      /** Prefix */
+      prefix: string;
+      /** Revoked At */
+      revoked_at: string | null;
+      /** Scopes */
+      scopes: "search"[];
+    };
+    /** DailyQuotaUsage */
+    DailyQuotaUsage: {
+      /** Daily Limit */
+      daily_limit: number;
+      /** Remaining */
+      remaining: number;
+      /** Used */
+      used: number;
+    };
+    /** DeleteAccountRequest */
+    DeleteAccountRequest: {
+      /** Confirmation */
+      confirmation: string;
+      /** Password */
+      password: string;
+    };
     /** ForgotPasswordRequest */
     ForgotPasswordRequest: {
       /**
@@ -351,6 +621,43 @@ export interface components {
     HTTPValidationError: {
       /** Detail */
       detail?: components["schemas"]["ValidationError"][];
+    };
+    /** LatencyPoint */
+    LatencyPoint: {
+      /**
+       * Bucket Start
+       * Format: date-time
+       */
+      bucket_start: string;
+      /** Overall P95 Ms */
+      overall_p95_ms: number | null;
+      /** Sample Count */
+      sample_count: number;
+      /** Standard P50 Ms */
+      standard_p50_ms: number | null;
+      /** Thorough P50 Ms */
+      thorough_p50_ms: number | null;
+    };
+    /** LatencyResponse */
+    LatencyResponse: {
+      /**
+       * Bucket
+       * @default day
+       * @constant
+       */
+      bucket: "day";
+      /**
+       * From
+       * Format: date-time
+       */
+      from: string;
+      /** Points */
+      points: components["schemas"]["LatencyPoint"][];
+      /**
+       * To
+       * Format: date-time
+       */
+      to: string;
     };
     /** LoginRequest */
     LoginRequest: {
@@ -582,6 +889,34 @@ export interface components {
      * @enum {string}
      */
     SearchStrength: "standard" | "thorough";
+    /** SessionResponse */
+    SessionResponse: {
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Current */
+      current: boolean;
+      /**
+       * Expires At
+       * Format: date-time
+       */
+      expires_at: string;
+      /** Id */
+      id: number;
+      /** Last Seen At */
+      last_seen_at: string | null;
+      /** Revoked At */
+      revoked_at: string | null;
+      /** User Agent */
+      user_agent: string | null;
+    };
+    /** TodayUsage */
+    TodayUsage: {
+      standard: components["schemas"]["DailyQuotaUsage"];
+      thorough: components["schemas"]["DailyQuotaUsage"];
+    };
     /** TokenResponse */
     TokenResponse: {
       /** Access Token */
@@ -594,6 +929,13 @@ export interface components {
        */
       token_type: string;
     };
+    /** UpdateAccessKeyRequest */
+    UpdateAccessKeyRequest: {
+      /** Expires At */
+      expires_at?: string | null;
+      /** Name */
+      name?: string | null;
+    };
     /**
      * UpdateProfileBody
      * @description Body for ``PUT``/``PATCH /profile`` — only supplied fields are updated.
@@ -601,6 +943,90 @@ export interface components {
     UpdateProfileBody: {
       /** Display Name */
       display_name?: string | null;
+    };
+    /** UsageAccessKey */
+    UsageAccessKey: {
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Last4 */
+      last4: string;
+      /** Name */
+      name: string;
+    };
+    /** UsageRecord */
+    UsageRecord: {
+      access_key: components["schemas"]["UsageAccessKey"] | null;
+      /**
+       * Actor Type
+       * @enum {string}
+       */
+      actor_type: "web" | "access_key";
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Error Code */
+      error_code: string | null;
+      /** Id */
+      id: number;
+      /**
+       * Outcome
+       * @enum {string}
+       */
+      outcome: "success" | "degraded" | "failed";
+      /** Quota Units */
+      quota_units: number;
+      /** Result Count */
+      result_count: number | null;
+      /** Search Duration Ms */
+      search_duration_ms: number | null;
+      /** Status Code */
+      status_code: number | null;
+      /**
+       * Strength
+       * @enum {string}
+       */
+      strength: "standard" | "thorough";
+    };
+    /** UsageRecordsResponse */
+    UsageRecordsResponse: {
+      /** Items */
+      items: components["schemas"]["UsageRecord"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+    };
+    /** UsageSummaryResponse */
+    UsageSummaryResponse: {
+      /** Degraded Count */
+      degraded_count: number;
+      /** Failed Count */
+      failed_count: number;
+      /** P95 Response Ms */
+      p95_response_ms: number | null;
+      /**
+       * Reset At
+       * Format: date-time
+       */
+      reset_at: string;
+      /** Searches This Month */
+      searches_this_month: number;
+      /** Searches Today */
+      searches_today: number;
+      /** Success Rate */
+      success_rate: number | null;
+      /**
+       * Timezone
+       * @default UTC
+       * @constant
+       */
+      timezone: "UTC";
+      today: components["schemas"]["TodayUsage"];
+      /** Typical Response Ms */
+      typical_response_ms: number | null;
     };
     /** UserPublic */
     UserPublic: {
@@ -640,6 +1066,39 @@ export interface components {
     VerifyEmailRequest: {
       /** Token */
       token: string;
+    };
+    /** VolumePoint */
+    VolumePoint: {
+      /**
+       * Bucket Start
+       * Format: date-time
+       */
+      bucket_start: string;
+      /** Standard */
+      standard: number;
+      /** Thorough */
+      thorough: number;
+    };
+    /** VolumeResponse */
+    VolumeResponse: {
+      /**
+       * Bucket
+       * @default day
+       * @constant
+       */
+      bucket: "day";
+      /**
+       * From
+       * Format: date-time
+       */
+      from: string;
+      /** Points */
+      points: components["schemas"]["VolumePoint"][];
+      /**
+       * To
+       * Format: date-time
+       */
+      to: string;
     };
   };
   responses: never;
@@ -901,6 +1360,77 @@ export interface operations {
       };
     };
   };
+  get_sessions_auth_sessions_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SessionResponse"][];
+        };
+      };
+    };
+  };
+  revoke_others_auth_sessions_revoke_others_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MessageResponse"];
+        };
+      };
+    };
+  };
+  delete_session_auth_sessions__session_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        session_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MessageResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
   verify_email_auth_verify_email_post: {
     parameters: {
       query?: never;
@@ -1128,6 +1658,154 @@ export interface operations {
       };
     };
   };
+  get_keys_user_access_keys_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AccessKeyResponse"][];
+        };
+      };
+    };
+  };
+  create_key_user_access_keys_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateAccessKeyRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CreatedAccessKeyResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  delete_key_user_access_keys__key_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        key_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  patch_key_user_access_keys__key_id__patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        key_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateAccessKeyRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AccessKeyResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  delete_account_user_account_delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["DeleteAccountRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
   get_profile_user_profile_get: {
     parameters: {
       query?: never;
@@ -1230,6 +1908,168 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["QuotaStatus"][];
+        };
+      };
+    };
+  };
+  usage_export_user_usage_export_csv_get: {
+    parameters: {
+      query?: {
+        strength?: ("standard" | "thorough") | null;
+        actor_type?: ("web" | "access_key") | null;
+        access_key_id?: string | null;
+        outcome?: ("success" | "degraded" | "failed") | null;
+        from?: string | null;
+        to?: string | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  usage_latency_user_usage_latency_get: {
+    parameters: {
+      query?: {
+        from?: string | null;
+        to?: string | null;
+        bucket?: "day";
+        access_key_id?: string | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["LatencyResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  usage_records_user_usage_records_get: {
+    parameters: {
+      query?: {
+        cursor?: string | null;
+        limit?: number;
+        strength?: ("standard" | "thorough") | null;
+        actor_type?: ("web" | "access_key") | null;
+        access_key_id?: string | null;
+        outcome?: ("success" | "degraded" | "failed") | null;
+        from?: string | null;
+        to?: string | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["UsageRecordsResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  usage_summary_user_usage_summary_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["UsageSummaryResponse"];
+        };
+      };
+    };
+  };
+  usage_volume_user_usage_volume_get: {
+    parameters: {
+      query?: {
+        from?: string | null;
+        to?: string | null;
+        bucket?: "day";
+        access_key_id?: string | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["VolumeResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
         };
       };
     };

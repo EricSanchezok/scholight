@@ -59,6 +59,7 @@ uv run scholight search -q "attention mechanism"   # 测试搜索
 | `SCHOLIGHT_PG_HOST/PORT/DATABASE/USER/PASSWORD` | ✅ | PostgreSQL 连接 |
 | `SCHOLIGHT_AUTH_JWT_SECRET` | API ✅ | 固定 JWT 密钥，API 启动要求至少 32 UTF-8 bytes |
 | `SCHOLIGHT_ANONYMOUS_QUOTA_HMAC_SECRET` | API ✅ | 匿名 IP 摘要密钥，至少 32 UTF-8 bytes，独立于 JWT 密钥并跨实例/重启保持一致 |
+| `SCHOLIGHT_ACCESS_KEY_HMAC_SECRET` | API ✅ | Access Key HMAC-SHA256 密钥，至少 32 UTF-8 bytes；必须独立生成并跨实例/重启保持一致 |
 | `SCHOLIGHT_ANONYMOUS_RATE_LIMIT_PER_MINUTE` | | 匿名共享分钟桶，默认 30 attempts/IP |
 | `SCHOLIGHT_ANONYMOUS_STANDARD_DAILY_LIMIT` | | 匿名 Standard UTC 日额度，默认 100/IP |
 | `SCHOLIGHT_ANONYMOUS_THOROUGH_DAILY_LIMIT` | | 匿名 Thorough UTC 日额度，默认 30/IP |
@@ -149,7 +150,7 @@ uv run scholight search -q "your query" --json       # JSON 输出
 - UTC 日额度独立分桶：Standard 默认 100/IP，Thorough 默认 30/IP。
 - 匿名 IP 仅以 HMAC-SHA256 摘要进入 PostgreSQL；原始 IP、完整摘要和密钥不得进入日志或 metrics。
 - 分钟或日额度耗尽返回结构化 `429` 并带 `Retry-After`；依赖暂不可用返回结构化 `503`，默认 `Retry-After: 5`。
-- 搜索核心 commit 前失败会 best-effort 补偿一次日额度；公开 enrichment 或历史异步写失败发生在 commit 后，不补偿。
+- 搜索执行或公开响应组装失败会 best-effort 补偿一次日额度；历史和 Usage 的后台持久化失败不会改变已经返回的搜索响应或额度。
 
 ### 搜索历史 API
 
@@ -160,6 +161,65 @@ uv run scholight search -q "your query" --json       # JSON 输出
 - `DELETE /search/history/{entry_id}`：保留原有 `200 {"message":"Deleted"}` 和 404 行为。
 
 登录搜索只有在最终响应为 `200` 时才安排历史写。历史写是最终一致的；写入失败不会改变搜索响应或额度，并会被后台任务消费和结构化记录。关闭 API 时会先 drain 未完成历史任务再关闭 PostgreSQL pool。
+
+### Access Key、Usage 与 Session API
+
+以下管理接口只接受登录 JWT。Access Key 仅拥有 `search` scope，不能访问账户、历史、Usage、Session 或 Key 管理接口。完整 Key 仅在创建响应中出现一次，服务端只保存 HMAC-SHA256 digest。
+
+```bash
+API=https://your-scholight.example/api
+JWT=your-login-access-token
+
+# 创建 Access Key（每个用户最多 10 个 active keys）
+curl -sS -X POST "$API/user/access-keys" \
+  -H "Authorization: Bearer $JWT" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"literature-review","scopes":["search"],"expires_at":null}'
+
+# 列表不会返回 key 或 digest
+curl -sS "$API/user/access-keys" -H "Authorization: Bearer $JWT"
+
+# 使用 Access Key 搜索；扣减 Key 所属用户的额度
+ACCESS_KEY=sk_live_xxx
+curl -sS -X POST "$API/search" \
+  -H "Authorization: Bearer $ACCESS_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"retrieval augmented generation","strength":"standard","limit":10,"filters":{}}'
+
+# 修改名称/有效期及立即撤销
+curl -sS -X PATCH "$API/user/access-keys/KEY_UUID" \
+  -H "Authorization: Bearer $JWT" -H 'Content-Type: application/json' \
+  -d '{"name":"new-name"}'
+curl -sS -X DELETE "$API/user/access-keys/KEY_UUID" \
+  -H "Authorization: Bearer $JWT"
+```
+
+Usage 只保存计量和 server search time，不保存 query、标题、摘要、IP、完整 Key 或内部检索诊断。`summary` 的当天用量来自 `auth.daily_usage`；趋势来自幂等的 `public.usage_events`。
+
+```bash
+curl -sS "$API/user/usage/summary" -H "Authorization: Bearer $JWT"
+curl -sS "$API/user/usage/volume?from=2026-07-01&to=2026-07-31" \
+  -H "Authorization: Bearer $JWT"
+curl -sS "$API/user/usage/latency?from=2026-07-01&to=2026-07-31" \
+  -H "Authorization: Bearer $JWT"
+curl -sS "$API/user/usage/records?limit=20&outcome=success" \
+  -H "Authorization: Bearer $JWT"
+curl -sS -OJ "$API/user/usage/export.csv?from=2026-07-01&to=2026-07-31" \
+  -H "Authorization: Bearer $JWT"
+```
+
+Session 以 cloud-auth 的 refresh-token family 为单位。新 access JWT 带 `sid`，旧 JWT 在过渡期仍可认证，但不会被标记为 current session。
+
+```bash
+curl -sS "$API/auth/sessions" -H "Authorization: Bearer $JWT"
+curl -sS -X DELETE "$API/auth/sessions/SESSION_ID" -H "Authorization: Bearer $JWT"
+curl -sS -X POST "$API/auth/sessions/revoke-others" -H "Authorization: Bearer $JWT"
+
+# 不可恢复：撤销所有凭据、清除产品数据、匿名化并禁用账户
+curl -sS -X DELETE "$API/user/account" \
+  -H "Authorization: Bearer $JWT" -H 'Content-Type: application/json' \
+  -d '{"password":"current-password","confirmation":"DELETE"}'
+```
 
 ### 可调超参数
 
@@ -235,7 +295,9 @@ docker compose --env-file .env --profile migrate run --rm migrate
 docker compose --env-file .env up -d api
 ```
 
-反向代理只应信任明确的 Caddy IP/CIDR，不能把 `SCHOLIGHT_FORWARDED_ALLOW_IPS` 设为 `*`；不要公开路由 `/livez` 或 `/readyz`。生产 CORS 必须使用实际前端 origin 列表，`.env.example` 的 localhost 仅为占位值。匿名 HMAC 配置只注入 API service，不注入 migrate 或 scheduler。
+反向代理只应信任明确的 Caddy IP/CIDR，不能把 `SCHOLIGHT_FORWARDED_ALLOW_IPS` 设为 `*`；不要公开路由 `/livez` 或 `/readyz`。生产 CORS 必须使用实际前端 origin 列表，`.env.example` 的 localhost 仅为占位值。匿名和 Access Key HMAC 配置只注入 API service，不注入 migrate 或 scheduler。
+
+Migration 007–009 分别新增 `public.access_keys`、`public.usage_events`，并对现有 `auth.refresh_tokens` additive 增加 `user_agent`/`last_seen_at`。发布时仍严格按 cloud-auth migrations → Scholight migrations 顺序执行；不得由开发流程连接或迁移生产 RDS。应用回滚保留这些 additive schema，旧版本不会引用它们。
 
 Migration 006 只新增 `public.anonymous_daily_search_usage`，不修改已上线的 migration 005 或 `search_history`。不得由开发流程连接或迁移生产 RDS；release operator 使用以下检查：
 
