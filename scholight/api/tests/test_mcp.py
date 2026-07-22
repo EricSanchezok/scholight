@@ -85,7 +85,7 @@ async def mcp_client() -> AsyncIterator[httpx.AsyncClient]:
         async with httpx.AsyncClient(
             transport=transport,
             base_url="http://test",
-            follow_redirects=True,
+            follow_redirects=False,
         ) as client:
             yield client
     finally:

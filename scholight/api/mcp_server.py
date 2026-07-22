@@ -233,7 +233,7 @@ def create_mcp_app() -> tuple[FastMCP[Any], ASGIApp]:
         instructions="Search AI research papers from Scholight's arXiv index.",
         stateless_http=True,
         json_response=True,
-        streamable_http_path="/",
+        streamable_http_path="/mcp",
         transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
     )
     server.tool(

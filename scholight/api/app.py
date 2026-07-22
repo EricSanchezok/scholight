@@ -238,6 +238,8 @@ def create_app() -> FastAPI:
         }
 
     app.include_router(search_router, prefix="/search", tags=["search"])
-    app.mount("/mcp", mcp_app, name="mcp")
+    # Keep /mcp exact: a nested /mcp mount redirects to /mcp/, which drops the
+    # public /api prefix after Caddy's handle_path rewrite.
+    app.mount("/", mcp_app, name="mcp")
 
     return app
