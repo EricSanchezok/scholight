@@ -33,17 +33,19 @@ class SearchActor:
 # cloud-auth's create_get_current_user returns an async callable that
 # resolves to a UserRecord; type the lazy-bound handle so ``await`` type-checks.
 _get_current_user_callable: Callable[..., Awaitable[UserRecord]] | None = None
+_auth_config: AuthConfig | None = None
 
 
 def wire_dependencies(*, db: AsyncpgUserDatabase, auth_config: AuthConfig) -> None:
     """在 create_app() 中调用一次, 连接 cloud-auth SDK 的依赖。"""
-    global _get_current_user_callable
+    global _auth_config, _get_current_user_callable
     # cloud_auth declares the factory return as Callable[..., object];
     # the actual closure is async and resolves to UserRecord.
     _get_current_user_callable = cast(
         "Callable[..., Awaitable[UserRecord]]",
         _create_get_current_user(db=db, config=auth_config),
     )
+    _auth_config = auth_config
 
 
 async def _resolve_current_user(
@@ -52,7 +54,27 @@ async def _resolve_current_user(
     if _get_current_user_callable is None:
         raise RuntimeError("Dependencies not wired — call wire_dependencies() in create_app()")
     try:
-        return await _get_current_user_callable(credentials=credentials)
+        user = await _get_current_user_callable(credentials=credentials)
+        if _auth_config is not None:
+            from cloud_auth.exceptions import AuthError
+
+            from scholight.api.sessions import session_id_from_access_token
+            from scholight.db.queries_sessions import touch_session
+
+            try:
+                session_id = session_id_from_access_token(
+                    credentials.credentials,
+                    config=_auth_config,
+                )
+            except AuthError:
+                session_id = None
+            if session_id is not None and not await touch_session(user.id, session_id):
+                raise HTTPException(
+                    status_code=401,
+                    detail="Session revoked or expired",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+        return user
     except HTTPException as exc:
         if exc.status_code != 401:
             raise

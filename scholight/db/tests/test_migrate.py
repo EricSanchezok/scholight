@@ -182,3 +182,14 @@ def test_usage_event_migration_is_idempotent_and_content_free() -> None:
     assert "query_text" not in sql
     assert "abstract" not in sql.lower()
     assert "ip_address" not in sql.lower()
+
+
+def test_session_migration_adds_metadata_to_refresh_token_families() -> None:
+    migration = Path(__file__).parents[3] / "migrations/009_add_refresh_session_metadata.sql"
+
+    sql = migration.read_text(encoding="utf-8")
+
+    assert "ALTER TABLE auth.refresh_tokens" in sql
+    assert "ADD COLUMN IF NOT EXISTS user_agent" in sql
+    assert "ADD COLUMN IF NOT EXISTS last_seen_at" in sql
+    assert "CREATE TABLE" not in sql

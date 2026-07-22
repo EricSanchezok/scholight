@@ -121,6 +121,7 @@ def create_app() -> FastAPI:
         anonymous_rate_limit_exceeded_handler,
         anonymous_search_limiter,
     )
+    from scholight.api.sessions import reset_session_user_agent, set_session_user_agent
     from scholight.config import settings, validate_api_runtime_settings
     from scholight.logging.middleware import RequestContextMiddleware, TimingMiddleware
 
@@ -142,11 +143,15 @@ def create_app() -> FastAPI:
     async def body_size_middleware(
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
+        session_context = set_session_user_agent(request.headers.get("user-agent"))
         try:
             await _limit_body_size(request)
         except ValueError as exc:
             return JSONResponse(status_code=413, content={"detail": str(exc)})
-        return await call_next(request)
+        try:
+            return await call_next(request)
+        finally:
+            reset_session_user_agent(session_context)
 
     app.add_middleware(TimingMiddleware)
     app.add_middleware(RequestContextMiddleware)
@@ -154,14 +159,16 @@ def create_app() -> FastAPI:
     # ── Route routers ──
     from cloud_auth.config import AuthConfig
     from cloud_auth.db.asyncpg import AsyncpgUserDatabase
-    from cloud_auth.manager import UserManager
     from cloud_auth.ratelimit import RegisterRateLimiter
     from cloud_auth.routers import get_auth_router, get_user_router
 
     from scholight.api.deps import get_current_user, wire_dependencies
     from scholight.api.routes.access_keys import router as access_key_router
+    from scholight.api.routes.account import router as account_router
     from scholight.api.routes.search import router as search_router
+    from scholight.api.routes.sessions import router as session_router
     from scholight.api.routes.usage import router as usage_router
+    from scholight.api.sessions import ScholightUserManager
     from scholight.db.client import get_pool
 
     auth_config = AuthConfig(
@@ -185,7 +192,7 @@ def create_app() -> FastAPI:
             reply_to_address=settings.aliyun_dm_reply_to_address,
         )
 
-    user_manager = UserManager(db=db, email_sender=email_sender, config=auth_config)
+    user_manager = ScholightUserManager(db=db, email_sender=email_sender, config=auth_config)
     wire_dependencies(db=db, auth_config=auth_config)
 
     app.include_router(
@@ -204,6 +211,8 @@ def create_app() -> FastAPI:
     )
     app.include_router(access_key_router, prefix="/user/access-keys", tags=["access-keys"])
     app.include_router(usage_router, prefix="/user/usage", tags=["usage"])
+    app.include_router(account_router, prefix="/user/account", tags=["account"])
+    app.include_router(session_router, prefix="/auth/sessions", tags=["sessions"])
 
     @app.get("/livez")
     async def livez() -> dict[str, str]:
