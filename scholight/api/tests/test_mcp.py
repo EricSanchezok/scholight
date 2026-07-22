@@ -150,7 +150,9 @@ async def test_anonymous_tool_call_returns_markdown_and_public_response_structur
     assert result["isError"] is False
     assert result["structuredContent"] == response.model_dump(mode="json")
     assert "retrieval" in result["content"][0]["text"]
-    invocation = execute.await_args.args[1]
+    execute_call = execute.await_args
+    assert execute_call is not None
+    invocation = execute_call.args[1]
     assert (invocation.actor, invocation.client_ip) == (None, "192.0.2.50")
 
 
@@ -196,7 +198,9 @@ async def test_access_key_is_resolved_as_search_actor(
 
     assert called.status_code == 200
     resolve.assert_awaited_once_with("sk_live_0123456789abcdef_secret")
-    assert execute.await_args.args[1].actor is actor
+    execute_call = execute.await_args
+    assert execute_call is not None
+    assert execute_call.args[1].actor is actor
 
 
 @pytest.mark.parametrize("authorization", ["Bearer jwt-token", "Basic abc", "Bearer"])
