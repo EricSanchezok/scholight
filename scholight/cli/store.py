@@ -21,21 +21,21 @@ def store_group() -> None:
 
 @store_group.command()
 def migrate() -> None:
-    """Apply pending Scholight PostgreSQL migrations."""
+    """Apply cloud-auth then Scholight PostgreSQL migrations."""
     import asyncio
 
     from scholight.db.client import close_pool, create_pool
-    from scholight.db.migrate import run_migrations
+    from scholight.db.migrate_all import run_all_migrations
 
     async def migrate_postgres() -> None:
         try:
             pool = await create_pool()
-            await run_migrations(pool)
+            await run_all_migrations(pool)
         finally:
             await close_pool()
 
     asyncio.run(migrate_postgres())
-    click.echo("Scholight PostgreSQL migrations applied.")
+    click.echo("Cloud-auth and Scholight PostgreSQL migrations applied.")
 
 
 @store_group.command()

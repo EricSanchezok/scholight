@@ -15,7 +15,7 @@ def test_store_migrate_runs_and_closes_pool() -> None:
     with (
         patch("scholight.db.client.create_pool", AsyncMock(return_value=pool)) as create_pool,
         patch("scholight.db.client.close_pool", AsyncMock()) as close_pool,
-        patch("scholight.db.migrate.run_migrations", AsyncMock()) as run_migrations,
+        patch("scholight.db.migrate_all.run_all_migrations", AsyncMock()) as run_migrations,
     ):
         result = CliRunner().invoke(cli, ["store", "migrate"])
 
@@ -32,7 +32,7 @@ def test_store_migrate_closes_pool_after_failure() -> None:
         patch("scholight.db.client.create_pool", AsyncMock(return_value=pool)),
         patch("scholight.db.client.close_pool", AsyncMock()) as close_pool,
         patch(
-            "scholight.db.migrate.run_migrations",
+            "scholight.db.migrate_all.run_all_migrations",
             AsyncMock(side_effect=RuntimeError("migration failed")),
         ),
     ):

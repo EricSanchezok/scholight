@@ -7,10 +7,12 @@ import os
 from pathlib import Path
 
 os.environ.setdefault("SCHOLIGHT_AUTH_JWT_SECRET", "openapi-export-jwt-secret-value-32b")
-os.environ.setdefault("SCHOLIGHT_ANONYMOUS_QUOTA_HMAC_SECRET", "openapi-export-hmac-secret-value-32")
+os.environ.setdefault(
+    "SCHOLIGHT_ANONYMOUS_QUOTA_HMAC_SECRET", "openapi-export-hmac-secret-value-32"
+)
 os.environ.setdefault("SCHOLIGHT_CORS_ALLOW_ORIGINS", '["http://localhost:5173"]')
 
-from scholight.api.app import create_app  # noqa: E402
+from scholight.api.app import create_app
 
 
 def main() -> None:

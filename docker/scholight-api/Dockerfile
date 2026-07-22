@@ -6,7 +6,7 @@ ARG PYTHON_IMAGE=python:3.11-slim-bookworm@sha256:b18992999dbe963a45a8a4da40ac2b
 FROM ${PYTHON_IMAGE} AS builder
 
 ARG PRIVATE_DEP_ARCHIVE=https://api.github.com/repos/EricSanchezok/cloud-auth/tarball
-ARG PRIVATE_DEP_REVISION=2660acaa8666b40d02f62e221bb400d120ccbb7b
+ARG PRIVATE_DEP_REVISION=a2831ef75f7d16d7fa7c8ab812917c6c49cb47b4
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl \

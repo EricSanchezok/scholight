@@ -222,6 +222,10 @@ uv run scholight scheduler status         # 调度任务状态
 
 ## Docker 部署
 
+本仓库根目录的 Compose 文件用于本地构建和运维。正式环境使用独立的
+[`deploy/production/`](deploy/production/README.md) 部署包：Caddy 是唯一公开入口，
+前后端按 digest 协调发布，migration 按 cloud-auth → Scholight 顺序显式运行。
+
 ```bash
 cp .env.example .env   # 填入所有必填配置和明确的前端/代理值
 docker compose --env-file .env build

@@ -1,0 +1,230 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Publish images, publish and deploy, or roll back production
+        required: true
+        type: choice
+        options: [publish, deploy, rollback]
+      ref:
+        description: Git commit or tag to publish
+        required: false
+        default: main
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: scholight-production-release
+  cancel-in-progress: false
+
+
+jobs:
+  prepare:
+    if: inputs.operation != 'rollback'
+    runs-on: ubuntu-latest
+    outputs:
+      release_sha: ${{ steps.revision.outputs.release_sha }}
+      package_sha: ${{ steps.package.outputs.package_sha }}
+    steps:
+      - name: Check out release revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Resolve immutable revision
+        id: revision
+        run: echo "release_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Resolve production package digest
+        id: package
+        run: echo "package_sha=$(bash deploy/production/release.sh package-sha)" >> "$GITHUB_OUTPUT"
+      - name: Require revision to be merged into main
+        env:
+          RELEASE_SHA: ${{ steps.revision.outputs.release_sha }}
+        run: git merge-base --is-ancestor "$RELEASE_SHA" origin/main
+
+  quality:
+    if: inputs.operation != 'rollback'
+    needs: prepare
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.prepare.outputs.release_sha }}
+    secrets:
+      CLOUD_AUTH_READ_TOKEN: ${{ secrets.CLOUD_AUTH_READ_TOKEN }}
+
+  publish-backend:
+    if: inputs.operation != 'rollback'
+    needs: [prepare, quality]
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.image.outputs.reference }}
+    steps:
+      - name: Check out release revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.prepare.outputs.release_sha }}
+          persist-credentials: false
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          role-to-assume: ${{ vars.AWS_PUBLISH_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Log in to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Build and push backend
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: docker/scholight-api/Dockerfile
+          platforms: ${{ vars.PRODUCTION_PLATFORM }}
+          push: true
+          tags: ${{ steps.ecr.outputs.registry }}/${{ vars.ECR_BACKEND_REPOSITORY }}:git-${{ needs.prepare.outputs.release_sha }}
+          provenance: mode=max
+          sbom: true
+          secrets: |
+            github_token=${{ secrets.CLOUD_AUTH_READ_TOKEN }}
+      - name: Export digest-qualified backend reference
+        id: image
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          REPOSITORY: ${{ vars.ECR_BACKEND_REPOSITORY }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: echo "reference=${REGISTRY}/${REPOSITORY}@${DIGEST}" >> "$GITHUB_OUTPUT"
+
+  publish-frontend:
+    if: inputs.operation != 'rollback'
+    needs: [prepare, quality]
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.image.outputs.reference }}
+    steps:
+      - name: Check out release revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.prepare.outputs.release_sha }}
+          persist-credentials: false
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          role-to-assume: ${{ vars.AWS_PUBLISH_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Log in to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Build and push frontend
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: frontend
+          file: frontend/Dockerfile
+          platforms: ${{ vars.PRODUCTION_PLATFORM }}
+          push: true
+          tags: ${{ steps.ecr.outputs.registry }}/${{ vars.ECR_FRONTEND_REPOSITORY }}:git-${{ needs.prepare.outputs.release_sha }}
+          provenance: mode=max
+          sbom: true
+      - name: Export digest-qualified frontend reference
+        id: image
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          REPOSITORY: ${{ vars.ECR_FRONTEND_REPOSITORY }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: echo "reference=${REGISTRY}/${REPOSITORY}@${DIGEST}" >> "$GITHUB_OUTPUT"
+
+  release-manifest:
+    if: inputs.operation != 'rollback'
+    needs: [prepare, publish-backend, publish-frontend]
+    runs-on: ubuntu-latest
+    outputs:
+      backend_image: ${{ needs.publish-backend.outputs.image }}
+      frontend_image: ${{ needs.publish-frontend.outputs.image }}
+    steps:
+      - name: Create release manifest
+        env:
+          RELEASE_SHA: ${{ needs.prepare.outputs.release_sha }}
+          PACKAGE_SHA: ${{ needs.prepare.outputs.package_sha }}
+          BACKEND_IMAGE: ${{ needs.publish-backend.outputs.image }}
+          FRONTEND_IMAGE: ${{ needs.publish-frontend.outputs.image }}
+        run: |
+          {
+            echo 'SCHOLIGHT_RELEASE_CONTRACT_VERSION=1'
+            echo "SCHOLIGHT_PACKAGE_SHA=${PACKAGE_SHA}"
+            echo "SCHOLIGHT_RELEASE_SHA=${RELEASE_SHA}"
+            echo "SCHOLIGHT_BACKEND_IMAGE=${BACKEND_IMAGE}"
+            echo "SCHOLIGHT_FRONTEND_IMAGE=${FRONTEND_IMAGE}"
+          } > release.env
+      - name: Upload release manifest
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: scholight-release-${{ needs.prepare.outputs.release_sha }}
+          path: release.env
+          if-no-files-found: error
+          retention-days: 30
+
+  deploy:
+    if: inputs.operation == 'deploy'
+    needs: [prepare, release-manifest]
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Check out release revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.prepare.outputs.release_sha }}
+          persist-credentials: false
+      - name: Configure AWS deployment credentials
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Deploy through Systems Manager
+        env:
+          INSTANCE_ID: ${{ vars.PRODUCTION_INSTANCE_ID }}
+          RELEASE_SHA: ${{ needs.prepare.outputs.release_sha }}
+          PACKAGE_SHA: ${{ needs.prepare.outputs.package_sha }}
+          BACKEND_IMAGE: ${{ needs.release-manifest.outputs.backend_image }}
+          FRONTEND_IMAGE: ${{ needs.release-manifest.outputs.frontend_image }}
+        run: |
+          command=$(printf 'sudo /opt/scholight/release.sh deploy --contract-version 1 --package-sha %q --release-sha %q --backend-image %q --frontend-image %q' \
+            "$PACKAGE_SHA" "$RELEASE_SHA" "$BACKEND_IMAGE" "$FRONTEND_IMAGE")
+          command_id=$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name AWS-RunShellScript \
+            --parameters "commands=[\"$command\"]" \
+            --query 'Command.CommandId' --output text)
+          bash deploy/production/wait-ssm.sh "$command_id" "$INSTANCE_ID"
+
+  rollback:
+    if: inputs.operation == 'rollback'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Check out release tooling
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Configure AWS deployment credentials
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Roll back through Systems Manager
+        env:
+          INSTANCE_ID: ${{ vars.PRODUCTION_INSTANCE_ID }}
+        run: |
+          command_id=$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name AWS-RunShellScript \
+            --parameters 'commands=["sudo /opt/scholight/release.sh rollback"]' \
+            --query 'Command.CommandId' --output text)
+          bash deploy/production/wait-ssm.sh "$command_id" "$INSTANCE_ID"

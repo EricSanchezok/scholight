@@ -1,9 +1,8 @@
 # Scholight remote deployment
 #
 # Build uses an immutable cloud-auth Git revision declared in the Dockerfile.
-# Scholight migrations are explicit and are never run by API startup:
+# Cloud-auth and Scholight migrations are explicit, ordered, and never run by API startup:
 #   docker compose --env-file .env --profile migrate run --rm migrate
-# cloud-auth migrations are separate and must be run with cloud-auth's own tooling.
 #
 # The API binds to loopback by default. Put a reverse proxy on the same host and
 # do not route /livez or /readyz publicly. If proxy headers are enabled, set the
@@ -105,6 +104,8 @@ services:
       SCHOLIGHT_PG_USER: ${SCHOLIGHT_PG_USER:-postgres}
       SCHOLIGHT_PG_PASSWORD: ${SCHOLIGHT_PG_PASSWORD:-}
       SCHOLIGHT_PG_SSL_ROOT_CERT: /etc/ssl/certs/global-bundle.pem
+      SCHOLIGHT_MIGRATIONS_DIR: /app/migrations
+      AUTH_MIGRATIONS_DIR: /app/cloud-auth/migrations
     restart: "no"
     healthcheck:
       disable: true

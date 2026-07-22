@@ -1,0 +1,130 @@
+name: scholight
+
+x-api-image: &api-image
+  image: ${SCHOLIGHT_BACKEND_IMAGE:?SCHOLIGHT_BACKEND_IMAGE must be a digest-qualified reference}
+
+x-database-environment: &database-environment
+  SCHOLIGHT_PG_HOST: ${SCHOLIGHT_PG_HOST:?SCHOLIGHT_PG_HOST is required}
+  SCHOLIGHT_PG_PORT: ${SCHOLIGHT_PG_PORT:-5432}
+  SCHOLIGHT_PG_DATABASE: ${SCHOLIGHT_PG_DATABASE:?SCHOLIGHT_PG_DATABASE is required}
+  SCHOLIGHT_PG_SSL_ROOT_CERT: /etc/ssl/certs/global-bundle.pem
+  SCHOLIGHT_PG_POOL_MIN_SIZE: ${SCHOLIGHT_PG_POOL_MIN_SIZE:-5}
+  SCHOLIGHT_PG_POOL_MAX_SIZE: ${SCHOLIGHT_PG_POOL_MAX_SIZE:-20}
+
+services:
+  caddy:
+    image: docker.io/library/caddy@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
+    environment:
+      SCHOLIGHT_DOMAIN: ${SCHOLIGHT_DOMAIN:?SCHOLIGHT_DOMAIN is required}
+      SCHOLIGHT_ACME_EMAIL: ${SCHOLIGHT_ACME_EMAIL:?SCHOLIGHT_ACME_EMAIL is required}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    networks:
+      scholight:
+        ipv4_address: ${SCHOLIGHT_CADDY_IP:-172.31.0.2}
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
+
+  frontend:
+    image: ${SCHOLIGHT_FRONTEND_IMAGE:?SCHOLIGHT_FRONTEND_IMAGE must be a digest-qualified reference}
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
+    networks:
+      scholight:
+        ipv4_address: ${SCHOLIGHT_FRONTEND_IP:-172.31.0.10}
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
+
+  api:
+    <<: *api-image
+    environment:
+      <<: *database-environment
+      SCHOLIGHT_PG_USER: ${SCHOLIGHT_APP_PG_USER:?SCHOLIGHT_APP_PG_USER is required}
+      SCHOLIGHT_PG_PASSWORD: ${SCHOLIGHT_APP_PG_PASSWORD:?SCHOLIGHT_APP_PG_PASSWORD is required}
+      SCHOLIGHT_LOG_LEVEL: ${SCHOLIGHT_LOG_LEVEL:-INFO}
+      SCHOLIGHT_DATA_ROOT: /data
+      SCHOLIGHT_SERVER_HOST: 0.0.0.0
+      SCHOLIGHT_SERVER_PORT: "8000"
+      SCHOLIGHT_PROXY_HEADERS: "true"
+      SCHOLIGHT_FORWARDED_ALLOW_IPS: ${SCHOLIGHT_CADDY_IP:-172.31.0.2}
+      SCHOLIGHT_ZILLIZ_URI: ${SCHOLIGHT_ZILLIZ_URI:?SCHOLIGHT_ZILLIZ_URI is required}
+      SCHOLIGHT_ZILLIZ_TOKEN: ${SCHOLIGHT_ZILLIZ_TOKEN:?SCHOLIGHT_ZILLIZ_TOKEN is required}
+      SCHOLIGHT_EMBEDDING_BASE_URL: ${SCHOLIGHT_EMBEDDING_BASE_URL:?SCHOLIGHT_EMBEDDING_BASE_URL is required}
+      SCHOLIGHT_EMBEDDING_API_KEY: ${SCHOLIGHT_EMBEDDING_API_KEY:?SCHOLIGHT_EMBEDDING_API_KEY is required}
+      SCHOLIGHT_EMBEDDING_MODEL: ${SCHOLIGHT_EMBEDDING_MODEL:?SCHOLIGHT_EMBEDDING_MODEL is required}
+      SCHOLIGHT_AUTH_JWT_SECRET: ${SCHOLIGHT_AUTH_JWT_SECRET:?SCHOLIGHT_AUTH_JWT_SECRET is required}
+      SCHOLIGHT_ANONYMOUS_QUOTA_HMAC_SECRET: ${SCHOLIGHT_ANONYMOUS_QUOTA_HMAC_SECRET:?SCHOLIGHT_ANONYMOUS_QUOTA_HMAC_SECRET is required}
+      SCHOLIGHT_ANONYMOUS_RATE_LIMIT_PER_MINUTE: ${SCHOLIGHT_ANONYMOUS_RATE_LIMIT_PER_MINUTE:-30}
+      SCHOLIGHT_ANONYMOUS_STANDARD_DAILY_LIMIT: ${SCHOLIGHT_ANONYMOUS_STANDARD_DAILY_LIMIT:-100}
+      SCHOLIGHT_ANONYMOUS_THOROUGH_DAILY_LIMIT: ${SCHOLIGHT_ANONYMOUS_THOROUGH_DAILY_LIMIT:-30}
+      SCHOLIGHT_CORS_ALLOW_ORIGINS: ${SCHOLIGHT_CORS_ALLOW_ORIGINS:?SCHOLIGHT_CORS_ALLOW_ORIGINS is required}
+      SCHOLIGHT_ALIYUN_DM_ACCESS_KEY_ID: ${SCHOLIGHT_ALIYUN_DM_ACCESS_KEY_ID:-}
+      SCHOLIGHT_ALIYUN_DM_ACCESS_KEY_SECRET: ${SCHOLIGHT_ALIYUN_DM_ACCESS_KEY_SECRET:-}
+      SCHOLIGHT_ALIYUN_DM_ACCOUNT_NAME: ${SCHOLIGHT_ALIYUN_DM_ACCOUNT_NAME:-}
+      SCHOLIGHT_ALIYUN_DM_FROM_ALIAS: ${SCHOLIGHT_ALIYUN_DM_FROM_ALIAS:-Scholight}
+      SCHOLIGHT_ALIYUN_DM_REPLY_TO_ADDRESS: ${SCHOLIGHT_ALIYUN_DM_REPLY_TO_ADDRESS:-true}
+    expose:
+      - "8000"
+    volumes:
+      - scholight-data:/data
+    networks:
+      scholight:
+        ipv4_address: ${SCHOLIGHT_API_IP:-172.31.0.20}
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
+
+  migrate:
+    <<: *api-image
+    profiles: ["migrate"]
+    command: ["/app/.venv/bin/scholight", "store", "migrate"]
+    environment:
+      <<: *database-environment
+      SCHOLIGHT_PG_USER: ${SCHOLIGHT_MIGRATION_PG_USER:?SCHOLIGHT_MIGRATION_PG_USER is required}
+      SCHOLIGHT_PG_PASSWORD: ${SCHOLIGHT_MIGRATION_PG_PASSWORD:?SCHOLIGHT_MIGRATION_PG_PASSWORD is required}
+      SCHOLIGHT_MIGRATIONS_DIR: /app/migrations
+      SCHOLIGHT_LOG_LEVEL: ${SCHOLIGHT_LOG_LEVEL:-INFO}
+      AUTH_MIGRATIONS_DIR: /app/cloud-auth/migrations
+    networks:
+      - scholight
+    restart: "no"
+    healthcheck:
+      disable: true
+
+volumes:
+  caddy-data:
+  caddy-config:
+  scholight-data:
+
+networks:
+  scholight:
+    ipam:
+      config:
+        - subnet: ${SCHOLIGHT_DOCKER_SUBNET:-172.31.0.0/24}

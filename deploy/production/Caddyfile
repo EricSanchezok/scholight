@@ -1,0 +1,22 @@
+{
+	email {$SCHOLIGHT_ACME_EMAIL}
+}
+
+{$SCHOLIGHT_DOMAIN} {
+	log {
+		output stdout
+		format json
+	}
+	encode zstd gzip
+
+	@internal_health path /api/livez /api/livez/ /api/readyz /api/readyz/
+	respond @internal_health 404
+
+	handle_path /api/* {
+		reverse_proxy api:8000
+	}
+
+	handle {
+		reverse_proxy frontend:8080
+	}
+}

@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from scholight.db.migrate import _MIGRATION_LOCK_ID, run_migrations
+from scholight.db.migrate import _MIGRATION_LOCK_ID, apply_migrations, run_migrations
 
 
 class _AsyncContext(AbstractAsyncContextManager[MagicMock]):
@@ -48,7 +48,7 @@ async def test_run_migrations_holds_advisory_lock_and_owns_transaction(tmp_path:
 
     conn = MagicMock()
     conn.execute = AsyncMock()
-    conn.fetchval = AsyncMock(return_value=False)
+    conn.fetchrow = AsyncMock(return_value=None)
     conn.transaction.return_value = _Transaction()
     pool = MagicMock()
     pool.acquire.return_value = _AsyncContext(conn)
@@ -70,6 +70,77 @@ async def test_run_migrations_holds_advisory_lock_and_owns_transaction(tmp_path:
         call.args == (migration.read_text(encoding="utf-8"),)
         for call in conn.execute.await_args_list
     )
+
+
+@pytest.mark.asyncio
+async def test_applied_migration_checksum_mismatch_fails_closed(tmp_path: Path) -> None:
+    migration = tmp_path / "001_create_example.sql"
+    migration.write_text("CREATE TABLE example (id INTEGER PRIMARY KEY);", encoding="utf-8")
+    conn = MagicMock()
+    conn.execute = AsyncMock()
+    conn.fetchrow = AsyncMock(return_value={"name": "create_example", "checksum": "0" * 64})
+    conn.transaction.return_value = _Transaction()
+    pool = MagicMock()
+    pool.acquire.return_value = _AsyncContext(conn)
+
+    with (
+        patch("scholight.db.migrate._MIGRATIONS_DIR", tmp_path),
+        pytest.raises(RuntimeError, match="checksum mismatch"),
+    ):
+        await run_migrations(pool)
+
+
+@pytest.mark.asyncio
+async def test_legacy_applied_migration_records_checksum_baseline(tmp_path: Path) -> None:
+    migration = tmp_path / "001_create_example.sql"
+    migration.write_text("CREATE TABLE example (id INTEGER PRIMARY KEY);", encoding="utf-8")
+    conn = MagicMock()
+    conn.execute = AsyncMock()
+    conn.fetchrow = AsyncMock(return_value={"name": "create_example", "checksum": None})
+    conn.transaction.return_value = _Transaction()
+    pool = MagicMock()
+    pool.acquire.return_value = _AsyncContext(conn)
+
+    with patch("scholight.db.migrate._MIGRATIONS_DIR", tmp_path):
+        await run_migrations(pool)
+
+    assert any(
+        call.args[0] == "UPDATE _migrations SET checksum = $2 WHERE version = $1"
+        for call in conn.execute.await_args_list
+    )
+
+
+@pytest.mark.asyncio
+async def test_unrecognized_migration_filename_fails_before_database_changes(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "create_example.sql").write_text("SELECT 1;", encoding="utf-8")
+    conn = MagicMock()
+    conn.execute = AsyncMock()
+
+    with (
+        patch("scholight.db.migrate._MIGRATIONS_DIR", tmp_path),
+        pytest.raises(ValueError, match="invalid Scholight migration filename"),
+    ):
+        await apply_migrations(conn)
+
+    conn.execute.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_duplicate_migration_version_fails_before_database_changes(tmp_path: Path) -> None:
+    (tmp_path / "001_create_example.sql").write_text("SELECT 1;", encoding="utf-8")
+    (tmp_path / "001_create_other.sql").write_text("SELECT 2;", encoding="utf-8")
+    conn = MagicMock()
+    conn.execute = AsyncMock()
+
+    with (
+        patch("scholight.db.migrate._MIGRATIONS_DIR", tmp_path),
+        pytest.raises(ValueError, match="duplicate Scholight migration version"),
+    ):
+        await apply_migrations(conn)
+
+    conn.execute.assert_not_awaited()
 
 
 def test_anonymous_quota_migration_has_exact_additive_schema() -> None:

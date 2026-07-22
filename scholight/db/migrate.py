@@ -4,68 +4,95 @@ tracking applied migrations in a ``_migrations`` table.
 
 from __future__ import annotations
 
+import os
+import re
 from pathlib import Path
 
 import asyncpg
 import structlog
 
+from scholight.db.migration_policy import migration_checksum, validate_expand_only_sql
+
 logger = structlog.get_logger(__name__)
 
-_MIGRATIONS_DIR = Path(__file__).resolve().parent.parent.parent / "migrations"
+_MIGRATIONS_DIR = Path(
+    os.environ.get(
+        "SCHOLIGHT_MIGRATIONS_DIR",
+        Path(__file__).resolve().parent.parent.parent / "migrations",
+    )
+)
 # Stable application-scoped PostgreSQL advisory lock for Scholight migrations.
 _MIGRATION_LOCK_ID = 7_192_003_901
 
 
 async def run_migrations(pool: asyncpg.Pool) -> None:
-    """Apply pending SQL migrations under one PostgreSQL advisory lock.
-
-    One acquired connection owns the advisory lock, migration transaction,
-    and tracking-table update so concurrent runners cannot race.
-    """
-    sql_files = sorted(_MIGRATIONS_DIR.glob("*.sql"))
-    if not sql_files:
-        logger.info("no migration files found", dir=str(_MIGRATIONS_DIR))
-        return
-
+    """Apply pending Scholight migrations under one PostgreSQL advisory lock."""
     async with pool.acquire() as conn:
         await conn.execute("SELECT pg_advisory_lock($1)", _MIGRATION_LOCK_ID)
         try:
-            await conn.execute(
-                "CREATE TABLE IF NOT EXISTS _migrations ("
-                "version INTEGER NOT NULL PRIMARY KEY, "
-                "name TEXT NOT NULL, "
-                "applied_at TIMESTAMPTZ NOT NULL DEFAULT now()"
-                ")"
-            )
-            for filepath in sql_files:
-                parts = filepath.stem.split("_", 1)
-                if len(parts) < 2:
-                    logger.warning("skipping unrecognized migration file", file=str(filepath))
-                    continue
-
-                try:
-                    version = int(parts[0])
-                except ValueError:
-                    logger.warning("skipping unrecognized migration file", file=str(filepath))
-                    continue
-
-                name = parts[1]
-                already_applied = await conn.fetchval(
-                    "SELECT EXISTS(SELECT 1 FROM _migrations WHERE version = $1)", version
-                )
-                if already_applied:
-                    logger.debug("migration already applied", version=version, name=name)
-                    continue
-
-                sql = filepath.read_text(encoding="utf-8")
-                async with conn.transaction():
-                    await conn.execute(sql)
-                    await conn.execute(
-                        "INSERT INTO _migrations (version, name) VALUES ($1, $2)",
-                        version,
-                        name,
-                    )
-
-                logger.info("migration applied", version=version, name=name)
+            await apply_migrations(conn)
         finally:
             await conn.execute("SELECT pg_advisory_unlock($1)", _MIGRATION_LOCK_ID)
+
+
+async def apply_migrations(conn: asyncpg.Connection) -> None:
+    """Apply pending Scholight migrations using an already-owned connection."""
+    sql_files = sorted(_MIGRATIONS_DIR.glob("*.sql"))
+    if not sql_files:
+        msg = f"Scholight migration files not found in {_MIGRATIONS_DIR}"
+        raise FileNotFoundError(msg)
+
+    migrations: list[tuple[int, str, Path]] = []
+    versions: set[int] = set()
+    for filepath in sql_files:
+        match = re.fullmatch(r"(\d+)_([a-z0-9][a-z0-9_]*)", filepath.stem)
+        if match is None:
+            msg = f"invalid Scholight migration filename: {filepath.name}"
+            raise ValueError(msg)
+        version = int(match.group(1))
+        if version in versions:
+            msg = f"duplicate Scholight migration version: {version}"
+            raise ValueError(msg)
+        versions.add(version)
+        migrations.append((version, match.group(2), filepath))
+
+    await conn.execute(
+        "CREATE TABLE IF NOT EXISTS _migrations ("
+        "version INTEGER NOT NULL PRIMARY KEY, "
+        "name TEXT NOT NULL, "
+        "checksum TEXT, "
+        "applied_at TIMESTAMPTZ NOT NULL DEFAULT now()"
+        ")"
+    )
+    await conn.execute("ALTER TABLE _migrations ADD COLUMN IF NOT EXISTS checksum TEXT")
+    for version, name, filepath in migrations:
+        sql = filepath.read_text(encoding="utf-8")
+        checksum = migration_checksum(sql)
+        applied = await conn.fetchrow(
+            "SELECT name, checksum FROM _migrations WHERE version = $1", version
+        )
+        if applied is not None:
+            recorded_checksum = applied["checksum"]
+            if recorded_checksum is None:
+                await conn.execute(
+                    "UPDATE _migrations SET checksum = $2 WHERE version = $1",
+                    version,
+                    checksum,
+                )
+            elif recorded_checksum != checksum:
+                msg = f"applied migration checksum mismatch: {filepath.name}"
+                raise RuntimeError(msg)
+            logger.debug("migration already applied", version=version, name=name)
+            continue
+
+        validate_expand_only_sql(sql)
+        async with conn.transaction():
+            await conn.execute(sql)
+            await conn.execute(
+                "INSERT INTO _migrations (version, name, checksum) VALUES ($1, $2, $3)",
+                version,
+                name,
+                checksum,
+            )
+
+        logger.info("migration applied", version=version, name=name)
