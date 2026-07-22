@@ -157,7 +157,7 @@ async def fetch_features(concurrency: int = 8) -> None:
         async with sem:
             try:
                 async with Embedder() as emb:
-                    qv_raw = await emb.embed_single(text)
+                    qv_raw = await emb.embed_query(text)
                 qv = np.array(qv_raw, dtype=np.float32)
                 raw = hybrid_search_arxiv_papers(
                     query_vector=qv_raw,

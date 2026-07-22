@@ -132,7 +132,7 @@ class BaseRunner(ABC):
         query_vectors: list[list[float] | None]
         try:
             async with Embedder() as embedder:
-                query_vectors = await embedder.embed_many(texts)
+                query_vectors = await embedder.embed_queries(texts)
         except Exception:
             logger.warning("batch embed failed — falling back to per-query embedding")
             query_vectors = [None] * len(queries)

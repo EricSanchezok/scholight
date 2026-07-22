@@ -77,7 +77,7 @@ class EmbedPhase(Phase):
             ctx.query_vector = ctx.request.query_vector
         else:
             async with Embedder() as embedder:
-                ctx.query_vector = await embedder.embed_single(ctx.request.query)
+                ctx.query_vector = await embedder.embed_query(ctx.request.query)
 
 
 class AnnSearchPhase(Phase):

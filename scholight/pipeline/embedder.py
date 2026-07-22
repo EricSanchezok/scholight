@@ -17,14 +17,27 @@ from scholight.utils.http import is_transient
 
 logger = structlog.get_logger(__name__)
 
+_ACADEMIC_QUERY_INSTRUCTION = (
+    "Given a research topic or paper title, retrieve relevant academic papers and their abstracts"
+)
+
+
+def _instruct_query(query: str) -> str:
+    return f"Instruct: {_ACADEMIC_QUERY_INSTRUCTION}\nQuery:{query}"
+
 
 class Embedder:
     """Async embedding client for SiliconFlow Qwen3-Embedding-0.6B.
 
+    Query embeddings use :meth:`embed_query`, which applies Qwen3's
+    instruction-aware retrieval format. Document and chunk embeddings use
+    :meth:`embed_single` or :meth:`embed_many` with their text unchanged.
+
     Usage::
 
         async with Embedder() as e:
-            vec = await e.embed_single("some text")
+            query_vec = await e.embed_query("some research topic")
+            document_vec = await e.embed_single("some abstract")
             batches = await e.embed_batch(["text1", "text2"])
     """
 
@@ -81,6 +94,14 @@ class Embedder:
                 raise ValueError(f"dim mismatch at idx {i}: got {len(emb)}, expected {expected}")
 
         return embeddings
+
+    async def embed_query(self, query: str) -> list[float]:
+        """Embed one retrieval query using Qwen3's instruction-aware format."""
+        return (await self.embed_batch([_instruct_query(query)]))[0]
+
+    async def embed_queries(self, queries: list[str]) -> list[list[float]]:
+        """Embed retrieval queries in batches using the same query instruction."""
+        return await self.embed_many([_instruct_query(query) for query in queries])
 
     async def embed_single(self, text: str) -> list[float]:
         return (await self.embed_batch([text]))[0]
