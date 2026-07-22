@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 
 import styles from "../styles/app.module.css";
+import { routes } from "../app/routes";
 
 export function NotFoundPage() {
   return (
@@ -8,7 +9,7 @@ export function NotFoundPage() {
       <span>404</span>
       <h1>This page is outside the index.</h1>
       <p>The address may be outdated or incomplete.</p>
-      <Link className={styles.primaryButton} to="/">
+      <Link className={styles.primaryButton} to={routes.home.path}>
         Return home
       </Link>
     </main>

@@ -2,7 +2,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
 
-import { dialogSurfaceMotion, motionEase } from "../app/motion";
+import { dialogOverlayMotion, dialogSurfaceMotion } from "../app/motion";
 import styles from "../styles/app.module.css";
 
 export function MotionDialogPortal({
@@ -25,12 +25,7 @@ export function MotionDialogPortal({
       {open && (
         <Dialog.Portal forceMount>
           <Dialog.Overlay asChild forceMount>
-            <m.div
-              className={styles.dialogOverlay}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1, transition: { duration: 0.14, ease: motionEase } }}
-              exit={{ opacity: 0, transition: { duration: 0.1, ease: motionEase } }}
-            />
+            <m.div className={styles.dialogOverlay} {...dialogOverlayMotion} />
           </Dialog.Overlay>
           <Dialog.Content
             forceMount

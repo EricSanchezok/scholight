@@ -1,6 +1,7 @@
 import { useReducedMotion } from "motion/react";
 import * as m from "motion/react-m";
 
+import { searchActivityMotion } from "../app/motion";
 import styles from "../styles/app.module.css";
 import { SkeletonPulse } from "./EditorialSkeleton";
 
@@ -11,18 +12,7 @@ export function SearchResultsSkeleton() {
       <div className={styles.searchLoadingHeading} role="status" aria-live="polite">
         <span>Searching the literature…</span>
         <div className={styles.searchActivityTrack} aria-hidden="true">
-          <m.span
-            animate={
-              reduceMotion
-                ? { opacity: 0.7, scaleX: 0.32 }
-                : { opacity: [0.45, 1, 0.45], scaleX: [0.12, 0.82, 0.12] }
-            }
-            transition={
-              reduceMotion
-                ? { duration: 0 }
-                : { duration: 1.8, repeat: Infinity, ease: "easeInOut" }
-            }
-          />
+          <m.span {...searchActivityMotion(reduceMotion)} />
         </div>
       </div>
       <SkeletonPulse label="Loading search results" className={styles.searchSkeletonPulse}>

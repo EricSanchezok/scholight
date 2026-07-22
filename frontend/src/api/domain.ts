@@ -20,6 +20,7 @@ import type {
   UsageSummary,
   UsageVolume,
 } from "./types";
+import { productConfig } from "../config/product";
 
 async function unwrap<T>(promise: Promise<ApiResult<T>>): Promise<T> {
   const result = await promise;
@@ -131,7 +132,12 @@ export const usageApi = {
       withAuthRetry(
         () =>
           apiClient.GET("/user/usage/records", {
-            params: { query: { limit: 10, ...(cursor ? { cursor } : {}) } },
+            params: {
+              query: {
+                limit: productConfig.usage.recordsPageSize,
+                ...(cursor ? { cursor } : {}),
+              },
+            },
           }),
         "protected",
       ),

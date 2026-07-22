@@ -3,7 +3,7 @@ import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
 import { useState } from "react";
 
-import { popoverMotion } from "../app/motion";
+import { chevronMotion, popoverMotion } from "../app/motion";
 import styles from "../styles/app.module.css";
 import { ChevronDownIcon } from "./icons";
 
@@ -39,11 +39,7 @@ export function EditorialSelect<T extends string>({
       >
         <Select.Value>{options.find((option) => option.value === value)?.label}</Select.Value>
         <Select.Icon asChild>
-          <m.span
-            className={styles.selectChevron}
-            animate={{ rotate: open ? 180 : 0 }}
-            transition={{ duration: 0.14 }}
-          >
+          <m.span className={styles.selectChevron} {...chevronMotion(open)}>
             <ChevronDownIcon />
           </m.span>
         </Select.Icon>

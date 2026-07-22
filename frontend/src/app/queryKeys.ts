@@ -1,14 +1,20 @@
 import type { SearchRequest } from "../api/types";
+import { productConfig } from "../config/product";
+
+const privateRoot = ["private"] as const;
+const historyRoot = [...privateRoot, "history"] as const;
 
 export const queryKeys = {
   search: (request: SearchRequest) => ["search", request] as const,
-  history: (q: string, page: number) => ["private", "history", q, page] as const,
-  profile: ["private", "profile"] as const,
-  quotas: ["private", "quotas"] as const,
-  accessKeys: ["private", "access-keys"] as const,
-  usageSummary: ["private", "usage", "summary"] as const,
-  usageVolume: ["private", "usage", "volume", "30-days"] as const,
-  usageLatency: ["private", "usage", "latency", "30-days"] as const,
-  usageRecords: ["private", "usage", "records"] as const,
-  sessions: ["private", "sessions"] as const,
+  privateRoot,
+  historyRoot,
+  history: (q: string, page: number) => [...historyRoot, q, page] as const,
+  profile: [...privateRoot, "profile"] as const,
+  quotas: [...privateRoot, "quotas"] as const,
+  accessKeys: [...privateRoot, "access-keys"] as const,
+  usageSummary: [...privateRoot, "usage", "summary"] as const,
+  usageVolume: [...privateRoot, "usage", "volume", productConfig.usage.rangeDays] as const,
+  usageLatency: [...privateRoot, "usage", "latency", productConfig.usage.rangeDays] as const,
+  usageRecords: [...privateRoot, "usage", "records"] as const,
+  sessions: [...privateRoot, "sessions"] as const,
 };

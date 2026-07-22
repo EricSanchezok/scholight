@@ -1,4 +1,5 @@
 import type { TokenResponse } from "../api/types";
+import { apiPath } from "../config/runtime";
 
 export const REFRESH_TOKEN_KEY = "scholight.refresh_token";
 const REFRESH_LOCK = "scholight-auth-refresh";
@@ -40,7 +41,7 @@ async function rotateRefreshToken(): Promise<string> {
   const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
   if (!refreshToken) throw new Error("No refresh token is available");
 
-  const response = await fetch("/api/auth/refresh", {
+  const response = await fetch(apiPath("/auth/refresh"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ refresh_token: refreshToken }),

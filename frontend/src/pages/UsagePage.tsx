@@ -5,7 +5,14 @@ import { useState } from "react";
 
 import { usageApi } from "../api/domain";
 import { ApiError } from "../api/errors";
+import {
+  ledgerRowMotion,
+  metricRevealMotion,
+  quotaProgressMotion,
+  sectionRevealMotion,
+} from "../app/motion";
 import { queryKeys } from "../app/queryKeys";
+import { productConfig } from "../config/product";
 import { EditorialRowsSkeleton, SkeletonPulse } from "../components/EditorialSkeleton";
 import { LatencyChart, VolumeChart } from "../features/usage/UsageCharts";
 import styles from "../styles/app.module.css";
@@ -38,12 +45,7 @@ function SectionError({ error, retry }: { error: Error; retry: () => void }) {
 
 function Reveal({ children, name }: { children: React.ReactNode; name: string }) {
   return (
-    <m.div
-      key={name}
-      initial={{ opacity: 0, y: 4 }}
-      animate={{ opacity: 1, y: 0, transition: { duration: 0.16 } }}
-      exit={{ opacity: 0, transition: { duration: 0.08 } }}
-    >
+    <m.div key={name} {...sectionRevealMotion}>
       {children}
     </m.div>
   );
@@ -55,28 +57,20 @@ export function UsagePage() {
   const summary = useQuery({
     queryKey: queryKeys.usageSummary,
     queryFn: usageApi.summary,
-    staleTime: 60_000,
-    retry: false,
   });
   const volume = useQuery({
     queryKey: queryKeys.usageVolume,
     queryFn: usageApi.volume,
-    staleTime: 60_000,
-    retry: false,
   });
   const latency = useQuery({
     queryKey: queryKeys.usageLatency,
     queryFn: usageApi.latency,
-    staleTime: 60_000,
-    retry: false,
   });
   const records = useInfiniteQuery({
     queryKey: queryKeys.usageRecords,
     queryFn: ({ pageParam }) => usageApi.records(pageParam),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (page) => page.next_cursor ?? undefined,
-    staleTime: 60_000,
-    retry: false,
   });
   const items = records.data?.pages.flatMap((page) => page.items) ?? [];
 
@@ -151,11 +145,7 @@ export function UsagePage() {
                         aria-valuemax={quota.daily_limit}
                         aria-label={`${strength} quota used`}
                       >
-                        <m.span
-                          initial={{ width: 0 }}
-                          animate={{ width: `${percent}%` }}
-                          transition={{ duration: 0.28 }}
-                        />
+                        <m.span {...quotaProgressMotion} animate={{ width: `${percent}%` }} />
                       </div>
                     </div>
                   );
@@ -179,11 +169,7 @@ export function UsagePage() {
       <section className={styles.performanceGrid} aria-label="Usage summary">
         {summary.data ? (
           <>
-            <m.div
-              initial={{ opacity: 0, y: 3 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.16 }}
-            >
+            <m.div {...metricRevealMotion(0)}>
               <span>SEARCHES TODAY</span>
               <strong>{summary.data.searches_today}</strong>
               <p>
@@ -191,29 +177,17 @@ export function UsagePage() {
                 Thorough
               </p>
             </m.div>
-            <m.div
-              initial={{ opacity: 0, y: 3 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.16, delay: 0.02 }}
-            >
+            <m.div {...metricRevealMotion(1)}>
               <span>THIS MONTH</span>
               <strong>{summary.data.searches_this_month}</strong>
               <p>Across web and access keys</p>
             </m.div>
-            <m.div
-              initial={{ opacity: 0, y: 3 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.16, delay: 0.04 }}
-            >
+            <m.div {...metricRevealMotion(2)}>
               <span>TYPICAL RESPONSE TIME</span>
               <strong>{seconds(summary.data.typical_response_ms)}</strong>
               <p>Median · p95 {seconds(summary.data.p95_response_ms)}</p>
             </m.div>
-            <m.div
-              initial={{ opacity: 0, y: 3 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.16, delay: 0.06 }}
-            >
+            <m.div {...metricRevealMotion(3)}>
               <span>SUCCESS RATE</span>
               <strong>
                 {summary.data.success_rate === null
@@ -239,7 +213,7 @@ export function UsagePage() {
       <section className={styles.analyticsGrid} aria-label="Usage analytics">
         <div className={styles.chartFigure}>
           <h2>Search volume</h2>
-          <p>Daily searches · last 30 days</p>
+          <p>Daily searches · last {productConfig.usage.rangeDays} days</p>
           <AnimatePresence initial={false} mode="popLayout">
             {volume.error && !volume.data ? (
               <SectionError error={volume.error} retry={() => void volume.refetch()} />
@@ -309,12 +283,7 @@ export function UsagePage() {
               </thead>
               <tbody>
                 {items.map((item, index) => (
-                  <m.tr
-                    key={item.id}
-                    initial={{ opacity: 0, y: 4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.16, delay: Math.min(index * 0.02, 0.16) }}
-                  >
+                  <m.tr key={item.id} {...ledgerRowMotion(index)}>
                     <td>
                       <time dateTime={item.created_at}>{usageTime(item.created_at)}</time>
                     </td>

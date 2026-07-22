@@ -8,7 +8,10 @@ import { searchApi } from "../api/domain";
 import { ApiError } from "../api/errors";
 import type { SearchFilters, SearchHit, SearchRequest } from "../api/types";
 import { queryKeys } from "../app/queryKeys";
+import { routes } from "../app/routes";
+import { resultRowMotion, resultsRevealMotion, sectionRevealMotion } from "../app/motion";
 import { useAuth } from "../auth/context";
+import { productConfig } from "../config/product";
 import { SearchForm } from "../components/SearchForm";
 import { SearchResultsSkeleton } from "../components/SearchResultsSkeleton";
 import { citationFor, formatAuthors, formatDate, parseSearchParameters } from "../lib/format";
@@ -22,12 +25,7 @@ function ResultItem({ hit, index }: { hit: SearchHit; index: number }) {
     window.setTimeout(() => setCopied(false), 1800);
   };
   return (
-    <m.article
-      className={styles.resultItem}
-      initial={{ opacity: 0, y: 5 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.18, delay: Math.min(index * 0.02, 0.18) }}
-    >
+    <m.article className={styles.resultItem} {...resultRowMotion(index)}>
       <h2>
         <a href={hit.arxiv_url} target="_blank" rel="noopener noreferrer">
           {hit.title}
@@ -104,14 +102,14 @@ export function SearchPage() {
   const request: SearchRequest = {
     query: parsed.query,
     strength: parsed.strength,
-    limit: 10,
+    limit: productConfig.search.resultLimit,
     filters: parsed.filters,
   };
   const result = useQuery({
     queryKey: queryKeys.search(request),
     queryFn: () => searchApi.search(request),
     enabled: Boolean(parsed.query),
-    staleTime: 5 * 60 * 1000,
+    staleTime: productConfig.search.cacheTimeMs,
     retry: false,
   });
 
@@ -170,9 +168,7 @@ export function SearchPage() {
               className={styles.errorState}
               role="alert"
               key="search-error"
-              initial={{ opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
+              {...sectionRevealMotion}
             >
               <h1>
                 {error.status === 429 ? "Search limit reached" : "We couldn’t complete that search"}
@@ -189,27 +185,16 @@ export function SearchPage() {
                 Retry
               </button>
               {error.status === 429 && authStatus === "anonymous" && (
-                <Link to="/login">Sign in</Link>
+                <Link to={routes.login.path}>Sign in</Link>
               )}
             </m.div>
           ) : result.data && result.data.hits.length === 0 ? (
-            <m.div
-              className={styles.state}
-              key="search-empty"
-              initial={{ opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-            >
+            <m.div className={styles.state} key="search-empty" {...sectionRevealMotion}>
               <h1>No papers found</h1>
               <p>Try a broader phrase or a different way of describing the topic.</p>
             </m.div>
           ) : result.data && result.data.hits.length > 0 ? (
-            <m.div
-              key={`results-${parsed.query}-${parsed.strength}`}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1, transition: { duration: 0.14 } }}
-              exit={{ opacity: 0, transition: { duration: 0.08 } }}
-            >
+            <m.div key={`results-${parsed.query}-${parsed.strength}`} {...resultsRevealMotion}>
               <div className={styles.resultsSummary}>
                 <h1>Search results</h1>
                 <span>

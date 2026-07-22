@@ -1,9 +1,10 @@
 import createClient from "openapi-fetch";
 
 import { clearSession, getAccessToken, refreshAccessToken } from "../auth/session";
+import { runtimeConfig } from "../config/runtime";
 import type { paths } from "./schema";
 
-export const apiClient = createClient<paths>({ baseUrl: "/api" });
+export const apiClient = createClient<paths>({ baseUrl: runtimeConfig.apiBasePath });
 
 apiClient.use({
   onRequest({ request }) {

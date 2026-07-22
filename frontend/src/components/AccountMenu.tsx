@@ -10,13 +10,11 @@ import accessKeysIcon from "../assets/icons/menu-access-keys.svg";
 import historyIcon from "../assets/icons/menu-history.svg";
 import signOutIcon from "../assets/icons/menu-sign-out.svg";
 import usageIcon from "../assets/icons/menu-usage.svg";
-import { popoverMotion } from "../app/motion";
-import {
-  type AccountDestination,
-  prefetchPrivateDestination,
-  preloadPrivateRoutes,
-} from "../app/privateRoutes";
+import { chevronMotion, popoverMotion } from "../app/motion";
+import { prefetchPrivateDestination, preloadPrivateRoutes } from "../app/privateRoutes";
+import { accountRoutes, type AccountDestination, routes } from "../app/routes";
 import { useAuth } from "../auth/context";
+import { productConfig } from "../config/product";
 import { avatarInitials } from "../lib/format";
 import styles from "../styles/app.module.css";
 import { ChevronDownIcon } from "./icons";
@@ -30,18 +28,19 @@ export function AccountMenu() {
   const intentTimer = useRef<number | undefined>(undefined);
   if (!user) return null;
   const name = user.display_name?.trim() || user.email.split("@")[0];
-  const destinations: { to: AccountDestination; label: string; icon: string }[] = [
-    { to: "/usage", label: "Usage & quota", icon: usageIcon },
-    { to: "/access-keys", label: "Access Keys", icon: accessKeysIcon },
-    { to: "/history", label: "Search history", icon: historyIcon },
-    { to: "/account", label: "Account settings", icon: accountIcon },
-  ];
+  const destinationDetails: Record<AccountDestination, { label: string; icon: string }> = {
+    [routes.usage.path]: { label: "Usage & quota", icon: usageIcon },
+    [routes.accessKeys.path]: { label: "Access Keys", icon: accessKeysIcon },
+    [routes.history.path]: { label: "Search history", icon: historyIcon },
+    [routes.account.path]: { label: "Account settings", icon: accountIcon },
+  };
   const clearIntent = () => window.clearTimeout(intentTimer.current);
   const warmDestination = (destination: AccountDestination, immediate = false) => {
     clearIntent();
     const warm = () => void prefetchPrivateDestination(destination, queryClient);
     if (immediate) warm();
-    else intentTimer.current = window.setTimeout(warm, 100);
+    else
+      intentTimer.current = window.setTimeout(warm, productConfig.navigation.intentPrefetchDelayMs);
   };
 
   return (
@@ -56,7 +55,7 @@ export function AccountMenu() {
       <DropdownMenu.Trigger className={styles.accountTrigger} aria-label="Open account menu">
         <span className={styles.avatar}>{avatarInitials(user.display_name, user.email)}</span>
         <span className={styles.accountName}>{name}</span>
-        <m.span animate={{ rotate: open ? 180 : 0 }} transition={{ duration: 0.14 }}>
+        <m.span {...chevronMotion(open)}>
           <ChevronDownIcon />
         </m.span>
       </DropdownMenu.Trigger>
@@ -70,24 +69,27 @@ export function AccountMenu() {
                   <span>{user.email}</span>
                 </div>
                 <DropdownMenu.Separator className={styles.menuSeparator} />
-                {destinations.map((destination) => (
-                  <DropdownMenu.Item asChild className={styles.menuItem} key={destination.to}>
-                    <Link
-                      to={destination.to}
-                      aria-current={location.pathname === destination.to ? "page" : undefined}
-                      onPointerEnter={() => warmDestination(destination.to)}
-                      onPointerLeave={clearIntent}
-                      onFocus={() => warmDestination(destination.to, true)}
-                    >
-                      <span className={styles.menuActiveMark} aria-hidden="true" />
-                      <img src={destination.icon} alt="" /> {destination.label}
-                    </Link>
-                  </DropdownMenu.Item>
-                ))}
+                {accountRoutes.map((destination) => {
+                  const details = destinationDetails[destination.path];
+                  return (
+                    <DropdownMenu.Item asChild className={styles.menuItem} key={destination.path}>
+                      <Link
+                        to={destination.path}
+                        aria-current={location.pathname === destination.path ? "page" : undefined}
+                        onPointerEnter={() => warmDestination(destination.path)}
+                        onPointerLeave={clearIntent}
+                        onFocus={() => warmDestination(destination.path, true)}
+                      >
+                        <span className={styles.menuActiveMark} aria-hidden="true" />
+                        <img src={details.icon} alt="" /> {details.label}
+                      </Link>
+                    </DropdownMenu.Item>
+                  );
+                })}
                 <DropdownMenu.Separator className={styles.menuSeparator} />
                 <DropdownMenu.Item
                   className={styles.menuItem}
-                  onSelect={() => void logout().then(() => navigate("/"))}
+                  onSelect={() => void logout().then(() => navigate(routes.home.path))}
                 >
                   <img src={signOutIcon} alt="" /> Sign out
                 </DropdownMenu.Item>

@@ -8,7 +8,8 @@ import { useRef, useState } from "react";
 import { accessKeyApi } from "../api/domain";
 import { ApiError } from "../api/errors";
 import type { AccessKey, CreatedAccessKey } from "../api/types";
-import { popoverMotion } from "../app/motion";
+import { productConfig } from "../config/product";
+import { ledgerRowMotion, popoverMotion } from "../app/motion";
 import { queryKeys } from "../app/queryKeys";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { EditorialRowsSkeleton } from "../components/EditorialSkeleton";
@@ -250,7 +251,6 @@ export function AccessKeysPage() {
   const keys = useQuery({
     queryKey: queryKeys.accessKeys,
     queryFn: accessKeyApi.list,
-    retry: false,
   });
   const visible = (keys.data ?? []).filter((key) => accessKeyStatus(key) !== "revoked");
   const activeCount = visible.filter((key) => accessKeyStatus(key) === "active").length;
@@ -299,7 +299,7 @@ export function AccessKeysPage() {
           <button
             className={styles.primaryButton}
             type="button"
-            disabled={activeCount >= 10}
+            disabled={activeCount >= productConfig.accessKeys.maxActive}
             onClick={() => setCreateOpen(true)}
           >
             Create new key
@@ -342,12 +342,7 @@ export function AccessKeysPage() {
                 {visible.map((key, index) => {
                   const status = accessKeyStatus(key);
                   return (
-                    <m.tr
-                      key={key.id}
-                      initial={{ opacity: 0, y: 4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.16, delay: Math.min(index * 0.02, 0.16) }}
-                    >
+                    <m.tr key={key.id} {...ledgerRowMotion(index)}>
                       <td>{key.name}</td>
                       <td>
                         <code>sk_live_••••••••{key.last4}</code>
@@ -378,7 +373,7 @@ export function AccessKeysPage() {
             </table>
           </div>
         )}
-        {activeCount >= 10 && (
+        {activeCount >= productConfig.accessKeys.maxActive && (
           <p className={styles.formMessageError}>You have reached the limit of 10 active keys.</p>
         )}
       </section>

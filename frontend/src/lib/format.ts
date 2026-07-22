@@ -1,4 +1,5 @@
 import type { SearchFilters, SearchHit, SearchStrength } from "../api/types";
+import { routes } from "../app/routes";
 
 export function formatAuthors(authors: string[]): string {
   if (authors.length <= 2) return authors.join(", ");
@@ -46,7 +47,7 @@ export function buildSearchUrl(parameters: SearchParameters): string {
   parameters.filters.authors?.forEach((value) => params.append("author", value));
   if (parameters.filters.date_from) params.set("from", parameters.filters.date_from);
   if (parameters.filters.date_to) params.set("to", parameters.filters.date_to);
-  return `/search?${params.toString()}`;
+  return `${routes.search.path}?${params.toString()}`;
 }
 
 export function avatarInitials(displayName: string | null | undefined, email: string): string {

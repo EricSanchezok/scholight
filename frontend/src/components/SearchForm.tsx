@@ -4,6 +4,8 @@ import * as m from "motion/react-m";
 import { useNavigate } from "react-router-dom";
 
 import type { SearchFilters, SearchStrength } from "../api/types";
+import { buttonLabelMotion } from "../app/motion";
+import { productConfig } from "../config/product";
 import { buildSearchUrl } from "../lib/format";
 import styles from "../styles/app.module.css";
 import { EditorialSelect } from "./EditorialSelect";
@@ -40,7 +42,8 @@ export function SearchForm({
     event.preventDefault();
     const normalized = query.trim();
     if (!normalized) return setError("Enter a research question or topic.");
-    if (normalized.length > 500) return setError("Keep your query to 500 characters or fewer.");
+    if (normalized.length > productConfig.search.maxQueryLength)
+      return setError("Keep your query to 500 characters or fewer.");
     setError("");
     navigate(
       buildSearchUrl({
@@ -66,7 +69,7 @@ export function SearchForm({
         value={query}
         onChange={(event) => setQuery(event.target.value)}
         placeholder="Search papers, topics, methods, or questions"
-        maxLength={501}
+        maxLength={productConfig.search.maxQueryLength + 1}
         aria-describedby={error ? "search-error" : undefined}
       />
       <div className={styles.searchActions}>
@@ -81,12 +84,7 @@ export function SearchForm({
         </div>
         <button className={styles.primaryButton} type="submit" disabled={busy} aria-busy={busy}>
           <AnimatePresence initial={false} mode="popLayout">
-            <m.span
-              key={busy ? "searching" : "search"}
-              initial={{ opacity: 0, y: 3 }}
-              animate={{ opacity: 1, y: 0, transition: { duration: 0.12 } }}
-              exit={{ opacity: 0, y: -2, transition: { duration: 0.08 } }}
-            >
+            <m.span key={busy ? "searching" : "search"} {...buttonLabelMotion}>
               {busy ? "Searching…" : "Search"}
             </m.span>
           </AnimatePresence>

@@ -1,7 +1,9 @@
 import { useReducedMotion } from "motion/react";
 import * as m from "motion/react-m";
 
+import { skeletonPulseMotion } from "../app/motion";
 import styles from "../styles/app.module.css";
+import { accountRouteFor, routes } from "../app/routes";
 
 export function SkeletonPulse({
   children,
@@ -19,10 +21,7 @@ export function SkeletonPulse({
       aria-busy="true"
       aria-label={label}
       role="status"
-      animate={reduceMotion ? { opacity: 0.64 } : { opacity: [0.48, 0.72, 0.48] }}
-      transition={
-        reduceMotion ? { duration: 0 } : { duration: 1.6, repeat: Infinity, ease: "easeInOut" }
-      }
+      {...skeletonPulseMotion(reduceMotion)}
     >
       <span className="sr-only">{label}</span>
       <div aria-hidden="true">{children}</div>
@@ -84,15 +83,16 @@ function UsageSkeleton() {
 }
 
 function LedgerSkeleton({ pathname }: { pathname: string }) {
-  const isHistory = pathname === "/history";
+  const route = accountRouteFor(pathname);
+  const isHistory = route?.id === "history";
   const title = isHistory
     ? "Search history"
-    : pathname === "/account"
+    : route?.id === "account"
       ? "Account settings"
       : "Access keys";
   const intro = isHistory
     ? "Revisit your previous research questions or remove the searches you no longer need."
-    : pathname === "/account"
+    : route?.id === "account"
       ? "Manage your profile, password, sessions, and account."
       : "Create keys for tools and agents that search Scholight on your behalf.";
   return (
@@ -100,7 +100,7 @@ function LedgerSkeleton({ pathname }: { pathname: string }) {
       className={
         isHistory
           ? styles.historyPage
-          : pathname === "/account"
+          : route?.id === "account"
             ? styles.accountPage
             : styles.ledgerPage
       }
@@ -112,12 +112,16 @@ function LedgerSkeleton({ pathname }: { pathname: string }) {
       </header>
       <SkeletonPulse label={`Loading ${title.toLowerCase()}`}>
         <div className={isHistory ? styles.skeletonToolbar : styles.skeletonLedgerHeading} />
-        <Lines rows={pathname === "/account" ? 6 : 4} />
+        <Lines rows={route?.id === "account" ? 6 : 4} />
       </SkeletonPulse>
     </main>
   );
 }
 
 export function RouteSkeleton({ pathname }: { pathname: string }) {
-  return pathname === "/usage" ? <UsageSkeleton /> : <LedgerSkeleton pathname={pathname} />;
+  return pathname === routes.usage.path ? (
+    <UsageSkeleton />
+  ) : (
+    <LedgerSkeleton pathname={pathname} />
+  );
 }

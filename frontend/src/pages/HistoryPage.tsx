@@ -6,14 +6,17 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { historyApi } from "../api/domain";
 import { ApiError } from "../api/errors";
 import { queryKeys } from "../app/queryKeys";
+import { routes } from "../app/routes";
+import { ledgerRowMotion } from "../app/motion";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { EditorialRowsSkeleton } from "../components/EditorialSkeleton";
 import { DeleteSearchIcon, SearchIcon, TrashIcon } from "../components/icons";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
+import { productConfig } from "../config/product";
 import { buildSearchUrl } from "../lib/format";
 import styles from "../styles/app.module.css";
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = productConfig.history.pageSize;
 
 function formatHistoryDate(value: string) {
   return new Intl.DateTimeFormat("en", {
@@ -51,7 +54,6 @@ export function HistoryPage() {
     queryKey: queryKeys.history(urlFilter, page),
     queryFn: () => historyApi.list(PAGE_SIZE, (page - 1) * PAGE_SIZE, urlFilter || undefined),
     placeholderData: (previous) => previous,
-    retry: false,
   });
   const items = history.data?.items ?? [];
   const allSelected = items.length > 0 && items.every((item) => selected.has(item.id));
@@ -68,7 +70,7 @@ export function HistoryPage() {
     onSuccess: async () => {
       setSelected(new Set());
       setPendingDelete([]);
-      await queryClient.invalidateQueries({ queryKey: ["private", "history"] });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.historyRoot });
       const remainingOnPage = items.length - pendingDelete.length;
       if (remainingOnPage <= 0 && page > 1) {
         const next = new URLSearchParams(params);
@@ -164,7 +166,11 @@ export function HistoryPage() {
                 Clear filter
               </button>
             ) : (
-              <button className={styles.primaryButton} type="button" onClick={() => navigate("/")}>
+              <button
+                className={styles.primaryButton}
+                type="button"
+                onClick={() => navigate(routes.home.path)}
+              >
                 Start searching
               </button>
             )}
@@ -176,9 +182,7 @@ export function HistoryPage() {
                 <m.article
                   key={item.id}
                   className={`${styles.historyRow} ${selected.has(item.id) ? styles.historyRowSelected : ""}`}
-                  initial={{ opacity: 0, y: 4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.16, delay: Math.min(index * 0.02, 0.16) }}
+                  {...ledgerRowMotion(index)}
                 >
                   <label className={styles.rowCheck}>
                     <input

@@ -2,19 +2,21 @@ import type { QueryClient } from "@tanstack/react-query";
 import type { ComponentType } from "react";
 
 import { accountApi, accessKeyApi, historyApi, usageApi } from "../api/domain";
+import { productConfig } from "../config/product";
 import { queryKeys } from "./queryKeys";
 import { PRIVATE_STALE_TIME } from "./queryClient";
+import { routes, type AccountDestination } from "./routes";
 
-export type AccountDestination = "/usage" | "/access-keys" | "/history" | "/account";
 type RouteModule = { default: ComponentType };
 
 export const privateRouteLoaders: Record<AccountDestination, () => Promise<RouteModule>> = {
-  "/usage": () => import("../pages/UsagePage").then((module) => ({ default: module.UsagePage })),
-  "/access-keys": () =>
+  [routes.usage.path]: () =>
+    import("../pages/UsagePage").then((module) => ({ default: module.UsagePage })),
+  [routes.accessKeys.path]: () =>
     import("../pages/AccessKeysPage").then((module) => ({ default: module.AccessKeysPage })),
-  "/history": () =>
+  [routes.history.path]: () =>
     import("../pages/HistoryPage").then((module) => ({ default: module.HistoryPage })),
-  "/account": () =>
+  [routes.account.path]: () =>
     import("../pages/AccountPage").then((module) => ({ default: module.AccountPage })),
 };
 
@@ -31,7 +33,7 @@ export async function prefetchPrivateDestination(
   void privateRouteLoaders[destination]().catch(() => undefined);
   const common = { staleTime: PRIVATE_STALE_TIME };
 
-  if (destination === "/usage") {
+  if (destination === routes.usage.path) {
     await Promise.all([
       queryClient.prefetchQuery({
         ...common,
@@ -57,7 +59,7 @@ export async function prefetchPrivateDestination(
     ]);
     return;
   }
-  if (destination === "/access-keys") {
+  if (destination === routes.accessKeys.path) {
     await queryClient.prefetchQuery({
       ...common,
       queryKey: queryKeys.accessKeys,
@@ -65,11 +67,11 @@ export async function prefetchPrivateDestination(
     });
     return;
   }
-  if (destination === "/history") {
+  if (destination === routes.history.path) {
     await queryClient.prefetchQuery({
       ...common,
       queryKey: queryKeys.history("", 1),
-      queryFn: () => historyApi.list(10, 0),
+      queryFn: () => historyApi.list(productConfig.history.pageSize, 0),
     });
     return;
   }

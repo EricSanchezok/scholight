@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import { authApi } from "../api/domain";
 import { ApiError } from "../api/errors";
+import { routes, withQuery } from "../app/routes";
 import { useAuth } from "../auth/context";
 import { safeReturnTo } from "../auth/redirect";
 import styles from "../styles/app.module.css";
@@ -37,7 +38,7 @@ function AuthShell({
   return (
     <main className={styles.authPage}>
       <div className={styles.authShell}>
-        <Link className="wordmark" to="/">
+        <Link className="wordmark" to={routes.home.path}>
           scholight
         </Link>
         <div className={styles.authIntroBlock}>
@@ -114,7 +115,7 @@ export function LoginPage() {
         </div>
         <div className={styles.formAside}>
           <span>Search is open to everyone</span>
-          <Link to="/forgot-password">Forgot password?</Link>
+          <Link to={routes.forgotPassword.path}>Forgot password?</Link>
         </div>
         <FormMessage error={serverError} />
         <button className={styles.authSubmit} disabled={isSubmitting}>
@@ -122,7 +123,7 @@ export function LoginPage() {
         </button>
       </form>
       <p className={styles.authFoot}>
-        New to Scholight? <Link to="/register">Create an account</Link>
+        New to Scholight? <Link to={routes.register.path}>Create an account</Link>
       </p>
     </AuthShell>
   );
@@ -140,7 +141,7 @@ export function RegisterPage() {
     try {
       setServerError("");
       await authApi.register(values);
-      navigate(`/check-email?email=${encodeURIComponent(values.email)}`);
+      navigate(withQuery(routes.checkEmail.path, { email: values.email }));
     } catch (error) {
       setServerError(
         error instanceof ApiError
@@ -181,7 +182,7 @@ export function RegisterPage() {
         </button>
       </form>
       <p className={styles.authFoot}>
-        Already have an account? <Link to="/login">Sign in</Link>
+        Already have an account? <Link to={routes.login.path}>Sign in</Link>
       </p>
     </AuthShell>
   );
@@ -214,7 +215,7 @@ export function CheckEmailPage() {
         <FormMessage success={status} />
       </div>
       <p className={styles.authFoot}>
-        <Link to="/login">Back to sign in</Link>
+        <Link to={routes.login.path}>Back to sign in</Link>
       </p>
     </AuthShell>
   );
@@ -228,7 +229,7 @@ export function VerifyEmailPage() {
   useEffect(() => {
     if (started.current) return;
     started.current = true;
-    window.history.replaceState({}, "", "/verify-email");
+    window.history.replaceState({}, "", routes.verifyEmail.path);
     if (!token) {
       setState("error");
       return;
@@ -256,7 +257,10 @@ export function VerifyEmailPage() {
       }
     >
       {state !== "working" && (
-        <Link className={styles.authSubmitLink} to={state === "done" ? "/login" : "/register"}>
+        <Link
+          className={styles.authSubmitLink}
+          to={state === "done" ? routes.login.path : routes.register.path}
+        >
           {state === "done" ? "Continue to sign in" : "Create an account"}
         </Link>
       )}
@@ -286,7 +290,7 @@ export function ForgotPasswordPage() {
       {sent ? (
         <div className={styles.authInfo}>
           <FormMessage success="If an account matches that address, reset instructions are on the way." />
-          <Link to="/login">Back to sign in</Link>
+          <Link to={routes.login.path}>Back to sign in</Link>
         </div>
       ) : (
         <form className={styles.authForm} onSubmit={submit} noValidate>
@@ -316,13 +320,13 @@ export function ResetPasswordPage() {
     formState: { errors, isSubmitting },
   } = useForm<z.infer<typeof resetSchema>>({ resolver: zodResolver(resetSchema) });
   useEffect(() => {
-    if (location.search) window.history.replaceState({}, "", "/reset-password");
+    if (location.search) window.history.replaceState({}, "", routes.resetPassword.path);
   }, [location.search]);
   const submit = handleSubmit(async ({ newPassword }) => {
     if (!token) return setServerError("This reset link is invalid or has expired.");
     try {
       await authApi.resetPassword(token, newPassword);
-      navigate("/login?reset=complete", { replace: true });
+      navigate(withQuery(routes.login.path, { reset: "complete" }), { replace: true });
     } catch (error) {
       setServerError(error instanceof ApiError ? error.message : "Unable to reset your password.");
     }

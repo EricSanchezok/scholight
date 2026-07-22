@@ -15,6 +15,12 @@ function walk(directory) {
 
 const sourceFiles = walk(sourceRoot);
 const cssFiles = sourceFiles.filter((path) => extname(path) === ".css");
+const uiFiles = sourceFiles.filter(
+  (path) =>
+    extname(path) === ".tsx" &&
+    !path.endsWith(".test.tsx") &&
+    !path.endsWith(join("app", "motion.tsx")),
+);
 const findings = [];
 const definitions = new Set();
 const usages = [];
@@ -46,6 +52,19 @@ for (const usage of usages) {
   }
 }
 
+for (const path of uiFiles) {
+  const content = readFileSync(path, "utf8");
+  const displayPath = relative(frontendRoot, path);
+  for (const match of content.matchAll(/["'`]\/(?!\/)/g)) {
+    findings.push(`${displayPath}:${lineOf(content, match.index)} route outside app/routes.ts`);
+  }
+  for (const match of content.matchAll(/\b(?:duration|delay)\s*:\s*[0-9]/g)) {
+    findings.push(
+      `${displayPath}:${lineOf(content, match.index)} motion timing outside app/motion.tsx`,
+    );
+  }
+}
+
 if (findings.length) {
   console.error("Frontend architecture checks failed:\n");
   findings.forEach((finding) => console.error(`- ${finding}`));
@@ -53,7 +72,7 @@ if (findings.length) {
 }
 
 console.log(
-  `Frontend architecture checks passed (${cssFiles.length} stylesheets, ${definitions.size} tokens).`,
+  `Frontend architecture checks passed (${cssFiles.length} stylesheets, ${definitions.size} tokens, ${uiFiles.length} UI modules).`,
 );
 
 function lineOf(content, index = 0) {

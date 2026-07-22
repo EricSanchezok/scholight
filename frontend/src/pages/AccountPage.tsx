@@ -11,6 +11,8 @@ import { accountApi, authApi } from "../api/domain";
 import { ApiError } from "../api/errors";
 import type { Session } from "../api/types";
 import { queryKeys } from "../app/queryKeys";
+import { routes, withQuery } from "../app/routes";
+import { ledgerRowMotion } from "../app/motion";
 import { useAuth } from "../auth/context";
 import { clearSession } from "../auth/session";
 import { ConfirmDialog } from "../components/ConfirmDialog";
@@ -116,13 +118,11 @@ export function AccountPage() {
     queryKey: queryKeys.profile,
     queryFn: accountApi.profile,
     initialData: user ?? undefined,
-    retry: false,
   });
   const sessions = useQuery({
     queryKey: queryKeys.sessions,
     queryFn: accountApi.sessions,
     staleTime: 30_000,
-    retry: false,
   });
   useEffect(() => setDisplayName(profile.data?.display_name ?? ""), [profile.data?.display_name]);
   const updateProfile = useMutation({
@@ -152,7 +152,7 @@ export function AccountPage() {
     onSuccess: () => {
       clearSession();
       queryClient.clear();
-      navigate("/", { replace: true });
+      navigate(routes.home.path, { replace: true });
     },
   });
   const {
@@ -168,7 +168,7 @@ export function AccountPage() {
       clearSession();
       queryClient.clear();
       reset();
-      navigate("/login?password=changed", { replace: true });
+      navigate(withQuery(routes.login.path, { password: "changed" }), { replace: true });
     } catch (error) {
       setPasswordMessage(
         error instanceof ApiError ? error.message : "Unable to change your password.",
@@ -305,13 +305,7 @@ export function AccountPage() {
           ) : (
             <div className={styles.sessionList}>
               {orderedSessions.map((session, index) => (
-                <m.div
-                  className={styles.sessionRow}
-                  key={session.id}
-                  initial={{ opacity: 0, y: 4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.16, delay: Math.min(index * 0.02, 0.16) }}
-                >
+                <m.div className={styles.sessionRow} key={session.id} {...ledgerRowMotion(index)}>
                   <div>
                     <strong>{parseUserAgent(session.user_agent)}</strong>
                     <span>{seenAt(session.last_seen_at, session.current)}</span>

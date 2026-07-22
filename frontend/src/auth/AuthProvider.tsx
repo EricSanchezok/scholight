@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { accountApi, authApi } from "../api/domain";
 import type { LoginRequest, UserProfile } from "../api/types";
+import { queryKeys } from "../app/queryKeys";
 import { AuthContext, type AuthStatus } from "./context";
 import {
   clearSession,
@@ -59,7 +60,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!hasRefreshToken()) {
         setUser(null);
         setStatus("anonymous");
-        queryClient.removeQueries({ queryKey: ["private"] });
+        queryClient.removeQueries({ queryKey: queryKeys.privateRoot });
       } else if (statusRef.current === "anonymous") {
         setStatus("checking");
         void refreshAccessToken()
@@ -81,7 +82,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const tokens = await authApi.login(credentials);
       establishSession(tokens);
       await loadProfile();
-      queryClient.removeQueries({ queryKey: ["private"] });
+      queryClient.removeQueries({ queryKey: queryKeys.privateRoot });
     },
     [loadProfile, queryClient],
   );
@@ -95,7 +96,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       clearSession();
       setUser(null);
       setStatus("anonymous");
-      queryClient.removeQueries({ queryKey: ["private"] });
+      queryClient.removeQueries({ queryKey: queryKeys.privateRoot });
     }
   }, [queryClient]);
 
