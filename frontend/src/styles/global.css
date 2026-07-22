@@ -48,12 +48,12 @@ svg {
 }
 
 :focus-visible {
-  outline: 3px solid color-mix(in srgb, var(--focus) 58%, transparent);
+  outline: 3px solid var(--focus-ring);
   outline-offset: 3px;
 }
 
 ::selection {
-  color: white;
+  color: var(--on-brand);
   background: var(--brand);
 }
 

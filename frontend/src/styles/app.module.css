@@ -25,7 +25,7 @@
 }
 .desktopNav a {
   padding: 12px 0;
-  color: #52545e;
+  color: var(--text-navigation);
 }
 .desktopNav a[aria-current="page"] {
   color: var(--ink);
@@ -36,7 +36,7 @@
 .navDivider {
   width: 1px;
   height: 18px;
-  background: #c7c4b8;
+  background: var(--line-navigation);
 }
 .headerActions {
   display: flex;
@@ -76,7 +76,7 @@
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  color: white;
+  color: var(--on-brand);
   background: var(--brand);
   place-items: center;
   font-size: 10px;
@@ -92,13 +92,13 @@
   font-weight: 500;
 }
 .dropdown {
-  z-index: 30;
+  z-index: var(--z-dropdown);
   width: 250px;
   padding: 8px;
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-md);
   background: var(--surface);
-  box-shadow: 0 16px 42px rgb(14 15 20 / 14%);
+  box-shadow: var(--shadow-dropdown);
   transform-origin: top right;
 }
 .dropdownIdentity {
@@ -151,11 +151,11 @@
   flex: 0 0 16px;
 }
 .menuItem:last-child {
-  color: #a63b2c;
+  color: var(--danger-strong);
 }
 .menuItem[data-highlighted] {
   color: var(--brand);
-  background: #f0f2fa;
+  background: var(--surface-selected);
 }
 .mobileMenuButton,
 .mobileNav,
@@ -209,7 +209,7 @@
   width: 760px;
   height: 60px;
   margin: 0;
-  color: #4f5059;
+  color: var(--text-secondary);
   font-size: 18px;
   line-height: 30px;
 }
@@ -238,7 +238,7 @@
   font-size: 16px;
 }
 .searchForm > input::placeholder {
-  color: #6b6b6e;
+  color: var(--text-placeholder);
 }
 .searchActions {
   display: flex;
@@ -256,9 +256,9 @@
 }
 .selectTrigger {
   display: inline-flex;
-  border: 1px solid #dbd7cc;
+  border: 1px solid var(--line-control);
   outline: 0;
-  color: #302e29;
+  color: var(--text-control);
   background: var(--surface-muted);
   align-items: center;
   justify-content: space-between;
@@ -282,14 +282,14 @@
   height: 12px;
 }
 .selectContent {
-  z-index: 70;
+  z-index: var(--z-select);
   width: var(--radix-select-trigger-width);
   min-width: var(--radix-select-trigger-width);
   padding: 5px;
   border: 1px solid var(--line-soft);
   border-radius: 7px;
   background: var(--surface);
-  box-shadow: 0 12px 30px rgb(14 15 20 / 15%);
+  box-shadow: var(--shadow-popover);
   transform-origin: top left;
 }
 .selectViewport {
@@ -311,10 +311,10 @@
 }
 .selectItem[data-highlighted] {
   color: var(--brand);
-  background: #f0f2fa;
+  background: var(--surface-selected);
 }
 .selectItem[data-state="checked"] {
-  color: white;
+  color: var(--on-brand);
   background: var(--brand);
 }
 .selectIndicator {
@@ -339,7 +339,7 @@
   padding: 0 24px;
   border: 1px solid var(--brand);
   border-radius: var(--radius-sm);
-  color: white;
+  color: var(--on-brand);
   background: var(--brand);
   align-items: center;
   justify-content: center;
@@ -349,7 +349,7 @@
 .primaryButton:hover,
 .authSubmit:hover,
 .authSubmitLink:hover {
-  background: #173995;
+  background: var(--brand-strong);
 }
 .primaryButton:disabled,
 .authSubmit:disabled {
@@ -408,14 +408,14 @@
   font-weight: 600;
 }
 .resultsSummary span {
-  color: #6b6b6e;
+  color: var(--text-placeholder);
   font-size: 12px;
 }
 .resultItem {
   display: flex;
   width: 920px;
   padding: 25px 0;
-  border-bottom: 1px solid #ccc9bf;
+  border-bottom: 1px solid var(--line-result);
   flex-direction: column;
   gap: 11px;
 }
@@ -440,13 +440,13 @@
 }
 .authors {
   margin: 0;
-  color: #5c5c61;
+  color: var(--text-metadata);
   font-size: 12px;
   font-weight: 500;
 }
 .metadata {
   margin: 0;
-  color: #736e63;
+  color: var(--text-warm-muted);
   font-size: 11px;
   font-weight: 500;
   line-height: 16px;
@@ -503,15 +503,15 @@
   margin: 0 0 25px;
   padding: 14px 16px;
   border-left: 3px solid var(--brand);
-  color: #343b55;
-  background: #f1f3fa;
+  color: var(--text-chip);
+  background: var(--surface-chip);
   align-items: center;
   justify-content: space-between;
   font-size: 13px;
 }
 .noticeError {
   border-color: var(--danger);
-  color: #67342e;
+  color: var(--danger-text);
   background: var(--danger-soft);
 }
 .noticeError button {
@@ -586,7 +586,7 @@
   display: block;
   height: 12px;
   border-radius: 3px;
-  background: #e5e2d8;
+  background: var(--surface-skeleton);
 }
 .searchSkeletonRow .searchSkeletonTitle {
   width: 68%;
@@ -630,7 +630,7 @@
 }
 .historyHeading p {
   margin: 0;
-  color: #61636e;
+  color: var(--muted);
   font-size: 14px;
   line-height: 22px;
 }
@@ -723,7 +723,7 @@
 }
 .authIntro {
   margin: 0;
-  color: #5e5e63;
+  color: var(--text-auth-intro);
   font-size: 14px;
   line-height: 22px;
 }
@@ -751,7 +751,7 @@
   width: 100%;
   height: 52px;
   padding: 0 15px;
-  border: 1px solid #aba89e;
+  border: 1px solid var(--line-field);
   border-radius: 6px;
   outline: none;
   color: var(--ink);
@@ -762,7 +762,7 @@
 .authForm input:focus,
 .settingsForm input:focus {
   border-color: var(--brand);
-  box-shadow: 0 0 0 2px rgb(31 69 184 / 12%);
+  box-shadow: 0 0 0 2px var(--focus-shadow);
 }
 .authForm label > span,
 .settingsForm label > span {
@@ -780,7 +780,7 @@
   margin-top: -1px;
   align-items: center;
   justify-content: space-between;
-  color: #77756f;
+  color: var(--text-form-muted);
   font-size: 11px;
 }
 .formAside a,
@@ -805,14 +805,14 @@
 .formMessageSuccess {
   margin: 0;
   padding: 11px 13px;
-  color: #6c3028;
+  color: var(--danger-message);
   background: var(--danger-soft);
   font-size: 12px;
   line-height: 1.5;
 }
 .formMessageSuccess {
-  color: #285843;
-  background: #eef6f0;
+  color: var(--success);
+  background: var(--surface-success);
 }
 .authInfo {
   display: flex;
@@ -855,7 +855,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  color: #6c6b66;
+  color: var(--text-history-muted);
   font-size: 12px;
 }
 .selectionSummary strong {
@@ -872,7 +872,7 @@
   width: 230px;
   height: 40px;
   padding: 0 14px;
-  border: 1px solid #c4c1b7;
+  border: 1px solid var(--line-filter);
   border-radius: 6px;
   background: var(--surface);
   align-items: center;
@@ -894,7 +894,7 @@
   width: 144px;
   height: 40px;
   padding: 0 12px;
-  border: 1px solid #d9b8b1;
+  border: 1px solid var(--line-danger);
   border-radius: 6px;
   color: var(--danger);
   background: var(--danger-soft);
@@ -910,7 +910,7 @@
   width: 18px;
   height: 18px;
   margin: 0;
-  border: 1px solid #aaa79d;
+  border: 1px solid var(--line-strong);
   border-radius: 4px;
   background: var(--surface);
   appearance: none;
@@ -926,7 +926,7 @@
   background: var(--brand) url("../assets/icons/indeterminate.svg") center / 12px 12px no-repeat;
 }
 .historyList {
-  border-block: 1px solid #aaa79d;
+  border-block: 1px solid var(--line-strong);
 }
 .historyRow {
   display: grid;
@@ -941,7 +941,7 @@
   border-bottom: 0;
 }
 .historyRowSelected {
-  background: rgb(31 69 184 / 4%);
+  background: var(--selection-surface);
 }
 .rowCheck {
   display: flex;
@@ -949,7 +949,7 @@
 }
 .historyDetails h2 {
   margin: 0 0 7px;
-  font-family: var(--font-body);
+  font-family: var(--font-ui);
   font-size: 16px;
   font-weight: 500;
   line-height: 22px;
@@ -969,7 +969,7 @@
   gap: 20px;
 }
 .historyActions > span {
-  color: #77746c;
+  color: var(--text-action-muted);
   font-size: 11px;
   font-weight: 500;
 }
@@ -1045,13 +1045,13 @@
 
 .dialogOverlay {
   position: fixed;
-  z-index: 50;
+  z-index: var(--z-overlay);
   inset: 0;
-  background: rgb(14 15 20 / 42%);
+  background: var(--overlay);
 }
 .dialogPositioner {
   position: fixed;
-  z-index: 51;
+  z-index: var(--z-dialog);
   top: 50%;
   left: 50%;
   display: grid;
@@ -1071,7 +1071,7 @@
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-md);
   background: var(--surface);
-  box-shadow: 0 20px 60px rgb(0 0 0 / 20%);
+  box-shadow: var(--shadow-dialog);
 }
 .dialogRule {
   width: 45px;
@@ -1092,7 +1092,7 @@
 .dialogContent .dialogError {
   margin-top: 18px;
   padding: 10px 12px;
-  color: #6c3028;
+  color: var(--danger-message);
   background: var(--danger-soft);
   font-size: 12px;
   line-height: 1.5;
@@ -1108,7 +1108,7 @@
   padding: 0 18px;
   border: 1px solid var(--danger);
   border-radius: 5px;
-  color: white;
+  color: var(--on-brand);
   background: var(--danger);
   cursor: pointer;
   font-weight: 600;
@@ -1239,7 +1239,7 @@
 .skeletonLines > span {
   display: block;
   border-radius: 3px;
-  background: #e5e2d8;
+  background: var(--surface-skeleton);
 }
 .skeletonQuota > span {
   height: 104px;
@@ -1283,7 +1283,7 @@
   width: 100%;
   height: 100%;
   min-height: 324px;
-  background: #e5e2d8;
+  background: var(--surface-skeleton);
 }
 .skeletonLedgerHeading,
 .skeletonToolbar {
@@ -1469,7 +1469,7 @@
   fill: var(--brand);
 }
 .chartMutedFill {
-  fill: #8c8980;
+  fill: var(--chart-neutral);
 }
 .chartInkFill {
   fill: var(--ink);
@@ -1487,7 +1487,7 @@
   stroke: var(--ink);
 }
 .chartP95Line {
-  stroke: #8c8980;
+  stroke: var(--chart-neutral);
   stroke-width: 1.8;
   stroke-dasharray: 6 6;
 }
@@ -1571,7 +1571,7 @@
   color: var(--brand);
 }
 .usageStatusDegraded {
-  color: #9e5912;
+  color: var(--warning);
 }
 .usageStatusFailed,
 .keyExpired {
@@ -1678,13 +1678,13 @@
   letter-spacing: 2px;
 }
 .rowMenu {
-  z-index: 40;
+  z-index: var(--z-row-menu);
   width: 150px;
   padding: 6px;
   border: 1px solid var(--line-soft);
   border-radius: 6px;
   background: var(--surface);
-  box-shadow: 0 10px 26px rgb(10 10 10 / 14%);
+  box-shadow: var(--shadow-row-menu);
 }
 .rowMenuItem,
 .rowMenuDanger {
@@ -1714,7 +1714,7 @@
   border: 0;
   border-radius: 2px;
   background: var(--surface);
-  box-shadow: 0 14px 32px rgb(5 5 8 / 18%);
+  box-shadow: var(--shadow-dialog-soft);
 }
 .formDialog h2,
 .secretDialog h2 {
@@ -1779,7 +1779,7 @@
   padding: 0 28px;
   border: 0;
   border-radius: 2px;
-  color: white;
+  color: var(--on-brand);
   background: var(--ink);
   cursor: pointer;
   font-weight: 600;
@@ -1802,7 +1802,7 @@
   margin-top: 26px;
   padding: 8px;
   border: 1px solid var(--line);
-  background: #f8f7f1;
+  background: var(--surface-secret);
 }
 .secretField input {
   height: 40px;

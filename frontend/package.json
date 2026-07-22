@@ -10,6 +10,7 @@
     "lint": "eslint . --max-warnings 0",
     "format:check": "prettier --check .",
     "format:write": "prettier --write .",
+    "architecture:check": "node scripts/check_architecture.mjs",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -18,7 +19,7 @@
     "api:types": "openapi-typescript src/api/openapi.json -o src/api/schema.d.ts && prettier --write src/api/openapi.json src/api/schema.d.ts",
     "api:generate": "npm run api:export && npm run api:types",
     "api:check": "npm run api:generate && git -C .. diff --exit-code -- frontend/src/api/openapi.json frontend/src/api/schema.d.ts",
-    "verify": "npm run api:check && npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build && npm run e2e"
+    "verify": "npm run api:check && npm run format:check && npm run architecture:check && npm run lint && npm run typecheck && npm run test && npm run build && npm run e2e"
   },
   "dependencies": {
     "@fontsource/literata": "^5.3.0",
