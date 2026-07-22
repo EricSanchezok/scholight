@@ -1928,13 +1928,13 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description Successful Response */
+      /** @description Usage records exported as CSV. */
       200: {
         headers: {
           [name: string]: unknown;
         };
         content: {
-          "application/json": unknown;
+          "text/csv": string;
         };
       };
       /** @description Validation Error */
