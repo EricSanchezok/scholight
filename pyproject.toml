@@ -24,7 +24,6 @@ dependencies = [
     "pylatexenc>=2",
     "pymupdf4llm>=1.27.2.3",
     "email-validator>=2.3.0",
-    "slowapi>=0.1.9",
 ]
 [project.optional-dependencies]
 dev = [

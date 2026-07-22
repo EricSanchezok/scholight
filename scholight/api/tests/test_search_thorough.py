@@ -29,12 +29,12 @@ async def test_thorough_operational_failure_returns_503_and_compensates_once(
 
     with (
         patch(
-            "scholight.api.routes.search.reserve_search_quota",
+            "scholight.api.search_execution.reserve_search_quota",
             new_callable=AsyncMock,
             return_value=reservation,
         ),
         patch(
-            "scholight.api.routes.search.compensate_search_quota",
+            "scholight.api.search_execution.compensate_search_quota",
             new_callable=AsyncMock,
         ) as compensate,
         patch(
@@ -43,7 +43,7 @@ async def test_thorough_operational_failure_returns_503_and_compensates_once(
             side_effect=failure,
         ),
         patch(
-            "scholight.api.routes.search.schedule_search_history_write",
+            "scholight.api.search_execution.schedule_search_history_write",
         ) as schedule_history,
     ):
         response = await api_client.post(
@@ -77,12 +77,12 @@ async def test_standard_operational_failure_uses_search_unavailable_code(
 
     with (
         patch(
-            "scholight.api.routes.search.reserve_search_quota",
+            "scholight.api.search_execution.reserve_search_quota",
             new_callable=AsyncMock,
             return_value=reservation,
         ),
         patch(
-            "scholight.api.routes.search.compensate_search_quota",
+            "scholight.api.search_execution.compensate_search_quota",
             new_callable=AsyncMock,
         ) as compensate,
         patch(
@@ -119,12 +119,12 @@ async def test_pre_commit_program_or_cancel_failure_returns_500_and_compensates_
 
     with (
         patch(
-            "scholight.api.routes.search.reserve_search_quota",
+            "scholight.api.search_execution.reserve_search_quota",
             new_callable=AsyncMock,
             return_value=reservation,
         ),
         patch(
-            "scholight.api.routes.search.compensate_search_quota",
+            "scholight.api.search_execution.compensate_search_quota",
             new_callable=AsyncMock,
         ) as compensate,
         patch(
@@ -133,7 +133,7 @@ async def test_pre_commit_program_or_cancel_failure_returns_500_and_compensates_
             side_effect=failure,
         ),
         patch(
-            "scholight.api.routes.search.schedule_search_history_write",
+            "scholight.api.search_execution.schedule_search_history_write",
         ) as schedule_history,
     ):
         response = await api_client.post(

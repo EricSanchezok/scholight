@@ -82,11 +82,13 @@ async def _is_zilliz_ready() -> bool:
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """Startup / shutdown lifecycle for database connections."""
     from scholight.api.history_tasks import drain_search_history_tasks
+    from scholight.api.search_access import reset_anonymous_minute_limits
     from scholight.api.usage_tasks import drain_usage_tasks
     from scholight.db.client import close_pool, create_pool
     from scholight.store.client import get_client
 
     _reset_dependency_probe_cache()
+    reset_anonymous_minute_limits()
     await create_pool()
     with suppress(Exception):
         get_client()
@@ -112,15 +114,8 @@ async def _limit_body_size(request: Request) -> None:
 
 def create_app() -> FastAPI:
     """Build and return the configured FastAPI application."""
-    from slowapi.errors import RateLimitExceeded
-    from slowapi.middleware import SlowAPIMiddleware
-
     from scholight import __version__
     from scholight.api.middleware.cors import setup_cors
-    from scholight.api.search_access import (
-        anonymous_rate_limit_exceeded_handler,
-        anonymous_search_limiter,
-    )
     from scholight.api.sessions import reset_session_user_agent, set_session_user_agent
     from scholight.config import settings, validate_api_runtime_settings
     from scholight.logging.middleware import RequestContextMiddleware, TimingMiddleware
@@ -135,9 +130,6 @@ def create_app() -> FastAPI:
     )
 
     setup_cors(app)
-    app.state.limiter = anonymous_search_limiter
-    app.add_exception_handler(RateLimitExceeded, anonymous_rate_limit_exceeded_handler)
-    app.add_middleware(SlowAPIMiddleware)
 
     @app.middleware("http")
     async def body_size_middleware(

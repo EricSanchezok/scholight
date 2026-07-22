@@ -1,4 +1,4 @@
-"""Authentication-adjacent access control for public search requests."""
+"""Transport-neutral quota and rate-limit controls for public search."""
 
 from __future__ import annotations
 
@@ -13,9 +13,6 @@ import structlog
 from cloud_auth.db.queries_quota import check_and_increment_quota, decrement_quota
 from cloud_auth.exceptions import DBError as AuthDBError
 from cloud_auth.models.user import UserRecord
-from fastapi import HTTPException, Request
-from fastapi.responses import JSONResponse
-from slowapi import Limiter
 
 from scholight.config import settings
 from scholight.db.client import DBError, get_pool
@@ -27,6 +24,26 @@ from scholight.db.queries_anonymous_quota import (
 
 logger = structlog.get_logger(__name__)
 _HMAC_CONTEXT = b"scholight:anonymous-quota:v1\0"
+_MINUTE_SECONDS = 60
+_minute_buckets: dict[bytes, tuple[int, int]] = {}
+
+
+class SearchAccessError(Exception):
+    """Stable quota/rate failure independent of an HTTP transport."""
+
+    def __init__(
+        self,
+        *,
+        status_code: int,
+        code: str,
+        message: str,
+        retry_after: int,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.code = code
+        self.message = message
+        self.retry_after = retry_after
 
 
 def anonymous_ip_digest(ip: str, secret: str) -> bytes:
@@ -37,45 +54,38 @@ def anonymous_ip_digest(ip: str, secret: str) -> bytes:
     return hmac.digest(secret.encode("utf-8"), _HMAC_CONTEXT + address.packed, "sha256")
 
 
-def _anonymous_minute_key(request: Request) -> str:
-    if (
-        request.method != "POST"
-        or request.url.path != "/search"
-        or "authorization" in request.headers
-    ):
-        return ""
-    if request.client is None:
-        return "anonymous-client-unavailable"
-    digest = anonymous_ip_digest(request.client.host, settings.anonymous_quota_hmac_secret)
-    return digest[:16].hex()
+def reset_anonymous_minute_limits() -> None:
+    """Clear process-local minute buckets for startup and isolated tests."""
+    _minute_buckets.clear()
 
 
-def _minute_limit() -> str:
-    return f"{settings.anonymous_rate_limit_per_minute}/minute"
+def _monotonic() -> float:
+    return time.monotonic()
 
 
-anonymous_search_limiter = Limiter(
-    key_func=_anonymous_minute_key,
-    default_limits=[_minute_limit],
-)
-
-
-def anonymous_rate_limit_exceeded_handler(request: Request, _exc: Exception) -> JSONResponse:
-    """Return the stable public anonymous-minute-limit error."""
-    response = JSONResponse(
-        status_code=429,
-        content={
-            "detail": {
-                "code": "anonymous_rate_limit_exceeded",
-                "message": "Anonymous search rate limit exceeded.",
-                "retryable": True,
-            }
-        },
-    )
-    limit_item, arguments = request.state.view_rate_limit
-    reset_at, _remaining = anonymous_search_limiter.limiter.get_window_stats(limit_item, *arguments)
-    response.headers["Retry-After"] = str(max(1, math.ceil(reset_at - time.time())))
-    return response
+def check_anonymous_minute_limit(client_ip: str) -> None:
+    """Consume one anonymous search attempt in the current fixed minute window."""
+    now = _monotonic()
+    window = int(now // _MINUTE_SECONDS)
+    digest = anonymous_ip_digest(client_ip, settings.anonymous_quota_hmac_secret)
+    stored_window, used = _minute_buckets.get(digest, (window, 0))
+    if stored_window != window:
+        used = 0
+    if used >= settings.anonymous_rate_limit_per_minute:
+        retry_after = max(1, math.ceil(((window + 1) * _MINUTE_SECONDS) - now))
+        raise SearchAccessError(
+            status_code=429,
+            code="anonymous_rate_limit_exceeded",
+            message="Anonymous search rate limit exceeded.",
+            retry_after=retry_after,
+        )
+    _minute_buckets[digest] = (window, used + 1)
+    if len(_minute_buckets) > 4096:
+        stale = [
+            key for key, (bucket_window, _) in _minute_buckets.items() if bucket_window != window
+        ]
+        for key in stale:
+            del _minute_buckets[key]
 
 
 def _utc_now() -> datetime:
@@ -88,13 +98,14 @@ def _seconds_until_next_utc_day(now: datetime | None = None) -> int:
     return max(1, math.ceil((tomorrow - current).total_seconds()))
 
 
-def _retryable_error(
+def _access_error(
     *, status_code: int, code: str, message: str, retry_after: int
-) -> HTTPException:
-    return HTTPException(
+) -> SearchAccessError:
+    return SearchAccessError(
         status_code=status_code,
-        detail={"code": code, "message": message, "retryable": True},
-        headers={"Retry-After": str(retry_after)},
+        code=code,
+        message=message,
+        retry_after=retry_after,
     )
 
 
@@ -111,19 +122,19 @@ class SearchQuotaReservation:
 
 
 async def reserve_search_quota(
-    request: Request,
+    client_ip: str | None,
     current_user: UserRecord | None,
     *,
     search_level: int,
 ) -> SearchQuotaReservation:
-    """Reserve the correct user or anonymous daily quota before core search."""
+    """Reserve the correct user or anonymous quota before core search."""
     operation = f"search_level{search_level}"
     if current_user is not None:
         quota_date = _utc_now().date()
         try:
             result = await check_and_increment_quota(get_pool, current_user.id, operation)
         except AuthDBError as exc:
-            raise _retryable_error(
+            raise _access_error(
                 status_code=503,
                 code="quota_service_unavailable",
                 message="Search quota service is temporarily unavailable.",
@@ -139,21 +150,22 @@ async def reserve_search_quota(
         if result.allowed:
             return reservation
         await compensate_search_quota(reservation)
-        raise _retryable_error(
+        raise _access_error(
             status_code=429,
             code="user_daily_quota_exceeded",
             message="Daily search quota exceeded.",
             retry_after=_seconds_until_next_utc_day(),
         )
 
-    if request.client is None:
-        raise _retryable_error(
+    if client_ip is None:
+        raise _access_error(
             status_code=503,
             code="quota_service_unavailable",
             message="Search quota service is temporarily unavailable.",
             retry_after=5,
         )
-    digest = anonymous_ip_digest(request.client.host, settings.anonymous_quota_hmac_secret)
+    check_anonymous_minute_limit(client_ip)
+    digest = anonymous_ip_digest(client_ip, settings.anonymous_quota_hmac_secret)
     limit = (
         settings.anonymous_standard_daily_limit
         if search_level == 1
@@ -166,14 +178,14 @@ async def reserve_search_quota(
             limit=limit,
         )
     except DBError as exc:
-        raise _retryable_error(
+        raise _access_error(
             status_code=503,
             code="quota_service_unavailable",
             message="Search quota service is temporarily unavailable.",
             retry_after=5,
         ) from exc
     if anonymous is None:
-        raise _retryable_error(
+        raise _access_error(
             status_code=429,
             code="anonymous_daily_limit_exceeded",
             message="Anonymous daily search limit exceeded.",
@@ -208,10 +220,11 @@ async def compensate_search_quota(reservation: SearchQuotaReservation) -> None:
 
 
 __all__ = [
+    "SearchAccessError",
     "SearchQuotaReservation",
     "anonymous_ip_digest",
-    "anonymous_rate_limit_exceeded_handler",
-    "anonymous_search_limiter",
+    "check_anonymous_minute_limit",
     "compensate_search_quota",
     "reserve_search_quota",
+    "reset_anonymous_minute_limits",
 ]

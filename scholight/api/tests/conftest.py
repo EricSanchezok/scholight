@@ -11,7 +11,7 @@ from cloud_auth.models.user import UserRecord
 from fastapi import FastAPI
 
 from scholight.api.app import create_app
-from scholight.api.search_access import anonymous_search_limiter
+from scholight.api.search_access import reset_anonymous_minute_limits
 from scholight.config import settings
 from scholight.models.search import SearchResult
 
@@ -41,9 +41,9 @@ def api_app(monkeypatch: pytest.MonkeyPatch) -> Iterator[FastAPI]:
     monkeypatch.setattr(settings, "proxy_headers", False)
     monkeypatch.setattr(settings, "forwarded_allow_ips", "127.0.0.1")
     monkeypatch.setattr(settings, "cors_allow_origins", ["http://localhost:3000"])
-    anonymous_search_limiter.reset()
+    reset_anonymous_minute_limits()
     yield create_app()
-    anonymous_search_limiter.reset()
+    reset_anonymous_minute_limits()
 
 
 @pytest_asyncio.fixture

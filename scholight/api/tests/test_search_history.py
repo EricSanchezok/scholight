@@ -291,7 +291,7 @@ async def test_authenticated_final_200_schedules_normalized_history(
 
     with (
         patch(
-            "scholight.api.routes.search.reserve_search_quota",
+            "scholight.api.search_execution.reserve_search_quota",
             new_callable=AsyncMock,
             return_value=reservation,
         ),
@@ -301,7 +301,7 @@ async def test_authenticated_final_200_schedules_normalized_history(
             return_value=result,
         ),
         patch(
-            "scholight.api.routes.search.schedule_search_history_write",
+            "scholight.api.search_execution.schedule_search_history_write",
             create=True,
         ) as schedule,
     ):

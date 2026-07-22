@@ -54,7 +54,7 @@ async def test_final_enrichment_runs_one_batch_and_preserves_core_rank(
 
     with (
         patch(
-            "scholight.api.routes.search.reserve_search_quota",
+            "scholight.api.search_execution.reserve_search_quota",
             new_callable=AsyncMock,
             return_value=reservation,
         ),
@@ -63,9 +63,9 @@ async def test_final_enrichment_runs_one_batch_and_preserves_core_rank(
             new_callable=AsyncMock,
             return_value=core_result,
         ),
-        patch("scholight.api.routes.search.batch_get_arxiv_papers", enrichment),
+        patch("scholight.api.search_execution.batch_get_arxiv_papers", enrichment),
         patch(
-            "scholight.api.routes.search.compensate_search_quota",
+            "scholight.api.search_execution.compensate_search_quota",
             new_callable=AsyncMock,
         ) as compensate,
     ):
@@ -91,7 +91,7 @@ async def test_missing_enrichment_row_is_degraded_with_null_abstract(
 
     with (
         patch(
-            "scholight.api.routes.search.reserve_search_quota",
+            "scholight.api.search_execution.reserve_search_quota",
             new_callable=AsyncMock,
             return_value=reservation,
         ),
@@ -101,11 +101,11 @@ async def test_missing_enrichment_row_is_degraded_with_null_abstract(
             return_value=core_result,
         ),
         patch(
-            "scholight.api.routes.search.batch_get_arxiv_papers",
+            "scholight.api.search_execution.batch_get_arxiv_papers",
             return_value={"A": {"arxiv_id": "A", "abstract": "Abstract A"}},
         ),
         patch(
-            "scholight.api.routes.search.compensate_search_quota",
+            "scholight.api.search_execution.compensate_search_quota",
             new_callable=AsyncMock,
         ) as compensate,
     ):
@@ -136,7 +136,7 @@ async def test_known_enrichment_failure_returns_degraded_without_compensation(
 
     with (
         patch(
-            "scholight.api.routes.search.reserve_search_quota",
+            "scholight.api.search_execution.reserve_search_quota",
             new_callable=AsyncMock,
             return_value=reservation,
         ),
@@ -146,11 +146,11 @@ async def test_known_enrichment_failure_returns_degraded_without_compensation(
             return_value=core_result,
         ),
         patch(
-            "scholight.api.routes.search.batch_get_arxiv_papers",
+            "scholight.api.search_execution.batch_get_arxiv_papers",
             side_effect=failure,
         ),
         patch(
-            "scholight.api.routes.search.compensate_search_quota",
+            "scholight.api.search_execution.compensate_search_quota",
             new_callable=AsyncMock,
         ) as compensate,
     ):
@@ -170,7 +170,7 @@ async def test_zero_core_hits_skip_final_enrichment(
 
     with (
         patch(
-            "scholight.api.routes.search.reserve_search_quota",
+            "scholight.api.search_execution.reserve_search_quota",
             new_callable=AsyncMock,
             return_value=reservation,
         ),
@@ -179,7 +179,7 @@ async def test_zero_core_hits_skip_final_enrichment(
             new_callable=AsyncMock,
             return_value=_result(),
         ),
-        patch("scholight.api.routes.search.batch_get_arxiv_papers", enrichment),
+        patch("scholight.api.search_execution.batch_get_arxiv_papers", enrichment),
     ):
         response = await api_client.post("/search", json={"query": "retrieval"})
 
@@ -200,7 +200,7 @@ async def test_post_commit_enrichment_program_error_returns_500_with_compensatio
 
     with (
         patch(
-            "scholight.api.routes.search.reserve_search_quota",
+            "scholight.api.search_execution.reserve_search_quota",
             new_callable=AsyncMock,
             return_value=reservation,
         ),
@@ -210,15 +210,15 @@ async def test_post_commit_enrichment_program_error_returns_500_with_compensatio
             return_value=core_result,
         ),
         patch(
-            "scholight.api.routes.search.batch_get_arxiv_papers",
+            "scholight.api.search_execution.batch_get_arxiv_papers",
             return_value={"A": None},
         ),
         patch(
-            "scholight.api.routes.search.compensate_search_quota",
+            "scholight.api.search_execution.compensate_search_quota",
             new_callable=AsyncMock,
         ) as compensate,
         patch(
-            "scholight.api.routes.search.schedule_search_history_write",
+            "scholight.api.search_execution.schedule_search_history_write",
         ) as schedule_history,
     ):
         response = await api_client.post("/search", json={"query": "retrieval"})
@@ -240,7 +240,7 @@ async def test_post_commit_mapper_error_returns_500_with_compensation(
 
     with (
         patch(
-            "scholight.api.routes.search.reserve_search_quota",
+            "scholight.api.search_execution.reserve_search_quota",
             new_callable=AsyncMock,
             return_value=reservation,
         ),
@@ -250,12 +250,12 @@ async def test_post_commit_mapper_error_returns_500_with_compensation(
             return_value=core_result,
         ),
         patch(
-            "scholight.api.routes.search.batch_get_arxiv_papers",
+            "scholight.api.search_execution.batch_get_arxiv_papers",
             return_value={"A": {"arxiv_id": "A", "abstract": "Abstract A"}},
         ),
-        patch("scholight.api.routes.search.map_search_response", side_effect=ValueError("bug")),
+        patch("scholight.api.search_execution.map_search_response", side_effect=ValueError("bug")),
         patch(
-            "scholight.api.routes.search.compensate_search_quota",
+            "scholight.api.search_execution.compensate_search_quota",
             new_callable=AsyncMock,
         ) as compensate,
     ):

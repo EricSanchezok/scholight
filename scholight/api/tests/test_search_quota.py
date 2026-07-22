@@ -3,33 +3,20 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import asyncpg
 import pytest
 from cloud_auth.models.user import QuotaResult, UserRecord
-from fastapi import HTTPException, Request
 
-from scholight.api.search_access import compensate_search_quota, reserve_search_quota
+from scholight.api.search_access import (
+    SearchAccessError,
+    compensate_search_quota,
+    reserve_search_quota,
+)
 from scholight.config import settings
 from scholight.db import client as db_client
 from scholight.db.queries_anonymous_quota import AnonymousQuotaReservation
-
-
-def _request() -> Request:
-    return Request(
-        {
-            "type": "http",
-            "method": "POST",
-            "path": "/search",
-            "headers": [],
-            "query_string": b"",
-            "scheme": "http",
-            "server": ("test", 80),
-            "client": ("192.0.2.20", 12345),
-        }
-    )
 
 
 def _user() -> UserRecord:
@@ -65,7 +52,7 @@ async def test_anonymous_search_routes_to_independent_daily_bucket(
             new_callable=AsyncMock,
         ) as reserve_user,
     ):
-        reservation = await reserve_search_quota(_request(), None, search_level=search_level)
+        reservation = await reserve_search_quota("192.0.2.20", None, search_level=search_level)
 
     assert reservation.anonymous is token
     anonymous_call = reserve_anonymous.await_args
@@ -82,17 +69,13 @@ async def test_anonymous_daily_limit_returns_stable_429() -> None:
         new_callable=AsyncMock,
         return_value=None,
     ):
-        with pytest.raises(HTTPException) as exc_info:
-            await reserve_search_quota(_request(), None, search_level=1)
+        with pytest.raises(SearchAccessError) as exc_info:
+            await reserve_search_quota("192.0.2.20", None, search_level=1)
 
     assert exc_info.value.status_code == 429
-    assert cast(dict[str, object], exc_info.value.detail) == {
-        "code": "anonymous_daily_limit_exceeded",
-        "message": "Anonymous daily search limit exceeded.",
-        "retryable": True,
-    }
-    assert exc_info.value.headers is not None
-    assert int(exc_info.value.headers["Retry-After"]) > 0
+    assert exc_info.value.code == "anonymous_daily_limit_exceeded"
+    assert exc_info.value.message == "Anonymous daily search limit exceeded."
+    assert exc_info.value.retry_after > 0
 
 
 @pytest.mark.asyncio
@@ -112,7 +95,7 @@ async def test_authenticated_search_uses_only_cloud_auth_quota() -> None:
             new_callable=AsyncMock,
         ) as reserve_anonymous,
     ):
-        reservation = await reserve_search_quota(_request(), _user(), search_level=2)
+        reservation = await reserve_search_quota(None, _user(), search_level=2)
 
     assert (
         reservation.operation,
@@ -141,7 +124,7 @@ async def test_user_compensation_is_one_shot_within_same_utc_day() -> None:
             new_callable=AsyncMock,
         ) as decrement,
     ):
-        reservation = await reserve_search_quota(_request(), _user(), search_level=1)
+        reservation = await reserve_search_quota(None, _user(), search_level=1)
         await compensate_search_quota(reservation)
         await compensate_search_quota(reservation)
 
@@ -167,7 +150,7 @@ async def test_user_quota_check_crossing_utc_midnight_never_decrements_new_day()
         ) as decrement,
         patch("scholight.api.search_access.logger.warning") as warning,
     ):
-        reservation = await reserve_search_quota(_request(), _user(), search_level=1)
+        reservation = await reserve_search_quota(None, _user(), search_level=1)
         await compensate_search_quota(reservation)
 
     assert (reservation.user_quota_date, reservation.user_quota_completed_date) == (

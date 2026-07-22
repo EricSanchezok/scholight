@@ -11,8 +11,8 @@ from cloud_auth.models.user import QuotaStatus, UserRecord
 from fastapi import FastAPI
 
 from scholight.api.deps import SearchActor
-from scholight.api.routes.search import _schedule_usage
 from scholight.api.routes.usage import usage_summary
+from scholight.api.search_execution import _schedule_usage
 from scholight.api.usage import (
     UsageRangeError,
     decode_usage_cursor,
@@ -104,7 +104,7 @@ def test_authenticated_usage_event_fields(
     key_id = uuid4()
     actor = SearchActor(user=active_user, actor_type="access_key", access_key_id=key_id)
 
-    with patch("scholight.api.routes.search.schedule_usage_event") as schedule:
+    with patch("scholight.api.search_execution.schedule_usage_event") as schedule:
         _schedule_usage(
             actor,
             request_id="request-1",
@@ -129,7 +129,7 @@ def test_authenticated_usage_event_fields(
 
 
 def test_anonymous_or_rejected_request_schedules_no_usage_event() -> None:
-    with patch("scholight.api.routes.search.schedule_usage_event") as schedule:
+    with patch("scholight.api.search_execution.schedule_usage_event") as schedule:
         _schedule_usage(
             None,
             request_id="request-1",
