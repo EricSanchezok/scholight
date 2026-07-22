@@ -20,3 +20,22 @@
 		reverse_proxy frontend:8080
 	}
 }
+
+{$OPENPAPER_DOMAIN} {
+	log {
+		output stdout
+		format json
+	}
+	encode zstd gzip
+
+	@internal_health path /livez /livez/ /readyz /readyz/
+	respond @internal_health 404
+
+	handle /api/* {
+		reverse_proxy openpaper-api:8000
+	}
+
+	handle {
+		reverse_proxy openpaper-client:3000
+	}
+}

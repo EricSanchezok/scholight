@@ -129,6 +129,20 @@ def test_caddy_blocks_internal_health_and_routes_api_directly() -> None:
     assert "format json" in caddyfile
 
 
+def test_caddy_routes_openpaper_over_the_shared_edge_network() -> None:
+    compose = yaml.safe_load((PRODUCTION / "compose.yaml").read_text(encoding="utf-8"))
+    caddyfile = (PRODUCTION / "Caddyfile").read_text(encoding="utf-8")
+
+    assert "edge" in compose["services"]["caddy"]["networks"]
+    assert compose["networks"]["edge"] == {
+        "external": True,
+        "name": "${SANCHEZCLOUD_EDGE_NETWORK:-sanchezcloud-edge}",
+    }
+    assert "{$OPENPAPER_DOMAIN}" in caddyfile
+    assert "reverse_proxy openpaper-api:8000" in caddyfile
+    assert "reverse_proxy openpaper-client:3000" in caddyfile
+
+
 def test_release_workflow_is_manual_oidc_and_digest_driven() -> None:
     workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
 

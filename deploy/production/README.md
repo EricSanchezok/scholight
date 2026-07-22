@@ -6,10 +6,12 @@ This package deploys one coordinated Scholight frontend/backend release to a sin
 
 - Linux host with Docker Engine, Compose v2, AWS CLI, `curl`, and `flock`
 - EC2 instance role with ECR pull permissions
-- DNS for `SCHOLIGHT_DOMAIN` pointing to the host
+- DNS for `SCHOLIGHT_DOMAIN` and `OPENPAPER_DOMAIN` pointing to the host
 - inbound TCP 80/443 and outbound access to ECR, ACME, RDS, Zilliz, and the embedding API
 - `/etc/scholight/runtime.env` created from `runtime.env.example`, owned by root (or the dedicated deployment user), mode `0600`; symlinks are rejected
 - this directory installed at `/opt/scholight`
+- external Docker network `sanchezcloud-edge`, shared only by Caddy and the public edges of
+  product Compose projects
 
 Unknown AWS account, Region, instance, domain, and architecture values are intentionally not committed.
 
@@ -46,6 +48,8 @@ The roles themselves and their passwords remain infrastructure-managed. The scri
 ## Install on the production host
 
 ```bash
+docker network inspect sanchezcloud-edge >/dev/null 2>&1 || \
+  docker network create sanchezcloud-edge
 sudo install -d -m 0755 /opt/scholight /etc/scholight /var/lib/scholight
 sudo install -m 0644 deploy/production/compose.yaml /opt/scholight/compose.yaml
 sudo install -m 0644 deploy/production/Caddyfile /opt/scholight/Caddyfile
@@ -56,6 +60,11 @@ sudo install -m 0755 deploy/production/wait-ssm.sh /opt/scholight/wait-ssm.sh
 sudo install -m 0600 deploy/production/runtime.env.example /etc/scholight/runtime.env
 sudoedit /etc/scholight/runtime.env
 ```
+
+Caddy remains the only process binding ports 80/443. The separate OpenPaper Compose project joins
+the same external network with aliases `openpaper-client` and `openpaper-api`; RabbitMQ, Redis,
+workers, and migration containers remain isolated on OpenPaper's internal network. Start OpenPaper
+before reloading this Caddy configuration if the new domain must become available immediately.
 
 Keep this package version synchronized with the repository. Each release carries a SHA-256 digest of `compose.yaml`, `Caddyfile`, `bootstrap-db.sql`, `release.sh`, `smoke.sh`, and `wait-ssm.sh`; deployment fails closed unless `/opt/scholight` matches that reviewed package. Upgrade these host files from the same merged revision before deploying a changed package. GitHub Actions never mutates host runtime secrets.
 

@@ -17,6 +17,7 @@ services:
     environment:
       SCHOLIGHT_DOMAIN: ${SCHOLIGHT_DOMAIN:?SCHOLIGHT_DOMAIN is required}
       SCHOLIGHT_ACME_EMAIL: ${SCHOLIGHT_ACME_EMAIL:?SCHOLIGHT_ACME_EMAIL is required}
+      OPENPAPER_DOMAIN: ${OPENPAPER_DOMAIN:?OPENPAPER_DOMAIN is required}
     ports:
       - "80:80"
       - "443:443"
@@ -32,6 +33,7 @@ services:
     networks:
       scholight:
         ipv4_address: ${SCHOLIGHT_CADDY_IP:-172.31.0.2}
+      edge:
     restart: unless-stopped
     logging:
       driver: json-file
@@ -133,3 +135,6 @@ networks:
     ipam:
       config:
         - subnet: ${SCHOLIGHT_DOCKER_SUBNET:-172.31.0.0/24}
+  edge:
+    external: true
+    name: ${SANCHEZCLOUD_EDGE_NETWORK:-sanchezcloud-edge}
