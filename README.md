@@ -2,6 +2,8 @@
 
 AI 学术论文搜索引擎——arXiv 单一数据源，段落级向量检索 + 多阶段重排。
 
+前端产品原则以 [`PRODUCT.md`](PRODUCT.md) 为准，视觉与交互系统以 [`DESIGN.md`](DESIGN.md) 为准；新增界面前应先读取两者。
+
 ## 架构概览
 
 ```
@@ -24,11 +26,11 @@ scholight/
 
 ### 外部依赖
 
-| 组件 | 用途 |
-|------|------|
-| Zilliz Cloud | 向量数据库（Milvus 兼容），存储 303 万篇论文 + 1.72 亿段落 |
-| PostgreSQL (AWS RDS) | 用户认证（cloud-auth） + 搜索历史 |
-| Embedding API | 文本向量化（Qwen3-Embedding-0.6B，硅基流动 / faro-hosted） |
+| 组件                 | 用途                                                       |
+| -------------------- | ---------------------------------------------------------- |
+| Zilliz Cloud         | 向量数据库（Milvus 兼容），存储 303 万篇论文 + 1.72 亿段落 |
+| PostgreSQL (AWS RDS) | 用户认证（cloud-auth） + 搜索历史                          |
+| Embedding API        | 文本向量化（Qwen3-Embedding-0.6B，硅基流动 / faro-hosted） |
 
 ---
 
@@ -50,22 +52,22 @@ uv run scholight search -q "attention mechanism"   # 测试搜索
 
 所有配置通过 `SCHOLIGHT_` 前缀的环境变量注入，模板在 `.env.example`。关键变量：
 
-| 变量 | 必填 | 说明 |
-|------|:--:|------|
-| `SCHOLIGHT_ZILLIZ_URI` | ✅ | Zilliz Cloud 集群地址 |
-| `SCHOLIGHT_ZILLIZ_TOKEN` | ✅ | Zilliz Cloud API 密钥 |
-| `SCHOLIGHT_EMBEDDING_API_KEY` | ✅ | Embedding API 密钥 |
-| `SCHOLIGHT_EMBEDDING_BASE_URL` | ✅ | Embedding API 端点 |
-| `SCHOLIGHT_PG_HOST/PORT/DATABASE/USER/PASSWORD` | ✅ | PostgreSQL 连接 |
-| `SCHOLIGHT_AUTH_JWT_SECRET` | API ✅ | 固定 JWT 密钥，API 启动要求至少 32 UTF-8 bytes |
-| `SCHOLIGHT_ANONYMOUS_QUOTA_HMAC_SECRET` | API ✅ | 匿名 IP 摘要密钥，至少 32 UTF-8 bytes，独立于 JWT 密钥并跨实例/重启保持一致 |
-| `SCHOLIGHT_ACCESS_KEY_HMAC_SECRET` | API ✅ | Access Key HMAC-SHA256 密钥，至少 32 UTF-8 bytes；必须独立生成并跨实例/重启保持一致 |
-| `SCHOLIGHT_ANONYMOUS_RATE_LIMIT_PER_MINUTE` | | 匿名共享分钟桶，默认 30 attempts/IP |
-| `SCHOLIGHT_ANONYMOUS_STANDARD_DAILY_LIMIT` | | 匿名 Standard UTC 日额度，默认 100/IP |
-| `SCHOLIGHT_ANONYMOUS_THOROUGH_DAILY_LIMIT` | | 匿名 Thorough UTC 日额度，默认 30/IP |
-| `SCHOLIGHT_CORS_ALLOW_ORIGINS` | API ✅ | 明确的前端 origin JSON 列表；生产环境禁止 `*` |
-| `SCHOLIGHT_PROXY_HEADERS` / `SCHOLIGHT_FORWARDED_ALLOW_IPS` | API ✅ | 反向代理信任设置；启用时必须列出明确代理 IP/CIDR，禁止 `*` |
-| `SCHOLIGHT_DATA_ROOT` | | 论文 PDF 和日志的本地存储路径（默认 `./data`） |
+| 变量                                                        |  必填  | 说明                                                                                |
+| ----------------------------------------------------------- | :----: | ----------------------------------------------------------------------------------- |
+| `SCHOLIGHT_ZILLIZ_URI`                                      |   ✅   | Zilliz Cloud 集群地址                                                               |
+| `SCHOLIGHT_ZILLIZ_TOKEN`                                    |   ✅   | Zilliz Cloud API 密钥                                                               |
+| `SCHOLIGHT_EMBEDDING_API_KEY`                               |   ✅   | Embedding API 密钥                                                                  |
+| `SCHOLIGHT_EMBEDDING_BASE_URL`                              |   ✅   | Embedding API 端点                                                                  |
+| `SCHOLIGHT_PG_HOST/PORT/DATABASE/USER/PASSWORD`             |   ✅   | PostgreSQL 连接                                                                     |
+| `SCHOLIGHT_AUTH_JWT_SECRET`                                 | API ✅ | 固定 JWT 密钥，API 启动要求至少 32 UTF-8 bytes                                      |
+| `SCHOLIGHT_ANONYMOUS_QUOTA_HMAC_SECRET`                     | API ✅ | 匿名 IP 摘要密钥，至少 32 UTF-8 bytes，独立于 JWT 密钥并跨实例/重启保持一致         |
+| `SCHOLIGHT_ACCESS_KEY_HMAC_SECRET`                          | API ✅ | Access Key HMAC-SHA256 密钥，至少 32 UTF-8 bytes；必须独立生成并跨实例/重启保持一致 |
+| `SCHOLIGHT_ANONYMOUS_RATE_LIMIT_PER_MINUTE`                 |        | 匿名共享分钟桶，默认 30 attempts/IP                                                 |
+| `SCHOLIGHT_ANONYMOUS_STANDARD_DAILY_LIMIT`                  |        | 匿名 Standard UTC 日额度，默认 100/IP                                               |
+| `SCHOLIGHT_ANONYMOUS_THOROUGH_DAILY_LIMIT`                  |        | 匿名 Thorough UTC 日额度，默认 30/IP                                                |
+| `SCHOLIGHT_CORS_ALLOW_ORIGINS`                              | API ✅ | 明确的前端 origin JSON 列表；生产环境禁止 `*`                                       |
+| `SCHOLIGHT_PROXY_HEADERS` / `SCHOLIGHT_FORWARDED_ALLOW_IPS` | API ✅ | 反向代理信任设置；启用时必须列出明确代理 IP/CIDR，禁止 `*`                          |
+| `SCHOLIGHT_DATA_ROOT`                                       |        | 论文 PDF 和日志的本地存储路径（默认 `./data`）                                      |
 
 API-only 校验只在 `create_app()` 执行；migration、scheduler 和内部 CLI 不需要匿名 HMAC 密钥。
 
@@ -75,13 +77,13 @@ API-only 校验只在 `create_app()` 执行；migration、scheduler 和内部 CL
 
 ### 两级检索管线
 
-| | Standard（内部 Level 1） | Thorough（内部 Level 2） |
-|---|---|---|
-| **范围** | 论文元数据（标题 + 摘要） | 论文元数据 + 段落全文 |
-| **集合** | `arxiv_papers`（303 万） | `arxiv_papers` + `arxiv_chunks`（1.72 亿） |
-| **算法** | Dense + BM25 hybrid → WeightedRanker(0.6/0.4) | Standard 全部 + Chunk 粗召回 → Dense 精排 → MaxP 聚合 → RRF 融合 |
-| **延迟** | ~300ms | ~1s |
-| **适用场景** | 日常检索 | 深度全文检索 |
+|              | Standard（内部 Level 1）                      | Thorough（内部 Level 2）                                         |
+| ------------ | --------------------------------------------- | ---------------------------------------------------------------- |
+| **范围**     | 论文元数据（标题 + 摘要）                     | 论文元数据 + 段落全文                                            |
+| **集合**     | `arxiv_papers`（303 万）                      | `arxiv_papers` + `arxiv_chunks`（1.72 亿）                       |
+| **算法**     | Dense + BM25 hybrid → WeightedRanker(0.6/0.4) | Standard 全部 + Chunk 粗召回 → Dense 精排 → MaxP 聚合 → RRF 融合 |
+| **延迟**     | ~300ms                                        | ~1s                                                              |
+| **适用场景** | 日常检索                                      | 深度全文检索                                                     |
 
 Thorough 是严格模式：Level 2 或其核心 metadata backfill 未完整成功时返回 `503`，不会回退并伪装成 Standard 成功。CLI 和 benchmark 仍使用内部 `level/top_k` DTO；只有 HTTP API 使用下述公共契约。
 
@@ -223,16 +225,16 @@ curl -sS -X DELETE "$API/user/account" \
 
 ### 可调超参数
 
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| `SCHOLIGHT_SEARCH_HYBRID_DENSE_WEIGHT` | 0.60 | 论文级 Dense 权重 |
-| `SCHOLIGHT_SEARCH_HYBRID_BM25_WEIGHT` | 0.40 | 论文级 BM25 权重 |
-| `SCHOLIGHT_SEARCH_CHUNK_AGGREGATION_ALPHA` | 0.5 | MaxP/SumP 混合比（0=纯 SumP，1=纯 MaxP） |
-| `SCHOLIGHT_SEARCH_POSITION_WEIGHT_BETA` | 0.3 | 段落位置加权（靠后的结论段得 boost） |
-| `SCHOLIGHT_SEARCH_RRF_K` | 60 | RRF 平滑常数 |
-| `SCHOLIGHT_BM25_COARSE_TOP_K` | 30 | Level 2 BM25 粗召回 Top-K |
-| `SCHOLIGHT_DENSE_REFINE_TOP_K` | 256 | Level 2 Dense 精排 Top-K |
-| `SCHOLIGHT_SEARCH_LEVEL` | 3 | 论文级 AUTOINDEX 召回率（3≈95%） |
+| 参数                                       | 默认值 | 说明                                     |
+| ------------------------------------------ | ------ | ---------------------------------------- |
+| `SCHOLIGHT_SEARCH_HYBRID_DENSE_WEIGHT`     | 0.60   | 论文级 Dense 权重                        |
+| `SCHOLIGHT_SEARCH_HYBRID_BM25_WEIGHT`      | 0.40   | 论文级 BM25 权重                         |
+| `SCHOLIGHT_SEARCH_CHUNK_AGGREGATION_ALPHA` | 0.5    | MaxP/SumP 混合比（0=纯 SumP，1=纯 MaxP） |
+| `SCHOLIGHT_SEARCH_POSITION_WEIGHT_BETA`    | 0.3    | 段落位置加权（靠后的结论段得 boost）     |
+| `SCHOLIGHT_SEARCH_RRF_K`                   | 60     | RRF 平滑常数                             |
+| `SCHOLIGHT_BM25_COARSE_TOP_K`              | 30     | Level 2 BM25 粗召回 Top-K                |
+| `SCHOLIGHT_DENSE_REFINE_TOP_K`             | 256    | Level 2 Dense 精排 Top-K                 |
+| `SCHOLIGHT_SEARCH_LEVEL`                   | 3      | 论文级 AUTOINDEX 召回率（3≈95%）         |
 
 ## CLI 命令
 
@@ -265,16 +267,16 @@ uv run scholight scheduler status         # 调度任务状态
 
 `scholight store health` 执行 7 层诊断：
 
-| 层 | 检查内容 | Zilliz Cloud 适配 |
-|----|---------|-------------------|
-| L0 Connection | 连通性、服务器版本 | ✅ |
-| L1 Collections | Collection 存在性、schema | ✅ |
-| L2 Indexes | 每个索引状态、pending 行数 | ✅ |
-| L3 Segments | loaded/persistent segments | 自动跳过（Cloud 不暴露） |
-| L4 Data Stats | 行数、年份分布 | ✅ |
-| L5 Resources | Pipeline flag 覆盖率 | ✅ |
-| L6 Vectors | 零向量比例 | ✅ |
-| L7 Consistency | papers ↔ chunks 交叉校验 | ✅ |
+| 层             | 检查内容                   | Zilliz Cloud 适配        |
+| -------------- | -------------------------- | ------------------------ |
+| L0 Connection  | 连通性、服务器版本         | ✅                       |
+| L1 Collections | Collection 存在性、schema  | ✅                       |
+| L2 Indexes     | 每个索引状态、pending 行数 | ✅                       |
+| L3 Segments    | loaded/persistent segments | 自动跳过（Cloud 不暴露） |
+| L4 Data Stats  | 行数、年份分布             | ✅                       |
+| L5 Resources   | Pipeline flag 覆盖率       | ✅                       |
+| L6 Vectors     | 零向量比例                 | ✅                       |
+| L7 Consistency | papers ↔ chunks 交叉校验   | ✅                       |
 
 所有层在 quick 模式（默认）下 5 秒内完成。`--deep` 模式会做全表扫描，使用前会弹出成本确认。
 

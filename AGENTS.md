@@ -1,5 +1,9 @@
 # AGENTS.md — Scholight 项目规范
 
+## Design Context
+
+Frontend product decisions are authoritative in [`PRODUCT.md`](PRODUCT.md); visual and interaction decisions are authoritative in [`DESIGN.md`](DESIGN.md). Read both before adding or reshaping frontend UI. Runtime design primitives live in `frontend/src/styles/tokens.css`; do not introduce page-local colors, shadows, typography roles, or motion timing when a semantic token exists.
+
 ## 项目概述
 
 Scholight 是面向人工智能领域的学术论文搜索引擎，**以 arXiv 为唯一数据源**，使用 **Zilliz Cloud** 作为唯一存储引擎。
@@ -147,21 +151,22 @@ uv run pre-commit install --hook-type commit-msg   # 提交信息检查
 
 共 20 个 hook：
 
-| Hook | 说明 |
-|---|---|
-| `pre-commit-hooks` | 基础卫生：YAML/TOML/JSON 验证、行尾空格、合并冲突、大文件、私钥检测等 |
-| `typos` | 代码拼写检查 |
-| `ruff-check` + `ruff-format` | Lint + 格式化（line-length=100） |
-| `mypy` | 静态类型检查（`strict = true`） |
-| `bandit` | AST 安全扫描 |
-| `vulture` | 死代码检测 |
-| `gitlint` | 提交信息规范（feat/fix/docs/refactor/perf/test/chore/ci） |
+| Hook                         | 说明                                                                  |
+| ---------------------------- | --------------------------------------------------------------------- |
+| `pre-commit-hooks`           | 基础卫生：YAML/TOML/JSON 验证、行尾空格、合并冲突、大文件、私钥检测等 |
+| `typos`                      | 代码拼写检查                                                          |
+| `ruff-check` + `ruff-format` | Lint + 格式化（line-length=100）                                      |
+| `mypy`                       | 静态类型检查（`strict = true`）                                       |
+| `bandit`                     | AST 安全扫描                                                          |
+| `vulture`                    | 死代码检测                                                            |
+| `gitlint`                    | 提交信息规范（feat/fix/docs/refactor/perf/test/chore/ci）             |
 
 ### Ruff 规则集（pyproject.toml）
 
 启用 18 组规则：`E, W, F, I, UP, N, B, C4, SIM, PIE, RUF, ARG, RET, RSE, T20, SLF, TCH, EM`
 
 部分规则已按场景豁免：
+
 - `__init__.py`：允许未使用的导入（用于 re-export）
 - `tests/`：允许访问私有成员、嵌套 with 语句
 - `scripts/`：允许 `print()`、中文注释
@@ -191,6 +196,7 @@ uv run pip-audit               # 依赖漏洞扫描（需网络）
 - **使用方式**：`logger = structlog.get_logger(__name__)`，用 keyword args 绑定上下文
 
 入口点调用示例：
+
 ```python
 from scholight.logging import configure_logging
 configure_logging(log_level="INFO", use_json=True)  # server

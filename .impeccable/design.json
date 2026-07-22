@@ -1,0 +1,196 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-22T14:34:14Z",
+  "title": "Design System: Scholight",
+  "extensions": {
+    "colorMeta": {
+      "brand-blue": {
+        "role": "primary",
+        "displayName": "Scholight Blue",
+        "canonical": "#1F45B8",
+        "tonalRamp": [
+          "#071238",
+          "#0D2262",
+          "#14338D",
+          "#1F45B8",
+          "#5578DD",
+          "#8FA7EB",
+          "#C7D3F5",
+          "#EDF1FC"
+        ]
+      },
+      "canvas": {
+        "role": "neutral",
+        "displayName": "Research Canvas",
+        "canonical": "#FBFAF5",
+        "tonalRamp": [
+          "#23221F",
+          "#43423D",
+          "#65635C",
+          "#88867D",
+          "#ACA99F",
+          "#CECCC3",
+          "#E8E6DF",
+          "#FBFAF5"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Primary Ink",
+        "canonical": "#0E0F14",
+        "tonalRamp": [
+          "#0E0F14",
+          "#292B34",
+          "#464852",
+          "#656771",
+          "#858791",
+          "#A7A9B1",
+          "#CACBD0",
+          "#EEEFF1"
+        ]
+      },
+      "danger": {
+        "role": "semantic",
+        "displayName": "Destructive Red",
+        "canonical": "#B23321",
+        "tonalRamp": [
+          "#35100A",
+          "#5A1B12",
+          "#812619",
+          "#B23321",
+          "#CE6252",
+          "#E49A8E",
+          "#F2C7C0",
+          "#FBEEEC"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Scholarly Display",
+        "purpose": "Wordmark, major headings, and paper titles only."
+      },
+      "body": {
+        "displayName": "Product Body",
+        "purpose": "Controls, prose, metadata, forms, and data."
+      }
+    },
+    "shadows": [
+      {
+        "name": "popover",
+        "value": "0 12px 30px rgb(14 15 20 / 15%)",
+        "purpose": "Portalled dropdown and select surfaces only."
+      },
+      {
+        "name": "dialog",
+        "value": "0 20px 60px rgb(0 0 0 / 20%)",
+        "purpose": "Modal dialog surfaces only."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-standard",
+        "value": "cubic-bezier(0.22, 1, 0.36, 1)",
+        "purpose": "The shared quiet deceleration curve."
+      },
+      {
+        "name": "duration-quick",
+        "value": "100ms",
+        "purpose": "Micro-feedback and exits."
+      },
+      {
+        "name": "duration-standard",
+        "value": "180ms",
+        "purpose": "State changes and page continuity."
+      },
+      {
+        "name": "duration-slow",
+        "value": "280ms",
+        "purpose": "Progress fills and deliberate modal entry."
+      }
+    ],
+    "breakpoints": [
+      { "name": "mobile", "value": "767px" },
+      { "name": "tablet", "value": "1199px" },
+      { "name": "desktop", "value": "1200px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The single high-emphasis action on a surface.",
+      "html": "<button class=\"ds-button-primary\">Search</button>",
+      "css": ".ds-button-primary { min-height: 48px; padding: 0 24px; border: 1px solid var(--brand); border-radius: var(--radius-sm); color: var(--surface); background: var(--brand); font: 600 14px var(--font-ui); } .ds-button-primary:hover { background: var(--brand-strong); } .ds-button-primary:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 3px; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "A bordered, quiet action that does not compete with the primary task.",
+      "html": "<button class=\"ds-button-secondary\">Cancel</button>",
+      "css": ".ds-button-secondary { min-height: 42px; padding: 0 18px; border: 1px solid var(--line); border-radius: var(--radius-sm); color: var(--ink); background: var(--surface); font: 600 13px var(--font-ui); } .ds-button-secondary:hover { border-color: var(--input-line); } .ds-button-secondary:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 3px; }"
+    },
+    {
+      "name": "Search Field",
+      "kind": "input",
+      "refersTo": "search-field",
+      "description": "A continuous 72px research query surface containing strength and submit actions.",
+      "html": "<div class=\"ds-search\"><input aria-label=\"Search research papers\" placeholder=\"Search papers, topics, methods, or questions\"><button>Search</button></div>",
+      "css": ".ds-search { display: flex; min-height: 72px; padding: 8px 8px 8px 22px; border: 1px solid var(--input-line); border-radius: var(--radius-lg); background: var(--surface); align-items: center; gap: 8px; } .ds-search input { min-width: 0; flex: 1; border: 0; color: var(--ink); background: transparent; font: 400 16px var(--font-ui); } .ds-search button { min-height: 56px; padding: 0 24px; border: 0; border-radius: 7px; color: var(--surface); background: var(--brand); font-weight: 600; } .ds-search:focus-within { outline: 3px solid var(--focus-ring); outline-offset: 2px; }"
+    },
+    {
+      "name": "Account Navigation",
+      "kind": "nav",
+      "description": "The canonical authenticated destination list.",
+      "html": "<nav class=\"ds-account-nav\"><a aria-current=\"page\" href=\"#\">Usage &amp; quota</a><a href=\"#\">Access Keys</a><a href=\"#\">Search history</a><a href=\"#\">Account settings</a></nav>",
+      "css": ".ds-account-nav { width: 250px; padding: 8px; border: 1px solid var(--line-soft); border-radius: var(--radius-md); background: var(--surface); font: 500 14px var(--font-ui); } .ds-account-nav a { display: flex; min-height: 44px; padding: 10px; border-radius: 5px; color: var(--ink); align-items: center; } .ds-account-nav a:hover { color: var(--brand); background: var(--surface-selected); } .ds-account-nav a[aria-current=\"page\"] { color: var(--brand); }"
+    },
+    {
+      "name": "Paper Result",
+      "kind": "custom",
+      "description": "One paper in the continuous reading flow; it is never an isolated card.",
+      "html": "<article class=\"ds-result\"><h2><a href=\"#\">A paper title</a></h2><p class=\"ds-result-meta\">Authors · 2026 · arXiv:2601.00001</p><p>Abstract text remains part of the reading flow.</p></article>",
+      "css": ".ds-result { max-width: var(--reading); padding: 28px 0; border-bottom: 1px solid var(--line-soft); color: var(--ink); } .ds-result h2 { margin: 0 0 8px; font: 600 22px/1.3 var(--font-display); } .ds-result h2 a { color: var(--brand-link); } .ds-result-meta { color: var(--muted); font: 400 12px/1.5 var(--font-ui); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Research Desk",
+    "overview": "Scholight is a generous research surface with a small number of precise instruments and no ornament competing with the work. Flat surfaces, thin dividers, one blue accent, and restrained motion carry one system from public search into authenticated account tools.",
+    "keyCharacteristics": [
+      "Continuous editorial reading flow instead of repeated result cards.",
+      "Restrained blue used for actions, selection, and meaningful emphasis only.",
+      "Flat layout with hairline separation; elevation is reserved for temporary surfaces.",
+      "Short, low-amplitude motion that communicates state and respects reduced motion."
+    ],
+    "rules": [
+      {
+        "name": "The One Blue Voice Rule",
+        "body": "Blue is functional, not decorative.",
+        "section": "colors"
+      },
+      {
+        "name": "The Two-Voice Rule",
+        "body": "Literata names and frames the work; Manrope operates it.",
+        "section": "typography"
+      },
+      {
+        "name": "The Temporary Elevation Rule",
+        "body": "If a surface remains in document flow, it does not receive a shadow.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do use shared semantic tokens for every color, type role, radius, elevation, and motion duration.",
+      "Do keep result pages continuous and optimized for scanning and reading.",
+      "Do keep motion between 90ms and 280ms, under 6px of travel, and limited to feedback or continuity."
+    ],
+    "donts": [
+      "Don't imitate AnySearch or another search product's layout, branding, or interaction vocabulary.",
+      "Don't use generic AI-tool marketing, gradients, agent hype, invented capabilities, or retrieval implementation jargon.",
+      "Don't build card-heavy SaaS dashboards or split papers into repeated elevated containers.",
+      "Don't add bouncing controls, parallax, animated counters, large slides, or decorative choreography."
+    ]
+  }
+}
