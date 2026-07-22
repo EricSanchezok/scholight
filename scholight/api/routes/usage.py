@@ -244,7 +244,16 @@ async def usage_records(
     return UsageRecordsResponse(items=[_map_record(row) for row in page], next_cursor=next_cursor)
 
 
-@router.get("/export.csv")
+@router.get(
+    "/export.csv",
+    response_class=Response,
+    responses={
+        200: {
+            "content": {"text/csv": {"schema": {"type": "string"}}},
+            "description": "Usage records exported as CSV.",
+        }
+    },
+)
 async def usage_export(
     strength: Literal["standard", "thorough"] | None = None,
     actor_type: Literal["web", "access_key"] | None = None,

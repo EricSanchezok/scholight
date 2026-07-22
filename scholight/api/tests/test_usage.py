@@ -8,6 +8,7 @@ from uuid import uuid4
 
 import pytest
 from cloud_auth.models.user import QuotaStatus, UserRecord
+from fastapi import FastAPI
 
 from scholight.api.deps import SearchActor
 from scholight.api.routes.search import _schedule_usage
@@ -21,6 +22,14 @@ from scholight.api.usage import (
     fill_volume_days,
     resolve_usage_range,
 )
+
+
+def test_usage_csv_openapi_declares_text_response(api_app: FastAPI) -> None:
+    content = api_app.openapi()["paths"]["/user/usage/export.csv"]["get"]["responses"]["200"][
+        "content"
+    ]
+
+    assert "text/csv" in content
 
 
 def test_default_usage_range_contains_thirty_utc_days() -> None:
