@@ -22,7 +22,8 @@ describe("SearchForm", () => {
       screen.getByRole("textbox", { name: "Search research papers" }),
       "graph neural networks",
     );
-    await user.selectOptions(screen.getByRole("combobox", { name: "Search strength" }), "thorough");
+    await user.click(screen.getByRole("combobox", { name: "Search strength" }));
+    await user.click(screen.getByRole("option", { name: "Thorough" }));
     await user.click(screen.getByRole("button", { name: "Search" }));
     expect(screen.getByTestId("location")).toHaveTextContent(
       "/search?q=graph+neural+networks&strength=thorough",

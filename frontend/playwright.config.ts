@@ -8,6 +8,8 @@ export default defineConfig({
   reporter: "html",
   use: {
     baseURL: "http://127.0.0.1:5173",
+    locale: "en-US",
+    timezoneId: "Asia/Shanghai",
     trace: "on-first-retry",
   },
   projects: [
