@@ -65,6 +65,8 @@ for (const usage of usages) {
 for (const path of uiFiles) {
   const content = readFileSync(path, "utf8");
   const displayPath = relative(frontendRoot, path);
+  const lineCount = content.split("\n").length;
+  if (lineCount > 400) findings.push(`${displayPath}:1 UI module exceeds 400 lines (${lineCount})`);
   for (const match of content.matchAll(/["'`]\/(?!\/)/g)) {
     findings.push(`${displayPath}:${lineOf(content, match.index)} route outside app/routes.ts`);
   }
