@@ -25,7 +25,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CLOUD_AUTH_REVISION: a2831ef75f7d16d7fa7c8ab812917c6c49cb47b4
+  CLOUD_AUTH_REVISION: c4c15784c6a9425fb42310d2b9408ab151b36489
 
 jobs:
   backend:

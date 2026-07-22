@@ -14,7 +14,7 @@ from scholight.api.sessions import (
     list_user_sessions,
     session_id_from_access_token,
 )
-from scholight.config import settings
+from scholight.config import AUTH_CLIENT_ID, settings
 from scholight.db.client import DBError
 from scholight.db.queries_sessions import revoke_other_sessions, revoke_session
 
@@ -30,6 +30,7 @@ def _error(status_code: int, code: str, message: str) -> HTTPException:
 
 def _session_id(credentials: HTTPAuthorizationCredentials) -> int | None:
     config = AuthConfig(
+        client_id=AUTH_CLIENT_ID,
         jwt_secret=settings.jwt_secret,
         jwt_access_token_ttl_minutes=settings.jwt_access_token_ttl_minutes,
         jwt_refresh_token_ttl_days=settings.jwt_refresh_token_ttl_days,
@@ -44,7 +45,9 @@ async def get_sessions(
 ) -> list[SessionResponse]:
     try:
         return await list_user_sessions(
-            current_user.id, current_session_id=_session_id(credentials)
+            current_user.id,
+            client_id=AUTH_CLIENT_ID,
+            current_session_id=_session_id(credentials),
         )
     except DBError as exc:
         raise _error(503, "session_service_unavailable", "Session service unavailable.") from exc
@@ -56,7 +59,11 @@ async def delete_session(
     current_user: UserRecord = Depends(get_current_user),
 ) -> MessageResponse:
     try:
-        revoked = await revoke_session(user_id=current_user.id, session_id=session_id)
+        revoked = await revoke_session(
+            user_id=current_user.id,
+            session_id=session_id,
+            client_id=AUTH_CLIENT_ID,
+        )
     except DBError as exc:
         raise _error(503, "session_service_unavailable", "Session service unavailable.") from exc
     if not revoked:
@@ -80,6 +87,7 @@ async def revoke_others(
         await revoke_other_sessions(
             user_id=current_user.id,
             current_session_id=current_session_id,
+            client_id=AUTH_CLIENT_ID,
         )
     except DBError as exc:
         raise _error(503, "session_service_unavailable", "Session service unavailable.") from exc

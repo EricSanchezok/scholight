@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
+from cloud_auth.models.user import UserRecord
 from fastapi import FastAPI
 
 from scholight.api.deps import SearchActor, get_current_user, get_optional_search_actor
@@ -47,7 +48,7 @@ async def test_history_requires_authentication(api_client: httpx.AsyncClient) ->
 async def test_history_returns_public_page_and_normalizes_query(
     api_app: FastAPI,
     api_client: httpx.AsyncClient,
-    active_user: object,
+    active_user: UserRecord,
 ) -> None:
     _authenticate(api_app, active_user)
     page = SimpleNamespace(items=[_history_entry()], total=1, legacy_level3_count=0)
@@ -90,7 +91,7 @@ async def test_history_returns_public_page_and_normalizes_query(
 async def test_history_sanitizes_malformed_legacy_filters_without_failing_page(
     api_app: FastAPI,
     api_client: httpx.AsyncClient,
-    active_user: object,
+    active_user: UserRecord,
 ) -> None:
     _authenticate(api_app, active_user)
     entry = _history_entry()
@@ -122,7 +123,7 @@ async def test_history_sanitizes_malformed_legacy_filters_without_failing_page(
 async def test_history_empty_q_is_normalized_to_none(
     api_app: FastAPI,
     api_client: httpx.AsyncClient,
-    active_user: object,
+    active_user: UserRecord,
 ) -> None:
     _authenticate(api_app, active_user)
     page = SimpleNamespace(items=[], total=0, legacy_level3_count=0)
@@ -151,7 +152,7 @@ async def test_history_empty_q_is_normalized_to_none(
 async def test_history_query_validation_returns_422(
     api_app: FastAPI,
     api_client: httpx.AsyncClient,
-    active_user: object,
+    active_user: UserRecord,
     params: dict[str, str | int],
 ) -> None:
     _authenticate(api_app, active_user)
@@ -165,7 +166,7 @@ async def test_history_query_validation_returns_422(
 async def test_bulk_delete_stably_deduplicates_and_returns_count(
     api_app: FastAPI,
     api_client: httpx.AsyncClient,
-    active_user: object,
+    active_user: UserRecord,
 ) -> None:
     _authenticate(api_app, active_user)
 
@@ -199,7 +200,7 @@ async def test_bulk_delete_stably_deduplicates_and_returns_count(
 async def test_bulk_delete_request_is_strict(
     api_app: FastAPI,
     api_client: httpx.AsyncClient,
-    active_user: object,
+    active_user: UserRecord,
     body: dict[str, object],
 ) -> None:
     _authenticate(api_app, active_user)
@@ -213,7 +214,7 @@ async def test_bulk_delete_request_is_strict(
 async def test_single_delete_success_and_404_remain_compatible(
     api_app: FastAPI,
     api_client: httpx.AsyncClient,
-    active_user: object,
+    active_user: UserRecord,
 ) -> None:
     _authenticate(api_app, active_user)
 
@@ -233,7 +234,7 @@ async def test_single_delete_success_and_404_remain_compatible(
 @pytest.mark.parametrize("method", ["get", "post", "delete"])
 async def test_history_database_errors_return_stable_503(
     api_app: FastAPI,
-    active_user: object,
+    active_user: UserRecord,
     method: str,
 ) -> None:
     _authenticate(api_app, active_user)
@@ -281,7 +282,7 @@ async def test_history_database_errors_return_stable_503(
 async def test_authenticated_final_200_schedules_normalized_history(
     api_app: FastAPI,
     api_client: httpx.AsyncClient,
-    active_user: object,
+    active_user: UserRecord,
 ) -> None:
     api_app.dependency_overrides[get_optional_search_actor] = lambda: SearchActor(
         user=active_user, actor_type="web"

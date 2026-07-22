@@ -169,9 +169,11 @@ def create_app() -> FastAPI:
     from scholight.api.routes.sessions import router as session_router
     from scholight.api.routes.usage import router as usage_router
     from scholight.api.sessions import ScholightUserManager
+    from scholight.config import AUTH_CLIENT_ID
     from scholight.db.client import get_pool
 
     auth_config = AuthConfig(
+        client_id=AUTH_CLIENT_ID,
         jwt_secret=settings.jwt_secret,
         jwt_access_token_ttl_minutes=settings.jwt_access_token_ttl_minutes,
         jwt_refresh_token_ttl_days=settings.jwt_refresh_token_ttl_days,
@@ -190,6 +192,7 @@ def create_app() -> FastAPI:
             account_name=settings.aliyun_dm_account_name,
             from_alias=settings.aliyun_dm_from_alias,
             reply_to_address=settings.aliyun_dm_reply_to_address,
+            brand="Scholight",
         )
 
     user_manager = ScholightUserManager(db=db, email_sender=email_sender, config=auth_config)

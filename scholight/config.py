@@ -3,6 +3,8 @@
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
 
+AUTH_CLIENT_ID = "scholight"
+
 
 class Settings(BaseSettings):
     """Application settings with SCHOLIGHT_ prefix."""

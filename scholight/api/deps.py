@@ -69,7 +69,11 @@ async def _resolve_current_user(
                 )
             except AuthError:
                 session_id = None
-            if session_id is not None and not await touch_session(user.id, session_id):
+            if session_id is not None and not await touch_session(
+                user.id,
+                session_id,
+                client_id=_auth_config.client_id,
+            ):
                 raise HTTPException(
                     status_code=401,
                     detail="Session revoked or expired",

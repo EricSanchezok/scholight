@@ -38,11 +38,12 @@ async def test_query_sessions_returns_only_active_families() -> None:
     pool.fetch = AsyncMock(return_value=[])
 
     with patch("scholight.db.queries_sessions.get_pool", return_value=pool):
-        sessions = await query_sessions(user_id=42)
+        sessions = await query_sessions(user_id=42, client_id="scholight")
 
-    sql, user_id = pool.fetch.await_args.args
+    sql, user_id, client_id = pool.fetch.await_args.args
     assert "HAVING bool_or(revoked_at IS NULL AND expires_at > now())" in sql
-    assert user_id == 42
+    assert "client_id = $2" in sql
+    assert (user_id, client_id) == (42, "scholight")
     assert sessions == []
 
 
@@ -54,11 +55,15 @@ async def test_revoke_session_is_owner_scoped() -> None:
     pool.acquire.return_value = _AsyncContext(connection)
 
     with patch("scholight.db.queries_sessions.get_pool", return_value=pool):
-        revoked = await revoke_session(user_id=42, session_id=123)
+        revoked = await revoke_session(
+            user_id=42,
+            session_id=123,
+            client_id="scholight",
+        )
 
-    sql, user_id, session_id = connection.execute.await_args.args
-    assert "user_id = $1 AND family_id = $2" in sql
-    assert (user_id, session_id) == (42, 123)
+    sql, user_id, session_id, client_id = connection.execute.await_args.args
+    assert "user_id = $1 AND family_id = $2 AND client_id = $3" in sql
+    assert (user_id, session_id, client_id) == (42, 123, "scholight")
     assert revoked
 
 
@@ -68,11 +73,16 @@ async def test_revoke_others_preserves_current_family() -> None:
     pool.execute = AsyncMock(return_value="UPDATE 3")
 
     with patch("scholight.db.queries_sessions.get_pool", return_value=pool):
-        await revoke_other_sessions(user_id=42, current_session_id=123)
+        await revoke_other_sessions(
+            user_id=42,
+            current_session_id=123,
+            client_id="scholight",
+        )
 
-    sql, user_id, session_id = pool.execute.await_args.args
+    sql, user_id, session_id, client_id = pool.execute.await_args.args
     assert "family_id <> $2" in sql
-    assert (user_id, session_id) == (42, 123)
+    assert "client_id = $3" in sql
+    assert (user_id, session_id, client_id) == (42, 123, "scholight")
 
 
 @pytest.mark.asyncio
@@ -82,7 +92,7 @@ async def test_revoked_family_fails_session_validation() -> None:
     pool.execute = AsyncMock()
 
     with patch("scholight.db.queries_sessions.get_pool", return_value=pool):
-        active = await touch_session(user_id=42, session_id=123)
+        active = await touch_session(user_id=42, session_id=123, client_id="scholight")
 
     assert not active
     pool.execute.assert_not_awaited()

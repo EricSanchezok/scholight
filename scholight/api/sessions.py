@@ -58,6 +58,7 @@ def create_session_access_token(
     payload: dict[str, object] = {
         "sub": str(user_id),
         "email": email,
+        "aud": config.client_id,
         "sid": session_id,
         "iat": now,
         "exp": now + timedelta(minutes=config.jwt_access_token_ttl_minutes),
@@ -73,7 +74,7 @@ def session_id_from_access_token(token: str, *, config: AuthConfig) -> int | Non
     return None
 
 
-class ScholightUserManager(UserManager):  # type: ignore[misc]
+class ScholightUserManager(UserManager):
     """Cloud-auth manager that adds session metadata and sid-aware access JWTs."""
 
     def __init__(
@@ -97,6 +98,7 @@ class ScholightUserManager(UserManager):  # type: ignore[misc]
             await register_session_metadata(
                 user_id=user_id,
                 session_id=family_id,
+                client_id=self._session_config.client_id,
                 user_agent=_session_user_agent.get(),
             )
         except DBError:
@@ -121,9 +123,12 @@ class ScholightUserManager(UserManager):  # type: ignore[misc]
 
 
 async def list_user_sessions(
-    user_id: int, *, current_session_id: int | None
+    user_id: int,
+    *,
+    client_id: str,
+    current_session_id: int | None,
 ) -> list[SessionResponse]:
-    records = await query_sessions(user_id)
+    records = await query_sessions(user_id, client_id=client_id)
     return [
         SessionResponse(**record.model_dump(), current=record.id == current_session_id)
         for record in records

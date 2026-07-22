@@ -17,13 +17,14 @@ from scholight.api.sessions import (
 
 
 def test_session_access_token_contains_backward_compatible_sid() -> None:
-    config = AuthConfig(jwt_secret="j" * 32)
+    config = AuthConfig(client_id="scholight", jwt_secret="j" * 32)
 
     token = create_session_access_token(42, "active@example.com", session_id=123, config=config)
     payload = verify_access_token(token, config=config)
 
     assert payload["sid"] == 123
     assert payload["sub"] == "42"
+    assert payload["aud"] == "scholight"
 
 
 @pytest.mark.asyncio
@@ -48,7 +49,11 @@ async def test_session_list_marks_only_sid_as_current() -> None:
     ]
 
     with patch("scholight.api.sessions.query_sessions", AsyncMock(return_value=records)):
-        sessions = await list_user_sessions(42, current_session_id=200)
+        sessions = await list_user_sessions(
+            42,
+            client_id="scholight",
+            current_session_id=200,
+        )
 
     assert [session.current for session in sessions] == [False, True]
 
@@ -65,6 +70,10 @@ async def test_legacy_access_token_marks_no_session_current() -> None:
     )
 
     with patch("scholight.api.sessions.query_sessions", AsyncMock(return_value=[record])):
-        sessions = await list_user_sessions(42, current_session_id=None)
+        sessions = await list_user_sessions(
+            42,
+            client_id="scholight",
+            current_session_id=None,
+        )
 
     assert not sessions[0].current
