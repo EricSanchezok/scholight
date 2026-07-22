@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     # ── MinerU API ──
     mineru_api_key: str = ""
 
+    # ── Search — Level 1 paper recall ──
+    # Fixed recall depth keeps ranking stable when callers change response size.
+    search_paper_candidate_top_k: int = Field(default=200, ge=1)
+
     # ── Search — Hybrid weights (paper-level, dense + BM25) ──
     search_hybrid_dense_weight: float = 0.60
     search_hybrid_bm25_weight: float = 0.40

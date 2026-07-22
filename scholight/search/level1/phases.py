@@ -91,7 +91,7 @@ class AnnSearchPhase(Phase):
 
     async def execute(self, ctx: PipelineContext) -> None:
         request = ctx.request
-        top_k_stage = request.top_k * 10
+        candidate_top_k = max(settings.search_paper_candidate_top_k, request.top_k)
 
         use_hybrid = bool(request.sparse_vector or not request.arxiv_ids)
 
@@ -102,7 +102,7 @@ class AnnSearchPhase(Phase):
             _do_paper_search,
             query_vector=ctx.query_vector,
             query_text=request.query,
-            top_k=top_k_stage,
+            top_k=candidate_top_k,
             use_hybrid=use_hybrid,
             categories=request.categories,
             authors=request.authors,
