@@ -80,6 +80,20 @@
   color: var(--muted);
   line-height: 1.75;
 }
+.docSections pre {
+  max-width: 850px;
+  margin: 20px 0 0;
+  padding: 18px 20px;
+  overflow-x: auto;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  color: var(--ink-soft);
+  background: var(--surface-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.65;
+  white-space: pre;
+}
 
 .authPage {
   display: grid;
