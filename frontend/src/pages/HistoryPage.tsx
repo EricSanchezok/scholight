@@ -16,7 +16,7 @@ import { productConfig } from "../config/product";
 import { formatFullDateTime } from "../i18n/format";
 import { useI18n } from "../i18n/I18nProvider";
 import { buildSearchUrl } from "../lib/format";
-import styles from "../styles/app.module.css";
+import { styles } from "../styles/classes";
 
 const PAGE_SIZE = productConfig.history.pageSize;
 

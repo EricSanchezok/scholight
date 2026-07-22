@@ -17,7 +17,7 @@ import { EditorialRowsSkeleton, SkeletonPulse } from "../components/EditorialSke
 import { LatencyChart, VolumeChart } from "../features/usage/UsageCharts";
 import { formatCompactDateTime, formatUtcTime } from "../i18n/format";
 import { useI18n } from "../i18n/I18nProvider";
-import styles from "../styles/app.module.css";
+import { styles } from "../styles/classes";
 
 function seconds(value: number | null): string {
   return value === null ? "—" : `${(value / 1000).toFixed(2)} s`;

@@ -1,0 +1,437 @@
+.home {
+  min-height: calc(100vh - 88px);
+}
+.hero {
+  display: flex;
+  width: min(var(--container), calc(100% - 64px));
+  margin: 0 auto;
+  padding: 122px 0 120px;
+  flex-direction: column;
+  gap: 30px;
+}
+.accentLine {
+  width: 54px;
+  height: 3px;
+  margin-bottom: 0;
+  background: var(--brand);
+}
+.heroCopy {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.hero h1 {
+  width: 920px;
+  height: 156px;
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 70px;
+  font-weight: 600;
+  line-height: 78px;
+  letter-spacing: -1.4px;
+}
+.hero h1 > span {
+  display: block;
+}
+.hero h1 em {
+  color: var(--brand);
+  font-style: normal;
+}
+.heroCopy > p {
+  width: 760px;
+  height: 60px;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 18px;
+  line-height: 30px;
+}
+.searchForm {
+  position: relative;
+  display: grid;
+  width: 100%;
+  height: 72px;
+  min-height: 72px;
+  padding: 8px 8px 8px 22px;
+  border: 1px solid var(--input-line);
+  border-radius: 10px;
+  background: var(--surface);
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 0;
+}
+.searchForm > input {
+  min-width: 0;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  color: var(--ink);
+  background: transparent;
+  font-size: 16px;
+}
+.searchForm > input::placeholder {
+  color: var(--text-placeholder);
+}
+.searchActions {
+  display: flex;
+  width: 260px;
+  height: 56px;
+  align-items: center;
+  gap: 8px;
+}
+.strengthSelect {
+  position: relative;
+  display: flex;
+  width: 140px;
+  height: 40px;
+  align-items: center;
+}
+.selectTrigger {
+  display: inline-flex;
+  border: 1px solid var(--line-control);
+  outline: 0;
+  color: var(--text-control);
+  background: var(--surface-muted);
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-weight: 600;
+}
+.strengthSelectTrigger {
+  width: 100%;
+  height: 100%;
+  padding: 0 34px 0 14px;
+  border-radius: 7px;
+  font-size: 13px;
+}
+.selectChevron {
+  display: inline-flex;
+  margin-left: 12px;
+}
+.selectChevron img {
+  width: 12px;
+  height: 12px;
+}
+.selectContent {
+  z-index: var(--z-select);
+  width: var(--radix-select-trigger-width);
+  min-width: var(--radix-select-trigger-width);
+  padding: 5px;
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+  background: var(--surface);
+  box-shadow: var(--shadow-popover);
+  transform-origin: top left;
+}
+.selectViewport {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.selectItem {
+  position: relative;
+  display: flex;
+  min-height: 36px;
+  padding: 8px 10px 8px 31px;
+  border-radius: 4px;
+  align-items: center;
+  outline: 0;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+}
+.selectItem[data-highlighted] {
+  color: var(--brand);
+  background: var(--surface-selected);
+}
+.selectItem[data-state="checked"] {
+  color: var(--on-brand);
+  background: var(--brand);
+}
+.selectIndicator {
+  position: absolute;
+  left: 10px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.fieldSelectTrigger {
+  width: 100%;
+  height: 48px;
+  padding: 0 13px;
+  border-radius: 2px;
+  background: var(--surface);
+  font-size: 13px;
+}
+.primaryButton,
+.authSubmit,
+.authSubmitLink {
+  display: inline-flex;
+  min-height: 48px;
+  padding: 0 24px;
+  border: 1px solid var(--brand);
+  border-radius: var(--radius-sm);
+  color: var(--on-brand);
+  background: var(--brand);
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  cursor: pointer;
+}
+.primaryButton:hover,
+.authSubmit:hover,
+.authSubmitLink:hover {
+  background: var(--brand-strong);
+}
+.primaryButton:disabled,
+.authSubmit:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+.searchActions .primaryButton {
+  min-width: 112px;
+  height: 56px;
+  padding: 0;
+  border-radius: 7px;
+  font-size: 14px;
+}
+.fieldError {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 3px;
+  margin: 0;
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.resultsPage {
+  width: min(var(--container), calc(100% - 64px));
+  margin: 0 auto;
+  padding: 38px 0 120px;
+}
+.resultsSearch {
+  width: 100%;
+  margin: 0 0 28px;
+}
+.resultsQueryError {
+  margin: 10px 3px 0;
+  color: var(--danger);
+  font-size: 13px;
+}
+.searchFormCompact {
+  min-height: 72px;
+}
+.readingColumn {
+  width: min(var(--reading), 100%);
+  margin: 0;
+}
+.resultsSummary {
+  display: flex;
+  width: 920px;
+  height: 44px;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 24px;
+}
+.resultsSummary h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: 600;
+}
+.resultsSummary span {
+  color: var(--text-placeholder);
+  font-size: 12px;
+}
+.resultItem {
+  display: flex;
+  width: 920px;
+  padding: 25px 0;
+  border-bottom: 1px solid var(--line-result);
+  flex-direction: column;
+  gap: 11px;
+}
+.resultItem:first-child {
+  padding-top: 0;
+}
+.resultItem h2 {
+  width: min(880px, 100%);
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 21px;
+  font-weight: 600;
+  line-height: 30px;
+  letter-spacing: 0;
+}
+.resultItem h2 a {
+  color: var(--brand-link);
+}
+.resultItem h2 a:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.authors {
+  margin: 0;
+  color: var(--text-metadata);
+  font-size: 12px;
+  font-weight: 500;
+}
+.metadata {
+  margin: 0;
+  color: var(--text-warm-muted);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+}
+.abstract {
+  width: min(890px, 100%);
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 14px;
+  line-height: 23px;
+}
+.resultActions {
+  display: flex;
+  min-height: 20px;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.resultActions a,
+.resultActions button {
+  color: var(--brand-link);
+}
+.resultActions button {
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.resultActions span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+.chips {
+  display: flex;
+  margin-bottom: 25px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.chips button {
+  min-height: 36px;
+  padding: 7px 11px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+}
+.notice,
+.noticeError {
+  display: flex;
+  margin: 0 0 25px;
+  padding: 14px 16px;
+  border-left: 3px solid var(--brand);
+  color: var(--text-chip);
+  background: var(--surface-chip);
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+}
+.noticeError {
+  border-color: var(--danger);
+  color: var(--danger-text);
+  background: var(--danger-soft);
+}
+.noticeError button {
+  border: 0;
+  color: var(--danger);
+  background: none;
+  font-weight: 600;
+  cursor: pointer;
+}
+.state,
+.errorState {
+  padding: 95px 0;
+  text-align: center;
+}
+.state h1,
+.errorState h1 {
+  margin: 0 0 12px;
+  font-family: var(--font-display);
+  font-size: 32px;
+}
+.state p,
+.errorState p {
+  max-width: 580px;
+  margin: 0 auto 24px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.errorState a {
+  display: inline-block;
+  margin-left: 20px;
+  color: var(--brand);
+  font-weight: 600;
+}
+.searchLoading {
+  padding-top: 34px;
+}
+.searchLoadingHeading {
+  display: flex;
+  min-height: 48px;
+  color: var(--muted);
+  flex-direction: column;
+  justify-content: center;
+  gap: 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.searchActivityTrack {
+  width: 100%;
+  height: 2px;
+  overflow: hidden;
+  background: var(--line-soft);
+}
+.searchActivityTrack span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--brand);
+  transform-origin: left center;
+}
+.searchSkeletonList {
+  border-top: 1px solid var(--line);
+}
+.searchSkeletonRow {
+  display: flex;
+  min-height: 196px;
+  padding: 28px 0;
+  border-bottom: 1px solid var(--line-soft);
+  flex-direction: column;
+  gap: 11px;
+}
+.searchSkeletonRow > span {
+  display: block;
+  height: 12px;
+  border-radius: 3px;
+  background: var(--surface-skeleton);
+}
+.searchSkeletonRow .searchSkeletonTitle {
+  width: 68%;
+  height: 21px;
+}
+.searchSkeletonRow .searchSkeletonMeta {
+  width: 44%;
+  height: 10px;
+}
+.searchSkeletonRow .searchSkeletonAbstract {
+  width: 94%;
+  margin-top: 9px;
+}
+.searchSkeletonRow .searchSkeletonAbstractShort {
+  width: 76%;
+}

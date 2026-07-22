@@ -3,7 +3,7 @@ import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
 
 import { dialogOverlayMotion, dialogSurfaceMotion } from "../app/motion";
-import styles from "../styles/app.module.css";
+import { styles } from "../styles/classes";
 
 export function MotionDialogPortal({
   open,

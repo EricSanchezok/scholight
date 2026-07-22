@@ -1,5 +1,5 @@
 import { SearchForm } from "../components/SearchForm";
-import styles from "../styles/app.module.css";
+import { styles } from "../styles/classes";
 
 export function HomePage() {
   return (

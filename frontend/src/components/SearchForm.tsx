@@ -7,7 +7,7 @@ import type { SearchFilters, SearchStrength } from "../api/types";
 import { buttonLabelMotion } from "../app/motion";
 import { productConfig } from "../config/product";
 import { buildSearchUrl } from "../lib/format";
-import styles from "../styles/app.module.css";
+import { styles } from "../styles/classes";
 import { EditorialSelect } from "./EditorialSelect";
 
 const strengthOptions = [

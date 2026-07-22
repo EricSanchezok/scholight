@@ -17,7 +17,7 @@ import { useAuth } from "../auth/context";
 import { productConfig } from "../config/product";
 import { avatarInitials } from "../lib/format";
 import { useI18n } from "../i18n/I18nProvider";
-import styles from "../styles/app.module.css";
+import { styles } from "../styles/classes";
 import { ChevronDownIcon } from "./icons";
 
 export function AccountMenu() {

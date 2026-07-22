@@ -1,4 +1,4 @@
-import styles from "../styles/app.module.css";
+import { styles } from "../styles/classes";
 
 const sections = [
   [

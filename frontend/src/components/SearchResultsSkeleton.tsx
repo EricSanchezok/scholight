@@ -2,7 +2,7 @@ import { useReducedMotion } from "motion/react";
 import * as m from "motion/react-m";
 
 import { searchActivityMotion } from "../app/motion";
-import styles from "../styles/app.module.css";
+import { styles } from "../styles/classes";
 import { SkeletonPulse } from "./EditorialSkeleton";
 
 export function SearchResultsSkeleton() {
@@ -15,7 +15,7 @@ export function SearchResultsSkeleton() {
           <m.span {...searchActivityMotion(reduceMotion)} />
         </div>
       </div>
-      <SkeletonPulse label="Loading search results" className={styles.searchSkeletonPulse}>
+      <SkeletonPulse label="Loading search results">
         <div className={styles.searchSkeletonList}>
           {Array.from({ length: 4 }, (_, index) => (
             <div className={styles.searchSkeletonRow} key={index}>

@@ -4,7 +4,7 @@ import * as m from "motion/react-m";
 import { useState } from "react";
 
 import { chevronMotion, popoverMotion } from "../app/motion";
-import styles from "../styles/app.module.css";
+import { styles } from "../styles/classes";
 import { ChevronDownIcon } from "./icons";
 
 export interface EditorialSelectOption<T extends string> {

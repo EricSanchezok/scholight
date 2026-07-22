@@ -1,7 +1,7 @@
 import type { UsageLatencyPoint, UsageVolumePoint } from "../../api/types";
 import { formatUtcDay } from "../../i18n/format";
 import { useI18n, type AppLocale } from "../../i18n/I18nProvider";
-import styles from "../../styles/app.module.css";
+import { styles } from "../../styles/classes";
 
 const WIDTH = 528;
 const HEIGHT = 280;

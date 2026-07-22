@@ -4,7 +4,7 @@ import { Suspense } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 
 import { RouteSkeleton } from "../components/EditorialSkeleton";
-import styles from "../styles/app.module.css";
+import { styles } from "../styles/classes";
 
 export const motionEase = [0.22, 1, 0.36, 1] as const;
 export const motionDuration = {

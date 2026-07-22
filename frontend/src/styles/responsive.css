@@ -1,0 +1,312 @@
+@media (max-width: 767px) {
+  .routeStage {
+    min-height: calc(100vh - 76px);
+  }
+  .skeletonQuota,
+  .skeletonCharts {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+  .skeletonQuota {
+    padding: 24px 0;
+  }
+  .skeletonMetricGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .skeletonMetricGrid > span:nth-child(3),
+  .skeletonMetricGrid > span:nth-child(4) {
+    border-top: 1px solid var(--canvas);
+  }
+  .searchSkeletonRow .searchSkeletonTitle {
+    width: 88%;
+  }
+  .searchSkeletonRow .searchSkeletonMeta {
+    width: 70%;
+  }
+  .header {
+    height: 76px;
+  }
+  .headerInner {
+    width: calc(100% - 40px);
+    display: flex;
+    justify-content: space-between;
+    transform: translateY(14px);
+  }
+  .headerLinks {
+    display: none;
+  }
+  .mobileActions {
+    display: block;
+  }
+  .mobileMenuButton {
+    display: flex;
+    min-height: 42px;
+    padding: 0 4px;
+    border: 0;
+    background: transparent;
+    align-items: center;
+    gap: 7px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .mobileNav {
+    position: absolute;
+    z-index: 20;
+    top: 76px;
+    right: 0;
+    left: 0;
+    display: flex;
+    padding: 12px 20px 22px;
+    border-bottom: 1px solid var(--line);
+    background: var(--canvas);
+    flex-direction: column;
+  }
+  .mobileNav a,
+  .mobileNav button {
+    min-height: 48px;
+    padding: 13px 0;
+    border: 0;
+    border-bottom: 1px solid var(--line-soft);
+    background: transparent;
+    text-align: left;
+    font-weight: 600;
+  }
+  .hero {
+    width: calc(100% - 40px);
+    padding: 74px 0 80px;
+    gap: 26px;
+  }
+  .hero h1 {
+    width: auto;
+    height: auto;
+    font-size: clamp(44px, 14vw, 58px);
+    line-height: 1.12;
+    letter-spacing: -0.035em;
+  }
+  .heroCopy > p {
+    width: auto;
+    height: auto;
+    font-size: 18px;
+  }
+  .searchForm {
+    height: auto;
+    padding: 17px;
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .searchForm > input {
+    height: 47px;
+  }
+  .searchActions {
+    width: 100%;
+  }
+  .strengthSelect {
+    width: auto;
+    flex: 1;
+  }
+  .searchActions .primaryButton {
+    min-width: 100px;
+  }
+  .resultsPage {
+    width: calc(100% - 40px);
+    padding-top: 18px;
+  }
+  .resultsSearch,
+  .readingColumn {
+    width: 100%;
+  }
+  .resultsSearch {
+    margin-bottom: 42px;
+  }
+  .resultsSummary {
+    width: 100%;
+    height: auto;
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 7px;
+  }
+  .resultItem {
+    width: 100%;
+  }
+  .resultItem h2 {
+    font-size: 22px;
+  }
+  .metadata {
+    gap: 6px 14px;
+  }
+  .resultActions {
+    gap: 18px;
+  }
+  .docs,
+  .historyPage,
+  .accountPage {
+    width: calc(100% - 40px);
+    padding: 65px 0 90px;
+  }
+  .docs header {
+    margin-bottom: 50px;
+  }
+  .docs h1 {
+    font-size: 39px;
+  }
+  .docSections section {
+    grid-template-columns: 45px 1fr;
+    gap: 6px;
+  }
+  .historyToolbar {
+    height: auto;
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .historyToolbarActions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .filterInput {
+    width: 100%;
+  }
+  .deleteSelection {
+    width: 100%;
+  }
+  .historyRow {
+    height: auto;
+    min-height: 118px;
+    padding: 18px 2px;
+    grid-template-columns: 27px 1fr;
+  }
+  .historyActions {
+    grid-column: 2;
+    justify-content: flex-start;
+  }
+  .historyActions button:first-child {
+    padding-left: 0;
+  }
+  .dialogContent {
+    padding: 28px 24px;
+  }
+  .accountName {
+    display: none;
+  }
+  .pagination {
+    align-items: flex-start;
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+  }
+  .ledgerPage {
+    width: calc(100% - 40px);
+    padding: 48px 0 80px;
+  }
+  .ledgerHeading {
+    margin-bottom: 28px;
+  }
+  .ledgerHeading h1,
+  .accountIntro h1 {
+    font-size: 34px;
+    line-height: 42px;
+  }
+  .sectionHeading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .quotaMetrics {
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+  .performanceGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .performanceGrid > div {
+    min-height: 140px;
+    padding: 24px 16px;
+  }
+  .performanceGrid > div:nth-child(3) {
+    border-top: 1px solid var(--line-soft);
+    border-left: 0;
+  }
+  .performanceGrid > div:nth-child(4) {
+    border-top: 1px solid var(--line-soft);
+  }
+  .analyticsGrid {
+    margin-top: 34px;
+    grid-template-columns: 1fr;
+    gap: 40px;
+  }
+  .chartShell {
+    min-height: 240px;
+  }
+  .chartShell svg {
+    min-height: 240px;
+  }
+  .recentUsage {
+    margin-top: 48px;
+  }
+  .usageTable,
+  .keyTable {
+    min-width: 780px;
+  }
+  .keyLedgerHeading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .securityNote {
+    margin-top: 40px;
+    line-height: 1.6;
+  }
+  .formDialog,
+  .secretDialog {
+    padding: 28px 24px;
+  }
+  .formDialog h2,
+  .secretDialog h2 {
+    font-size: 25px;
+  }
+  .accountPage {
+    padding: 48px 0 80px;
+  }
+  .accountIntro {
+    margin-bottom: 36px;
+  }
+  .accountSection,
+  .accountSection + .accountSection {
+    min-height: 0;
+    padding: 28px 0 36px;
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+  .accountSection:first-of-type {
+    padding-top: 4px;
+  }
+  .accountForm {
+    min-height: 230px;
+  }
+  .passwordForm {
+    grid-template-columns: 1fr;
+  }
+  .passwordForm .fullField,
+  .passwordHint,
+  .passwordForm .formMessageError,
+  .passwordForm > button {
+    grid-column: 1;
+  }
+  .dangerSection .accountSectionBody {
+    justify-content: flex-start;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1199px) {
+  .hero,
+  .headerInner,
+  .resultsPage,
+  .docs,
+  .historyPage,
+  .accountPage {
+    width: calc(100% - 64px);
+  }
+  .ledgerPage {
+    width: calc(100% - 64px);
+  }
+}

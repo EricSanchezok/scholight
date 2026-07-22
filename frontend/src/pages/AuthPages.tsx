@@ -9,7 +9,7 @@ import { ApiError } from "../api/errors";
 import { routes, withQuery } from "../app/routes";
 import { useAuth } from "../auth/context";
 import { safeReturnTo } from "../auth/redirect";
-import styles from "../styles/app.module.css";
+import { styles } from "../styles/classes";
 
 const emailSchema = z.object({ email: z.email("Enter a valid email address.") });
 const credentialsSchema = emailSchema.extend({

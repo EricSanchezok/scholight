@@ -1,0 +1,501 @@
+.docs,
+.historyPage,
+.accountPage {
+  width: min(var(--container), calc(100% - 64px));
+  margin: 0 auto;
+  padding: 90px 0 130px;
+}
+.historyPage {
+  padding: 56px 0 110px;
+}
+.historyHeading {
+  display: flex;
+  margin-bottom: 28px;
+  flex-direction: column;
+  gap: 8px;
+}
+.historyHeading h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 36px;
+  font-weight: 600;
+  line-height: 46px;
+  letter-spacing: -0.02em;
+}
+.historyHeading p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 22px;
+}
+.docs header {
+  max-width: 760px;
+  margin-bottom: 72px;
+}
+.eyebrow {
+  margin: 0 0 11px;
+  color: var(--brand);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.docs h1 {
+  margin: 0 0 18px;
+  font-family: var(--font-display);
+  font-size: 50px;
+  font-weight: 600;
+  line-height: 1.16;
+  letter-spacing: -0.025em;
+}
+.docs header > p:last-child {
+  margin: 0;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1.6;
+}
+.docSections {
+  border-top: 1px solid var(--ink);
+}
+.docSections section {
+  display: grid;
+  padding: 35px 0 38px;
+  border-bottom: 1px solid var(--line-soft);
+  grid-template-columns: 110px 1fr;
+}
+.docSections section > span {
+  padding-top: 5px;
+  color: var(--brand);
+  font-size: 12px;
+  font-weight: 600;
+}
+.docSections h2 {
+  margin: 0 0 12px;
+  font-family: var(--font-display);
+  font-size: 25px;
+}
+.docSections p {
+  max-width: 750px;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.75;
+}
+
+.authPage {
+  display: grid;
+  min-height: 100vh;
+  padding: 40px 20px;
+  place-items: center;
+}
+.authShell {
+  display: flex;
+  width: min(420px, 100%);
+  flex-direction: column;
+  gap: 22px;
+}
+.authShell > .wordmark {
+  display: inline-block;
+  align-self: flex-start;
+  font-size: 24px;
+}
+.authIntroBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.authShell h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 34px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+}
+.authIntro {
+  margin: 0;
+  color: var(--text-auth-intro);
+  font-size: 14px;
+  line-height: 22px;
+}
+.authForm {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.authFields {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.authForm label {
+  display: flex;
+  color: var(--ink-soft);
+  flex-direction: column;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.authForm input {
+  width: 100%;
+  height: 52px;
+  padding: 0 15px;
+  border: 1px solid var(--line-field);
+  border-radius: 6px;
+  outline: none;
+  color: var(--ink);
+  background: var(--surface);
+  font-size: 13px;
+  font-weight: 400;
+}
+.authForm input:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 2px var(--focus-shadow);
+}
+.authForm label > span {
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 400;
+}
+.authForm small {
+  color: var(--muted);
+  font-weight: 400;
+}
+.formAside {
+  display: flex;
+  min-height: 22px;
+  margin-top: -1px;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text-form-muted);
+  font-size: 11px;
+}
+.formAside a,
+.authFoot a,
+.authInfo a {
+  color: var(--brand);
+  font-weight: 600;
+}
+.authSubmit {
+  width: 100%;
+  height: 52px;
+  margin-top: 6px;
+  border-radius: 6px;
+}
+.authFoot {
+  margin: 0;
+  color: var(--muted);
+  text-align: left;
+  font-size: 12px;
+}
+.formMessageError,
+.formMessageSuccess {
+  margin: 0;
+  padding: 11px 13px;
+  color: var(--danger-message);
+  background: var(--danger-soft);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.formMessageSuccess {
+  color: var(--success);
+  background: var(--surface-success);
+}
+.authInfo {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 20px;
+}
+.authInfo p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.authSubmitLink {
+  width: 100%;
+  height: 52px;
+  border-radius: 6px;
+}
+
+.secondaryButton {
+  display: inline-flex;
+  min-height: 42px;
+  padding: 0 18px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface);
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  cursor: pointer;
+}
+.historyToolbar {
+  display: flex;
+  height: 48px;
+  margin-bottom: 28px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+.selectionSummary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-history-muted);
+  font-size: 12px;
+}
+.selectionSummary strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+.historyToolbarActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.filterInput {
+  display: flex;
+  width: 230px;
+  height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--line-filter);
+  border-radius: 6px;
+  background: var(--surface);
+  align-items: center;
+  gap: 9px;
+}
+.filterInput img {
+  flex: 0 0 auto;
+}
+.filterInput input {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font-size: 12px;
+}
+.deleteSelection {
+  display: flex;
+  width: 144px;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--line-danger);
+  border-radius: 6px;
+  color: var(--danger);
+  background: var(--danger-soft);
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+.selectionSummary input,
+.rowCheck input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  background: var(--surface);
+  appearance: none;
+  cursor: pointer;
+}
+.selectionSummary input:checked,
+.rowCheck input:checked {
+  border-color: var(--brand);
+  background: var(--brand) url("../assets/icons/check.svg") center / 12px 12px no-repeat;
+}
+.selectionSummary input:indeterminate {
+  border-color: var(--brand);
+  background: var(--brand) url("../assets/icons/indeterminate.svg") center / 12px 12px no-repeat;
+}
+.historyList {
+  border-block: 1px solid var(--line-strong);
+}
+.historyRow {
+  display: grid;
+  height: 98px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--line-soft);
+  grid-template-columns: 32px 1fr auto;
+  align-items: center;
+  gap: 10px;
+}
+.historyRow:last-child {
+  border-bottom: 0;
+}
+.historyRowSelected {
+  background: var(--selection-surface);
+}
+.rowCheck {
+  display: flex;
+  align-items: center;
+}
+.historyDetails h2 {
+  margin: 0 0 7px;
+  font-family: var(--font-ui);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 22px;
+}
+.historyDetails p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.historyDetails .historyFilters {
+  margin-top: 4px;
+  color: var(--brand);
+}
+.historyActions {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+.historyActions > span {
+  color: var(--text-action-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+.historyActions button {
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  color: var(--brand);
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+.historyActions button:last-child {
+  display: grid;
+  width: 24px;
+  padding: 0;
+  place-items: center;
+}
+.historyActions button:last-child:hover {
+  opacity: 0.7;
+}
+.pagination {
+  display: flex;
+  min-height: 56px;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 12px;
+}
+.pagination > div {
+  display: flex;
+  gap: 20px;
+}
+.pagination button {
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  color: var(--brand);
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+.pagination button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.emptyHistory {
+  padding: 95px 20px;
+  border-top: 1px solid var(--ink);
+  text-align: center;
+}
+.emptyMark {
+  display: grid;
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 25px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--brand);
+  place-items: center;
+}
+.emptyHistory h2 {
+  margin: 0 0 10px;
+  font-family: var(--font-display);
+  font-size: 30px;
+}
+.emptyHistory p {
+  margin: 0 auto 25px;
+  color: var(--muted);
+}
+
+.dialogOverlay {
+  position: fixed;
+  z-index: var(--z-overlay);
+  inset: 0;
+  background: var(--overlay);
+}
+.dialogPositioner {
+  position: fixed;
+  z-index: var(--z-dialog);
+  top: 50%;
+  left: 50%;
+  display: grid;
+  width: 100vw;
+  border: 0;
+  outline: 0;
+  transform: translate(-50%, -50%);
+  place-items: center;
+  pointer-events: none;
+}
+.dialogPositioner > * {
+  pointer-events: auto;
+}
+.dialogContent {
+  width: min(460px, calc(100% - 32px));
+  padding: 34px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-dialog);
+}
+.dialogRule {
+  width: 45px;
+  height: 3px;
+  margin-bottom: 22px;
+  background: var(--danger);
+}
+.dialogContent h2 {
+  margin: 0 0 12px;
+  font-family: var(--font-display);
+  font-size: 27px;
+}
+.dialogContent p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.dialogContent .dialogError {
+  margin-top: 18px;
+  padding: 10px 12px;
+  color: var(--danger-message);
+  background: var(--danger-soft);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.dialogActions {
+  display: flex;
+  margin-top: 31px;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.dangerButton {
+  min-height: 42px;
+  padding: 0 18px;
+  border: 1px solid var(--danger);
+  border-radius: 5px;
+  color: var(--on-brand);
+  background: var(--danger);
+  cursor: pointer;
+  font-weight: 600;
+}

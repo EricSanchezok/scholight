@@ -2,7 +2,7 @@ import { useReducedMotion } from "motion/react";
 import * as m from "motion/react-m";
 
 import { skeletonPulseMotion } from "../app/motion";
-import styles from "../styles/app.module.css";
+import { styles } from "../styles/classes";
 import { accountRouteFor, routes } from "../app/routes";
 
 export function SkeletonPulse({

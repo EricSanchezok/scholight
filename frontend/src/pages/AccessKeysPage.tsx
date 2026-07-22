@@ -18,7 +18,7 @@ import { MotionDialogPortal } from "../components/MotionDialog";
 import { formatCalendarDate, formatCompactDateTime, formatTime } from "../i18n/format";
 import { useI18n, type AppLocale } from "../i18n/I18nProvider";
 import { accessKeyStatus, expiryFromPreset, type ExpiryPreset } from "../lib/account";
-import styles from "../styles/app.module.css";
+import { styles } from "../styles/classes";
 
 function date(value: string, locale: AppLocale): string {
   return formatCalendarDate(value, locale);

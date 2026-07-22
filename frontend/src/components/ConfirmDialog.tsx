@@ -1,6 +1,6 @@
 import * as Dialog from "@radix-ui/react-dialog";
 
-import styles from "../styles/app.module.css";
+import { styles } from "../styles/classes";
 import { MotionDialogPortal } from "./MotionDialog";
 
 interface Props {

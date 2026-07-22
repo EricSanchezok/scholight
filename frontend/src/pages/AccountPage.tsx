@@ -22,7 +22,7 @@ import { formatFullDateTime } from "../i18n/format";
 import { useI18n, type AppLocale } from "../i18n/I18nProvider";
 import type { Messages } from "../i18n/en";
 import { parseUserAgent, sortSessions } from "../lib/account";
-import styles from "../styles/app.module.css";
+import { styles } from "../styles/classes";
 
 const passwordSchema = z
   .object({

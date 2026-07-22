@@ -26,11 +26,18 @@ const codeFiles = sourceFiles.filter(
 );
 const findings = [];
 const definitions = new Set();
+const styleClasses = new Set();
 const usages = [];
 
 for (const path of cssFiles) {
   const content = readFileSync(path, "utf8");
   const displayPath = relative(frontendRoot, path);
+  const lineCount = content.split("\n").length;
+  if (lineCount > 900)
+    findings.push(`${displayPath}:1 stylesheet exceeds 900 lines (${lineCount})`);
+  for (const match of content.matchAll(/\.([A-Za-z_][A-Za-z0-9_-]*)/g)) {
+    styleClasses.add(match[1]);
+  }
   for (const match of content.matchAll(/--([a-z0-9-]+)\s*:/gi)) definitions.add(match[1]);
   for (const match of content.matchAll(/var\(--([a-z0-9-]+)/gi)) {
     usages.push({ token: match[1], path: displayPath, index: match.index ?? 0, content });
@@ -65,6 +72,11 @@ for (const path of uiFiles) {
     findings.push(
       `${displayPath}:${lineOf(content, match.index)} motion timing outside app/motion.tsx`,
     );
+  }
+  for (const match of content.matchAll(/\bstyles\.([A-Za-z_][A-Za-z0-9_]*)/g)) {
+    if (!styleClasses.has(match[1])) {
+      findings.push(`${displayPath}:${lineOf(content, match.index)} undefined style .${match[1]}`);
+    }
   }
 }
 

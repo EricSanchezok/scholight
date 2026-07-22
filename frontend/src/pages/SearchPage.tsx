@@ -16,7 +16,7 @@ import { SearchForm } from "../components/SearchForm";
 import { SearchResultsSkeleton } from "../components/SearchResultsSkeleton";
 import { citationFor, formatAuthors, formatDate, parseSearchParameters } from "../lib/format";
 import { useI18n } from "../i18n/I18nProvider";
-import styles from "../styles/app.module.css";
+import { styles } from "../styles/classes";
 
 function ResultItem({ hit, index }: { hit: SearchHit; index: number }) {
   const { locale, messages } = useI18n();
@@ -162,7 +162,7 @@ export function SearchPage() {
             <p>{messages.search.startHint}</p>
           </div>
         )}
-        <AnimatePresence initial={false} mode="wait">
+        <AnimatePresence initial={false} mode="popLayout">
           {result.isPending && parsed.query ? (
             <m.div key={`loading-${parsed.query}-${parsed.strength}`} exit={{ opacity: 0 }}>
               <SearchResultsSkeleton />
@@ -208,7 +208,7 @@ export function SearchPage() {
                     : messages.search.standard}
                 </span>
               </div>
-              <div className={styles.resultList}>
+              <div>
                 {result.data.hits.map((hit, index) => (
                   <ResultItem key={`${hit.arxiv_id}-${hit.rank}`} hit={hit} index={index} />
                 ))}

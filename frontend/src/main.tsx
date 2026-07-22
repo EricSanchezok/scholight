@@ -8,6 +8,7 @@ import { createRoot } from "react-dom/client";
 import { App } from "./app/App";
 import { I18nProvider } from "./i18n/I18nProvider";
 import "./styles/tokens.css";
+import "./styles/app.css";
 import "./styles/global.css";
 import { ThemeProvider } from "./theme/ThemeProvider";
 

@@ -7,7 +7,7 @@ import { useAuth } from "../auth/context";
 import { accountRoutes, routes, withQuery } from "../app/routes";
 import { mobileMenuMotion } from "../app/motion";
 import { useI18n } from "../i18n/I18nProvider";
-import styles from "../styles/app.module.css";
+import { styles } from "../styles/classes";
 import { AccountMenu } from "./AccountMenu";
 import { CloseIcon, MenuIcon } from "./icons";
 

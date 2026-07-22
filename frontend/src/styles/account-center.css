@@ -1,0 +1,831 @@
+.ledgerPage {
+  width: min(var(--container), calc(100% - 64px));
+  min-height: calc(100vh - 88px);
+  margin: 0 auto;
+  padding: 56px 0 120px;
+}
+.routeStage {
+  position: relative;
+  min-height: calc(100vh - 88px);
+}
+.routeScene {
+  width: 100%;
+}
+.skeletonPulse {
+  width: 100%;
+}
+.skeletonPulse > div {
+  width: 100%;
+}
+.skeletonQuota {
+  display: grid;
+  min-height: 180px;
+  padding: 34px 0;
+  border-block: 1px solid var(--line-soft);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 64px;
+}
+.skeletonQuota > span,
+.skeletonCharts > span,
+.skeletonMetricGrid > span,
+.skeletonLedgerHeading,
+.skeletonToolbar,
+.skeletonLines > span {
+  display: block;
+  border-radius: 3px;
+  background: var(--surface-skeleton);
+}
+.skeletonQuota > span {
+  height: 104px;
+}
+.skeletonMetricGrid {
+  display: grid;
+  margin-top: 32px;
+  border-block: 1px solid var(--line-soft);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.skeletonMetricGrid > span {
+  height: 154px;
+  border-left: 1px solid var(--canvas);
+  border-radius: 0;
+}
+.skeletonCharts {
+  display: grid;
+  margin-top: 40px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 64px;
+}
+.skeletonCharts > span {
+  height: 326px;
+}
+.performanceSkeleton {
+  grid-column: 1 / -1;
+}
+.performanceSkeleton .skeletonMetricGrid {
+  margin-top: 0;
+  border: 0;
+}
+.chartSkeleton {
+  display: block;
+  min-height: 326px;
+  margin-top: 16px;
+  border-block: 1px solid var(--line-soft);
+}
+.chartSkeleton > div,
+.chartSkeleton > div > span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 324px;
+  background: var(--surface-skeleton);
+}
+.skeletonLedgerHeading,
+.skeletonToolbar {
+  height: 48px;
+  margin-bottom: 28px;
+}
+.skeletonLines {
+  display: flex;
+  border-block: 1px solid var(--line);
+  flex-direction: column;
+}
+.skeletonLines > span {
+  height: 76px;
+  border-bottom: 1px solid var(--canvas);
+  border-radius: 0;
+}
+.skeletonLines > span:last-child {
+  border-bottom: 0;
+}
+.ledgerHeading {
+  display: flex;
+  margin-bottom: 32px;
+  flex-direction: column;
+  gap: 8px;
+}
+.ledgerHeading h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 36px;
+  line-height: 46px;
+  letter-spacing: -0.7px;
+}
+.ledgerHeading p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 22px;
+}
+.quotaSection {
+  padding: 24px 0 44px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.sectionHeading,
+.keyLedgerHeading,
+.recentUsageHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.sectionHeading h2,
+.keyLedgerHeading h2,
+.recentUsageHeading h2,
+.chartFigure h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 22px;
+  line-height: 30px;
+}
+.sectionHeading > span {
+  color: var(--muted-soft);
+  font-size: 12px;
+}
+.quotaMetrics {
+  display: grid;
+  margin-top: 22px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 64px;
+}
+.quotaMetric {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.brandLabel,
+.mutedLabel {
+  color: var(--brand);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+}
+.mutedLabel {
+  color: var(--muted-soft);
+}
+.quotaMetric strong {
+  font-family: var(--font-display);
+  font-size: 30px;
+  line-height: 38px;
+}
+.quotaMetric p,
+.performanceGrid p,
+.chartFigure > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+.quotaProgress {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--line-soft);
+}
+.quotaProgress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--brand);
+}
+.quotaMetric:nth-child(2) .quotaProgress span {
+  background: var(--muted);
+}
+.performanceGrid {
+  display: grid;
+  margin-top: 32px;
+  border-top: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.performanceGrid > div {
+  display: flex;
+  min-height: 154px;
+  padding: 30px 24px 24px;
+  border-left: 1px solid var(--line-soft);
+  flex-direction: column;
+  gap: 8px;
+}
+.performanceGrid > div:first-child {
+  border-left: 0;
+}
+.performanceGrid > div > span,
+.fieldCaption {
+  color: var(--muted-soft);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+}
+.performanceGrid strong {
+  font-family: var(--font-display);
+  font-size: 30px;
+  line-height: 38px;
+}
+.analyticsGrid {
+  display: grid;
+  margin-top: 40px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 64px;
+}
+.chartFigure {
+  min-width: 0;
+}
+.chartFigure > p {
+  margin-top: 8px;
+}
+.chartShell {
+  position: relative;
+  width: 100%;
+  min-height: 326px;
+  margin-top: 16px;
+  border-top: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
+}
+.chartShell svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-height: 280px;
+}
+.chartGrid {
+  stroke: var(--line-soft);
+  stroke-width: 1;
+}
+.chartAxisLabel,
+.chartLegend {
+  fill: var(--muted-soft);
+  font-family: var(--font-ui);
+  font-size: 10px;
+}
+.chartLegend {
+  font-weight: 500;
+}
+.chartBrandFill {
+  fill: var(--brand);
+}
+.chartMutedFill {
+  fill: var(--chart-neutral);
+}
+.chartInkFill {
+  fill: var(--ink);
+}
+.chartStandardLine,
+.chartThoroughLine,
+.chartP95Line {
+  fill: none;
+  stroke: var(--brand);
+  stroke-width: 2.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.chartThoroughLine {
+  stroke: var(--ink);
+}
+.chartP95Line {
+  stroke: var(--chart-neutral);
+  stroke-width: 1.8;
+  stroke-dasharray: 6 6;
+}
+.chartEmpty,
+.ledgerEmpty {
+  display: grid;
+  min-height: 150px;
+  margin: 0;
+  color: var(--muted);
+  place-items: center;
+  font-size: 13px;
+}
+.recentUsage {
+  margin-top: 64px;
+}
+.recentUsageHeading {
+  margin-bottom: 16px;
+}
+.recentUsageHeading button,
+.sectionError button,
+.loadMoreButton {
+  padding: 8px 0;
+  border: 0;
+  color: var(--brand);
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+.usageTableWrap,
+.keyTableWrap {
+  overflow-x: auto;
+}
+.usageTable,
+.keyTable {
+  width: 100%;
+  border-collapse: collapse;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  table-layout: fixed;
+  text-align: left;
+}
+.usageTable th,
+.keyTable th {
+  height: 42px;
+  color: var(--muted-soft);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.usageTable td,
+.keyTable td {
+  height: 60px;
+  border-top: 1px solid var(--line-soft);
+  font-size: 12px;
+}
+.usageTable th:nth-child(1) {
+  width: 16%;
+}
+.usageTable th:nth-child(2) {
+  width: 27%;
+}
+.usageTable th:nth-child(3) {
+  width: 14%;
+}
+.usageTable th:nth-child(4) {
+  width: 16%;
+}
+.usageTable th:nth-child(5) {
+  width: 13%;
+}
+.usageTable td:nth-child(1),
+.usageTable td:nth-child(4),
+.usageTable td:nth-child(5) {
+  color: var(--muted);
+}
+.usageStatusSuccess,
+.usageStatusSucceeded {
+  color: var(--brand);
+}
+.usageStatusDegraded {
+  color: var(--warning);
+}
+.usageStatusFailed,
+.keyExpired {
+  color: var(--danger);
+}
+.loadMoreButton {
+  display: block;
+  margin: 14px auto 0;
+}
+.sectionError {
+  display: flex;
+  min-height: 72px;
+  padding: 18px 0;
+  color: var(--danger);
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  font-size: 13px;
+}
+.ledgerEmpty {
+  min-height: 180px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  align-content: center;
+  justify-items: start;
+  gap: 6px;
+}
+.ledgerEmpty h3,
+.ledgerEmpty p {
+  margin: 0;
+}
+.ledgerEmpty h3 {
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 20px;
+}
+.keyLedger {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.keyLedgerHeading {
+  min-height: 40px;
+}
+.keyLedgerHeading .primaryButton {
+  min-height: 40px;
+  padding: 0 18px;
+  font-size: 12px;
+}
+.keyTable th:nth-child(1) {
+  width: 23%;
+}
+.keyTable th:nth-child(2) {
+  width: 30%;
+}
+.keyTable th:nth-child(3) {
+  width: 16%;
+}
+.keyTable th:nth-child(4) {
+  width: 17%;
+}
+.keyTable th:nth-child(5) {
+  width: 11%;
+}
+.keyTable th:last-child {
+  width: 34px;
+}
+.keyTable td {
+  height: 72px;
+  font-size: 13px;
+}
+.keyTable code {
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: 12px;
+}
+.keyTable td:nth-child(3),
+.keyTable td:nth-child(4) {
+  color: var(--muted);
+  font-size: 12px;
+}
+.keyTable td:nth-child(5) small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.keyActive {
+  color: var(--brand);
+  font-size: 12px;
+  font-weight: 500;
+}
+.rowMenuTrigger {
+  width: 36px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  letter-spacing: 2px;
+}
+.rowMenu {
+  z-index: var(--z-row-menu);
+  width: 150px;
+  padding: 6px;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  background: var(--surface);
+  box-shadow: var(--shadow-row-menu);
+}
+.rowMenuItem,
+.rowMenuDanger {
+  min-height: 38px;
+  padding: 10px;
+  border-radius: 3px;
+  outline: 0;
+  cursor: pointer;
+  font-size: 12px;
+}
+.rowMenuItem[data-highlighted],
+.rowMenuDanger[data-highlighted] {
+  background: var(--surface-muted);
+}
+.rowMenuDanger {
+  color: var(--danger);
+}
+.securityNote {
+  margin: 187px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.formDialog,
+.secretDialog {
+  width: min(520px, calc(100% - 32px));
+  padding: 40px;
+  border: 0;
+  border-radius: 2px;
+  background: var(--surface);
+  box-shadow: var(--shadow-dialog-soft);
+}
+.formDialog h2,
+.secretDialog h2 {
+  margin: 12px 0 8px;
+  font-family: var(--font-display);
+  font-size: 28px;
+}
+.formDialog > p,
+.secretDialog > p {
+  margin: 0;
+}
+.formDialog > p:not(.dialogEyebrow),
+.secretDialog > p:not(.dialogEyebrow) {
+  color: var(--muted);
+  font-size: 13px;
+}
+.dialogEyebrow {
+  color: var(--brand);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+}
+.formDialog form {
+  display: flex;
+  margin-top: 28px;
+  flex-direction: column;
+  gap: 18px;
+}
+.formDialog label,
+.formSelectField {
+  display: flex;
+  color: var(--muted-soft);
+  flex-direction: column;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.formSelectField > span {
+  display: block;
+}
+.formDialog input,
+.formDialog select,
+.secretField input {
+  width: 100%;
+  height: 48px;
+  padding: 0 13px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  color: var(--ink);
+  background: var(--surface);
+  font: 13px var(--font-ui);
+  letter-spacing: 0;
+  text-transform: none;
+}
+.formDialog select {
+  appearance: auto;
+}
+.darkButton {
+  min-height: 44px;
+  padding: 0 28px;
+  border: 0;
+  border-radius: 2px;
+  color: var(--on-brand);
+  background: var(--ink);
+  cursor: pointer;
+  font-weight: 600;
+}
+.secretDialog {
+  width: min(560px, calc(100% - 32px));
+}
+.secretDialog .fieldCaption {
+  display: block;
+  margin-top: 34px;
+}
+.secretDialog > strong {
+  display: block;
+  margin-top: 10px;
+  font-size: 14px;
+}
+.secretField {
+  display: flex;
+  height: 58px;
+  margin-top: 26px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface-secret);
+}
+.secretField input {
+  height: 40px;
+  padding-left: 6px;
+  border: 0;
+  background: transparent;
+  font-size: 12px;
+}
+.secretField .primaryButton {
+  width: 88px;
+  min-width: 88px;
+  min-height: 40px;
+  padding: 0 10px;
+  border-radius: 2px;
+  flex: 0 0 88px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.secretHint {
+  margin-top: 18px !important;
+}
+.secretDialog .dialogActions {
+  margin-top: 28px;
+}
+.accountPage {
+  padding: 56px 0 100px;
+}
+.accountIntro {
+  display: flex;
+  margin-bottom: 42px;
+  flex-direction: column;
+  gap: 8px;
+}
+.accountIntro > p {
+  margin: 0 0 4px;
+  color: var(--brand);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+}
+.accountIntro h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 38px;
+  line-height: 48px;
+  letter-spacing: -0.02em;
+}
+.accountIntro > span {
+  color: var(--muted);
+  font-size: 14px;
+}
+.accountSection {
+  display: grid;
+  min-height: 248px;
+  padding: 4px 0 32px;
+  border-bottom: 1px solid var(--line-soft);
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 40px;
+}
+.accountSection + .accountSection {
+  padding-top: 36px;
+}
+.accountSectionIntro h2 {
+  margin: 0 0 8px;
+  font-family: var(--font-display);
+  font-size: 22px;
+}
+.accountSectionIntro p {
+  max-width: 300px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.accountSectionBody {
+  min-width: 0;
+}
+.accountForm {
+  display: flex;
+  min-height: 212px;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.accountForm label {
+  display: flex;
+  width: min(560px, 100%);
+  color: var(--muted-soft);
+  flex-direction: column;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.accountForm input,
+.passwordForm input {
+  width: 100%;
+  height: 48px;
+  padding: 0 13px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  color: var(--ink);
+  background: var(--surface);
+  font: 13px var(--font-ui);
+}
+.accountForm > div {
+  margin-top: 28px;
+}
+.accountForm > div p {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.accountForm > button {
+  min-height: 44px;
+  margin: auto 0 0 auto;
+  border-radius: 2px;
+  font-size: 12px;
+}
+.passwordForm {
+  display: grid;
+  min-height: 250px;
+  grid-template-columns: repeat(2, minmax(0, 270px));
+  align-content: start;
+  gap: 24px 20px;
+}
+.passwordForm label {
+  display: block;
+}
+.passwordForm .fullField {
+  grid-column: 1 / -1;
+}
+.passwordForm small {
+  display: block;
+  margin-top: 5px;
+  color: var(--danger);
+  font-size: 11px;
+}
+.passwordHint {
+  margin: 0;
+  color: var(--muted);
+  grid-column: 1 / -1;
+  font-size: 12px;
+}
+.passwordForm .formMessageError {
+  margin: 0;
+  grid-column: 1 / -1;
+}
+.passwordForm > button {
+  margin: 6px 0 0 auto;
+  grid-column: 1 / -1;
+}
+.sessionList {
+  display: flex;
+  flex-direction: column;
+}
+.sessionRow {
+  display: flex;
+  min-height: 70px;
+  border-bottom: 1px solid var(--line-soft);
+  align-items: center;
+  justify-content: space-between;
+}
+.sessionRow > div {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.sessionRow strong {
+  font-size: 13px;
+  font-weight: 500;
+}
+.sessionRow span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.sessionRow .currentSession {
+  color: var(--brand);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+}
+.sessionRow button {
+  padding: 10px 0 10px 16px;
+  border: 0;
+  color: var(--danger);
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+.revokeOthersButton {
+  min-height: 44px;
+  margin: 28px 0 0 auto;
+  padding: 0 16px;
+  border: 1px solid var(--danger);
+  border-radius: 2px;
+  color: var(--danger);
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+.sessionEmpty {
+  padding: 24px 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.dangerSection {
+  min-height: 150px;
+  border-bottom: 0;
+}
+.dangerSection h2 {
+  color: var(--danger);
+}
+.dangerSection .accountSectionBody {
+  display: flex;
+  justify-content: flex-end;
+}
+.deleteAccountButton {
+  width: 140px;
+  height: 44px;
+  border: 1px solid var(--danger);
+  border-radius: 2px;
+  color: var(--danger);
+  background: var(--danger-soft);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+.dialogDangerEyebrow {
+  color: var(--danger);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+}
