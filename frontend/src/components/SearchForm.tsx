@@ -4,7 +4,12 @@ import { useNavigate } from "react-router-dom";
 import type { SearchFilters, SearchStrength } from "../api/types";
 import { buildSearchUrl } from "../lib/format";
 import styles from "../styles/app.module.css";
-import { ChevronDownIcon } from "./icons";
+import { EditorialSelect } from "./EditorialSelect";
+
+const strengthOptions = [
+  { value: "standard", label: "Standard" },
+  { value: "thorough", label: "Thorough" },
+] as const;
 
 interface Props {
   initialQuery?: string;
@@ -61,17 +66,15 @@ export function SearchForm({
         aria-describedby={error ? "search-error" : undefined}
       />
       <div className={styles.searchActions}>
-        <label className={styles.strengthSelect}>
-          <span className="sr-only">Search strength</span>
-          <select
+        <div className={styles.strengthSelect}>
+          <EditorialSelect
+            label="Search strength"
             value={strength}
-            onChange={(event) => setStrength(event.target.value as SearchStrength)}
-          >
-            <option value="standard">Standard</option>
-            <option value="thorough">Thorough</option>
-          </select>
-          <ChevronDownIcon />
-        </label>
+            options={strengthOptions}
+            onValueChange={setStrength}
+            variant="strength"
+          />
+        </div>
         <button className={styles.primaryButton} type="submit">
           Search
         </button>

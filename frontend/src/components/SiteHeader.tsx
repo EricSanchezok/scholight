@@ -19,11 +19,6 @@ export function SiteHeader() {
       <NavLink to="/docs" onClick={() => setOpen(false)}>
         Docs
       </NavLink>
-      {status === "authenticated" && (
-        <NavLink to="/history" onClick={() => setOpen(false)}>
-          History
-        </NavLink>
-      )}
     </>
   );
 
@@ -69,8 +64,17 @@ export function SiteHeader() {
           {nav}
           {status === "authenticated" ? (
             <>
+              <Link to="/usage" onClick={() => setOpen(false)}>
+                Usage &amp; quota
+              </Link>
+              <Link to="/access-keys" onClick={() => setOpen(false)}>
+                Access Keys
+              </Link>
+              <Link to="/history" onClick={() => setOpen(false)}>
+                Search history
+              </Link>
               <Link to="/account" onClick={() => setOpen(false)}>
-                Account
+                Account settings
               </Link>
               <button type="button" onClick={() => void logout()}>
                 Sign out

@@ -1,6 +1,11 @@
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Link, useNavigate } from "react-router-dom";
 
+import accountIcon from "../assets/icons/menu-account.svg";
+import accessKeysIcon from "../assets/icons/menu-access-keys.svg";
+import historyIcon from "../assets/icons/menu-history.svg";
+import signOutIcon from "../assets/icons/menu-sign-out.svg";
+import usageIcon from "../assets/icons/menu-usage.svg";
 import { useAuth } from "../auth/context";
 import { avatarInitials } from "../lib/format";
 import styles from "../styles/app.module.css";
@@ -27,17 +32,31 @@ export function AccountMenu() {
           </div>
           <DropdownMenu.Separator className={styles.menuSeparator} />
           <DropdownMenu.Item asChild className={styles.menuItem}>
-            <Link to="/history">Search history</Link>
+            <Link to="/usage">
+              <img src={usageIcon} alt="" /> Usage &amp; quota
+            </Link>
           </DropdownMenu.Item>
           <DropdownMenu.Item asChild className={styles.menuItem}>
-            <Link to="/account">Account settings</Link>
+            <Link to="/access-keys">
+              <img src={accessKeysIcon} alt="" /> Access Keys
+            </Link>
+          </DropdownMenu.Item>
+          <DropdownMenu.Item asChild className={styles.menuItem}>
+            <Link to="/history">
+              <img src={historyIcon} alt="" /> Search history
+            </Link>
+          </DropdownMenu.Item>
+          <DropdownMenu.Item asChild className={styles.menuItem}>
+            <Link to="/account">
+              <img src={accountIcon} alt="" /> Account settings
+            </Link>
           </DropdownMenu.Item>
           <DropdownMenu.Separator className={styles.menuSeparator} />
           <DropdownMenu.Item
             className={styles.menuItem}
             onSelect={() => void logout().then(() => navigate("/"))}
           >
-            Sign out
+            <img src={signOutIcon} alt="" /> Sign out
           </DropdownMenu.Item>
         </DropdownMenu.Content>
       </DropdownMenu.Portal>

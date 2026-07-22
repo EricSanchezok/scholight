@@ -5,10 +5,20 @@ import type {
   LoginRequest,
   QuotaStatus,
   RegisterRequest,
+  AccessKey,
+  CreateAccessKeyRequest,
+  CreatedAccessKey,
+  DeleteAccountRequest,
   SearchRequest,
   SearchResponse,
+  Session,
   TokenResponse,
+  UpdateAccessKeyRequest,
   UserProfile,
+  UsageLatency,
+  UsageRecords,
+  UsageSummary,
+  UsageVolume,
 } from "./types";
 
 async function unwrap<T>(promise: Promise<ApiResult<T>>): Promise<T> {
@@ -61,6 +71,80 @@ export const accountApi = {
     ),
   quotas: () =>
     unwrap<QuotaStatus[]>(withAuthRetry(() => apiClient.GET("/user/quotas"), "protected")),
+  sessions: () =>
+    unwrap<Session[]>(withAuthRetry(() => apiClient.GET("/auth/sessions"), "protected")),
+  revokeSession: (sessionId: number) =>
+    unwrap(
+      withAuthRetry(
+        () =>
+          apiClient.DELETE("/auth/sessions/{session_id}", {
+            params: { path: { session_id: sessionId } },
+          }),
+        "protected",
+      ),
+    ),
+  revokeOtherSessions: () =>
+    unwrap(withAuthRetry(() => apiClient.POST("/auth/sessions/revoke-others"), "protected")),
+  deleteAccount: (body: DeleteAccountRequest) =>
+    unwrap(withAuthRetry(() => apiClient.DELETE("/user/account", { body }), "protected")),
+};
+
+export const accessKeyApi = {
+  list: () =>
+    unwrap<AccessKey[]>(withAuthRetry(() => apiClient.GET("/user/access-keys"), "protected")),
+  create: (body: CreateAccessKeyRequest) =>
+    unwrap<CreatedAccessKey>(
+      withAuthRetry(() => apiClient.POST("/user/access-keys", { body }), "protected"),
+    ),
+  update: (keyId: string, body: UpdateAccessKeyRequest) =>
+    unwrap<AccessKey>(
+      withAuthRetry(
+        () =>
+          apiClient.PATCH("/user/access-keys/{key_id}", {
+            params: { path: { key_id: keyId } },
+            body,
+          }),
+        "protected",
+      ),
+    ),
+  revoke: (keyId: string) =>
+    unwrap(
+      withAuthRetry(
+        () =>
+          apiClient.DELETE("/user/access-keys/{key_id}", {
+            params: { path: { key_id: keyId } },
+          }),
+        "protected",
+      ),
+    ),
+};
+
+export const usageApi = {
+  summary: () =>
+    unwrap<UsageSummary>(withAuthRetry(() => apiClient.GET("/user/usage/summary"), "protected")),
+  volume: () =>
+    unwrap<UsageVolume>(withAuthRetry(() => apiClient.GET("/user/usage/volume"), "protected")),
+  latency: () =>
+    unwrap<UsageLatency>(withAuthRetry(() => apiClient.GET("/user/usage/latency"), "protected")),
+  records: (cursor?: string) =>
+    unwrap<UsageRecords>(
+      withAuthRetry(
+        () =>
+          apiClient.GET("/user/usage/records", {
+            params: { query: { limit: 10, ...(cursor ? { cursor } : {}) } },
+          }),
+        "protected",
+      ),
+    ),
+  exportCsv: async () => {
+    const data = await unwrap<string>(
+      withAuthRetry(
+        () => apiClient.GET("/user/usage/export.csv", { parseAs: "text" }),
+        "protected",
+      ),
+    );
+    return new Blob([data], { type: "text/csv;charset=utf-8" });
+  },
 };
 
 export const historyApi = {

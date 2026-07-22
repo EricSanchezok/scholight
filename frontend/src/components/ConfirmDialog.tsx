@@ -7,11 +7,24 @@ interface Props {
   title: string;
   description: string;
   busy?: boolean;
+  error?: string;
+  confirmLabel?: string;
+  busyLabel?: string;
   onOpenChange: (open: boolean) => void;
   onConfirm: () => void;
 }
 
-export function ConfirmDialog({ open, title, description, busy, onOpenChange, onConfirm }: Props) {
+export function ConfirmDialog({
+  open,
+  title,
+  description,
+  busy,
+  error,
+  confirmLabel = "Delete",
+  busyLabel = "Deleting…",
+  onOpenChange,
+  onConfirm,
+}: Props) {
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
@@ -20,6 +33,11 @@ export function ConfirmDialog({ open, title, description, busy, onOpenChange, on
           <div className={styles.dialogRule} />
           <Dialog.Title>{title}</Dialog.Title>
           <Dialog.Description>{description}</Dialog.Description>
+          {error && (
+            <p className={styles.dialogError} role="alert">
+              {error}
+            </p>
+          )}
           <div className={styles.dialogActions}>
             <Dialog.Close className={styles.secondaryButton}>Cancel</Dialog.Close>
             <button
@@ -28,7 +46,7 @@ export function ConfirmDialog({ open, title, description, busy, onOpenChange, on
               disabled={busy}
               onClick={onConfirm}
             >
-              {busy ? "Deleting…" : "Delete"}
+              {busy ? busyLabel : confirmLabel}
             </button>
           </div>
         </Dialog.Content>
