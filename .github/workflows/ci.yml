@@ -29,6 +29,7 @@ env:
 
 jobs:
   backend:
+    runs-on: ubuntu-latest
     env:
       SCHOLIGHT_DATA_ROOT: /tmp/scholight-ci
     steps:
