@@ -64,7 +64,8 @@ svg {
   line-height: 1.45;
 }
 
-.app-loading {
+.app-loading,
+.loading-screen {
   display: grid;
   min-height: 100vh;
   place-items: center;
