@@ -67,4 +67,16 @@ describe("SearchForm", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Enter a research question");
     expect(screen.getByTestId("location")).toHaveTextContent("/");
   });
+
+  it("announces a pending search without moving or disabling the query field", () => {
+    render(
+      <MemoryRouter>
+        <SearchForm initialQuery="quiet interfaces" busy />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole("textbox", { name: "Search research papers" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Searching…" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Searching…" })).toHaveAttribute("aria-busy", "true");
+  });
 });

@@ -99,7 +99,7 @@
   border-radius: var(--radius-md);
   background: var(--surface);
   box-shadow: 0 16px 42px rgb(14 15 20 / 14%);
-  animation: menu-in 140ms ease-out;
+  transform-origin: top right;
 }
 .dropdownIdentity {
   display: flex;
@@ -132,6 +132,19 @@
   cursor: pointer;
   outline: none;
 }
+.menuItem[aria-current="page"] {
+  color: var(--brand);
+}
+.menuActiveMark {
+  width: 3px;
+  height: 14px;
+  margin-right: -5px;
+  border-radius: 2px;
+  background: transparent;
+}
+.menuItem[aria-current="page"] .menuActiveMark {
+  background: var(--brand);
+}
 .menuItem img {
   width: 16px;
   height: 16px;
@@ -148,6 +161,9 @@
 .mobileNav,
 .mobileActions {
   display: none;
+}
+.mobileNav {
+  overflow: hidden;
 }
 
 .home {
@@ -274,7 +290,7 @@
   border-radius: 7px;
   background: var(--surface);
   box-shadow: 0 12px 30px rgb(14 15 20 / 15%);
-  animation: menu-in 120ms ease-out;
+  transform-origin: top left;
 }
 .selectViewport {
   display: flex;
@@ -529,21 +545,63 @@
   color: var(--brand);
   font-weight: 600;
 }
-.loadingState {
+.searchLoading {
+  padding-top: 34px;
+}
+.searchLoadingHeading {
   display: flex;
-  padding: 100px 0;
+  min-height: 48px;
   color: var(--muted);
-  align-items: center;
+  flex-direction: column;
   justify-content: center;
   gap: 12px;
+  font-size: 12px;
+  font-weight: 500;
 }
-.loadingState span {
-  width: 15px;
-  height: 15px;
-  border: 2px solid var(--line);
-  border-top-color: var(--brand);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
+.searchActivityTrack {
+  width: 100%;
+  height: 2px;
+  overflow: hidden;
+  background: var(--line-soft);
+}
+.searchActivityTrack span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--brand);
+  transform-origin: left center;
+}
+.searchSkeletonList {
+  border-top: 1px solid var(--line);
+}
+.searchSkeletonRow {
+  display: flex;
+  min-height: 196px;
+  padding: 28px 0;
+  border-bottom: 1px solid var(--line-soft);
+  flex-direction: column;
+  gap: 11px;
+}
+.searchSkeletonRow > span {
+  display: block;
+  height: 12px;
+  border-radius: 3px;
+  background: #e5e2d8;
+}
+.searchSkeletonRow .searchSkeletonTitle {
+  width: 68%;
+  height: 21px;
+}
+.searchSkeletonRow .searchSkeletonMeta {
+  width: 44%;
+  height: 10px;
+}
+.searchSkeletonRow .searchSkeletonAbstract {
+  width: 94%;
+  margin-top: 9px;
+}
+.searchSkeletonRow .searchSkeletonAbstractShort {
+  width: 76%;
 }
 
 .docs,
@@ -990,20 +1048,30 @@
   z-index: 50;
   inset: 0;
   background: rgb(14 15 20 / 42%);
-  animation: fade-in 120ms ease-out;
 }
-.dialogContent {
+.dialogPositioner {
   position: fixed;
   z-index: 51;
   top: 50%;
   left: 50%;
+  display: grid;
+  width: 100vw;
+  border: 0;
+  outline: 0;
+  transform: translate(-50%, -50%);
+  place-items: center;
+  pointer-events: none;
+}
+.dialogPositioner > * {
+  pointer-events: auto;
+}
+.dialogContent {
   width: min(460px, calc(100% - 32px));
   padding: 34px;
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-md);
   background: var(--surface);
   box-shadow: 0 20px 60px rgb(0 0 0 / 20%);
-  transform: translate(-50%, -50%);
 }
 .dialogRule {
   width: 45px;
@@ -1141,6 +1209,99 @@
   min-height: calc(100vh - 88px);
   margin: 0 auto;
   padding: 56px 0 120px;
+}
+.routeStage {
+  position: relative;
+  min-height: calc(100vh - 88px);
+}
+.routeScene {
+  width: 100%;
+}
+.skeletonPulse {
+  width: 100%;
+}
+.skeletonPulse > div {
+  width: 100%;
+}
+.skeletonQuota {
+  display: grid;
+  min-height: 180px;
+  padding: 34px 0;
+  border-block: 1px solid var(--line-soft);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 64px;
+}
+.skeletonQuota > span,
+.skeletonCharts > span,
+.skeletonMetricGrid > span,
+.skeletonLedgerHeading,
+.skeletonToolbar,
+.skeletonLines > span {
+  display: block;
+  border-radius: 3px;
+  background: #e5e2d8;
+}
+.skeletonQuota > span {
+  height: 104px;
+}
+.skeletonMetricGrid {
+  display: grid;
+  margin-top: 32px;
+  border-block: 1px solid var(--line-soft);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.skeletonMetricGrid > span {
+  height: 154px;
+  border-left: 1px solid var(--canvas);
+  border-radius: 0;
+}
+.skeletonCharts {
+  display: grid;
+  margin-top: 40px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 64px;
+}
+.skeletonCharts > span {
+  height: 326px;
+}
+.performanceSkeleton {
+  grid-column: 1 / -1;
+}
+.performanceSkeleton .skeletonMetricGrid {
+  margin-top: 0;
+  border: 0;
+}
+.chartSkeleton {
+  display: block;
+  min-height: 326px;
+  margin-top: 16px;
+  border-block: 1px solid var(--line-soft);
+}
+.chartSkeleton > div,
+.chartSkeleton > div > span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 324px;
+  background: #e5e2d8;
+}
+.skeletonLedgerHeading,
+.skeletonToolbar {
+  height: 48px;
+  margin-bottom: 28px;
+}
+.skeletonLines {
+  display: flex;
+  border-block: 1px solid var(--line);
+  flex-direction: column;
+}
+.skeletonLines > span {
+  height: 76px;
+  border-bottom: 1px solid var(--canvas);
+  border-radius: 0;
+}
+.skeletonLines > span:last-child {
+  border-bottom: 0;
 }
 .ledgerHeading {
   display: flex;
@@ -1548,17 +1709,12 @@
 }
 .formDialog,
 .secretDialog {
-  position: fixed;
-  z-index: 51;
-  top: 50%;
-  left: 50%;
   width: min(520px, calc(100% - 32px));
   padding: 40px;
   border: 0;
   border-radius: 2px;
   background: var(--surface);
   box-shadow: 0 14px 32px rgb(5 5 8 / 18%);
-  transform: translate(-50%, -50%);
 }
 .formDialog h2,
 .secretDialog h2 {
@@ -1908,24 +2064,31 @@
   color: var(--muted);
 }
 
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-@keyframes fade-in {
-  from {
-    opacity: 0;
-  }
-}
-@keyframes menu-in {
-  from {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
-}
-
 @media (max-width: 767px) {
+  .routeStage {
+    min-height: calc(100vh - 76px);
+  }
+  .skeletonQuota,
+  .skeletonCharts {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+  .skeletonQuota {
+    padding: 24px 0;
+  }
+  .skeletonMetricGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .skeletonMetricGrid > span:nth-child(3),
+  .skeletonMetricGrid > span:nth-child(4) {
+    border-top: 1px solid var(--canvas);
+  }
+  .searchSkeletonRow .searchSkeletonTitle {
+    width: 88%;
+  }
+  .searchSkeletonRow .searchSkeletonMeta {
+    width: 70%;
+  }
   .header {
     height: 76px;
   }

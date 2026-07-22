@@ -1,12 +1,13 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 
 import { LoadingScreen } from "../components/LoadingScreen";
+import { RouteSkeleton } from "../components/EditorialSkeleton";
 import { useAuth } from "./context";
 
 export function ProtectedRoute() {
   const { status } = useAuth();
   const location = useLocation();
-  if (status === "checking") return <LoadingScreen />;
+  if (status === "checking") return <RouteSkeleton pathname={location.pathname} />;
   if (status === "anonymous") {
     const returnTo = `${location.pathname}${location.search}`;
     return <Navigate to={`/login?returnTo=${encodeURIComponent(returnTo)}`} replace />;

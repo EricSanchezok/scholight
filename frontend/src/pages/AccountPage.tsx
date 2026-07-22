@@ -1,6 +1,7 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import * as m from "motion/react-m";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useNavigate } from "react-router-dom";
@@ -13,6 +14,8 @@ import { queryKeys } from "../app/queryKeys";
 import { useAuth } from "../auth/context";
 import { clearSession } from "../auth/session";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { EditorialRowsSkeleton } from "../components/EditorialSkeleton";
+import { MotionDialogPortal } from "../components/MotionDialog";
 import { parseUserAgent, sortSessions } from "../lib/account";
 import styles from "../styles/app.module.css";
 
@@ -50,55 +53,52 @@ function DeleteAccountDialog({
   const [confirmation, setConfirmation] = useState("");
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Portal>
-        <Dialog.Overlay className={styles.dialogOverlay} />
-        <Dialog.Content className={styles.formDialog}>
-          <p className={styles.dialogDangerEyebrow}>PERMANENT ACTION</p>
-          <Dialog.Title>Delete your account?</Dialog.Title>
-          <Dialog.Description>
-            This permanently removes your search history, access keys, usage records, and account
-            access.
-          </Dialog.Description>
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              onConfirm(password, confirmation);
-            }}
-          >
-            <label>
-              Current password
-              <input
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-              />
-            </label>
-            <label>
-              Type DELETE to confirm
-              <input
-                value={confirmation}
-                autoComplete="off"
-                onChange={(event) => setConfirmation(event.target.value)}
-              />
-            </label>
-            {error && (
-              <p className={styles.formMessageError} role="alert">
-                {error instanceof ApiError ? error.message : "Unable to delete your account."}
-              </p>
-            )}
-            <div className={styles.dialogActions}>
-              <Dialog.Close className={styles.secondaryButton}>Cancel</Dialog.Close>
-              <button
-                className={styles.dangerButton}
-                disabled={busy || !password || confirmation !== "DELETE"}
-              >
-                {busy ? "Deleting…" : "Delete account"}
-              </button>
-            </div>
-          </form>
-        </Dialog.Content>
-      </Dialog.Portal>
+      <MotionDialogPortal open={open} className={styles.formDialog}>
+        <p className={styles.dialogDangerEyebrow}>PERMANENT ACTION</p>
+        <Dialog.Title>Delete your account?</Dialog.Title>
+        <Dialog.Description>
+          This permanently removes your search history, access keys, usage records, and account
+          access.
+        </Dialog.Description>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            onConfirm(password, confirmation);
+          }}
+        >
+          <label>
+            Current password
+            <input
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+            />
+          </label>
+          <label>
+            Type DELETE to confirm
+            <input
+              value={confirmation}
+              autoComplete="off"
+              onChange={(event) => setConfirmation(event.target.value)}
+            />
+          </label>
+          {error && (
+            <p className={styles.formMessageError} role="alert">
+              {error instanceof ApiError ? error.message : "Unable to delete your account."}
+            </p>
+          )}
+          <div className={styles.dialogActions}>
+            <Dialog.Close className={styles.secondaryButton}>Cancel</Dialog.Close>
+            <button
+              className={styles.dangerButton}
+              disabled={busy || !password || confirmation !== "DELETE"}
+            >
+              {busy ? "Deleting…" : "Delete account"}
+            </button>
+          </div>
+        </form>
+      </MotionDialogPortal>
     </Dialog.Root>
   );
 }
@@ -287,7 +287,7 @@ export function AccountPage() {
           <p>Devices currently signed in to your Scholight account.</p>
         </div>
         <div className={styles.accountSectionBody}>
-          {sessions.error ? (
+          {sessions.error && !sessions.data ? (
             <div className={styles.sectionError} role="alert">
               <span>
                 {sessions.error instanceof ApiError
@@ -299,13 +299,19 @@ export function AccountPage() {
               </button>
             </div>
           ) : sessions.isPending ? (
-            <div className={styles.sectionLoading}>Loading active sessions…</div>
+            <EditorialRowsSkeleton label="Loading active sessions" rows={2} />
           ) : orderedSessions.length === 0 ? (
             <div className={styles.sessionEmpty}>No active sessions were found.</div>
           ) : (
             <div className={styles.sessionList}>
-              {orderedSessions.map((session) => (
-                <div className={styles.sessionRow} key={session.id}>
+              {orderedSessions.map((session, index) => (
+                <m.div
+                  className={styles.sessionRow}
+                  key={session.id}
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.16, delay: Math.min(index * 0.02, 0.16) }}
+                >
                   <div>
                     <strong>{parseUserAgent(session.user_agent)}</strong>
                     <span>{seenAt(session.last_seen_at, session.current)}</span>
@@ -317,7 +323,7 @@ export function AccountPage() {
                       Revoke
                     </button>
                   )}
-                </div>
+                </m.div>
               ))}
               {otherSessions.length > 0 && (
                 <button

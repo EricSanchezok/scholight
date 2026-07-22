@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { AnimatePresence } from "motion/react";
+import * as m from "motion/react-m";
 import { Link, NavLink, useLocation } from "react-router-dom";
 
 import { useAuth } from "../auth/context";
@@ -59,34 +61,43 @@ export function SiteHeader() {
           </button>
         </div>
       </div>
-      {open && (
-        <nav id="mobile-menu" className={styles.mobileNav} aria-label="Mobile navigation">
-          {nav}
-          {status === "authenticated" ? (
-            <>
-              <Link to="/usage" onClick={() => setOpen(false)}>
-                Usage &amp; quota
+      <AnimatePresence>
+        {open && (
+          <m.nav
+            id="mobile-menu"
+            className={styles.mobileNav}
+            aria-label="Mobile navigation"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1, transition: { duration: 0.18 } }}
+            exit={{ height: 0, opacity: 0, transition: { duration: 0.1 } }}
+          >
+            {nav}
+            {status === "authenticated" ? (
+              <>
+                <Link to="/usage" onClick={() => setOpen(false)}>
+                  Usage &amp; quota
+                </Link>
+                <Link to="/access-keys" onClick={() => setOpen(false)}>
+                  Access Keys
+                </Link>
+                <Link to="/history" onClick={() => setOpen(false)}>
+                  Search history
+                </Link>
+                <Link to="/account" onClick={() => setOpen(false)}>
+                  Account settings
+                </Link>
+                <button type="button" onClick={() => void logout()}>
+                  Sign out
+                </button>
+              </>
+            ) : (
+              <Link to="/login" onClick={() => setOpen(false)}>
+                Sign in
               </Link>
-              <Link to="/access-keys" onClick={() => setOpen(false)}>
-                Access Keys
-              </Link>
-              <Link to="/history" onClick={() => setOpen(false)}>
-                Search history
-              </Link>
-              <Link to="/account" onClick={() => setOpen(false)}>
-                Account settings
-              </Link>
-              <button type="button" onClick={() => void logout()}>
-                Sign out
-              </button>
-            </>
-          ) : (
-            <Link to="/login" onClick={() => setOpen(false)}>
-              Sign in
-            </Link>
-          )}
-        </nav>
-      )}
+            )}
+          </m.nav>
+        )}
+      </AnimatePresence>
     </header>
   );
 }

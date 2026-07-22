@@ -53,6 +53,10 @@ async function mockAuthenticated(page: Page) {
   );
 }
 
+async function settleMotion(page: Page) {
+  await page.waitForTimeout(300);
+}
+
 async function mockAccountCenter(page: Page) {
   await mockAuthenticated(page);
   const days = Array.from({ length: 12 }, (_, index) => {
@@ -225,10 +229,46 @@ test("anonymous search reaches the continuous results view", async ({ page }) =>
   await expect(page).toHaveURL(/\/search\?q=retrieval\+augmented\+generation/);
   await expect(page.getByRole("heading", { name: "A Paper About Retrieval" })).toBeVisible();
   await expect(page.getByText("Score")).toBeVisible();
+  await settleMotion(page);
   const accessibility = await new AxeBuilder({ page }).analyze();
   expect(
     accessibility.violations.filter((item) => ["serious", "critical"].includes(item.impact ?? "")),
   ).toEqual([]);
+});
+
+test("a delayed search immediately shows a stable editorial skeleton", async ({ page }) => {
+  await page.route("**/api/search", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    await route.fulfill({ json: result });
+  });
+  await page.goto("/");
+  await page.getByRole("textbox", { name: "Search research papers" }).fill("quiet interfaces");
+  await page.getByRole("button", { name: "Search" }).click();
+
+  await expect(page.getByTestId("search-results-skeleton")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Searching…" })).toHaveAttribute(
+    "aria-busy",
+    "true",
+  );
+  await expect(page.getByText("Searching the literature…")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "A Paper About Retrieval" })).toBeVisible();
+  await expect(page.getByTestId("search-results-skeleton")).toBeHidden();
+});
+
+test("reduced motion keeps the search skeleton static", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.route("**/api/search", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    await route.fulfill({ json: result });
+  });
+  await page.goto("/search?q=quiet+interfaces&strength=standard");
+  const pulse = page.getByRole("status", { name: "Loading search results" });
+  await expect(pulse).toBeVisible();
+
+  const firstOpacity = await pulse.evaluate((element) => getComputedStyle(element).opacity);
+  await page.waitForTimeout(150);
+  const secondOpacity = await pulse.evaluate((element) => getComputedStyle(element).opacity);
+  expect(secondOpacity).toBe(firstOpacity);
 });
 
 test("protected routes preserve a safe return path", async ({ page }) => {
@@ -332,6 +372,7 @@ test("signed-in history follows the compact editorial layout", async ({ page }, 
   );
   await page.goto("/history");
   await expect(page.getByRole("heading", { name: "Search history" })).toBeVisible();
+  await expect(page.getByPlaceholder("Filter searches")).toBeVisible();
 
   const geometry = await page.evaluate(() => {
     const rect = (selector: string) => {
@@ -388,6 +429,7 @@ test("custom strength dropdown preserves the Figma interaction", async ({ page }
   await page.getByRole("combobox", { name: "Search strength" }).click();
   await expect(page.getByRole("option", { name: "Standard" })).toBeVisible();
   await expect(page.getByRole("option", { name: "Thorough" })).toBeVisible();
+  await settleMotion(page);
   await expect(page).toHaveScreenshot("strength-menu.png");
   await page.getByRole("option", { name: "Thorough" }).click();
   await expect(page.getByRole("combobox", { name: "Search strength" })).toHaveText("Thorough");
@@ -408,6 +450,7 @@ test("account menu uses the approved order and protected destinations", async ({
     /Account settings/,
     /Sign out/,
   ]);
+  await settleMotion(page);
   await expect(page).toHaveScreenshot("account-menu.png");
   await page.getByRole("menuitem", { name: /Usage & quota/ }).click();
   await expect(page).toHaveURL(/\/usage$/);
@@ -434,6 +477,7 @@ test("usage, access keys, and account match the editorial account center", async
 
   await page.goto("/access-keys");
   await expect(page.getByRole("heading", { name: "Access keys" })).toBeVisible();
+  await expect(page.getByText("literature-review", { exact: true })).toBeVisible();
   await expect(page).toHaveScreenshot("access-keys.png", { fullPage: true });
   await page.getByRole("button", { name: "Create new key" }).click();
   await page.getByRole("combobox", { name: "Expiration" }).click();

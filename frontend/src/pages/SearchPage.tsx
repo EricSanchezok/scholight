@@ -1,4 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
+import { AnimatePresence } from "motion/react";
+import * as m from "motion/react-m";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
@@ -8,10 +10,11 @@ import type { SearchFilters, SearchHit, SearchRequest } from "../api/types";
 import { queryKeys } from "../app/queryKeys";
 import { useAuth } from "../auth/context";
 import { SearchForm } from "../components/SearchForm";
+import { SearchResultsSkeleton } from "../components/SearchResultsSkeleton";
 import { citationFor, formatAuthors, formatDate, parseSearchParameters } from "../lib/format";
 import styles from "../styles/app.module.css";
 
-function ResultItem({ hit }: { hit: SearchHit }) {
+function ResultItem({ hit, index }: { hit: SearchHit; index: number }) {
   const [copied, setCopied] = useState(false);
   const copyCitation = async () => {
     await navigator.clipboard.writeText(citationFor(hit));
@@ -19,7 +22,12 @@ function ResultItem({ hit }: { hit: SearchHit }) {
     window.setTimeout(() => setCopied(false), 1800);
   };
   return (
-    <article className={styles.resultItem}>
+    <m.article
+      className={styles.resultItem}
+      initial={{ opacity: 0, y: 5 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.18, delay: Math.min(index * 0.02, 0.18) }}
+    >
       <h2>
         <a href={hit.arxiv_url} target="_blank" rel="noopener noreferrer">
           {hit.title}
@@ -46,7 +54,7 @@ function ResultItem({ hit }: { hit: SearchHit }) {
         </button>
         <span aria-live="polite">{copied ? "Citation copied" : ""}</span>
       </div>
-    </article>
+    </m.article>
   );
 }
 
@@ -136,6 +144,7 @@ export function SearchPage() {
           initialStrength={parsed.strength}
           filters={parsed.filters}
           compact
+          busy={result.isPending && Boolean(parsed.query)}
         />
         {error?.status === 422 && (
           <p className={styles.resultsQueryError} role="alert">
@@ -151,57 +160,75 @@ export function SearchPage() {
             <p>Enter a topic, method, or question above.</p>
           </div>
         )}
-        {result.isPending && parsed.query && (
-          <div className={styles.loadingState} role="status">
-            <span />
-            Searching the literature…
-          </div>
-        )}
-        {error && (
-          <div className={styles.errorState} role="alert">
-            <h1>
-              {error.status === 429 ? "Search limit reached" : "We couldn’t complete that search"}
-            </h1>
-            <p>
-              {error.message}
-              {error.retryAfter ? ` Try again in about ${error.retryAfter} seconds.` : ""}
-            </p>
-            <button
-              className={styles.secondaryButton}
-              type="button"
-              onClick={() => void result.refetch()}
+        <AnimatePresence initial={false} mode="wait">
+          {result.isPending && parsed.query ? (
+            <m.div key={`loading-${parsed.query}-${parsed.strength}`} exit={{ opacity: 0 }}>
+              <SearchResultsSkeleton />
+            </m.div>
+          ) : error ? (
+            <m.div
+              className={styles.errorState}
+              role="alert"
+              key="search-error"
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
             >
-              Retry
-            </button>
-            {error.status === 429 && authStatus === "anonymous" && <Link to="/login">Sign in</Link>}
-          </div>
-        )}
+              <h1>
+                {error.status === 429 ? "Search limit reached" : "We couldn’t complete that search"}
+              </h1>
+              <p>
+                {error.message}
+                {error.retryAfter ? ` Try again in about ${error.retryAfter} seconds.` : ""}
+              </p>
+              <button
+                className={styles.secondaryButton}
+                type="button"
+                onClick={() => void result.refetch()}
+              >
+                Retry
+              </button>
+              {error.status === 429 && authStatus === "anonymous" && (
+                <Link to="/login">Sign in</Link>
+              )}
+            </m.div>
+          ) : result.data && result.data.hits.length === 0 ? (
+            <m.div
+              className={styles.state}
+              key="search-empty"
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+            >
+              <h1>No papers found</h1>
+              <p>Try a broader phrase or a different way of describing the topic.</p>
+            </m.div>
+          ) : result.data && result.data.hits.length > 0 ? (
+            <m.div
+              key={`results-${parsed.query}-${parsed.strength}`}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1, transition: { duration: 0.14 } }}
+              exit={{ opacity: 0, transition: { duration: 0.08 } }}
+            >
+              <div className={styles.resultsSummary}>
+                <h1>Search results</h1>
+                <span>
+                  {result.data.result_count} papers ·{" "}
+                  {result.data.strength === "thorough" ? "Thorough" : "Standard"}
+                </span>
+              </div>
+              <div className={styles.resultList}>
+                {result.data.hits.map((hit, index) => (
+                  <ResultItem key={`${hit.arxiv_id}-${hit.rank}`} hit={hit} index={index} />
+                ))}
+              </div>
+            </m.div>
+          ) : null}
+        </AnimatePresence>
         {result.data?.degraded && (
           <div className={styles.notice} role="status">
             Some abstracts are temporarily unavailable. The available results are shown below.
           </div>
-        )}
-        {result.data && result.data.hits.length === 0 && (
-          <div className={styles.state}>
-            <h1>No papers found</h1>
-            <p>Try a broader phrase or a different way of describing the topic.</p>
-          </div>
-        )}
-        {result.data && result.data.hits.length > 0 && (
-          <>
-            <div className={styles.resultsSummary}>
-              <h1>Search results</h1>
-              <span>
-                {result.data.result_count} papers ·{" "}
-                {result.data.strength === "thorough" ? "Thorough" : "Standard"}
-              </span>
-            </div>
-            <div className={styles.resultList}>
-              {result.data.hits.map((hit) => (
-                <ResultItem key={`${hit.arxiv_id}-${hit.rank}`} hit={hit} />
-              ))}
-            </div>
-          </>
         )}
       </div>
     </main>

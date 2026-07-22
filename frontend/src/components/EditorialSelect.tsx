@@ -1,5 +1,9 @@
 import * as Select from "@radix-ui/react-select";
+import { AnimatePresence } from "motion/react";
+import * as m from "motion/react-m";
+import { useState } from "react";
 
+import { popoverMotion } from "../app/motion";
 import styles from "../styles/app.module.css";
 import { ChevronDownIcon } from "./icons";
 
@@ -21,34 +25,53 @@ export function EditorialSelect<T extends string>({
   onValueChange: (value: T) => void;
   variant?: "strength" | "field";
 }) {
+  const [open, setOpen] = useState(false);
   return (
-    <Select.Root value={value} onValueChange={(next) => onValueChange(next as T)}>
+    <Select.Root
+      open={open}
+      onOpenChange={setOpen}
+      value={value}
+      onValueChange={(next) => onValueChange(next as T)}
+    >
       <Select.Trigger
         className={`${styles.selectTrigger} ${variant === "strength" ? styles.strengthSelectTrigger : styles.fieldSelectTrigger}`}
         aria-label={label}
       >
-        <Select.Value />
-        <Select.Icon className={styles.selectChevron}>
-          <ChevronDownIcon />
+        <Select.Value>{options.find((option) => option.value === value)?.label}</Select.Value>
+        <Select.Icon asChild>
+          <m.span
+            className={styles.selectChevron}
+            animate={{ rotate: open ? 180 : 0 }}
+            transition={{ duration: 0.14 }}
+          >
+            <ChevronDownIcon />
+          </m.span>
         </Select.Icon>
       </Select.Trigger>
-      <Select.Portal>
-        <Select.Content
-          className={styles.selectContent}
-          position="popper"
-          sideOffset={5}
-          align="start"
-        >
-          <Select.Viewport className={styles.selectViewport}>
-            {options.map((option) => (
-              <Select.Item className={styles.selectItem} value={option.value} key={option.value}>
-                <Select.ItemIndicator className={styles.selectIndicator}>✓</Select.ItemIndicator>
-                <Select.ItemText>{option.label}</Select.ItemText>
-              </Select.Item>
-            ))}
-          </Select.Viewport>
-        </Select.Content>
-      </Select.Portal>
+      <AnimatePresence>
+        {open && (
+          <Select.Portal forceMount>
+            <Select.Content asChild forceMount position="popper" sideOffset={5} align="start">
+              <m.div className={styles.selectContent} {...popoverMotion}>
+                <Select.Viewport className={styles.selectViewport}>
+                  {options.map((option) => (
+                    <Select.Item
+                      className={styles.selectItem}
+                      value={option.value}
+                      key={option.value}
+                    >
+                      <Select.ItemIndicator className={styles.selectIndicator}>
+                        ✓
+                      </Select.ItemIndicator>
+                      <Select.ItemText>{option.label}</Select.ItemText>
+                    </Select.Item>
+                  ))}
+                </Select.Viewport>
+              </m.div>
+            </Select.Content>
+          </Select.Portal>
+        )}
+      </AnimatePresence>
     </Select.Root>
   );
 }

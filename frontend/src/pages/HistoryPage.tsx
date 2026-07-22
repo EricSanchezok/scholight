@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import * as m from "motion/react-m";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
@@ -6,6 +7,7 @@ import { historyApi } from "../api/domain";
 import { ApiError } from "../api/errors";
 import { queryKeys } from "../app/queryKeys";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { EditorialRowsSkeleton } from "../components/EditorialSkeleton";
 import { DeleteSearchIcon, SearchIcon, TrashIcon } from "../components/icons";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { buildSearchUrl } from "../lib/format";
@@ -140,7 +142,9 @@ export function HistoryPage() {
             </button>
           </div>
         )}
-        {!history.isPending && !history.error && items.length === 0 ? (
+        {history.isPending ? (
+          <EditorialRowsSkeleton label="Loading search history" rows={4} />
+        ) : !history.error && items.length === 0 ? (
           <div className={styles.emptyHistory}>
             <div className={styles.emptyMark} aria-hidden="true">
               <SearchIcon />
@@ -168,10 +172,13 @@ export function HistoryPage() {
         ) : (
           <>
             <div className={styles.historyList} aria-busy={history.isFetching}>
-              {items.map((item) => (
-                <article
+              {items.map((item, index) => (
+                <m.article
                   key={item.id}
                   className={`${styles.historyRow} ${selected.has(item.id) ? styles.historyRowSelected : ""}`}
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.16, delay: Math.min(index * 0.02, 0.16) }}
                 >
                   <label className={styles.rowCheck}>
                     <input
@@ -225,7 +232,7 @@ export function HistoryPage() {
                       <DeleteSearchIcon />
                     </button>
                   </div>
-                </article>
+                </m.article>
               ))}
             </div>
             {pageCount > 1 && (

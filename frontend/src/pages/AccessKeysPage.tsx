@@ -1,14 +1,19 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AnimatePresence } from "motion/react";
+import * as m from "motion/react-m";
 import { useRef, useState } from "react";
 
 import { accessKeyApi } from "../api/domain";
 import { ApiError } from "../api/errors";
 import type { AccessKey, CreatedAccessKey } from "../api/types";
+import { popoverMotion } from "../app/motion";
 import { queryKeys } from "../app/queryKeys";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { EditorialRowsSkeleton } from "../components/EditorialSkeleton";
 import { EditorialSelect } from "../components/EditorialSelect";
+import { MotionDialogPortal } from "../components/MotionDialog";
 import { accessKeyStatus, expiryFromPreset, type ExpiryPreset } from "../lib/account";
 import styles from "../styles/app.module.css";
 
@@ -73,63 +78,61 @@ function AccessKeyFormDialog({
   const normalized = name.trim();
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Portal>
-        <Dialog.Overlay className={styles.dialogOverlay} />
-        <Dialog.Content
-          className={styles.formDialog}
-          onOpenAutoFocus={(event) => {
+      <MotionDialogPortal
+        open={open}
+        className={styles.formDialog}
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          nameInput.current?.focus();
+        }}
+      >
+        <p className={styles.dialogEyebrow}>
+          {mode === "create" ? "NEW ACCESS KEY" : "ACCESS KEY"}
+        </p>
+        <Dialog.Title>{mode === "create" ? "Create a new key" : "Edit access key"}</Dialog.Title>
+        <Dialog.Description>
+          {mode === "create"
+            ? "Use a clear name so you can identify where this key is used."
+            : "Update the key name or choose a new expiration."}
+        </Dialog.Description>
+        <form
+          onSubmit={(event) => {
             event.preventDefault();
-            nameInput.current?.focus();
+            if (normalized) onSubmit(normalized, expiry);
           }}
         >
-          <p className={styles.dialogEyebrow}>
-            {mode === "create" ? "NEW ACCESS KEY" : "ACCESS KEY"}
-          </p>
-          <Dialog.Title>{mode === "create" ? "Create a new key" : "Edit access key"}</Dialog.Title>
-          <Dialog.Description>
-            {mode === "create"
-              ? "Use a clear name so you can identify where this key is used."
-              : "Update the key name or choose a new expiration."}
-          </Dialog.Description>
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (normalized) onSubmit(normalized, expiry);
-            }}
-          >
-            <label>
-              Key name
-              <input
-                ref={nameInput}
-                value={name}
-                maxLength={64}
-                onChange={(event) => setName(event.target.value)}
-                placeholder="literature-review"
-              />
-            </label>
-            <div className={styles.formSelectField}>
-              <span>Expiration</span>
-              <EditorialSelect
-                label="Expiration"
-                value={expiry}
-                options={mode === "edit" ? editExpiryOptions : createExpiryOptions}
-                onValueChange={setExpiry}
-              />
-            </div>
-            {error && (
-              <p className={styles.formMessageError} role="alert">
-                {error instanceof ApiError ? error.message : "Unable to save this access key."}
-              </p>
-            )}
-            <div className={styles.dialogActions}>
-              <Dialog.Close className={styles.secondaryButton}>Cancel</Dialog.Close>
-              <button className={styles.primaryButton} type="submit" disabled={busy || !normalized}>
-                {busy ? "Saving…" : mode === "create" ? "Create key" : "Save changes"}
-              </button>
-            </div>
-          </form>
-        </Dialog.Content>
-      </Dialog.Portal>
+          <label>
+            Key name
+            <input
+              ref={nameInput}
+              value={name}
+              maxLength={64}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="literature-review"
+            />
+          </label>
+          <div className={styles.formSelectField}>
+            <span>Expiration</span>
+            <EditorialSelect
+              label="Expiration"
+              value={expiry}
+              options={mode === "edit" ? editExpiryOptions : createExpiryOptions}
+              onValueChange={setExpiry}
+            />
+          </div>
+          {error && (
+            <p className={styles.formMessageError} role="alert">
+              {error instanceof ApiError ? error.message : "Unable to save this access key."}
+            </p>
+          )}
+          <div className={styles.dialogActions}>
+            <Dialog.Close className={styles.secondaryButton}>Cancel</Dialog.Close>
+            <button className={styles.primaryButton} type="submit" disabled={busy || !normalized}>
+              {busy ? "Saving…" : mode === "create" ? "Create key" : "Save changes"}
+            </button>
+          </div>
+        </form>
+      </MotionDialogPortal>
     </Dialog.Root>
   );
 }
@@ -150,55 +153,91 @@ function SecretDialog({ secret, onDone }: { secret: CreatedAccessKey; onDone: ()
   };
   return (
     <Dialog.Root open>
-      <Dialog.Portal>
-        <Dialog.Overlay className={styles.dialogOverlay} />
-        <Dialog.Content
-          className={styles.secretDialog}
-          onOpenAutoFocus={(event) => {
-            event.preventDefault();
-            copyButton.current?.focus();
-          }}
-          onEscapeKeyDown={(event) => event.preventDefault()}
-          onPointerDownOutside={(event) => event.preventDefault()}
-        >
-          <p className={styles.dialogEyebrow}>ACCESS KEY CREATED</p>
-          <Dialog.Title>Copy your key now</Dialog.Title>
-          <Dialog.Description>
-            For your security, this key will not be shown again.
-          </Dialog.Description>
-          <span className={styles.fieldCaption}>KEY NAME</span>
-          <strong>{secret.name}</strong>
-          <div className={styles.secretField}>
-            <input
-              ref={input}
-              readOnly
-              value={secret.key}
-              onFocus={(event) => event.currentTarget.select()}
-              aria-label="New access key"
-            />
-            <button
-              ref={copyButton}
-              className={styles.primaryButton}
-              type="button"
-              onClick={() => void copy()}
-            >
-              Copy key
-            </button>
-          </div>
-          <p className={styles.secretHint}>
-            Store it in a password manager or server-side secret store.
-          </p>
-          <p className="sr-only" aria-live="polite">
-            {message}
-          </p>
-          <div className={styles.dialogActions}>
-            <button className={styles.darkButton} type="button" onClick={onDone}>
-              Done
-            </button>
-          </div>
-        </Dialog.Content>
-      </Dialog.Portal>
+      <MotionDialogPortal
+        open
+        className={styles.secretDialog}
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          copyButton.current?.focus();
+        }}
+        onEscapeKeyDown={(event) => event.preventDefault()}
+        onPointerDownOutside={(event) => event.preventDefault()}
+      >
+        <p className={styles.dialogEyebrow}>ACCESS KEY CREATED</p>
+        <Dialog.Title>Copy your key now</Dialog.Title>
+        <Dialog.Description>
+          For your security, this key will not be shown again.
+        </Dialog.Description>
+        <span className={styles.fieldCaption}>KEY NAME</span>
+        <strong>{secret.name}</strong>
+        <div className={styles.secretField}>
+          <input
+            ref={input}
+            readOnly
+            value={secret.key}
+            onFocus={(event) => event.currentTarget.select()}
+            aria-label="New access key"
+          />
+          <button
+            ref={copyButton}
+            className={styles.primaryButton}
+            type="button"
+            onClick={() => void copy()}
+          >
+            Copy key
+          </button>
+        </div>
+        <p className={styles.secretHint}>
+          Store it in a password manager or server-side secret store.
+        </p>
+        <p className="sr-only" aria-live="polite">
+          {message}
+        </p>
+        <div className={styles.dialogActions}>
+          <button className={styles.darkButton} type="button" onClick={onDone}>
+            Done
+          </button>
+        </div>
+      </MotionDialogPortal>
     </Dialog.Root>
+  );
+}
+
+function KeyActionsMenu({
+  keyRecord,
+  onEdit,
+  onRevoke,
+}: {
+  keyRecord: AccessKey;
+  onEdit: () => void;
+  onRevoke: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <DropdownMenu.Root open={open} onOpenChange={setOpen}>
+      <DropdownMenu.Trigger
+        className={styles.rowMenuTrigger}
+        aria-label={`Actions for ${keyRecord.name}`}
+      >
+        •••
+      </DropdownMenu.Trigger>
+      <AnimatePresence>
+        {open && (
+          <DropdownMenu.Portal forceMount>
+            <DropdownMenu.Content asChild forceMount align="end">
+              <m.div className={styles.rowMenu} {...popoverMotion}>
+                <DropdownMenu.Item className={styles.rowMenuItem} onSelect={onEdit}>
+                  Edit
+                </DropdownMenu.Item>
+                <DropdownMenu.Item className={styles.rowMenuDanger} onSelect={onRevoke}>
+                  Revoke
+                </DropdownMenu.Item>
+              </m.div>
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        )}
+      </AnimatePresence>
+    </DropdownMenu.Root>
   );
 }
 
@@ -266,7 +305,7 @@ export function AccessKeysPage() {
             Create new key
           </button>
         </div>
-        {keys.error ? (
+        {keys.error && !keys.data ? (
           <div className={styles.sectionError} role="alert">
             <span>
               {keys.error instanceof ApiError
@@ -278,7 +317,7 @@ export function AccessKeysPage() {
             </button>
           </div>
         ) : keys.isPending ? (
-          <div className={styles.sectionLoading}>Loading access keys…</div>
+          <EditorialRowsSkeleton label="Loading access keys" rows={3} />
         ) : visible.length === 0 ? (
           <div className={styles.ledgerEmpty}>
             <h3>No access keys</h3>
@@ -300,10 +339,15 @@ export function AccessKeysPage() {
                 </tr>
               </thead>
               <tbody>
-                {visible.map((key) => {
+                {visible.map((key, index) => {
                   const status = accessKeyStatus(key);
                   return (
-                    <tr key={key.id}>
+                    <m.tr
+                      key={key.id}
+                      initial={{ opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.16, delay: Math.min(index * 0.02, 0.16) }}
+                    >
                       <td>{key.name}</td>
                       <td>
                         <code>sk_live_••••••••{key.last4}</code>
@@ -321,32 +365,13 @@ export function AccessKeysPage() {
                         )}
                       </td>
                       <td>
-                        <DropdownMenu.Root>
-                          <DropdownMenu.Trigger
-                            className={styles.rowMenuTrigger}
-                            aria-label={`Actions for ${key.name}`}
-                          >
-                            •••
-                          </DropdownMenu.Trigger>
-                          <DropdownMenu.Portal>
-                            <DropdownMenu.Content className={styles.rowMenu} align="end">
-                              <DropdownMenu.Item
-                                className={styles.rowMenuItem}
-                                onSelect={() => setEditKey(key)}
-                              >
-                                Edit
-                              </DropdownMenu.Item>
-                              <DropdownMenu.Item
-                                className={styles.rowMenuDanger}
-                                onSelect={() => setRevokeKey(key)}
-                              >
-                                Revoke
-                              </DropdownMenu.Item>
-                            </DropdownMenu.Content>
-                          </DropdownMenu.Portal>
-                        </DropdownMenu.Root>
+                        <KeyActionsMenu
+                          keyRecord={key}
+                          onEdit={() => setEditKey(key)}
+                          onRevoke={() => setRevokeKey(key)}
+                        />
                       </td>
-                    </tr>
+                    </m.tr>
                   );
                 })}
               </tbody>
