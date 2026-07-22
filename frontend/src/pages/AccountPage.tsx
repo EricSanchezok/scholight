@@ -18,6 +18,9 @@ import { clearSession } from "../auth/session";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { EditorialRowsSkeleton } from "../components/EditorialSkeleton";
 import { MotionDialogPortal } from "../components/MotionDialog";
+import { formatFullDateTime } from "../i18n/format";
+import { useI18n, type AppLocale } from "../i18n/I18nProvider";
+import type { Messages } from "../i18n/en";
 import { parseUserAgent, sortSessions } from "../lib/account";
 import styles from "../styles/app.module.css";
 
@@ -32,10 +35,15 @@ const passwordSchema = z
     message: "Passwords do not match.",
   });
 
-function seenAt(value: string | null, current: boolean): string {
-  if (current) return "Active now";
-  if (!value) return "Last seen unavailable";
-  return `Last seen ${new Intl.DateTimeFormat("en", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value))}`;
+function seenAt(
+  value: string | null,
+  current: boolean,
+  locale: AppLocale,
+  messages: Messages,
+): string {
+  if (current) return messages.account.activeNow;
+  if (!value) return messages.account.lastSeenUnavailable;
+  return messages.account.lastSeen(formatFullDateTime(value, locale));
 }
 
 function DeleteAccountDialog({
@@ -106,6 +114,7 @@ function DeleteAccountDialog({
 }
 
 export function AccountPage() {
+  const { locale, messages } = useI18n();
   const { user, refreshProfile } = useAuth();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -308,10 +317,10 @@ export function AccountPage() {
                 <m.div className={styles.sessionRow} key={session.id} {...ledgerRowMotion(index)}>
                   <div>
                     <strong>{parseUserAgent(session.user_agent)}</strong>
-                    <span>{seenAt(session.last_seen_at, session.current)}</span>
+                    <span>{seenAt(session.last_seen_at, session.current, locale, messages)}</span>
                   </div>
                   {session.current ? (
-                    <span className={styles.currentSession}>CURRENT</span>
+                    <span className={styles.currentSession}>{messages.account.currentSession}</span>
                   ) : (
                     <button type="button" onClick={() => setPendingSession(session)}>
                       Revoke

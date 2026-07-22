@@ -13,22 +13,15 @@ import { EditorialRowsSkeleton } from "../components/EditorialSkeleton";
 import { DeleteSearchIcon, SearchIcon, TrashIcon } from "../components/icons";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { productConfig } from "../config/product";
+import { formatFullDateTime } from "../i18n/format";
+import { useI18n } from "../i18n/I18nProvider";
 import { buildSearchUrl } from "../lib/format";
 import styles from "../styles/app.module.css";
 
 const PAGE_SIZE = productConfig.history.pageSize;
 
-function formatHistoryDate(value: string) {
-  return new Intl.DateTimeFormat("en", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(new Date(value));
-}
-
 export function HistoryPage() {
+  const { locale } = useI18n();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [params, setParams] = useSearchParams();
@@ -202,7 +195,9 @@ export function HistoryPage() {
                   <div className={styles.historyDetails}>
                     <h2>{item.query}</h2>
                     <p>
-                      <time dateTime={item.created_at}>{formatHistoryDate(item.created_at)}</time>
+                      <time dateTime={item.created_at}>
+                        {formatFullDateTime(item.created_at, locale)}
+                      </time>
                       {` · ${item.result_count} results · ${(item.elapsed_ms / 1000).toFixed(2)}s`}
                     </p>
                     {(item.filters.categories?.length ||

@@ -15,27 +15,26 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { EditorialRowsSkeleton } from "../components/EditorialSkeleton";
 import { EditorialSelect } from "../components/EditorialSelect";
 import { MotionDialogPortal } from "../components/MotionDialog";
+import { formatCalendarDate, formatCompactDateTime, formatTime } from "../i18n/format";
+import { useI18n, type AppLocale } from "../i18n/I18nProvider";
 import { accessKeyStatus, expiryFromPreset, type ExpiryPreset } from "../lib/account";
 import styles from "../styles/app.module.css";
 
-function date(value: string): string {
-  return new Intl.DateTimeFormat("en", { day: "2-digit", month: "short", year: "numeric" }).format(
-    new Date(value),
-  );
+function date(value: string, locale: AppLocale): string {
+  return formatCalendarDate(value, locale);
 }
 
-function lastUsed(value: string | null): string {
-  if (!value) return "Never";
+function lastUsed(
+  value: string | null,
+  locale: AppLocale,
+  never: string,
+  todayAt: (value: string) => string,
+): string {
+  if (!value) return never;
   const parsed = new Date(value);
   const today = new Date();
-  if (parsed.toDateString() === today.toDateString())
-    return `Today, ${new Intl.DateTimeFormat("en", { hour: "2-digit", minute: "2-digit" }).format(parsed)}`;
-  return new Intl.DateTimeFormat("en", {
-    day: "2-digit",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(parsed);
+  if (parsed.toDateString() === today.toDateString()) return todayAt(formatTime(parsed, locale));
+  return formatCompactDateTime(parsed, locale);
 }
 
 function expiryValue(preset: ExpiryPreset): string | null | undefined {
@@ -243,6 +242,7 @@ function KeyActionsMenu({
 }
 
 export function AccessKeysPage() {
+  const { locale, messages } = useI18n();
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [editKey, setEditKey] = useState<AccessKey | null>(null);
@@ -330,11 +330,11 @@ export function AccessKeysPage() {
                 <tr>
                   <th>Name</th>
                   <th>Key</th>
-                  <th>Created</th>
-                  <th>Last used</th>
-                  <th>Status</th>
+                  <th>{messages.accessKeys.created}</th>
+                  <th>{messages.accessKeys.lastUsed}</th>
+                  <th>{messages.accessKeys.status}</th>
                   <th>
-                    <span className="sr-only">Actions</span>
+                    <span className="sr-only">{messages.common.actions}</span>
                   </th>
                 </tr>
               </thead>
@@ -347,16 +347,23 @@ export function AccessKeysPage() {
                       <td>
                         <code>sk_live_••••••••{key.last4}</code>
                       </td>
-                      <td>{date(key.created_at)}</td>
-                      <td>{lastUsed(key.last_used_at)}</td>
+                      <td>{date(key.created_at, locale)}</td>
+                      <td>
+                        {lastUsed(
+                          key.last_used_at,
+                          locale,
+                          messages.common.never,
+                          messages.accessKeys.todayAt,
+                        )}
+                      </td>
                       <td>
                         <span
                           className={status === "expired" ? styles.keyExpired : styles.keyActive}
                         >
-                          {status === "expired" ? "Expired" : "Active"}
+                          {status === "expired" ? messages.common.expired : messages.common.active}
                         </span>
                         {key.expires_at && status === "active" && (
-                          <small>Expires {date(key.expires_at)}</small>
+                          <small>{messages.accessKeys.expires(date(key.expires_at, locale))}</small>
                         )}
                       </td>
                       <td>

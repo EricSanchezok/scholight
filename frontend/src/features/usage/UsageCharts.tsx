@@ -1,4 +1,6 @@
 import type { UsageLatencyPoint, UsageVolumePoint } from "../../api/types";
+import { formatUtcDay } from "../../i18n/format";
+import { useI18n, type AppLocale } from "../../i18n/I18nProvider";
 import styles from "../../styles/app.module.css";
 
 const WIDTH = 528;
@@ -10,10 +12,8 @@ function tickIndexes(length: number): number[] {
   return [...new Set([0, Math.floor((length - 1) / 2), length - 1])];
 }
 
-function dateLabel(value: string): string {
-  return new Intl.DateTimeFormat("en", { day: "numeric", month: "short", timeZone: "UTC" }).format(
-    new Date(value),
-  );
+function dateLabel(value: string, locale: AppLocale): string {
+  return formatUtcDay(value, locale);
 }
 
 function niceMaximum(value: number): number {
@@ -23,6 +23,7 @@ function niceMaximum(value: number): number {
 }
 
 export function VolumeChart({ points }: { points: UsageVolumePoint[] }) {
+  const { locale } = useI18n();
   const plotWidth = WIDTH - PLOT.left - PLOT.right;
   const plotHeight = HEIGHT - PLOT.top - PLOT.bottom;
   const maximum = niceMaximum(
@@ -113,7 +114,7 @@ export function VolumeChart({ points }: { points: UsageVolumePoint[] }) {
                   textAnchor="middle"
                   className={styles.chartAxisLabel}
                 >
-                  {dateLabel(point.bucket_start)}
+                  {dateLabel(point.bucket_start, locale)}
                 </text>
               );
             })}
@@ -130,7 +131,7 @@ export function VolumeChart({ points }: { points: UsageVolumePoint[] }) {
             <tbody>
               {points.map((point) => (
                 <tr key={point.bucket_start}>
-                  <td>{dateLabel(point.bucket_start)}</td>
+                  <td>{dateLabel(point.bucket_start, locale)}</td>
                   <td>{point.standard}</td>
                   <td>{point.thorough}</td>
                 </tr>
@@ -170,6 +171,7 @@ function latencyLabel(value: number): string {
 }
 
 export function LatencyChart({ points }: { points: UsageLatencyPoint[] }) {
+  const { locale } = useI18n();
   const values = points
     .flatMap((point) => [point.standard_p50_ms, point.thorough_p50_ms, point.overall_p95_ms])
     .filter((value): value is number => value !== null);
@@ -252,7 +254,7 @@ export function LatencyChart({ points }: { points: UsageLatencyPoint[] }) {
                   textAnchor="middle"
                   className={styles.chartAxisLabel}
                 >
-                  {dateLabel(point.bucket_start)}
+                  {dateLabel(point.bucket_start, locale)}
                 </text>
               );
             })}
@@ -271,7 +273,7 @@ export function LatencyChart({ points }: { points: UsageLatencyPoint[] }) {
             <tbody>
               {points.map((point) => (
                 <tr key={point.bucket_start}>
-                  <td>{dateLabel(point.bucket_start)}</td>
+                  <td>{dateLabel(point.bucket_start, locale)}</td>
                   <td>{point.standard_p50_ms ?? "No data"}</td>
                   <td>{point.thorough_p50_ms ?? "No data"}</td>
                   <td>{point.overall_p95_ms ?? "No data"}</td>

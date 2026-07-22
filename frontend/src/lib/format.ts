@@ -1,19 +1,21 @@
 import type { SearchFilters, SearchHit, SearchStrength } from "../api/types";
 import { routes } from "../app/routes";
+import { formatResearchDate } from "../i18n/format";
+import type { AppLocale } from "../i18n/I18nProvider";
 
 export function formatAuthors(authors: string[]): string {
   if (authors.length <= 2) return authors.join(", ");
   return `${authors[0]} et al.`;
 }
 
-export function formatDate(value: string, style: "long" | "short" = "long"): string {
+export function formatDate(
+  value: string,
+  style: "long" | "short" = "long",
+  locale?: AppLocale,
+): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("en", {
-    year: "numeric",
-    month: style === "long" ? "long" : "short",
-    day: "numeric",
-  }).format(date);
+  return formatResearchDate(date, style, locale);
 }
 
 export function citationFor(hit: SearchHit): string {

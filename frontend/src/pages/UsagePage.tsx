@@ -15,19 +15,12 @@ import { queryKeys } from "../app/queryKeys";
 import { productConfig } from "../config/product";
 import { EditorialRowsSkeleton, SkeletonPulse } from "../components/EditorialSkeleton";
 import { LatencyChart, VolumeChart } from "../features/usage/UsageCharts";
+import { formatCompactDateTime, formatUtcTime } from "../i18n/format";
+import { useI18n } from "../i18n/I18nProvider";
 import styles from "../styles/app.module.css";
 
 function seconds(value: number | null): string {
   return value === null ? "—" : `${(value / 1000).toFixed(2)} s`;
-}
-
-function usageTime(value: string): string {
-  return new Intl.DateTimeFormat("en", {
-    day: "numeric",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value));
 }
 
 function SectionError({ error, retry }: { error: Error; retry: () => void }) {
@@ -52,6 +45,7 @@ function Reveal({ children, name }: { children: React.ReactNode; name: string })
 }
 
 export function UsagePage() {
+  const { locale } = useI18n();
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState("");
   const summary = useQuery({
@@ -104,7 +98,7 @@ export function UsagePage() {
           <h2 id="today-usage">Today</h2>
           <span>
             {summary.data
-              ? `Resets at ${new Intl.DateTimeFormat("en", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: "UTC", timeZoneName: "short" }).format(new Date(summary.data.reset_at))}`
+              ? `Resets at ${formatUtcTime(summary.data.reset_at, locale)}`
               : "UTC daily allowance"}
           </span>
         </div>
@@ -285,7 +279,9 @@ export function UsagePage() {
                 {items.map((item, index) => (
                   <m.tr key={item.id} {...ledgerRowMotion(index)}>
                     <td>
-                      <time dateTime={item.created_at}>{usageTime(item.created_at)}</time>
+                      <time dateTime={item.created_at}>
+                        {formatCompactDateTime(item.created_at, locale)}
+                      </time>
                     </td>
                     <td>
                       {item.actor_type === "access_key"

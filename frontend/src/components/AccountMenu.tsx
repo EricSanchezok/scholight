@@ -16,10 +16,12 @@ import { accountRoutes, type AccountDestination, routes } from "../app/routes";
 import { useAuth } from "../auth/context";
 import { productConfig } from "../config/product";
 import { avatarInitials } from "../lib/format";
+import { useI18n } from "../i18n/I18nProvider";
 import styles from "../styles/app.module.css";
 import { ChevronDownIcon } from "./icons";
 
 export function AccountMenu() {
+  const { messages } = useI18n();
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -29,10 +31,10 @@ export function AccountMenu() {
   if (!user) return null;
   const name = user.display_name?.trim() || user.email.split("@")[0];
   const destinationDetails: Record<AccountDestination, { label: string; icon: string }> = {
-    [routes.usage.path]: { label: "Usage & quota", icon: usageIcon },
-    [routes.accessKeys.path]: { label: "Access Keys", icon: accessKeysIcon },
-    [routes.history.path]: { label: "Search history", icon: historyIcon },
-    [routes.account.path]: { label: "Account settings", icon: accountIcon },
+    [routes.usage.path]: { label: messages.navigation.usage, icon: usageIcon },
+    [routes.accessKeys.path]: { label: messages.navigation.accessKeys, icon: accessKeysIcon },
+    [routes.history.path]: { label: messages.navigation.history, icon: historyIcon },
+    [routes.account.path]: { label: messages.navigation.account, icon: accountIcon },
   };
   const clearIntent = () => window.clearTimeout(intentTimer.current);
   const warmDestination = (destination: AccountDestination, immediate = false) => {
@@ -52,7 +54,10 @@ export function AccountMenu() {
         else clearIntent();
       }}
     >
-      <DropdownMenu.Trigger className={styles.accountTrigger} aria-label="Open account menu">
+      <DropdownMenu.Trigger
+        className={styles.accountTrigger}
+        aria-label={messages.navigation.accountMenuLabel}
+      >
         <span className={styles.avatar}>{avatarInitials(user.display_name, user.email)}</span>
         <span className={styles.accountName}>{name}</span>
         <m.span {...chevronMotion(open)}>
@@ -91,7 +96,7 @@ export function AccountMenu() {
                   className={styles.menuItem}
                   onSelect={() => void logout().then(() => navigate(routes.home.path))}
                 >
-                  <img src={signOutIcon} alt="" /> Sign out
+                  <img src={signOutIcon} alt="" /> {messages.navigation.signOut}
                 </DropdownMenu.Item>
               </m.div>
             </DropdownMenu.Content>

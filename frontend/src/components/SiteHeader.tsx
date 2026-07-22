@@ -6,11 +6,13 @@ import { Link, NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "../auth/context";
 import { accountRoutes, routes, withQuery } from "../app/routes";
 import { mobileMenuMotion } from "../app/motion";
+import { useI18n } from "../i18n/I18nProvider";
 import styles from "../styles/app.module.css";
 import { AccountMenu } from "./AccountMenu";
 import { CloseIcon, MenuIcon } from "./icons";
 
 export function SiteHeader() {
+  const { messages } = useI18n();
   const { status, logout } = useAuth();
   const [open, setOpen] = useState(false);
   const location = useLocation();
@@ -18,10 +20,10 @@ export function SiteHeader() {
   const nav = (
     <>
       <NavLink to={routes.home.path} end onClick={() => setOpen(false)}>
-        Home
+        {messages.navigation.home}
       </NavLink>
       <NavLink to={routes.docs.path} onClick={() => setOpen(false)}>
-        Docs
+        {messages.navigation.docs}
       </NavLink>
     </>
   );
@@ -29,11 +31,11 @@ export function SiteHeader() {
   return (
     <header className={styles.header}>
       <div className={styles.headerInner}>
-        <Link className="wordmark" to={routes.home.path} aria-label="Scholight home">
-          scholight
+        <Link className="wordmark" to={routes.home.path} aria-label={messages.brand.homeLabel}>
+          {messages.brand.name}
         </Link>
         <div className={styles.headerLinks}>
-          <nav className={styles.desktopNav} aria-label="Main navigation">
+          <nav className={styles.desktopNav} aria-label={messages.navigation.mainLabel}>
             {nav}
           </nav>
           <span className={styles.navDivider} aria-hidden="true" />
@@ -47,7 +49,7 @@ export function SiteHeader() {
                   returnTo: location.pathname + location.search,
                 })}
               >
-                Sign in
+                {messages.navigation.signIn}
               </Link>
             )}
           </div>
@@ -61,7 +63,7 @@ export function SiteHeader() {
             aria-controls="mobile-menu"
           >
             {open ? <CloseIcon /> : <MenuIcon />}
-            <span>{open ? "Close" : "Menu"}</span>
+            <span>{open ? messages.navigation.close : messages.navigation.menu}</span>
           </button>
         </div>
       </div>
@@ -70,7 +72,7 @@ export function SiteHeader() {
           <m.nav
             id="mobile-menu"
             className={styles.mobileNav}
-            aria-label="Mobile navigation"
+            aria-label={messages.navigation.mobileLabel}
             {...mobileMenuMotion}
           >
             {nav}
@@ -78,22 +80,16 @@ export function SiteHeader() {
               <>
                 {accountRoutes.map((route) => (
                   <Link to={route.path} onClick={() => setOpen(false)} key={route.id}>
-                    {route.id === "usage"
-                      ? "Usage & quota"
-                      : route.id === "accessKeys"
-                        ? "Access Keys"
-                        : route.id === "history"
-                          ? "Search history"
-                          : "Account settings"}
+                    {messages.navigation[route.id]}
                   </Link>
                 ))}
                 <button type="button" onClick={() => void logout()}>
-                  Sign out
+                  {messages.navigation.signOut}
                 </button>
               </>
             ) : (
               <Link to={routes.login.path} onClick={() => setOpen(false)}>
-                Sign in
+                {messages.navigation.signIn}
               </Link>
             )}
           </m.nav>

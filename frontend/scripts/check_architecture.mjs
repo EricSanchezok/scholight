@@ -21,6 +21,9 @@ const uiFiles = sourceFiles.filter(
     !path.endsWith(".test.tsx") &&
     !path.endsWith(join("app", "motion.tsx")),
 );
+const codeFiles = sourceFiles.filter(
+  (path) => [".ts", ".tsx"].includes(extname(path)) && !path.includes(`${join("src", "i18n")}/`),
+);
 const findings = [];
 const definitions = new Set();
 const usages = [];
@@ -62,6 +65,16 @@ for (const path of uiFiles) {
     findings.push(
       `${displayPath}:${lineOf(content, match.index)} motion timing outside app/motion.tsx`,
     );
+  }
+}
+
+for (const path of codeFiles) {
+  const content = readFileSync(path, "utf8");
+  const displayPath = relative(frontendRoot, path);
+  for (const match of content.matchAll(
+    /\bIntl\.(?:DateTimeFormat|NumberFormat|RelativeTimeFormat)\b/g,
+  )) {
+    findings.push(`${displayPath}:${lineOf(content, match.index)} locale formatting outside i18n`);
   }
 }
 

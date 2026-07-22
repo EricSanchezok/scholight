@@ -15,9 +15,11 @@ import { productConfig } from "../config/product";
 import { SearchForm } from "../components/SearchForm";
 import { SearchResultsSkeleton } from "../components/SearchResultsSkeleton";
 import { citationFor, formatAuthors, formatDate, parseSearchParameters } from "../lib/format";
+import { useI18n } from "../i18n/I18nProvider";
 import styles from "../styles/app.module.css";
 
 function ResultItem({ hit, index }: { hit: SearchHit; index: number }) {
+  const { locale, messages } = useI18n();
   const [copied, setCopied] = useState(false);
   const copyCitation = async () => {
     await navigator.clipboard.writeText(citationFor(hit));
@@ -36,8 +38,9 @@ function ResultItem({ hit, index }: { hit: SearchHit; index: number }) {
         {hit.arxiv_id}
       </p>
       <p className={styles.metadata}>
-        {hit.categories.join(" · ")} · Submitted {formatDate(hit.submitted_at, "short")} · v
-        {hit.version} · Score {hit.score.toFixed(3)}
+        {hit.categories.join(" · ")} · {messages.search.submitted}{" "}
+        {formatDate(hit.submitted_at, "short", locale)} · v{hit.version} · {messages.search.score}{" "}
+        {hit.score.toFixed(3)}
       </p>
       {hit.abstract && <p className={styles.abstract}>{hit.abstract}</p>}
       <div className={styles.resultActions}>
@@ -48,9 +51,9 @@ function ResultItem({ hit, index }: { hit: SearchHit; index: number }) {
           PDF
         </a>
         <button type="button" onClick={() => void copyCitation()}>
-          Cite
+          {messages.search.cite}
         </button>
-        <span aria-live="polite">{copied ? "Citation copied" : ""}</span>
+        <span aria-live="polite">{copied ? messages.search.citationCopied : ""}</span>
       </div>
     </m.article>
   );
@@ -96,6 +99,7 @@ function FilterChips({
 }
 
 export function SearchPage() {
+  const { messages } = useI18n();
   const { status: authStatus } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const parsed = useMemo(() => parseSearchParameters(searchParams), [searchParams]);
@@ -114,8 +118,8 @@ export function SearchPage() {
   });
 
   useEffect(() => {
-    document.title = parsed.query ? `${parsed.query} — Scholight` : "Search — Scholight";
-  }, [parsed.query]);
+    document.title = messages.titles.search(parsed.query || undefined);
+  }, [messages.titles, parsed.query]);
 
   const removeFilter = (key: keyof SearchFilters, value?: string) => {
     const next = new URLSearchParams(searchParams);
@@ -154,8 +158,8 @@ export function SearchPage() {
         <FilterChips filters={parsed.filters} onRemove={removeFilter} />
         {!parsed.query && (
           <div className={styles.state}>
-            <h1>Start with a research question</h1>
-            <p>Enter a topic, method, or question above.</p>
+            <h1>{messages.search.startTitle}</h1>
+            <p>{messages.search.startHint}</p>
           </div>
         )}
         <AnimatePresence initial={false} mode="wait">
@@ -171,7 +175,7 @@ export function SearchPage() {
               {...sectionRevealMotion}
             >
               <h1>
-                {error.status === 429 ? "Search limit reached" : "We couldn’t complete that search"}
+                {error.status === 429 ? messages.search.limitReached : messages.search.failedTitle}
               </h1>
               <p>
                 {error.message}
@@ -182,24 +186,26 @@ export function SearchPage() {
                 type="button"
                 onClick={() => void result.refetch()}
               >
-                Retry
+                {messages.common.retry}
               </button>
               {error.status === 429 && authStatus === "anonymous" && (
-                <Link to={routes.login.path}>Sign in</Link>
+                <Link to={routes.login.path}>{messages.search.signIn}</Link>
               )}
             </m.div>
           ) : result.data && result.data.hits.length === 0 ? (
             <m.div className={styles.state} key="search-empty" {...sectionRevealMotion}>
-              <h1>No papers found</h1>
-              <p>Try a broader phrase or a different way of describing the topic.</p>
+              <h1>{messages.search.noPapers}</h1>
+              <p>{messages.search.noPapersHint}</p>
             </m.div>
           ) : result.data && result.data.hits.length > 0 ? (
             <m.div key={`results-${parsed.query}-${parsed.strength}`} {...resultsRevealMotion}>
               <div className={styles.resultsSummary}>
-                <h1>Search results</h1>
+                <h1>{messages.search.resultsTitle}</h1>
                 <span>
                   {result.data.result_count} papers ·{" "}
-                  {result.data.strength === "thorough" ? "Thorough" : "Standard"}
+                  {result.data.strength === "thorough"
+                    ? messages.search.thorough
+                    : messages.search.standard}
                 </span>
               </div>
               <div className={styles.resultList}>
