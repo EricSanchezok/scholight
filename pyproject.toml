@@ -19,6 +19,7 @@ dependencies = [
     "asyncpg>=0.29",
     "structlog>=24",
     "fastapi>=0.115",
+    "mcp>=1.28,<2",
     "uvicorn[standard]>=0.30",
     "tenacity>=8",
     "pylatexenc>=2",

@@ -122,7 +122,7 @@ async def get_optional_search_actor(
     token = credentials.credentials
     if token.startswith("sk_live_"):
         try:
-            record, user = await resolve_access_key(token)
+            return await resolve_access_key_search_actor(token)
         except AccessKeyError as exc:
             raise HTTPException(
                 status_code=401,
@@ -143,6 +143,11 @@ async def get_optional_search_actor(
                 },
                 headers={"Retry-After": "5"},
             ) from exc
-        return SearchActor(user=user, actor_type="access_key", access_key_id=record.id)
     user = await _resolve_current_user(credentials)
     return SearchActor(user=user, actor_type="web")
+
+
+async def resolve_access_key_search_actor(token: str) -> SearchActor:
+    """Resolve a search-only access key without imposing a transport error model."""
+    record, user = await resolve_access_key(token)
+    return SearchActor(user=user, actor_type="access_key", access_key_id=record.id)

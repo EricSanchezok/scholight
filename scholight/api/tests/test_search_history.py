@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import importlib
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
@@ -373,13 +375,23 @@ async def test_lifespan_drains_history_tasks_before_closing_pool() -> None:
     async def close() -> None:
         order.append("close")
 
+    @asynccontextmanager
+    async def mcp_runtime() -> AsyncIterator[None]:
+        yield
+
+    app = SimpleNamespace(
+        state=SimpleNamespace(
+            mcp_server=SimpleNamespace(session_manager=SimpleNamespace(run=mcp_runtime))
+        )
+    )
+
     with (
         patch("scholight.db.client.create_pool", new_callable=AsyncMock),
         patch("scholight.api.history_tasks.drain_search_history_tasks", new=drain),
         patch("scholight.db.client.close_pool", new=close),
         patch("scholight.store.client.get_client"),
     ):
-        async with lifespan(MagicMock()):
+        async with lifespan(app):  # type: ignore[arg-type]
             pass
 
     assert order == ["drain", "close"]

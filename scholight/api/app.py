@@ -79,7 +79,7 @@ async def _is_zilliz_ready() -> bool:
 
 
 @asynccontextmanager
-async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Startup / shutdown lifecycle for database connections."""
     from scholight.api.history_tasks import drain_search_history_tasks
     from scholight.api.search_access import reset_anonymous_minute_limits
@@ -89,14 +89,15 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
     _reset_dependency_probe_cache()
     reset_anonymous_minute_limits()
-    await create_pool()
-    with suppress(Exception):
-        get_client()
-    try:
-        yield
-    finally:
-        await asyncio.gather(drain_search_history_tasks(), drain_usage_tasks())
-        await close_pool()
+    async with app.state.mcp_server.session_manager.run():
+        await create_pool()
+        with suppress(Exception):
+            get_client()
+        try:
+            yield
+        finally:
+            await asyncio.gather(drain_search_history_tasks(), drain_usage_tasks())
+            await close_pool()
 
 
 _ONE_MB = 1_048_576
@@ -115,6 +116,7 @@ async def _limit_body_size(request: Request) -> None:
 def create_app() -> FastAPI:
     """Build and return the configured FastAPI application."""
     from scholight import __version__
+    from scholight.api.mcp_server import create_mcp_app
     from scholight.api.middleware.cors import setup_cors
     from scholight.api.sessions import reset_session_user_agent, set_session_user_agent
     from scholight.config import settings, validate_api_runtime_settings
@@ -128,6 +130,8 @@ def create_app() -> FastAPI:
         version=__version__,
         lifespan=lifespan,
     )
+    mcp_server, mcp_app = create_mcp_app()
+    app.state.mcp_server = mcp_server
 
     setup_cors(app)
 
@@ -234,5 +238,6 @@ def create_app() -> FastAPI:
         }
 
     app.include_router(search_router, prefix="/search", tags=["search"])
+    app.mount("/mcp", mcp_app, name="mcp")
 
     return app
