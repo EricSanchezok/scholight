@@ -97,6 +97,7 @@ def test_migrate_service_receives_database_secrets_only() -> None:
     assert "SCHOLIGHT_PG_PASSWORD" in serialized
     assert "SCHOLIGHT_AUTH_JWT_SECRET" not in serialized
     assert "SCHOLIGHT_ANONYMOUS_QUOTA_HMAC_SECRET" not in serialized
+    assert "SCHOLIGHT_ACCESS_KEY_HMAC_SECRET" not in serialized
     assert "SCHOLIGHT_ZILLIZ_TOKEN" not in serialized
     assert "SCHOLIGHT_EMBEDDING_API_KEY" not in serialized
 

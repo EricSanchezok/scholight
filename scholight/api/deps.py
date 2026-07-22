@@ -15,6 +15,7 @@ from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from scholight.api.access_keys import AccessKeyError, resolve_access_key
+from scholight.db.client import DBError
 
 security = HTTPBearer(scheme_name="BearerAuth")
 optional_security = HTTPBearer(auto_error=False, scheme_name="BearerAuth")
@@ -131,6 +132,16 @@ async def get_optional_search_actor(
                     "retryable": False,
                 },
                 headers={"WWW-Authenticate": "Bearer"},
+            ) from exc
+        except DBError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "access_key_service_unavailable",
+                    "message": "Access key service is temporarily unavailable.",
+                    "retryable": True,
+                },
+                headers={"Retry-After": "5"},
             ) from exc
         return SearchActor(user=user, actor_type="access_key", access_key_id=record.id)
     user = await _resolve_current_user(credentials)

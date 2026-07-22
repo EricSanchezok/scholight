@@ -73,9 +73,13 @@ async def patch_key(
     body: UpdateAccessKeyRequest,
     current_user: UserRecord = Depends(get_current_user),
 ) -> AccessKeyResponse:
-    existing = next(
-        (key for key in await list_access_keys(current_user.id) if key.id == key_id), None
-    )
+    try:
+        keys = await list_access_keys(current_user.id)
+    except DBError as exc:
+        raise _error(
+            503, "access_key_service_unavailable", "Access key service unavailable."
+        ) from exc
+    existing = next((key for key in keys if key.id == key_id), None)
     if existing is None or existing.revoked_at is not None:
         raise _error(404, "access_key_not_found", "Access key not found.")
     name = body.name if "name" in body.model_fields_set else existing.name
