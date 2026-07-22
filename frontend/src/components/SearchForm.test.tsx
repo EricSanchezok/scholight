@@ -29,21 +29,24 @@ describe("SearchForm", () => {
     );
   });
 
-  it("serializes category author and date filters from the form", async () => {
+  it("replays existing hidden filters without exposing an advanced filter control", async () => {
     const user = userEvent.setup();
     render(
       <MemoryRouter>
-        <SearchForm />
+        <SearchForm
+          filters={{
+            categories: ["cs.AI", "cs.LG"],
+            authors: ["Ada Lovelace"],
+            date_from: "2024-01-01",
+            date_to: "2024-12-31",
+          }}
+        />
         <Location />
       </MemoryRouter>,
     );
 
     await user.type(screen.getByRole("textbox", { name: "Search research papers" }), "agents");
-    await user.click(screen.getByRole("button", { name: "Filters" }));
-    await user.type(screen.getByRole("textbox", { name: "Categories" }), "cs.AI, cs.LG");
-    await user.type(screen.getByRole("textbox", { name: "Authors" }), "Ada Lovelace");
-    await user.type(screen.getByLabelText("From date"), "2024-01-01");
-    await user.type(screen.getByLabelText("To date"), "2024-12-31");
+    expect(screen.queryByRole("button", { name: "Filters" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Search" }));
 
     expect(screen.getByTestId("location")).toHaveTextContent(

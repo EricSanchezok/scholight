@@ -33,20 +33,25 @@ export function SiteHeader() {
         <Link className="wordmark" to="/" aria-label="Scholight home">
           scholight
         </Link>
-        <nav className={styles.desktopNav} aria-label="Main navigation">
-          {nav}
-        </nav>
-        <div className={styles.headerActions}>
-          {status === "authenticated" ? (
-            <AccountMenu />
-          ) : (
-            <Link
-              className={styles.signInLink}
-              to={`/login?returnTo=${encodeURIComponent(location.pathname + location.search)}`}
-            >
-              Sign in
-            </Link>
-          )}
+        <div className={styles.headerLinks}>
+          <nav className={styles.desktopNav} aria-label="Main navigation">
+            {nav}
+          </nav>
+          <span className={styles.navDivider} aria-hidden="true" />
+          <div className={styles.headerActions}>
+            {status === "authenticated" ? (
+              <AccountMenu />
+            ) : (
+              <Link
+                className={styles.signInLink}
+                to={`/login?returnTo=${encodeURIComponent(location.pathname + location.search)}`}
+              >
+                Sign in
+              </Link>
+            )}
+          </div>
+        </div>
+        <div className={styles.mobileActions}>
           <button
             className={styles.mobileMenuButton}
             type="button"

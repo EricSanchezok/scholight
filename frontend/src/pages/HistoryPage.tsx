@@ -6,12 +6,22 @@ import { historyApi } from "../api/domain";
 import { ApiError } from "../api/errors";
 import { queryKeys } from "../app/queryKeys";
 import { ConfirmDialog } from "../components/ConfirmDialog";
-import { SearchIcon, TrashIcon } from "../components/icons";
+import { DeleteSearchIcon, SearchIcon, TrashIcon } from "../components/icons";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
-import { buildSearchUrl, formatDate } from "../lib/format";
+import { buildSearchUrl } from "../lib/format";
 import styles from "../styles/app.module.css";
 
 const PAGE_SIZE = 10;
+
+function formatHistoryDate(value: string) {
+  return new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
 
 export function HistoryPage() {
   const navigate = useNavigate();
@@ -75,32 +85,48 @@ export function HistoryPage() {
 
   return (
     <main className={styles.historyPage}>
-      <header className={styles.pageHeading}>
-        <div className={styles.accentLine} />
-        <p className={styles.eyebrow}>Your library</p>
+      <header className={styles.historyHeading}>
         <h1>Search history</h1>
-        <p>Return to previous research questions or clear the searches you no longer need.</p>
+        <p>Revisit your previous research questions or remove the searches you no longer need.</p>
       </header>
       <section aria-label="Search history">
         <div className={styles.historyToolbar}>
-          <label className={styles.filterInput}>
-            <SearchIcon />
-            <span className="sr-only">Filter search history</span>
+          <label className={styles.selectionSummary}>
             <input
-              value={filter}
-              onChange={(event) => setFilter(event.target.value)}
-              placeholder="Filter by query"
+              ref={checkbox}
+              type="checkbox"
+              checked={allSelected}
+              onChange={() =>
+                setSelected(allSelected ? new Set() : new Set(items.map((item) => item.id)))
+              }
             />
+            <span>
+              <strong>
+                {selected.size > 0 ? `${selected.size} selected` : "Select this page"}
+              </strong>
+              {` of ${history.data?.total ?? 0} searches`}
+            </span>
           </label>
-          {selected.size > 0 && (
-            <button
-              className={styles.deleteSelection}
-              type="button"
-              onClick={() => setPendingDelete([...selected])}
-            >
-              <TrashIcon /> Delete {selected.size}
-            </button>
-          )}
+          <div className={styles.historyToolbarActions}>
+            <label className={styles.filterInput}>
+              <SearchIcon />
+              <span className="sr-only">Filter search history</span>
+              <input
+                value={filter}
+                onChange={(event) => setFilter(event.target.value)}
+                placeholder="Filter searches"
+              />
+            </label>
+            {selected.size > 0 && (
+              <button
+                className={styles.deleteSelection}
+                type="button"
+                onClick={() => setPendingDelete([...selected])}
+              >
+                <TrashIcon /> Delete selected
+              </button>
+            )}
+          </div>
         </div>
         {history.error && (
           <div className={styles.noticeError} role="alert">
@@ -141,23 +167,12 @@ export function HistoryPage() {
           </div>
         ) : (
           <>
-            <div className={styles.selectRow}>
-              <label>
-                <input
-                  ref={checkbox}
-                  type="checkbox"
-                  checked={allSelected}
-                  onChange={() =>
-                    setSelected(allSelected ? new Set() : new Set(items.map((item) => item.id)))
-                  }
-                />{" "}
-                Select this page
-              </label>
-              <span>{history.data?.total ?? 0} saved searches</span>
-            </div>
             <div className={styles.historyList} aria-busy={history.isFetching}>
               {items.map((item) => (
-                <article key={item.id} className={styles.historyRow}>
+                <article
+                  key={item.id}
+                  className={`${styles.historyRow} ${selected.has(item.id) ? styles.historyRowSelected : ""}`}
+                >
                   <label className={styles.rowCheck}>
                     <input
                       type="checkbox"
@@ -176,8 +191,8 @@ export function HistoryPage() {
                   <div className={styles.historyDetails}>
                     <h2>{item.query}</h2>
                     <p>
-                      {item.strength === "thorough" ? "Thorough" : "Standard"} · {item.result_count}{" "}
-                      results · {(item.elapsed_ms / 1000).toFixed(2)}s
+                      <time dateTime={item.created_at}>{formatHistoryDate(item.created_at)}</time>
+                      {` · ${item.result_count} results · ${(item.elapsed_ms / 1000).toFixed(2)}s`}
                     </p>
                     {(item.filters.categories?.length ||
                       item.filters.authors?.length ||
@@ -185,9 +200,9 @@ export function HistoryPage() {
                       item.filters.date_to) && (
                       <p className={styles.historyFilters}>Filtered search</p>
                     )}
-                    <time dateTime={item.created_at}>{formatDate(item.created_at)}</time>
                   </div>
                   <div className={styles.historyActions}>
+                    <span>{item.strength === "thorough" ? "Thorough" : "Standard"}</span>
                     <button
                       type="button"
                       onClick={() =>
@@ -207,7 +222,7 @@ export function HistoryPage() {
                       aria-label={`Delete ${item.query}`}
                       onClick={() => setPendingDelete([item.id])}
                     >
-                      <TrashIcon />
+                      <DeleteSearchIcon />
                     </button>
                   </div>
                 </article>
@@ -215,19 +230,23 @@ export function HistoryPage() {
             </div>
             {pageCount > 1 && (
               <nav className={styles.pagination} aria-label="History pages">
-                <button type="button" disabled={page <= 1} onClick={() => goToPage(page - 1)}>
-                  Previous
-                </button>
                 <span>
-                  Page {page} of {pageCount}
+                  Showing {(page - 1) * PAGE_SIZE + 1}–
+                  {Math.min(page * PAGE_SIZE, history.data?.total ?? 0)} of{" "}
+                  {history.data?.total ?? 0}
                 </span>
-                <button
-                  type="button"
-                  disabled={page >= pageCount}
-                  onClick={() => goToPage(page + 1)}
-                >
-                  Next
-                </button>
+                <div>
+                  <button type="button" disabled={page <= 1} onClick={() => goToPage(page - 1)}>
+                    Previous
+                  </button>
+                  <button
+                    type="button"
+                    disabled={page >= pageCount}
+                    onClick={() => goToPage(page + 1)}
+                  >
+                    Next
+                  </button>
+                </div>
               </nav>
             )}
           </>

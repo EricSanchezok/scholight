@@ -6,10 +6,15 @@ export function HomePage() {
     <main className={styles.home}>
       <section className={styles.hero}>
         <div className={styles.accentLine} />
-        <h1>
-          Academic search, built for <span>AI.</span>
-        </h1>
-        <p>Find the research that matters to your work.</p>
+        <div className={styles.heroCopy}>
+          <h1>
+            <span>Academic search,</span>
+            <span>
+              built for <em>AI.</em>
+            </span>
+          </h1>
+          <p>Find the research that matters to your work.</p>
+        </div>
         <SearchForm />
       </section>
     </main>

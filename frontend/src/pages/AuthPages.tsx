@@ -26,12 +26,10 @@ const resetSchema = z
   });
 
 function AuthShell({
-  eyebrow,
   title,
   intro,
   children,
 }: {
-  eyebrow: string;
   title: string;
   intro?: string;
   children: React.ReactNode;
@@ -42,10 +40,10 @@ function AuthShell({
         <Link className="wordmark" to="/">
           scholight
         </Link>
-        <div className={styles.authRule} />
-        <p className={styles.eyebrow}>{eyebrow}</p>
-        <h1>{title}</h1>
-        {intro && <p className={styles.authIntro}>{intro}</p>}
+        <div className={styles.authIntroBlock}>
+          <h1>{title}</h1>
+          {intro && <p className={styles.authIntro}>{intro}</p>}
+        </div>
         {children}
       </div>
     </main>
@@ -90,19 +88,32 @@ export function LoginPage() {
     }
   });
   return (
-    <AuthShell eyebrow="Welcome back" title="Sign in to Scholight">
+    <AuthShell title="Sign in" intro="Save searches and revisit your research history.">
       <form className={styles.authForm} onSubmit={submit} noValidate>
-        <label>
-          Email
-          <input type="email" autoComplete="email" {...register("email")} />
-          {errors.email && <span role="alert">{errors.email.message}</span>}
-        </label>
-        <label>
-          Password
-          <input type="password" autoComplete="current-password" {...register("password")} />
-          {errors.password && <span role="alert">{errors.password.message}</span>}
-        </label>
+        <div className={styles.authFields}>
+          <label>
+            Email
+            <input
+              type="email"
+              autoComplete="email"
+              placeholder="name@example.com"
+              {...register("email")}
+            />
+            {errors.email && <span role="alert">{errors.email.message}</span>}
+          </label>
+          <label>
+            Password
+            <input
+              type="password"
+              autoComplete="current-password"
+              placeholder="Enter your password"
+              {...register("password")}
+            />
+            {errors.password && <span role="alert">{errors.password.message}</span>}
+          </label>
+        </div>
         <div className={styles.formAside}>
+          <span>Search is open to everyone</span>
           <Link to="/forgot-password">Forgot password?</Link>
         </div>
         <FormMessage error={serverError} />
@@ -139,19 +150,31 @@ export function RegisterPage() {
     }
   });
   return (
-    <AuthShell eyebrow="Create an account" title="Save your research">
+    <AuthShell title="Create an account" intro="Keep your searches and research history in sync.">
       <form className={styles.authForm} onSubmit={submit} noValidate>
-        <label>
-          Email
-          <input type="email" autoComplete="email" {...register("email")} />
-          {errors.email && <span role="alert">{errors.email.message}</span>}
-        </label>
-        <label>
-          Password
-          <input type="password" autoComplete="new-password" {...register("password")} />
-          {errors.password && <span role="alert">{errors.password.message}</span>}
-          <small>Use 12 or more characters.</small>
-        </label>
+        <div className={styles.authFields}>
+          <label>
+            Email
+            <input
+              type="email"
+              autoComplete="email"
+              placeholder="name@example.com"
+              {...register("email")}
+            />
+            {errors.email && <span role="alert">{errors.email.message}</span>}
+          </label>
+          <label>
+            Password
+            <input
+              type="password"
+              autoComplete="new-password"
+              placeholder="Create a password"
+              {...register("password")}
+            />
+            {errors.password && <span role="alert">{errors.password.message}</span>}
+            <small>Use 12 or more characters.</small>
+          </label>
+        </div>
         <FormMessage error={serverError} />
         <button className={styles.authSubmit} disabled={isSubmitting}>
           {isSubmitting ? "Creating account…" : "Create account"}
@@ -178,7 +201,6 @@ export function CheckEmailPage() {
   };
   return (
     <AuthShell
-      eyebrow="Check your email"
       title="Verify your address"
       intro="We sent a verification link. Open it to finish creating your Scholight account."
     >
@@ -218,7 +240,6 @@ export function VerifyEmailPage() {
   }, [token]);
   return (
     <AuthShell
-      eyebrow="Email verification"
       title={
         state === "working"
           ? "Verifying your email…"
@@ -259,7 +280,6 @@ export function ForgotPasswordPage() {
   });
   return (
     <AuthShell
-      eyebrow="Password recovery"
       title="Reset your password"
       intro="Enter your email and we’ll send reset instructions if an account is eligible."
     >
@@ -308,7 +328,7 @@ export function ResetPasswordPage() {
     }
   });
   return (
-    <AuthShell eyebrow="Choose a new password" title="Reset password">
+    <AuthShell title="Reset password" intro="Choose a new password for your account.">
       <form className={styles.authForm} onSubmit={submit} noValidate>
         <label>
           New password

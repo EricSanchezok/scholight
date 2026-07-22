@@ -25,32 +25,14 @@ function ResultItem({ hit }: { hit: SearchHit }) {
           {hit.title}
         </a>
       </h2>
-      <p className={styles.authors}>{formatAuthors(hit.authors)}</p>
-      <dl className={styles.metadata}>
-        <div>
-          <dt>Year</dt>
-          <dd>{new Date(hit.submitted_at).getUTCFullYear()}</dd>
-        </div>
-        <div>
-          <dt>arXiv</dt>
-          <dd>{hit.arxiv_id}</dd>
-        </div>
-        <div>
-          <dt>Submitted</dt>
-          <dd>{formatDate(hit.submitted_at, "short")}</dd>
-        </div>
-        <div>
-          <dt>Version</dt>
-          <dd>v{hit.version}</dd>
-        </div>
-        <div>
-          <dt>Score</dt>
-          <dd>{hit.score.toFixed(3)}</dd>
-        </div>
-      </dl>
-      {hit.categories.length > 0 && (
-        <p className={styles.categories}>{hit.categories.join(" · ")}</p>
-      )}
+      <p className={styles.authors}>
+        {formatAuthors(hit.authors)} · {new Date(hit.submitted_at).getUTCFullYear()} · arXiv:
+        {hit.arxiv_id}
+      </p>
+      <p className={styles.metadata}>
+        {hit.categories.join(" · ")} · Submitted {formatDate(hit.submitted_at, "short")} · v
+        {hit.version} · Score {hit.score.toFixed(3)}
+      </p>
       {hit.abstract && <p className={styles.abstract}>{hit.abstract}</p>}
       <div className={styles.resultActions}>
         <a href={hit.arxiv_url} target="_blank" rel="noopener noreferrer">
@@ -208,12 +190,10 @@ export function SearchPage() {
         {result.data && result.data.hits.length > 0 && (
           <>
             <div className={styles.resultsSummary}>
-              <p>
-                <strong>{result.data.result_count}</strong> results for “{result.data.query}”
-              </p>
+              <h1>Search results</h1>
               <span>
-                {result.data.strength === "thorough" ? "Thorough" : "Standard"} ·{" "}
-                {(result.data.elapsed_ms / 1000).toFixed(2)}s
+                {result.data.result_count} papers ·{" "}
+                {result.data.strength === "thorough" ? "Thorough" : "Standard"}
               </span>
             </div>
             <div className={styles.resultList}>

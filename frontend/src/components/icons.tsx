@@ -1,4 +1,9 @@
-import type { SVGProps } from "react";
+import type { ImgHTMLAttributes, SVGProps } from "react";
+
+import chevronDown from "../assets/icons/chevron-down.svg";
+import search from "../assets/icons/search.svg";
+import trashDanger from "../assets/icons/trash-danger.svg";
+import trashMuted from "../assets/icons/trash-muted.svg";
 
 function Icon({ children, ...props }: SVGProps<SVGSVGElement>) {
   return (
@@ -8,29 +13,22 @@ function Icon({ children, ...props }: SVGProps<SVGSVGElement>) {
   );
 }
 
-export const ChevronDownIcon = (props: SVGProps<SVGSVGElement>) => (
-  <Icon {...props}>
-    <path d="m7 9.5 5 5 5-5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-  </Icon>
+type AssetIconProps = Omit<ImgHTMLAttributes<HTMLImageElement>, "src" | "alt">;
+
+export const ChevronDownIcon = (props: AssetIconProps) => (
+  <img src={chevronDown} alt="" aria-hidden="true" width="12" height="12" {...props} />
 );
 
-export const SearchIcon = (props: SVGProps<SVGSVGElement>) => (
-  <Icon {...props}>
-    <circle cx="10.7" cy="10.7" r="6.5" stroke="currentColor" strokeWidth="1.7" />
-    <path d="m15.7 15.7 4 4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-  </Icon>
+export const SearchIcon = (props: AssetIconProps) => (
+  <img src={search} alt="" aria-hidden="true" width="15" height="15" {...props} />
 );
 
-export const TrashIcon = (props: SVGProps<SVGSVGElement>) => (
-  <Icon {...props}>
-    <path
-      d="M5 7h14M9 7V4h6v3m2 0-1 13H8L7 7"
-      stroke="currentColor"
-      strokeWidth="1.6"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  </Icon>
+export const TrashIcon = (props: AssetIconProps) => (
+  <img src={trashDanger} alt="" aria-hidden="true" width="14" height="14" {...props} />
+);
+
+export const DeleteSearchIcon = (props: AssetIconProps) => (
+  <img src={trashMuted} alt="" aria-hidden="true" width="15" height="15" {...props} />
 );
 
 export const MenuIcon = (props: SVGProps<SVGSVGElement>) => (
