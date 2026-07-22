@@ -1,0 +1,4 @@
+interface:
+  display_name: "Scholight Search"
+  short_description: "Search AI research papers on arXiv"
+  default_prompt: "Use $scholight-search to find relevant arXiv papers for my research question."
