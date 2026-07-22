@@ -20,14 +20,12 @@ export function establishSession(tokens: TokenResponse, announce = true): void {
   accessToken = tokens.access_token;
   localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refresh_token);
   if (announce) channel?.postMessage({ type: "session-changed" });
-  window.dispatchEvent(new Event("scholight-session"));
 }
 
 export function clearSession(announce = true): void {
   accessToken = null;
   localStorage.removeItem(REFRESH_TOKEN_KEY);
   if (announce) channel?.postMessage({ type: "signed-out" });
-  window.dispatchEvent(new Event("scholight-session"));
 }
 
 async function rotateRefreshToken(): Promise<string> {
@@ -69,11 +67,9 @@ export function subscribeToSessionChanges(listener: () => void): () => void {
   };
   const channelListener = () => listener();
   window.addEventListener("storage", storageListener);
-  window.addEventListener("scholight-session", listener);
   channel?.addEventListener("message", channelListener);
   return () => {
     window.removeEventListener("storage", storageListener);
-    window.removeEventListener("scholight-session", listener);
     channel?.removeEventListener("message", channelListener);
   };
 }

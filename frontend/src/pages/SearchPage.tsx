@@ -6,6 +6,7 @@ import { searchApi } from "../api/domain";
 import { ApiError } from "../api/errors";
 import type { SearchFilters, SearchHit, SearchRequest } from "../api/types";
 import { queryKeys } from "../app/queryKeys";
+import { useAuth } from "../auth/AuthProvider";
 import { SearchForm } from "../components/SearchForm";
 import { citationFor, formatAuthors, formatDate, parseSearchParameters } from "../lib/format";
 import styles from "../styles/app.module.css";
@@ -107,6 +108,7 @@ function FilterChips({
 }
 
 export function SearchPage() {
+  const { status: authStatus } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const parsed = useMemo(() => parseSearchParameters(searchParams), [searchParams]);
   const request: SearchRequest = {
@@ -153,6 +155,11 @@ export function SearchPage() {
           filters={parsed.filters}
           compact
         />
+        {error?.status === 422 && (
+          <p className={styles.resultsQueryError} role="alert">
+            {error.fieldErrors?.[0]?.message ?? error.message}
+          </p>
+        )}
       </div>
       <div className={styles.readingColumn}>
         <FilterChips filters={parsed.filters} onRemove={removeFilter} />
@@ -184,7 +191,7 @@ export function SearchPage() {
             >
               Retry
             </button>
-            {error.status === 429 && <Link to="/login">Sign in</Link>}
+            {error.status === 429 && authStatus === "anonymous" && <Link to="/login">Sign in</Link>}
           </div>
         )}
         {result.data?.degraded && (

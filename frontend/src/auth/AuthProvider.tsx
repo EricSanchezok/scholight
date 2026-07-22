@@ -1,5 +1,13 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { accountApi, authApi } from "../api/domain";
 import type { LoginRequest, UserProfile } from "../api/types";
@@ -27,6 +35,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<AuthStatus>(hasRefreshToken() ? "checking" : "anonymous");
   const [user, setUser] = useState<UserProfile | null>(null);
+  const statusRef = useRef(status);
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
 
   const loadProfile = useCallback(async () => {
     const profile = await accountApi.profile();
@@ -67,13 +79,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(null);
         setStatus("anonymous");
         queryClient.removeQueries({ queryKey: ["private"] });
+      } else if (statusRef.current === "anonymous") {
+        setStatus("checking");
+        void refreshAccessToken()
+          .then(() => loadProfile())
+          .catch(() => {
+            clearSession(false);
+            setStatus("anonymous");
+          });
       }
     });
     return () => {
       active = false;
       unsubscribe();
     };
-  }, [queryClient]);
+  }, [loadProfile, queryClient]);
 
   const login = useCallback(
     async (credentials: LoginRequest) => {

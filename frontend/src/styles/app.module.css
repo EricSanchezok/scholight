@@ -267,6 +267,11 @@
   width: min(var(--container), calc(100% - 64px));
   margin: 0 auto 64px;
 }
+.resultsQueryError {
+  margin: 10px 3px 0;
+  color: var(--danger);
+  font-size: 13px;
+}
 .searchFormCompact {
   min-height: 68px;
   padding-block: 7px;
