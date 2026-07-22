@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from typing import cast
+from dataclasses import dataclass
+from typing import Literal, cast
+from uuid import UUID
 
 from cloud_auth.config import AuthConfig
 from cloud_auth.db.asyncpg import AsyncpgUserDatabase
@@ -12,8 +14,20 @@ from cloud_auth.models.user import UserRecord
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from scholight.api.access_keys import AccessKeyError, resolve_access_key
+
 security = HTTPBearer(scheme_name="BearerAuth")
 optional_security = HTTPBearer(auto_error=False, scheme_name="BearerAuth")
+
+
+@dataclass(frozen=True, slots=True)
+class SearchActor:
+    """Authenticated identity used only by the public search surface."""
+
+    user: UserRecord
+    actor_type: Literal["web", "access_key"]
+    access_key_id: UUID | None = None
+
 
 # ── 延迟绑定：cloud-auth SDK ──
 # cloud-auth's create_get_current_user returns an async callable that
@@ -67,3 +81,35 @@ async def get_optional_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
     return await _resolve_current_user(credentials)
+
+
+async def get_optional_search_actor(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(optional_security),
+) -> SearchActor | None:
+    """Authenticate search with either a web JWT or a search-only access key."""
+    if "authorization" not in request.headers:
+        return None
+    if credentials is None or credentials.scheme.lower() != "bearer" or not credentials.credentials:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid access token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    token = credentials.credentials
+    if token.startswith("sk_live_"):
+        try:
+            record, user = await resolve_access_key(token)
+        except AccessKeyError as exc:
+            raise HTTPException(
+                status_code=401,
+                detail={
+                    "code": exc.code,
+                    "message": "Access key is invalid or unavailable.",
+                    "retryable": False,
+                },
+                headers={"WWW-Authenticate": "Bearer"},
+            ) from exc
+        return SearchActor(user=user, actor_type="access_key", access_key_id=record.id)
+    user = await _resolve_current_user(credentials)
+    return SearchActor(user=user, actor_type="web")

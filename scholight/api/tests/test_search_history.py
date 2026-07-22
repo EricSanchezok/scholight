@@ -11,7 +11,7 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
-from scholight.api.deps import get_current_user, get_optional_current_user
+from scholight.api.deps import SearchActor, get_current_user, get_optional_search_actor
 from scholight.api.search_access import SearchQuotaReservation
 from scholight.db.client import DBError
 from scholight.models.history import SearchHistoryEntry
@@ -283,7 +283,9 @@ async def test_authenticated_final_200_schedules_normalized_history(
     api_client: httpx.AsyncClient,
     active_user: object,
 ) -> None:
-    api_app.dependency_overrides[get_optional_current_user] = lambda: active_user
+    api_app.dependency_overrides[get_optional_search_actor] = lambda: SearchActor(
+        user=active_user, actor_type="web"
+    )
     reservation = SearchQuotaReservation(operation="search_level1")
     result = SearchResult(query="retrieval", level=1, total_ms=1.0, hits=[])
 

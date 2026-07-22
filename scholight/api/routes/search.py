@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pymilvus.exceptions import MilvusException
 from structlog.contextvars import get_contextvars
 
-from scholight.api.deps import get_current_user, get_optional_current_user
+from scholight.api.deps import SearchActor, get_current_user, get_optional_search_actor
 from scholight.api.history_mapper import map_search_history_page
 from scholight.api.history_tasks import schedule_search_history_write
 from scholight.api.models.history import (
@@ -92,11 +92,12 @@ router = APIRouter()
 async def search(
     request: Request,
     body: PublicSearchRequest,
-    current_user: UserRecord | None = Depends(get_optional_current_user),
+    actor: SearchActor | None = Depends(get_optional_search_actor),
 ) -> PublicSearchResponse:
     from scholight.search.engine import SearchEngine  # lazy — heavy import chain
 
     internal_request = body.to_internal()
+    current_user = actor.user if actor is not None else None
     reservation = await reserve_search_quota(
         request,
         current_user,

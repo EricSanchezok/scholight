@@ -102,6 +102,9 @@ class Settings(BaseSettings):
     account_lockout_threshold: int = 5
     account_lockout_duration_minutes: int = 15
 
+    # ── Personal access keys ──
+    access_key_hmac_secret: str = ""
+
     # ── Anonymous public search ──
     anonymous_rate_limit_per_minute: int = Field(default=30, gt=0)
     anonymous_standard_daily_limit: int = Field(default=100, gt=0)
@@ -135,6 +138,8 @@ def validate_api_runtime_settings() -> None:
         raise ValueError(
             "SCHOLIGHT_ANONYMOUS_QUOTA_HMAC_SECRET must contain at least 32 UTF-8 bytes"
         )
+    if len(settings.access_key_hmac_secret.encode("utf-8")) < 32:
+        raise ValueError("SCHOLIGHT_ACCESS_KEY_HMAC_SECRET must contain at least 32 UTF-8 bytes")
     if settings.proxy_headers and settings.forwarded_allow_ips.strip() == "*":
         raise ValueError(
             "SCHOLIGHT_FORWARDED_ALLOW_IPS must not be '*' when proxy headers are enabled"

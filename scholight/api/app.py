@@ -158,6 +158,7 @@ def create_app() -> FastAPI:
     from cloud_auth.routers import get_auth_router, get_user_router
 
     from scholight.api.deps import get_current_user, wire_dependencies
+    from scholight.api.routes.access_keys import router as access_key_router
     from scholight.api.routes.search import router as search_router
     from scholight.db.client import get_pool
 
@@ -199,6 +200,7 @@ def create_app() -> FastAPI:
         prefix="/user",
         tags=["user"],
     )
+    app.include_router(access_key_router, prefix="/user/access-keys", tags=["access-keys"])
 
     @app.get("/livez")
     async def livez() -> dict[str, str]:

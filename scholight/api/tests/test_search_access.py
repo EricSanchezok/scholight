@@ -61,9 +61,21 @@ def test_api_runtime_requires_hmac_secret(monkeypatch: pytest.MonkeyPatch) -> No
         validate_api_runtime_settings()
 
 
+def test_api_runtime_requires_access_key_hmac_secret(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "jwt_secret", "j" * 32)
+    monkeypatch.setattr(settings, "anonymous_quota_hmac_secret", "h" * 32)
+    monkeypatch.setattr(settings, "access_key_hmac_secret", "short")
+    monkeypatch.setattr(settings, "proxy_headers", False)
+    monkeypatch.setattr(settings, "cors_allow_origins", ["http://localhost:3000"])
+
+    with pytest.raises(ValueError, match="ACCESS_KEY_HMAC_SECRET"):
+        validate_api_runtime_settings()
+
+
 def test_api_runtime_rejects_untrusted_proxy_wildcard(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "jwt_secret", "j" * 32)
     monkeypatch.setattr(settings, "anonymous_quota_hmac_secret", "h" * 32)
+    monkeypatch.setattr(settings, "access_key_hmac_secret", "k" * 32)
     monkeypatch.setattr(settings, "proxy_headers", True)
     monkeypatch.setattr(settings, "forwarded_allow_ips", "*")
     monkeypatch.setattr(settings, "cors_allow_origins", ["http://localhost:3000"])
@@ -75,6 +87,7 @@ def test_api_runtime_rejects_untrusted_proxy_wildcard(monkeypatch: pytest.Monkey
 def test_api_runtime_rejects_wildcard_cors(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "jwt_secret", "j" * 32)
     monkeypatch.setattr(settings, "anonymous_quota_hmac_secret", "h" * 32)
+    monkeypatch.setattr(settings, "access_key_hmac_secret", "k" * 32)
     monkeypatch.setattr(settings, "proxy_headers", False)
     monkeypatch.setattr(settings, "cors_allow_origins", ["*"])
 

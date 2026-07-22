@@ -155,3 +155,16 @@ def test_anonymous_quota_migration_has_exact_additive_schema() -> None:
     assert "CHECK (used_count >= 0)" in sql
     assert "IF NOT EXISTS" not in sql
     assert "CREATE INDEX" not in sql
+
+
+def test_access_key_migration_has_hashed_owner_scoped_schema() -> None:
+    migration = Path(__file__).parents[3] / "migrations/007_create_access_keys.sql"
+
+    sql = migration.read_text(encoding="utf-8")
+
+    assert "CREATE TABLE public.access_keys" in sql
+    assert "user_id BIGINT NOT NULL REFERENCES auth.users(id)" in sql
+    assert "key_digest BYTEA NOT NULL UNIQUE" in sql
+    assert "CHECK (octet_length(key_digest) = 32)" in sql
+    assert "plaintext" not in sql.lower()
+    assert "WHERE revoked_at IS NULL" in sql
