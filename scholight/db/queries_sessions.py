@@ -29,7 +29,9 @@ async def query_sessions(user_id: int) -> list[SessionRecord]:
             "CASE WHEN bool_or(revoked_at IS NULL AND expires_at > now()) "
             "THEN NULL ELSE max(revoked_at) END AS revoked_at "
             "FROM auth.refresh_tokens WHERE user_id = $1 "
-            "GROUP BY family_id ORDER BY created_at DESC",
+            "GROUP BY family_id "
+            "HAVING bool_or(revoked_at IS NULL AND expires_at > now()) "
+            "ORDER BY created_at DESC",
             user_id,
         )
     except asyncpg.PostgresError as exc:

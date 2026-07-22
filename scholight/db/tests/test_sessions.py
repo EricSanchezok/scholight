@@ -8,7 +8,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from scholight.db.queries_sessions import revoke_other_sessions, revoke_session, touch_session
+from scholight.db.queries_sessions import (
+    query_sessions,
+    revoke_other_sessions,
+    revoke_session,
+    touch_session,
+)
 
 
 class _AsyncContext(AbstractAsyncContextManager[MagicMock]):
@@ -25,6 +30,20 @@ class _AsyncContext(AbstractAsyncContextManager[MagicMock]):
         traceback: TracebackType | None,
     ) -> bool | None:
         return None
+
+
+@pytest.mark.asyncio
+async def test_query_sessions_returns_only_active_families() -> None:
+    pool = MagicMock()
+    pool.fetch = AsyncMock(return_value=[])
+
+    with patch("scholight.db.queries_sessions.get_pool", return_value=pool):
+        sessions = await query_sessions(user_id=42)
+
+    sql, user_id = pool.fetch.await_args.args
+    assert "HAVING bool_or(revoked_at IS NULL AND expires_at > now())" in sql
+    assert user_id == 42
+    assert sessions == []
 
 
 @pytest.mark.asyncio
