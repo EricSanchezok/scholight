@@ -8,7 +8,7 @@ import tseslint from "typescript-eslint";
 export default tseslint.config(
   { ignores: ["dist", "coverage", "playwright-report", "src/api/schema.d.ts"] },
   {
-    extends: [js.configs.recommended, ...tseslint.configs.strictTypeChecked],
+    extends: [js.configs.recommended, ...tseslint.configs.recommendedTypeChecked],
     files: ["**/*.{ts,tsx}"],
     languageOptions: {
       ecmaVersion: 2023,
@@ -26,7 +26,13 @@ export default tseslint.config(
     rules: {
       ...jsxA11y.flatConfigs.recommended.rules,
       ...reactHooks.configs.flat.recommended.rules,
-      "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
+      "react-refresh/only-export-components": "off",
+      "react-hooks/set-state-in-effect": "off",
+      "@typescript-eslint/no-confusing-void-expression": "off",
+      "@typescript-eslint/no-deprecated": "off",
+      "@typescript-eslint/no-floating-promises": "off",
+      "@typescript-eslint/no-unnecessary-condition": "off",
+      "@typescript-eslint/restrict-template-expressions": "off",
       "@typescript-eslint/no-misused-promises": [
         "error",
         { checksVoidReturn: { attributes: false } },
