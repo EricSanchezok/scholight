@@ -26,6 +26,7 @@ const result = {
 };
 
 test.beforeEach(async ({ page }) => {
+  await page.clock.setFixedTime(new Date("2026-07-23T00:00:00Z"));
   await page.route("**/api/search", (route) => route.fulfill({ json: result }));
   await page.route("**/api/auth/refresh", (route) =>
     route.fulfill({ status: 401, json: { detail: "Invalid session" } }),
@@ -440,7 +441,7 @@ test("account menu uses the approved order and protected destinations", async ({
 }, testInfo) => {
   test.skip(testInfo.project.name !== "chromium", "desktop-only visual assertion");
   await page.setViewportSize({ width: 1440, height: 1024 });
-  await mockAuthenticated(page);
+  await mockAccountCenter(page);
   await page.goto("/");
   await page.getByRole("button", { name: "Open account menu" }).click();
   await expect(page.getByRole("menuitem")).toHaveText([
