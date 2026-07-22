@@ -55,7 +55,12 @@ async function mockAuthenticated(page: Page) {
 }
 
 async function settleMotion(page: Page) {
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(50);
+  await page.waitForFunction(() =>
+    document
+      .getAnimations()
+      .every((animation) => animation.playState === "finished" || animation.playState === "idle"),
+  );
 }
 
 async function mockAccountCenter(page: Page) {
@@ -230,6 +235,7 @@ test("anonymous search reaches the continuous results view", async ({ page }) =>
   await expect(page).toHaveURL(/\/search\?q=retrieval\+augmented\+generation/);
   await expect(page.getByRole("heading", { name: "A Paper About Retrieval" })).toBeVisible();
   await expect(page.getByText("Score")).toBeVisible();
+  await expect(page.getByText("Searching the literature…")).toBeHidden();
   await settleMotion(page);
   const accessibility = await new AxeBuilder({ page }).analyze();
   expect(
