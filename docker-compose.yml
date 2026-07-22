@@ -37,6 +37,20 @@ x-scheduler-service: &scheduler-service
     disable: true
 
 services:
+  frontend:
+    image: ${SCHOLIGHT_FRONTEND_IMAGE:-scholight-frontend:0.1.0}
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    depends_on:
+      - api
+    ports:
+      - "${SCHOLIGHT_BIND_ADDRESS:-127.0.0.1}:${SCHOLIGHT_FRONTEND_PORT:-3000}:80"
+    networks:
+      scholight:
+        ipv4_address: 172.30.0.10
+    restart: unless-stopped
+
   api:
     <<: *scholight-image
     environment:
@@ -44,7 +58,7 @@ services:
       SCHOLIGHT_SERVER_HOST: 0.0.0.0
       SCHOLIGHT_SERVER_PORT: "8000"
       SCHOLIGHT_PROXY_HEADERS: ${SCHOLIGHT_PROXY_HEADERS:-false}
-      SCHOLIGHT_FORWARDED_ALLOW_IPS: ${SCHOLIGHT_FORWARDED_ALLOW_IPS:-127.0.0.1}
+      SCHOLIGHT_FORWARDED_ALLOW_IPS: ${SCHOLIGHT_FORWARDED_ALLOW_IPS:-127.0.0.1,172.30.0.10}
       SCHOLIGHT_ANONYMOUS_RATE_LIMIT_PER_MINUTE: ${SCHOLIGHT_ANONYMOUS_RATE_LIMIT_PER_MINUTE:-30}
       SCHOLIGHT_ANONYMOUS_STANDARD_DAILY_LIMIT: ${SCHOLIGHT_ANONYMOUS_STANDARD_DAILY_LIMIT:-100}
       SCHOLIGHT_ANONYMOUS_THOROUGH_DAILY_LIMIT: ${SCHOLIGHT_ANONYMOUS_THOROUGH_DAILY_LIMIT:-30}
@@ -76,6 +90,8 @@ services:
     ports:
       - "${SCHOLIGHT_BIND_ADDRESS:-127.0.0.1}:${SCHOLIGHT_HOST_PORT:-8000}:8000"
     restart: unless-stopped
+    networks:
+      - scholight
 
   migrate:
     <<: *scholight-image
@@ -130,3 +146,9 @@ secrets:
 
 volumes:
   scholight-data:
+
+networks:
+  scholight:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
