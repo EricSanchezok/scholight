@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Annotated
+from typing import Annotated, Literal
+from uuid import uuid4
 
 import grpc
 import structlog
@@ -25,6 +26,7 @@ from scholight.api.models.history import (
 from scholight.api.models.search import PublicSearchRequest, PublicSearchResponse
 from scholight.api.search_access import compensate_search_quota, reserve_search_quota
 from scholight.api.search_mapper import map_search_response
+from scholight.api.usage_tasks import schedule_usage_event
 from scholight.config import settings
 from scholight.db.client import DBError
 from scholight.db.queries_history import (
@@ -32,6 +34,7 @@ from scholight.db.queries_history import (
     get_search_history,
     soft_delete_search_entry,
 )
+from scholight.db.queries_usage import UsageEvent
 from scholight.search.errors import SearchUnavailable, ThoroughSearchUnavailable
 from scholight.store.ingest import StoreError
 from scholight.store.query import batch_get_arxiv_papers
@@ -39,6 +42,39 @@ from scholight.store.query import batch_get_arxiv_papers
 logger = structlog.get_logger(__name__)
 
 _PUBLIC_ENRICHMENT_FIELDS = ["arxiv_id", "abstract"]
+
+
+def _schedule_usage(
+    actor: SearchActor | None,
+    *,
+    request_id: str,
+    level: int,
+    strength: Literal["standard", "thorough"],
+    outcome: Literal["success", "degraded", "failed"],
+    quota_units: int,
+    result_count: int | None,
+    duration_ms: float | None,
+    status_code: int,
+    error_code: str | None,
+) -> None:
+    if actor is None:
+        return
+    schedule_usage_event(
+        UsageEvent(
+            request_id=request_id,
+            user_id=actor.user.id,
+            operation="search_level1" if level == 1 else "search_level2",
+            strength=strength,
+            actor_type=actor.actor_type,
+            access_key_id=actor.access_key_id,
+            outcome=outcome,
+            quota_units=quota_units,
+            result_count=result_count,
+            search_duration_ms=duration_ms,
+            status_code=status_code,
+            error_code=error_code,
+        )
+    )
 
 
 async def _enrich_public_abstracts(
@@ -105,15 +141,40 @@ async def search(
     )
 
     t_start = time.perf_counter()
+    request_id = str(get_contextvars().get("request_id") or uuid4())
     engine = SearchEngine()
     try:
         result = await engine.search(internal_request)
     except asyncio.CancelledError as exc:
         await compensate_search_quota(reservation)
+        _schedule_usage(
+            actor,
+            request_id=request_id,
+            level=internal_request.level,
+            strength=body.strength.value,
+            outcome="failed",
+            quota_units=0,
+            result_count=None,
+            duration_ms=(time.perf_counter() - t_start) * 1000,
+            status_code=500,
+            error_code="search_cancelled",
+        )
         logger.error("search_cancelled", strength=body.strength)
         raise HTTPException(status_code=500, detail="Search service error") from exc
     except ThoroughSearchUnavailable as exc:
         await compensate_search_quota(reservation)
+        _schedule_usage(
+            actor,
+            request_id=request_id,
+            level=internal_request.level,
+            strength=body.strength.value,
+            outcome="failed",
+            quota_units=0,
+            result_count=None,
+            duration_ms=(time.perf_counter() - t_start) * 1000,
+            status_code=503,
+            error_code="thorough_search_unavailable",
+        )
         logger.warning(
             "thorough_search_unavailable",
             strength=body.strength,
@@ -131,6 +192,18 @@ async def search(
         ) from exc
     except SearchUnavailable as exc:
         await compensate_search_quota(reservation)
+        _schedule_usage(
+            actor,
+            request_id=request_id,
+            level=internal_request.level,
+            strength=body.strength.value,
+            outcome="failed",
+            quota_units=0,
+            result_count=None,
+            duration_ms=(time.perf_counter() - t_start) * 1000,
+            status_code=503,
+            error_code="search_unavailable",
+        )
         logger.warning(
             "search_unavailable",
             strength=body.strength,
@@ -148,6 +221,18 @@ async def search(
         ) from exc
     except Exception as exc:
         await compensate_search_quota(reservation)
+        _schedule_usage(
+            actor,
+            request_id=request_id,
+            level=internal_request.level,
+            strength=body.strength.value,
+            outcome="failed",
+            quota_units=0,
+            result_count=None,
+            duration_ms=(time.perf_counter() - t_start) * 1000,
+            status_code=500,
+            error_code="search_failed",
+        )
         logger.exception("search_failed", strength=body.strength)
         raise HTTPException(status_code=500, detail="Search service error") from exc
 
@@ -162,6 +247,19 @@ async def search(
             abstracts=abstracts,
         )
     except Exception as exc:
+        await compensate_search_quota(reservation)
+        _schedule_usage(
+            actor,
+            request_id=request_id,
+            level=internal_request.level,
+            strength=body.strength.value,
+            outcome="failed",
+            quota_units=0,
+            result_count=None,
+            duration_ms=(time.perf_counter() - t_start) * 1000,
+            status_code=500,
+            error_code="search_post_commit_failed",
+        )
         logger.exception("search_post_commit_failed", strength=body.strength)
         raise HTTPException(status_code=500, detail="Search service error") from exc
 
@@ -176,7 +274,6 @@ async def search(
         filters["date_to"] = internal_request.date_to
 
     if current_user is not None:
-        request_id = str(get_contextvars().get("request_id", ""))
         schedule_search_history_write(
             request_id=request_id,
             user_id=current_user.id,
@@ -186,6 +283,18 @@ async def search(
             filters=filters if filters else None,
             result_count=len(result.hits),
             elapsed_ms=elapsed_ms,
+        )
+        _schedule_usage(
+            actor,
+            request_id=request_id,
+            level=internal_request.level,
+            strength=body.strength.value,
+            outcome="degraded" if degraded else "success",
+            quota_units=1,
+            result_count=len(result.hits),
+            duration_ms=elapsed_ms,
+            status_code=200,
+            error_code=None,
         )
 
     return response

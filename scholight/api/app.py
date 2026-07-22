@@ -82,6 +82,7 @@ async def _is_zilliz_ready() -> bool:
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """Startup / shutdown lifecycle for database connections."""
     from scholight.api.history_tasks import drain_search_history_tasks
+    from scholight.api.usage_tasks import drain_usage_tasks
     from scholight.db.client import close_pool, create_pool
     from scholight.store.client import get_client
 
@@ -92,7 +93,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
-        await drain_search_history_tasks()
+        await asyncio.gather(drain_search_history_tasks(), drain_usage_tasks())
         await close_pool()
 
 
@@ -160,6 +161,7 @@ def create_app() -> FastAPI:
     from scholight.api.deps import get_current_user, wire_dependencies
     from scholight.api.routes.access_keys import router as access_key_router
     from scholight.api.routes.search import router as search_router
+    from scholight.api.routes.usage import router as usage_router
     from scholight.db.client import get_pool
 
     auth_config = AuthConfig(
@@ -201,6 +203,7 @@ def create_app() -> FastAPI:
         tags=["user"],
     )
     app.include_router(access_key_router, prefix="/user/access-keys", tags=["access-keys"])
+    app.include_router(usage_router, prefix="/user/usage", tags=["usage"])
 
     @app.get("/livez")
     async def livez() -> dict[str, str]:

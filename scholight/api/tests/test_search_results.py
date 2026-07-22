@@ -192,7 +192,7 @@ async def test_zero_core_hits_skip_final_enrichment(
 
 
 @pytest.mark.asyncio
-async def test_post_commit_enrichment_program_error_returns_500_without_compensation(
+async def test_post_commit_enrichment_program_error_returns_500_with_compensation(
     api_client: httpx.AsyncClient,
 ) -> None:
     reservation = SearchQuotaReservation(operation="search_level1")
@@ -227,12 +227,12 @@ async def test_post_commit_enrichment_program_error_returns_500_without_compensa
         500,
         {"detail": "Search service error"},
     )
-    compensate.assert_not_awaited()
+    compensate.assert_awaited_once()
     schedule_history.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_post_commit_mapper_error_returns_500_without_compensation(
+async def test_post_commit_mapper_error_returns_500_with_compensation(
     api_client: httpx.AsyncClient,
 ) -> None:
     reservation = SearchQuotaReservation(operation="search_level1")
@@ -265,4 +265,4 @@ async def test_post_commit_mapper_error_returns_500_without_compensation(
         500,
         {"detail": "Search service error"},
     )
-    compensate.assert_not_awaited()
+    compensate.assert_awaited_once()

@@ -168,3 +168,17 @@ def test_access_key_migration_has_hashed_owner_scoped_schema() -> None:
     assert "CHECK (octet_length(key_digest) = 32)" in sql
     assert "plaintext" not in sql.lower()
     assert "WHERE revoked_at IS NULL" in sql
+
+
+def test_usage_event_migration_is_idempotent_and_content_free() -> None:
+    migration = Path(__file__).parents[3] / "migrations/008_create_usage_events.sql"
+
+    sql = migration.read_text(encoding="utf-8")
+
+    assert "CREATE TABLE public.usage_events" in sql
+    assert "request_id VARCHAR(128) NOT NULL UNIQUE" in sql
+    assert "quota_units INTEGER NOT NULL" in sql
+    assert "access_key_id UUID" in sql
+    assert "query_text" not in sql
+    assert "abstract" not in sql.lower()
+    assert "ip_address" not in sql.lower()
