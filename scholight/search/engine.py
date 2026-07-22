@@ -12,6 +12,7 @@ import time
 from datetime import date
 from typing import Any
 
+import grpc
 import structlog
 from pymilvus.exceptions import MilvusException
 
@@ -200,7 +201,9 @@ class SearchEngine:
 
 def _is_operational_search_error(exc: Exception) -> bool:
     """Return whether a required search dependency failed operationally."""
-    return isinstance(exc, (MilvusException, OSError, TimeoutError)) or is_transient(exc)
+    return isinstance(exc, (grpc.RpcError, MilvusException, OSError, TimeoutError)) or is_transient(
+        exc
+    )
 
 
 # ── Hit construction ─────────────────────────────────────────────────────────

@@ -50,10 +50,12 @@ class Settings(BaseSettings):
     # ── Level 2 chunk search sizes ──
     bm25_coarse_top_k: int = 30
     dense_refine_top_k: int = 256
-    # Strict Level 2 has a bounded total deadline; timeout is surfaced to callers.
-    # Each underlying blocking Zilliz RPC is bounded independently.
-    search_level2_timeout_seconds: float = 2.0
-    search_level2_rpc_timeout_seconds: float = 1.5
+    # Public-result enrichment stays short because it degrades without failing the search.
+    search_enrichment_rpc_timeout_seconds: float = 1.5
+    # Strict Level 2 must cover a cold 172M-row chunk index while remaining bounded.
+    # Each blocking Zilliz RPC is shorter than the end-to-end Level 2 deadline.
+    search_level2_rpc_timeout_seconds: float = 45.0
+    search_level2_timeout_seconds: float = 60.0
 
     # ── Search — Level 2 RRF fusion (C2) ──
     search_rrf_k: int = 60

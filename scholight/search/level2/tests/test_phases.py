@@ -76,7 +76,15 @@ class TestChunkSearchPhase:
             ctx.metadata["chunk_mode"],
             bm25_search.call_args.kwargs["timeout"],
             dense_search.call_args.kwargs["timeout"],
-        ) == (dense_fake, 1, 1, 1, "bm25+dense", 1.5, 1.5)
+        ) == (
+            dense_fake,
+            1,
+            1,
+            1,
+            "bm25+dense",
+            phases_module.settings.search_level2_rpc_timeout_seconds,
+            phases_module.settings.search_level2_rpc_timeout_seconds,
+        )
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -124,7 +132,7 @@ class TestChunkSearchPhase:
             "date_from": ctx.request.date_from,
             "date_to": ctx.request.date_to,
             "output_fields": ["arxiv_id"],
-            "timeout": 1.5,
+            "timeout": phases_module.settings.search_level2_rpc_timeout_seconds,
         }
         assert filter_candidates.call_args.args == (["B", "A"],)
         assert dense_search.call_args.kwargs["arxiv_ids"] == ["A"]
@@ -194,7 +202,10 @@ class TestChunkSearchPhase:
         ):
             phases_module._ensure_chunks_loaded()
 
-        client.load_collection.assert_called_once_with("arxiv_chunks", timeout=1.5)
+        client.load_collection.assert_called_once_with(
+            "arxiv_chunks",
+            timeout=phases_module.settings.search_level2_rpc_timeout_seconds,
+        )
 
     def test_concurrent_chunk_load_is_serialized(self):
         client = MagicMock()

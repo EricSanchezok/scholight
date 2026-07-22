@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import grpc
 import httpx
 import pytest
 from pymilvus.exceptions import MilvusException
@@ -77,7 +78,7 @@ async def test_final_enrichment_runs_one_batch_and_preserves_core_rank(
     assert enrichment.call_count == 1
     assert enrichment.call_args.args == (["B", "A"],)
     assert enrichment.call_args.kwargs["output_fields"] == ["arxiv_id", "abstract"]
-    assert enrichment.call_args.kwargs["timeout"] > 0
+    assert enrichment.call_args.kwargs["timeout"] == 1.5
     compensate.assert_not_awaited()
 
 
@@ -124,6 +125,7 @@ async def test_missing_enrichment_row_is_degraded_with_null_abstract(
         OSError("connection reset"),
         MilvusException(message="private endpoint unavailable", code=1),
         StoreError("private store detail"),
+        grpc.RpcError("deadline exceeded"),
     ],
 )
 async def test_known_enrichment_failure_returns_degraded_without_compensation(

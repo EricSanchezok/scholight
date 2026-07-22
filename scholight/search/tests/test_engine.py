@@ -9,10 +9,12 @@ from types import SimpleNamespace
 from typing import Any, ClassVar
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import grpc
 import httpx
 import pytest
 from pymilvus.exceptions import MilvusException
 
+from scholight.config import Settings
 from scholight.models.search import SearchRequest
 from scholight.search import engine as engine_module
 from scholight.search.base import PhaseError, PipelineContext
@@ -167,6 +169,14 @@ async def test_non_transient_embedding_http_failure_remains_a_phase_error() -> N
     assert exc_info.value.cause is failure
 
 
+def test_default_thorough_budget_covers_cold_chunk_search() -> None:
+    rpc_timeout = Settings.model_fields["search_level2_rpc_timeout_seconds"].default
+    total_timeout = Settings.model_fields["search_level2_timeout_seconds"].default
+
+    assert rpc_timeout >= 30.0
+    assert total_timeout >= rpc_timeout + 10.0
+
+
 @pytest.mark.asyncio
 async def test_slow_level2_raises_strict_unavailable_within_budget() -> None:
     request = SearchRequest(query="test", level=2, top_k=10)
@@ -198,6 +208,25 @@ async def test_operational_level2_failure_raises_strict_unavailable() -> None:
     level1_context = _level1_context(request)
     engine = SearchEngine()
     failure = MilvusException(message="unavailable", code=1)
+
+    with (
+        patch.object(
+            engine, "_resolve_l1_pipeline", return_value=StubLevel1Pipeline(level1_context)
+        ),
+        patch.object(engine, "_resolve_l2_pipeline", return_value=FailingLevel2Pipeline(failure)),
+    ):
+        with pytest.raises(ThoroughSearchUnavailable) as exc_info:
+            await engine.search(request)
+
+    assert (exc_info.value.phase_name, exc_info.value.cause) == ("chunk_search", failure)
+
+
+@pytest.mark.asyncio
+async def test_grpc_level2_failure_raises_strict_unavailable() -> None:
+    request = SearchRequest(query="test", level=2, top_k=10)
+    level1_context = _level1_context(request)
+    engine = SearchEngine()
+    failure = grpc.RpcError("deadline exceeded")
 
     with (
         patch.object(

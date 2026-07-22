@@ -6,6 +6,7 @@ import asyncio
 import time
 from typing import Annotated
 
+import grpc
 import structlog
 from cloud_auth.models.auth import MessageResponse
 from cloud_auth.models.user import UserRecord
@@ -56,9 +57,9 @@ async def _enrich_public_abstracts(
             batch_get_arxiv_papers,
             arxiv_ids,
             output_fields=_PUBLIC_ENRICHMENT_FIELDS,
-            timeout=settings.search_level2_rpc_timeout_seconds,
+            timeout=settings.search_enrichment_rpc_timeout_seconds,
         )
-    except (MilvusException, StoreError, OSError, TimeoutError) as exc:
+    except (grpc.RpcError, MilvusException, StoreError, OSError, TimeoutError) as exc:
         logger.warning("public_search_enrichment_failed", error_type=type(exc).__name__)
         return {}, True
 

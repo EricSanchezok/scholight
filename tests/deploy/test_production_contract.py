@@ -41,6 +41,34 @@ def test_production_compose_separates_application_and_migration_database_roles()
     assert api_environment["SCHOLIGHT_PG_PASSWORD"] != migrate_environment["SCHOLIGHT_PG_PASSWORD"]
 
 
+def test_production_api_forwards_search_timeout_defaults() -> None:
+    compose = yaml.safe_load((PRODUCTION / "compose.yaml").read_text(encoding="utf-8"))
+    environment = compose["services"]["api"]["environment"]
+
+    assert (
+        environment.get("SCHOLIGHT_SEARCH_ENRICHMENT_RPC_TIMEOUT_SECONDS"),
+        environment.get("SCHOLIGHT_SEARCH_LEVEL2_RPC_TIMEOUT_SECONDS"),
+        environment.get("SCHOLIGHT_SEARCH_LEVEL2_TIMEOUT_SECONDS"),
+    ) == (
+        "${SCHOLIGHT_SEARCH_ENRICHMENT_RPC_TIMEOUT_SECONDS:-1.5}",
+        "${SCHOLIGHT_SEARCH_LEVEL2_RPC_TIMEOUT_SECONDS:-45.0}",
+        "${SCHOLIGHT_SEARCH_LEVEL2_TIMEOUT_SECONDS:-60.0}",
+    )
+
+
+def test_production_runtime_example_documents_search_timeouts() -> None:
+    runtime = (PRODUCTION / "runtime.env.example").read_text(encoding="utf-8")
+
+    assert all(
+        setting in runtime
+        for setting in (
+            "SCHOLIGHT_SEARCH_ENRICHMENT_RPC_TIMEOUT_SECONDS=1.5",
+            "SCHOLIGHT_SEARCH_LEVEL2_RPC_TIMEOUT_SECONDS=45.0",
+            "SCHOLIGHT_SEARCH_LEVEL2_TIMEOUT_SECONDS=60.0",
+        )
+    )
+
+
 def test_workflows_do_not_persist_checkout_credentials_or_inherit_secrets() -> None:
     workflows = "\n".join(
         (ROOT / ".github" / "workflows" / name).read_text(encoding="utf-8")
