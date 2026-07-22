@@ -82,9 +82,10 @@ async def patch_key(
     existing = next((key for key in keys if key.id == key_id), None)
     if existing is None or existing.revoked_at is not None:
         raise _error(404, "access_key_not_found", "Access key not found.")
-    name = body.name if "name" in body.model_fields_set else existing.name
+    name = body.name
+    if "name" not in body.model_fields_set or name is None:
+        name = existing.name
     expires_at = body.expires_at if "expires_at" in body.model_fields_set else existing.expires_at
-    assert name is not None
     try:
         updated = await update_access_key(
             key_id,

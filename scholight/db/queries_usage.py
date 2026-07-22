@@ -151,11 +151,27 @@ async def query_latency(
 
 
 def _records_sql(*, include_cursor: bool) -> str:
-    cursor_clause = "AND (u.created_at, u.id) < ($9, $10) " if include_cursor else ""
+    if include_cursor:
+        return (
+            "SELECT u.id, u.created_at, u.actor_type, u.access_key_id, "
+            "k.name AS access_key_name, k.key_last4 AS access_key_last4, "
+            "u.strength, u.search_duration_ms, u.result_count, u.outcome, "
+            "u.quota_units, u.status_code, u.error_code "
+            "FROM public.usage_events u LEFT JOIN public.access_keys k "
+            "ON k.id = u.access_key_id AND k.user_id = u.user_id "
+            "WHERE u.user_id = $1 AND u.created_at >= $2 AND u.created_at < $3 "
+            "AND ($4::VARCHAR IS NULL OR u.strength = $4) "
+            "AND ($5::VARCHAR IS NULL OR u.actor_type = $5) "
+            "AND ($6::UUID IS NULL OR u.access_key_id = $6) "
+            "AND ($7::VARCHAR IS NULL OR u.outcome = $7) "
+            "AND (u.created_at, u.id) < ($9, $10) "
+            "ORDER BY u.created_at DESC, u.id DESC LIMIT $8"
+        )
     return (
-        "SELECT u.id, u.created_at, u.actor_type, u.access_key_id, k.name AS access_key_name, "
-        "k.key_last4 AS access_key_last4, u.strength, u.search_duration_ms, u.result_count, "
-        "u.outcome, u.quota_units, u.status_code, u.error_code "
+        "SELECT u.id, u.created_at, u.actor_type, u.access_key_id, "
+        "k.name AS access_key_name, k.key_last4 AS access_key_last4, "
+        "u.strength, u.search_duration_ms, u.result_count, u.outcome, "
+        "u.quota_units, u.status_code, u.error_code "
         "FROM public.usage_events u LEFT JOIN public.access_keys k "
         "ON k.id = u.access_key_id AND k.user_id = u.user_id "
         "WHERE u.user_id = $1 AND u.created_at >= $2 AND u.created_at < $3 "
@@ -163,7 +179,7 @@ def _records_sql(*, include_cursor: bool) -> str:
         "AND ($5::VARCHAR IS NULL OR u.actor_type = $5) "
         "AND ($6::UUID IS NULL OR u.access_key_id = $6) "
         "AND ($7::VARCHAR IS NULL OR u.outcome = $7) "
-        f"{cursor_clause}ORDER BY u.created_at DESC, u.id DESC LIMIT $8"
+        "ORDER BY u.created_at DESC, u.id DESC LIMIT $8"
     )
 
 
