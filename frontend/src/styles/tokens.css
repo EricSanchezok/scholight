@@ -1,0 +1,26 @@
+:root {
+  color-scheme: light;
+  --canvas: #fbfaf5;
+  --surface: #fffefc;
+  --surface-raised: #fcfbf7;
+  --surface-muted: #f4f2ec;
+  --ink: #0e0f14;
+  --ink-soft: #2e2f36;
+  --muted: #61636e;
+  --muted-soft: #737069;
+  --brand: #1f45b8;
+  --brand-link: #18389e;
+  --line: #ccc9bd;
+  --line-soft: #dbd9cc;
+  --input-line: #b5b2a8;
+  --danger: #b23321;
+  --danger-soft: #fbf1ed;
+  --focus: #5578dd;
+  --font-display: "Literata", Georgia, serif;
+  --font-ui: "Manrope", system-ui, sans-serif;
+  --container: 1120px;
+  --reading: 920px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+}
