@@ -85,6 +85,12 @@ for (const path of uiFiles) {
 for (const path of codeFiles) {
   const content = readFileSync(path, "utf8");
   const displayPath = relative(frontendRoot, path);
+  if (
+    !path.endsWith(join("src", "main.tsx")) &&
+    /from\s+["'][^"']+\.css["']|import\s+["'][^"']+\.css["']/.test(content)
+  ) {
+    findings.push(`${displayPath}:1 stylesheet import outside src/main.tsx`);
+  }
   for (const match of content.matchAll(
     /\bIntl\.(?:DateTimeFormat|NumberFormat|RelativeTimeFormat)\b/g,
   )) {
