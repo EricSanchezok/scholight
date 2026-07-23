@@ -136,7 +136,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: EricSanchezok/cloud-auth
-          ref: 3d95e2a8bb351c0d99aefca9572fb25deb88cc52
+          ref: 9e82bb25f38a33aaa309933bfb0affb6d47c1df2
           token: ${{ secrets.CLOUD_AUTH_READ_TOKEN }}
           path: .ci/cloud-auth
           persist-credentials: false
