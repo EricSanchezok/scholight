@@ -11,6 +11,7 @@ interface Props {
   error?: string;
   confirmLabel?: string;
   busyLabel?: string;
+  tone?: "danger" | "primary";
   onOpenChange: (open: boolean) => void;
   onConfirm: () => void;
 }
@@ -23,6 +24,7 @@ export function ConfirmDialog({
   error,
   confirmLabel = "Delete",
   busyLabel = "Deleting…",
+  tone = "danger",
   onOpenChange,
   onConfirm,
 }: Props) {
@@ -39,7 +41,12 @@ export function ConfirmDialog({
         )}
         <div className={styles.dialogActions}>
           <Dialog.Close className={styles.secondaryButton}>Cancel</Dialog.Close>
-          <button className={styles.dangerButton} type="button" disabled={busy} onClick={onConfirm}>
+          <button
+            className={tone === "primary" ? styles.primaryButton : styles.dangerButton}
+            type="button"
+            disabled={busy}
+            onClick={onConfirm}
+          >
             {busy ? busyLabel : confirmLabel}
           </button>
         </div>

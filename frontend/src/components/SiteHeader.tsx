@@ -4,7 +4,7 @@ import * as m from "motion/react-m";
 import { Link, NavLink, useLocation } from "react-router-dom";
 
 import { useAuth } from "../auth/context";
-import { accountRoutes, routes, withQuery } from "../app/routes";
+import { routes, visibleAccountRoutes, withQuery } from "../app/routes";
 import { mobileMenuMotion } from "../app/motion";
 import { useI18n } from "../i18n/I18nProvider";
 import { styles } from "../styles/classes";
@@ -13,7 +13,7 @@ import { CloseIcon, MenuIcon } from "./icons";
 
 export function SiteHeader() {
   const { messages } = useI18n();
-  const { status, logout } = useAuth();
+  const { status, canManageQuotas, logout } = useAuth();
   const [open, setOpen] = useState(false);
   const location = useLocation();
 
@@ -78,7 +78,7 @@ export function SiteHeader() {
             {nav}
             {status === "authenticated" ? (
               <>
-                {accountRoutes.map((route) => (
+                {visibleAccountRoutes(canManageQuotas).map((route) => (
                   <Link to={route.path} onClick={() => setOpen(false)} key={route.id}>
                     {messages.navigation[route.id]}
                   </Link>

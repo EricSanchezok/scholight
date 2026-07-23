@@ -1,0 +1,174 @@
+.adminPage {
+  max-width: var(--container);
+}
+.adminLookup {
+  display: grid;
+  padding: 28px 0 32px;
+  border-block: 1px solid var(--line);
+  grid-template-columns: minmax(220px, 0.8fr) minmax(420px, 1.2fr);
+  gap: 48px;
+}
+.adminLookup h2,
+.adminTarget h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 22px;
+}
+.adminLookup p,
+.adminTargetIdentity p,
+.adminQuotaHint,
+.adminEmpty p {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.adminLookup form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+}
+.adminLookup label {
+  display: flex;
+  color: var(--muted-soft);
+  flex-direction: column;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.adminLookup input,
+.adminQuotaRow input {
+  width: 100%;
+  height: 48px;
+  padding: 0 13px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  background: var(--surface);
+  font: 13px var(--font-ui);
+  letter-spacing: 0;
+  text-transform: none;
+}
+.adminLookup .primaryButton {
+  min-width: 112px;
+}
+.adminTarget {
+  margin-top: 48px;
+}
+.adminTargetIdentity {
+  display: flex;
+  min-height: 92px;
+  padding-bottom: 24px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+.adminTargetIdentity > div {
+  min-width: 0;
+}
+.adminTargetIdentity > span {
+  color: var(--brand);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.adminQuotaHeader,
+.adminQuotaRow {
+  display: grid;
+  grid-template-columns:
+    minmax(120px, 1.1fr) minmax(90px, 0.7fr) minmax(90px, 0.7fr)
+    minmax(90px, 0.7fr) minmax(180px, 1.1fr);
+  align-items: center;
+  gap: 20px;
+}
+.adminQuotaHeader {
+  min-height: 42px;
+  border-top: 1px solid var(--line);
+  color: var(--muted-soft);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.adminQuotaRows {
+  border-bottom: 1px solid var(--line);
+}
+.adminQuotaRow {
+  min-height: 82px;
+  border-top: 1px solid var(--line-soft);
+  font-size: 13px;
+}
+.adminQuotaRow > strong {
+  font-family: var(--font-display);
+  font-size: 17px;
+}
+.adminQuotaRow > span {
+  color: var(--muted);
+}
+.adminQuotaRow label {
+  min-width: 0;
+}
+.adminQuotaRow input {
+  height: 44px;
+}
+.adminQuotaHint {
+  max-width: 680px;
+  margin-top: 16px;
+}
+.adminTarget > .formMessageError,
+.adminTarget > .formMessageSuccess {
+  margin: 14px 0 0;
+}
+.adminQuotaActions {
+  display: flex;
+  margin-top: 28px;
+  justify-content: flex-end;
+  gap: 12px;
+}
+.adminQuotaActions .secondaryButton,
+.adminQuotaActions .primaryButton {
+  width: 176px;
+  min-height: 44px;
+  white-space: nowrap;
+}
+.adminEmpty {
+  min-height: 190px;
+  border-bottom: 1px solid var(--line-soft);
+  align-content: center;
+}
+.adminAudit {
+  margin-top: 72px;
+}
+.adminAuditLedger {
+  border-block: 1px solid var(--line);
+}
+.adminAuditRow {
+  display: grid;
+  min-height: 78px;
+  padding: 16px 0;
+  border-top: 1px solid var(--line-soft);
+  grid-template-columns: minmax(160px, 0.7fr) minmax(360px, 1.7fr) minmax(150px, 0.6fr);
+  align-items: center;
+  gap: 28px;
+  font-size: 12px;
+}
+.adminAuditRow:first-child {
+  border-top: 0;
+}
+.adminAuditRow time,
+.adminAuditRow > span,
+.adminAuditRow div > span {
+  color: var(--muted);
+}
+.adminAuditRow div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+}
+.adminAuditRow strong {
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}

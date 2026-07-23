@@ -33,7 +33,7 @@ test.beforeEach(async ({ page }) => {
   );
 });
 
-async function mockAuthenticated(page: Page) {
+async function mockAuthenticated(page: Page, canManageQuotas = false) {
   await page.route("**/api/auth/refresh", (route) =>
     route.fulfill({
       json: { access_token: "access-token", token_type: "bearer" },
@@ -50,6 +50,9 @@ async function mockAuthenticated(page: Page) {
         created_at: "2026-07-01T08:00:00Z",
       },
     }),
+  );
+  await page.route("**/api/admin/capabilities", (route) =>
+    route.fulfill({ json: { can_manage_quotas: canManageQuotas } }),
   );
 }
 
@@ -222,6 +225,58 @@ async function mockAccountCenter(page: Page) {
         },
       ],
     }),
+  );
+}
+
+async function mockQuotaAdministration(page: Page) {
+  await mockAuthenticated(page, true);
+  await page.route("**/api/admin/users/lookup**", (route) =>
+    route.fulfill({
+      json: {
+        user: {
+          id: 7,
+          email: "reader@example.com",
+          display_name: "Reader",
+          account_status: "active",
+        },
+        quotas: {
+          standard: {
+            default_limit: 1000,
+            override_limit: 5000,
+            effective_limit: 5000,
+            used: 20,
+            remaining: 4980,
+          },
+          thorough: {
+            default_limit: 1000,
+            override_limit: null,
+            effective_limit: 1000,
+            used: 4,
+            remaining: 996,
+          },
+        },
+      },
+    }),
+  );
+  await page.route("**/api/admin/audit-events**", (route) =>
+    route.fulfill({
+      json: [
+        {
+          event_id: "00000000-0000-0000-0000-000000000001",
+          actor_type: "user",
+          actor_identifier: "admin@example.com",
+          target_user_id: 7,
+          target_email: "reader@example.com",
+          action: "quota_overrides_updated",
+          before_state: { standard: 1000, thorough: null },
+          after_state: { standard: 5000, thorough: null },
+          created_at: "2026-07-22T18:42:00Z",
+        },
+      ],
+    }),
+  );
+  await page.route("**/api/admin/users/*/quota-overrides", (route) =>
+    route.fulfill({ json: { changed: true } }),
   );
 }
 
@@ -425,6 +480,28 @@ test("mobile account center keeps navigation and pages inside the viewport", asy
     }));
     expect(widths.scroll).toBe(widths.client);
   }
+});
+
+test("quota administration stays exact, auditable, and within the viewport", async ({ page }) => {
+  await mockQuotaAdministration(page);
+  await page.goto("/admin/quotas");
+  await expect(page.getByRole("heading", { name: "Quota administration" })).toBeVisible();
+  await page.getByLabel("User email").fill("reader@example.com");
+  await page.getByRole("button", { name: "Find user" }).click();
+  await expect(page.getByRole("heading", { name: "Reader" })).toBeVisible();
+  await expect(page.getByLabel("Standard custom daily limit")).toHaveValue("5000");
+  await expect(page.getByText(/Standard 1,000 → 5,000/)).toBeVisible();
+
+  const widths = await page.evaluate(() => ({
+    client: document.documentElement.clientWidth,
+    scroll: document.documentElement.scrollWidth,
+  }));
+  expect(widths.scroll).toBe(widths.client);
+  expect(
+    (await new AxeBuilder({ page }).analyze()).violations.filter((item) =>
+      ["serious", "critical"].includes(item.impact ?? ""),
+    ),
+  ).toEqual([]);
 });
 
 test("custom strength dropdown preserves the Figma interaction", async ({ page }, testInfo) => {

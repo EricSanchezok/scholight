@@ -1,11 +1,11 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { ComponentType } from "react";
 
-import { accountApi, accessKeyApi, historyApi, usageApi } from "../api/domain";
+import { accountApi, accessKeyApi, adminApi, historyApi, usageApi } from "../api/domain";
 import { productConfig } from "../config/product";
 import { queryKeys } from "./queryKeys";
 import { PRIVATE_STALE_TIME } from "./queryClient";
-import { routes, type AccountDestination } from "./routes";
+import { routes, visibleAccountRoutes, type AccountDestination } from "./routes";
 
 type RouteModule = { default: ComponentType };
 
@@ -18,10 +18,13 @@ export const privateRouteLoaders: Record<AccountDestination, () => Promise<Route
     import("../pages/HistoryPage").then((module) => ({ default: module.HistoryPage })),
   [routes.account.path]: () =>
     import("../pages/AccountPage").then((module) => ({ default: module.AccountPage })),
+  [routes.quotaAdmin.path]: () =>
+    import("../pages/QuotaAdminPage").then((module) => ({ default: module.QuotaAdminPage })),
 };
 
-export function preloadPrivateRoutes(): void {
-  Object.values(privateRouteLoaders).forEach((loader) => {
+export function preloadPrivateRoutes(canManageQuotas = false): void {
+  visibleAccountRoutes(canManageQuotas).forEach((route) => {
+    const loader = privateRouteLoaders[route.path];
     void loader().catch(() => undefined);
   });
 }
@@ -72,6 +75,14 @@ export async function prefetchPrivateDestination(
       ...common,
       queryKey: queryKeys.history("", 1),
       queryFn: () => historyApi.list(productConfig.history.pageSize, 0),
+    });
+    return;
+  }
+  if (destination === routes.quotaAdmin.path) {
+    await queryClient.prefetchQuery({
+      ...common,
+      queryKey: queryKeys.adminAudit,
+      queryFn: () => adminApi.auditEvents(20),
     });
     return;
   }

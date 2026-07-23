@@ -1,7 +1,7 @@
 import { QueryClient } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { accountApi, accessKeyApi, historyApi, usageApi } from "../api/domain";
+import { accountApi, accessKeyApi, adminApi, historyApi, usageApi } from "../api/domain";
 import { prefetchPrivateDestination } from "./privateRoutes";
 
 vi.mock("../api/domain", () => ({
@@ -14,6 +14,7 @@ vi.mock("../api/domain", () => ({
     latency: vi.fn(),
     records: vi.fn(),
   },
+  adminApi: { auditEvents: vi.fn() },
 }));
 
 describe("private destination prefetch", () => {
@@ -29,6 +30,7 @@ describe("private destination prefetch", () => {
     vi.mocked(historyApi.list).mockResolvedValue({ items: [], total: 0 } as never);
     vi.mocked(accountApi.profile).mockResolvedValue({} as never);
     vi.mocked(accountApi.sessions).mockResolvedValue([]);
+    vi.mocked(adminApi.auditEvents).mockResolvedValue([]);
   });
 
   it("warms every independent usage section", async () => {
@@ -51,5 +53,11 @@ describe("private destination prefetch", () => {
     await prefetchPrivateDestination("/history", client);
 
     expect(historyApi.list).toHaveBeenCalledWith(10, 0);
+  });
+
+  it("prefetches the administration audit ledger", async () => {
+    await prefetchPrivateDestination("/admin/quotas", client);
+
+    expect(adminApi.auditEvents).toHaveBeenCalledWith(20);
   });
 });

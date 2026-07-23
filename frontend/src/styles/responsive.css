@@ -347,6 +347,50 @@
   .passwordForm > button {
     grid-column: 1;
   }
+  .adminLookup {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+  .adminLookup form {
+    grid-template-columns: 1fr;
+  }
+  .adminLookup .primaryButton {
+    width: 100%;
+  }
+  .adminQuotaHeader {
+    display: none;
+  }
+  .adminQuotaRow {
+    padding: 20px 0;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px 20px;
+  }
+  .adminQuotaRow > strong,
+  .adminQuotaRow label {
+    grid-column: 1 / -1;
+  }
+  .adminQuotaRow > span::before {
+    display: block;
+    margin-bottom: 3px;
+    color: var(--muted-soft);
+    content: attr(data-label);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .adminQuotaActions {
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+  .adminQuotaActions .secondaryButton,
+  .adminQuotaActions .primaryButton {
+    width: 100%;
+  }
+  .adminAuditRow {
+    grid-template-columns: 1fr;
+    gap: 7px;
+  }
 }
 
 @media (min-width: 768px) and (max-width: 1199px) {

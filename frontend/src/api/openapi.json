@@ -102,6 +102,179 @@
         "title": "AccessTokenResponse",
         "type": "object"
       },
+      "AdminAuditEventResponse": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "actor_identifier": {
+            "title": "Actor Identifier",
+            "type": "string"
+          },
+          "actor_type": {
+            "title": "Actor Type",
+            "type": "string"
+          },
+          "after_state": {
+            "additionalProperties": true,
+            "title": "After State",
+            "type": "object"
+          },
+          "before_state": {
+            "additionalProperties": true,
+            "title": "Before State",
+            "type": "object"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "event_id": {
+            "format": "uuid",
+            "title": "Event Id",
+            "type": "string"
+          },
+          "target_email": {
+            "format": "email",
+            "title": "Target Email",
+            "type": "string"
+          },
+          "target_user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target User Id"
+          }
+        },
+        "required": [
+          "event_id",
+          "actor_type",
+          "actor_identifier",
+          "target_user_id",
+          "target_email",
+          "action",
+          "before_state",
+          "after_state",
+          "created_at"
+        ],
+        "title": "AdminAuditEventResponse",
+        "type": "object"
+      },
+      "AdminCapabilitiesResponse": {
+        "properties": {
+          "can_manage_quotas": {
+            "title": "Can Manage Quotas",
+            "type": "boolean"
+          }
+        },
+        "required": ["can_manage_quotas"],
+        "title": "AdminCapabilitiesResponse",
+        "type": "object"
+      },
+      "AdminQuotaResponse": {
+        "properties": {
+          "default_limit": {
+            "minimum": 0.0,
+            "title": "Default Limit",
+            "type": "integer"
+          },
+          "effective_limit": {
+            "minimum": 0.0,
+            "title": "Effective Limit",
+            "type": "integer"
+          },
+          "override_limit": {
+            "anyOf": [
+              {
+                "maximum": 1000000.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Override Limit"
+          },
+          "remaining": {
+            "minimum": 0.0,
+            "title": "Remaining",
+            "type": "integer"
+          },
+          "used": {
+            "minimum": 0.0,
+            "title": "Used",
+            "type": "integer"
+          }
+        },
+        "required": ["default_limit", "override_limit", "effective_limit", "used", "remaining"],
+        "title": "AdminQuotaResponse",
+        "type": "object"
+      },
+      "AdminQuotasResponse": {
+        "properties": {
+          "standard": {
+            "$ref": "#/components/schemas/AdminQuotaResponse"
+          },
+          "thorough": {
+            "$ref": "#/components/schemas/AdminQuotaResponse"
+          }
+        },
+        "required": ["standard", "thorough"],
+        "title": "AdminQuotasResponse",
+        "type": "object"
+      },
+      "AdminUserLookupResponse": {
+        "properties": {
+          "quotas": {
+            "$ref": "#/components/schemas/AdminQuotasResponse"
+          },
+          "user": {
+            "$ref": "#/components/schemas/AdminUserResponse"
+          }
+        },
+        "required": ["user", "quotas"],
+        "title": "AdminUserLookupResponse",
+        "type": "object"
+      },
+      "AdminUserResponse": {
+        "properties": {
+          "account_status": {
+            "title": "Account Status",
+            "type": "string"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "email": {
+            "format": "email",
+            "title": "Email",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          }
+        },
+        "required": ["id", "email", "display_name", "account_status"],
+        "title": "AdminUserResponse",
+        "type": "object"
+      },
       "BulkDeleteSearchHistoryRequest": {
         "additionalProperties": false,
         "description": "Strict owner-scoped history IDs, stably deduplicated.",
@@ -780,6 +953,50 @@
         "title": "PublicSearchResponse",
         "type": "object"
       },
+      "QuotaOverrideRequest": {
+        "properties": {
+          "standard": {
+            "anyOf": [
+              {
+                "maximum": 1000000.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Standard"
+          },
+          "thorough": {
+            "anyOf": [
+              {
+                "maximum": 1000000.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thorough"
+          }
+        },
+        "required": ["standard", "thorough"],
+        "title": "QuotaOverrideRequest",
+        "type": "object"
+      },
+      "QuotaOverrideUpdateResponse": {
+        "properties": {
+          "changed": {
+            "title": "Changed",
+            "type": "boolean"
+          }
+        },
+        "required": ["changed"],
+        "title": "QuotaOverrideUpdateResponse",
+        "type": "object"
+      },
       "RegisterRequest": {
         "properties": {
           "display_name": {
@@ -1335,6 +1552,183 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/admin/audit-events": {
+      "get": {
+        "operationId": "audit_events_admin_audit_events_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AdminAuditEventResponse"
+                  },
+                  "title": "Response Audit Events Admin Audit Events Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Audit Events",
+        "tags": ["admin"]
+      }
+    },
+    "/admin/capabilities": {
+      "get": {
+        "operationId": "capabilities_admin_capabilities_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminCapabilitiesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Capabilities",
+        "tags": ["admin"]
+      }
+    },
+    "/admin/users/lookup": {
+      "get": {
+        "operationId": "lookup_user_admin_users_lookup_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "email",
+            "required": true,
+            "schema": {
+              "format": "email",
+              "title": "Email",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUserLookupResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Lookup User",
+        "tags": ["admin"]
+      }
+    },
+    "/admin/users/{user_id}/quota-overrides": {
+      "put": {
+        "operationId": "update_quota_overrides_admin_users__user_id__quota_overrides_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuotaOverrideRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuotaOverrideUpdateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Update Quota Overrides",
+        "tags": ["admin"]
+      }
+    },
     "/auth/change-password": {
       "post": {
         "operationId": "change_password_auth_change_password_post",

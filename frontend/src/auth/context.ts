@@ -7,6 +7,7 @@ export type AuthStatus = "checking" | "anonymous" | "authenticated";
 export interface AuthContextValue {
   status: AuthStatus;
   user: UserProfile | null;
+  canManageQuotas: boolean;
   login: (credentials: LoginRequest) => Promise<void>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<UserProfile>;

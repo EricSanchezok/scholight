@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { accountRouteFor, accountRoutes, routes, withQuery } from "./routes";
+import { accountRouteFor, accountRoutes, routes, visibleAccountRoutes, withQuery } from "./routes";
 
 describe("route registry", () => {
   it("keeps every public path unique", () => {
@@ -16,7 +16,13 @@ describe("route registry", () => {
       "accessKeys",
       "history",
       "account",
+      "quotaAdmin",
     ]);
+  });
+
+  it("only exposes quota administration to capable users", () => {
+    expect(visibleAccountRoutes(false).map((route) => route.id)).not.toContain("quotaAdmin");
+    expect(visibleAccountRoutes(true).map((route) => route.id)).toContain("quotaAdmin");
   });
 
   it("resolves an account route from a pathname", () => {

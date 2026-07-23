@@ -17,6 +17,11 @@ import type {
   UsageRecords,
   UsageSummary,
   UsageVolume,
+  AdminCapabilities,
+  AdminUserLookup,
+  AdminAuditEvent,
+  QuotaOverrideRequest,
+  QuotaOverrideUpdate,
 } from "./types";
 import { productConfig } from "../config/product";
 
@@ -173,6 +178,38 @@ export const historyApi = {
     unwrap(
       withAuthRetry(
         () => apiClient.POST("/search/history/bulk-delete", { body: { ids } }),
+        "protected",
+      ),
+    ),
+};
+
+export const adminApi = {
+  capabilities: () =>
+    unwrap<AdminCapabilities>(
+      withAuthRetry(() => apiClient.GET("/admin/capabilities"), "protected"),
+    ),
+  lookupUser: (email: string) =>
+    unwrap<AdminUserLookup>(
+      withAuthRetry(
+        () => apiClient.GET("/admin/users/lookup", { params: { query: { email } } }),
+        "protected",
+      ),
+    ),
+  updateQuotaOverrides: (userId: number, body: QuotaOverrideRequest) =>
+    unwrap<QuotaOverrideUpdate>(
+      withAuthRetry(
+        () =>
+          apiClient.PUT("/admin/users/{user_id}/quota-overrides", {
+            params: { path: { user_id: userId } },
+            body,
+          }),
+        "protected",
+      ),
+    ),
+  auditEvents: (limit = 20) =>
+    unwrap<AdminAuditEvent[]>(
+      withAuthRetry(
+        () => apiClient.GET("/admin/audit-events", { params: { query: { limit } } }),
         "protected",
       ),
     ),

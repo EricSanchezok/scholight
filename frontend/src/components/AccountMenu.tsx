@@ -12,7 +12,7 @@ import signOutIcon from "../assets/icons/menu-sign-out.svg";
 import usageIcon from "../assets/icons/menu-usage.svg";
 import { chevronMotion, popoverMotion } from "../app/motion";
 import { prefetchPrivateDestination, preloadPrivateRoutes } from "../app/privateRoutes";
-import { accountRoutes, type AccountDestination, routes } from "../app/routes";
+import { type AccountDestination, routes, visibleAccountRoutes } from "../app/routes";
 import { useAuth } from "../auth/context";
 import { productConfig } from "../config/product";
 import { avatarInitials } from "../lib/format";
@@ -22,7 +22,7 @@ import { ChevronDownIcon } from "./icons";
 
 export function AccountMenu() {
   const { messages } = useI18n();
-  const { user, logout } = useAuth();
+  const { user, canManageQuotas, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
@@ -35,6 +35,7 @@ export function AccountMenu() {
     [routes.accessKeys.path]: { label: messages.navigation.accessKeys, icon: accessKeysIcon },
     [routes.history.path]: { label: messages.navigation.history, icon: historyIcon },
     [routes.account.path]: { label: messages.navigation.account, icon: accountIcon },
+    [routes.quotaAdmin.path]: { label: messages.navigation.quotaAdmin, icon: usageIcon },
   };
   const clearIntent = () => window.clearTimeout(intentTimer.current);
   const warmDestination = (destination: AccountDestination, immediate = false) => {
@@ -50,7 +51,7 @@ export function AccountMenu() {
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
-        if (next) preloadPrivateRoutes();
+        if (next) preloadPrivateRoutes(canManageQuotas);
         else clearIntent();
       }}
     >
@@ -74,7 +75,7 @@ export function AccountMenu() {
                   <span>{user.email}</span>
                 </div>
                 <DropdownMenu.Separator className={styles.menuSeparator} />
-                {accountRoutes.map((destination) => {
+                {visibleAccountRoutes(canManageQuotas).map((destination) => {
                   const details = destinationDetails[destination.path];
                   return (
                     <DropdownMenu.Item asChild className={styles.menuItem} key={destination.path}>

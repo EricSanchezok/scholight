@@ -4,6 +4,74 @@
  */
 
 export interface paths {
+  "/admin/audit-events": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Audit Events */
+    get: operations["audit_events_admin_audit_events_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/admin/capabilities": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Capabilities */
+    get: operations["capabilities_admin_capabilities_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/admin/users/lookup": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Lookup User */
+    get: operations["lookup_user_admin_users_lookup_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/admin/users/{user_id}/quota-overrides": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /** Update Quota Overrides */
+    put: operations["update_quota_overrides_admin_users__user_id__quota_overrides_put"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/auth/change-password": {
     parameters: {
       query?: never;
@@ -511,6 +579,82 @@ export interface components {
        */
       token_type: string;
     };
+    /** AdminAuditEventResponse */
+    AdminAuditEventResponse: {
+      /** Action */
+      action: string;
+      /** Actor Identifier */
+      actor_identifier: string;
+      /** Actor Type */
+      actor_type: string;
+      /** After State */
+      after_state: {
+        [key: string]: unknown;
+      };
+      /** Before State */
+      before_state: {
+        [key: string]: unknown;
+      };
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /**
+       * Event Id
+       * Format: uuid
+       */
+      event_id: string;
+      /**
+       * Target Email
+       * Format: email
+       */
+      target_email: string;
+      /** Target User Id */
+      target_user_id: number | null;
+    };
+    /** AdminCapabilitiesResponse */
+    AdminCapabilitiesResponse: {
+      /** Can Manage Quotas */
+      can_manage_quotas: boolean;
+    };
+    /** AdminQuotaResponse */
+    AdminQuotaResponse: {
+      /** Default Limit */
+      default_limit: number;
+      /** Effective Limit */
+      effective_limit: number;
+      /** Override Limit */
+      override_limit: number | null;
+      /** Remaining */
+      remaining: number;
+      /** Used */
+      used: number;
+    };
+    /** AdminQuotasResponse */
+    AdminQuotasResponse: {
+      standard: components["schemas"]["AdminQuotaResponse"];
+      thorough: components["schemas"]["AdminQuotaResponse"];
+    };
+    /** AdminUserLookupResponse */
+    AdminUserLookupResponse: {
+      quotas: components["schemas"]["AdminQuotasResponse"];
+      user: components["schemas"]["AdminUserResponse"];
+    };
+    /** AdminUserResponse */
+    AdminUserResponse: {
+      /** Account Status */
+      account_status: string;
+      /** Display Name */
+      display_name: string | null;
+      /**
+       * Email
+       * Format: email
+       */
+      email: string;
+      /** Id */
+      id: number;
+    };
     /**
      * BulkDeleteSearchHistoryRequest
      * @description Strict owner-scoped history IDs, stably deduplicated.
@@ -810,6 +954,18 @@ export interface components {
       result_count: number;
       strength: components["schemas"]["SearchStrength"];
     };
+    /** QuotaOverrideRequest */
+    QuotaOverrideRequest: {
+      /** Standard */
+      standard: number | null;
+      /** Thorough */
+      thorough: number | null;
+    };
+    /** QuotaOverrideUpdateResponse */
+    QuotaOverrideUpdateResponse: {
+      /** Changed */
+      changed: boolean;
+    };
     /** RegisterRequest */
     RegisterRequest: {
       /** Display Name */
@@ -1044,6 +1200,123 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+  audit_events_admin_audit_events_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AdminAuditEventResponse"][];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  capabilities_admin_capabilities_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AdminCapabilitiesResponse"];
+        };
+      };
+    };
+  };
+  lookup_user_admin_users_lookup_get: {
+    parameters: {
+      query: {
+        email: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AdminUserLookupResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  update_quota_overrides_admin_users__user_id__quota_overrides_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        user_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["QuotaOverrideRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["QuotaOverrideUpdateResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
   change_password_auth_change_password_post: {
     parameters: {
       query?: never;

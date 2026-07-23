@@ -17,4 +17,5 @@ export const queryKeys = {
   usageLatency: [...privateRoot, "usage", "latency", productConfig.usage.rangeDays] as const,
   usageRecords: [...privateRoot, "usage", "records"] as const,
   sessions: [...privateRoot, "sessions"] as const,
+  adminAudit: [...privateRoot, "admin", "audit"] as const,
 };

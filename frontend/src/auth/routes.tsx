@@ -21,3 +21,8 @@ export function AnonymousOnlyRoute() {
   if (status === "checking") return <LoadingScreen />;
   return status === "authenticated" ? <Navigate to={routes.home.path} replace /> : <Outlet />;
 }
+
+export function QuotaAdminRoute() {
+  const { canManageQuotas } = useAuth();
+  return canManageQuotas ? <Outlet /> : <Navigate to={routes.account.path} replace />;
+}

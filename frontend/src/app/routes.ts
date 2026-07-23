@@ -12,14 +12,16 @@ export const routes = {
   accessKeys: { path: "/access-keys", segment: "access-keys" },
   history: { path: "/history", segment: "history" },
   account: { path: "/account", segment: "account" },
+  quotaAdmin: { path: "/admin/quotas", segment: "admin/quotas" },
   notFound: { path: "*", segment: "*" },
 } as const;
 
 export const accountRoutes = [
-  { id: "usage", ...routes.usage },
-  { id: "accessKeys", ...routes.accessKeys },
-  { id: "history", ...routes.history },
-  { id: "account", ...routes.account },
+  { id: "usage", adminOnly: false, ...routes.usage },
+  { id: "accessKeys", adminOnly: false, ...routes.accessKeys },
+  { id: "history", adminOnly: false, ...routes.history },
+  { id: "account", adminOnly: false, ...routes.account },
+  { id: "quotaAdmin", adminOnly: true, ...routes.quotaAdmin },
 ] as const;
 
 export type AccountRoute = (typeof accountRoutes)[number];
@@ -28,6 +30,10 @@ export type AccountDestination = AccountRoute["path"];
 
 export function accountRouteFor(pathname: string): AccountRoute | undefined {
   return accountRoutes.find((route) => route.path === pathname);
+}
+
+export function visibleAccountRoutes(canManageQuotas: boolean): readonly AccountRoute[] {
+  return accountRoutes.filter((route) => !route.adminOnly || canManageQuotas);
 }
 
 export function withQuery(

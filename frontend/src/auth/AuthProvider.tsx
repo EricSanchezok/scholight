@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { accountApi, authApi } from "../api/domain";
+import { accountApi, adminApi, authApi } from "../api/domain";
 import type { LoginRequest, UserProfile } from "../api/types";
 import { queryKeys } from "../app/queryKeys";
 import { AuthContext, type AuthStatus } from "./context";
@@ -16,9 +16,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<AuthStatus>("checking");
   const [user, setUser] = useState<UserProfile | null>(null);
+  const [canManageQuotas, setCanManageQuotas] = useState(false);
   const loadProfile = useCallback(async () => {
     const profile = await accountApi.profile();
+    const capabilities = await adminApi.capabilities().catch(() => ({ can_manage_quotas: false }));
     setUser(profile);
+    setCanManageQuotas(capabilities.can_manage_quotas);
     setStatus("authenticated");
     return profile;
   }, []);
@@ -29,14 +32,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         await refreshAccessToken();
         const profile = await accountApi.profile();
+        const capabilities = await adminApi
+          .capabilities()
+          .catch(() => ({ can_manage_quotas: false }));
         if (active) {
           setUser(profile);
+          setCanManageQuotas(capabilities.can_manage_quotas);
           setStatus("authenticated");
         }
       } catch {
         if (active) {
           clearSession(false);
           setUser(null);
+          setCanManageQuotas(false);
           setStatus("anonymous");
         }
       }
@@ -50,6 +58,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .catch(() => {
           clearSession(false);
           setUser(null);
+          setCanManageQuotas(false);
           setStatus("anonymous");
           queryClient.removeQueries({ queryKey: queryKeys.privateRoot });
         });
@@ -78,14 +87,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       clearSession();
       setUser(null);
+      setCanManageQuotas(false);
       setStatus("anonymous");
       queryClient.removeQueries({ queryKey: queryKeys.privateRoot });
     }
   }, [queryClient]);
 
   const value = useMemo(
-    () => ({ status, user, login, logout, refreshProfile: loadProfile }),
-    [status, user, login, logout, loadProfile],
+    () => ({ status, user, canManageQuotas, login, logout, refreshProfile: loadProfile }),
+    [status, user, canManageQuotas, login, logout, loadProfile],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

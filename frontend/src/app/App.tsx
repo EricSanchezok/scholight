@@ -3,7 +3,7 @@ import { lazy } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 
 import { AuthProvider } from "../auth/AuthProvider";
-import { AnonymousOnlyRoute, ProtectedRoute } from "../auth/routes";
+import { AnonymousOnlyRoute, ProtectedRoute, QuotaAdminRoute } from "../auth/routes";
 import { SiteHeader } from "../components/SiteHeader";
 import {
   CheckEmailPage,
@@ -27,6 +27,7 @@ const UsagePage = lazy(privateRouteLoaders[routes.usage.path]);
 const AccessKeysPage = lazy(privateRouteLoaders[routes.accessKeys.path]);
 const HistoryPage = lazy(privateRouteLoaders[routes.history.path]);
 const AccountPage = lazy(privateRouteLoaders[routes.account.path]);
+const QuotaAdminPage = lazy(privateRouteLoaders[routes.quotaAdmin.path]);
 
 function SiteLayout() {
   return (
@@ -53,6 +54,9 @@ export function App() {
                   <Route path={routes.usage.segment} element={<UsagePage />} />
                   <Route path={routes.accessKeys.segment} element={<AccessKeysPage />} />
                   <Route path={routes.account.segment} element={<AccountPage />} />
+                  <Route element={<QuotaAdminRoute />}>
+                    <Route path={routes.quotaAdmin.segment} element={<QuotaAdminPage />} />
+                  </Route>
                 </Route>
                 <Route path={routes.notFound.segment} element={<NotFoundPage />} />
               </Route>

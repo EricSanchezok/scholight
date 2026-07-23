@@ -106,4 +106,22 @@ describe("typed API client", () => {
     expect(blob.type).toBe("text/csv;charset=utf-8");
     expect(blob.size).toBeGreaterThan(0);
   });
+
+  it("sends both quota override fields through the protected admin endpoint", async () => {
+    const { establishSession } = await import("../auth/session");
+    establishSession({ access_token: "admin-access", token_type: "bearer" }, false);
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ changed: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const { adminApi } = await import("./domain");
+    await adminApi.updateQuotaOverrides(7, { standard: 5000, thorough: null });
+    const request = fetchMock.mock.calls[0]?.[0] as Request;
+    expect(request.url).toContain("/api/admin/users/7/quota-overrides");
+    expect(await request.clone().json()).toEqual({ standard: 5000, thorough: null });
+    expect(request.headers.get("Authorization")).toBe("Bearer admin-access");
+  });
 });
