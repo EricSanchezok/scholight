@@ -14,8 +14,10 @@ from scholight.db.client import DBError
 from scholight.db.queries_anonymous_quota import (
     AnonymousQuotaReservation,
     decrement_anonymous_daily_quota,
+    get_anonymous_quota_status,
     reserve_anonymous_daily_quota,
 )
+from scholight.models.quota import QuotaStatus
 
 
 class _Acquire(AbstractAsyncContextManager[MagicMock]):
@@ -85,6 +87,36 @@ async def test_reserve_returns_none_when_daily_limit_is_exhausted() -> None:
         )
 
     assert reservation is None
+
+
+@pytest.mark.asyncio
+async def test_status_returns_exact_daily_usage() -> None:
+    connection = MagicMock()
+    connection.fetchrow = AsyncMock(
+        return_value={
+            "strength": "thorough",
+            "daily_limit": 30,
+            "used": 30,
+            "remaining": 0,
+        }
+    )
+
+    with patch(
+        "scholight.db.queries_anonymous_quota.get_pool",
+        return_value=_pool_with(connection),
+    ):
+        status = await get_anonymous_quota_status(
+            b"d" * 32,
+            strength="thorough",
+            limit=30,
+        )
+
+    assert status == QuotaStatus(
+        strength="thorough",
+        daily_limit=30,
+        used=30,
+        remaining=0,
+    )
 
 
 @pytest.mark.asyncio

@@ -24,6 +24,7 @@ from scholight.api.search_mapper import map_search_response
 from scholight.api.usage_tasks import schedule_usage_event
 from scholight.config import settings
 from scholight.db.queries_usage import UsageEvent
+from scholight.models.quota import QuotaErrorDetails
 from scholight.models.search import SearchResult
 from scholight.search.errors import SearchUnavailable, ThoroughSearchUnavailable
 from scholight.store.ingest import StoreError
@@ -65,6 +66,7 @@ class PublicSearchError(Exception):
         retryable: bool,
         retry_after: int | None = None,
         structured_http_detail: bool = True,
+        quota: QuotaErrorDetails | dict[str, object] | None = None,
     ) -> None:
         super().__init__(message)
         self.status_code = status_code
@@ -73,12 +75,20 @@ class PublicSearchError(Exception):
         self.retryable = retryable
         self.retry_after = retry_after
         self.structured_http_detail = structured_http_detail
+        self.quota = QuotaErrorDetails.model_validate(quota) if quota is not None else None
 
     @property
     def http_detail(self) -> str | dict[str, object]:
         if not self.structured_http_detail:
             return self.message
-        return {"code": self.code, "message": self.message, "retryable": self.retryable}
+        detail: dict[str, object] = {
+            "code": self.code,
+            "message": self.message,
+            "retryable": self.retryable,
+        }
+        if self.quota is not None:
+            detail["quota"] = self.quota.model_dump(mode="json")
+        return detail
 
 
 def _schedule_usage(
@@ -153,6 +163,7 @@ def _execution_error(
     retryable: bool,
     retry_after: int | None = None,
     structured_http_detail: bool = True,
+    quota: QuotaErrorDetails | None = None,
 ) -> PublicSearchError:
     return PublicSearchError(
         status_code=status_code,
@@ -161,6 +172,7 @@ def _execution_error(
         retryable=retryable,
         retry_after=retry_after,
         structured_http_detail=structured_http_detail,
+        quota=quota,
     )
 
 
@@ -186,6 +198,7 @@ async def execute_public_search(
             message=exc.message,
             retryable=True,
             retry_after=exc.retry_after,
+            quota=exc.quota,
         ) from exc
 
     t_start = time.perf_counter()

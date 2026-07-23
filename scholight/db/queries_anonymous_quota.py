@@ -10,7 +10,7 @@ import asyncpg
 import structlog
 
 from scholight.db.client import DBError, get_pool
-from scholight.models.quota import SearchStrengthValue
+from scholight.models.quota import QuotaStatus, SearchStrengthValue
 
 logger = structlog.get_logger(__name__)
 
@@ -50,6 +50,19 @@ WHERE quota_date = $1
   AND strength = $3
   AND used_count > 0
 RETURNING used_count
+"""
+
+_STATUS_SQL = """
+SELECT
+    $2::text AS strength,
+    $3::integer AS daily_limit,
+    COALESCE(usage.used_count, 0) AS used,
+    GREATEST($3::integer - COALESCE(usage.used_count, 0), 0) AS remaining
+FROM (SELECT 1) AS singleton
+LEFT JOIN scholight.anonymous_daily_search_usage AS usage
+    ON usage.ip_digest = $1::bytea
+    AND usage.strength = $2::text
+    AND usage.quota_date = (statement_timestamp() AT TIME ZONE 'UTC')::date
 """
 
 
@@ -119,8 +132,31 @@ async def decrement_anonymous_daily_quota(reservation: AnonymousQuotaReservation
     return used_count is not None
 
 
+async def get_anonymous_quota_status(
+    ip_digest: bytes,
+    *,
+    strength: str,
+    limit: int,
+) -> QuotaStatus:
+    """Return the exact UTC-day quota status for one anonymous identity."""
+    normalized_strength = _validate_reservation_input(ip_digest, strength, limit)
+    try:
+        async with get_pool().acquire() as connection:
+            row = await connection.fetchrow(
+                _STATUS_SQL,
+                ip_digest,
+                normalized_strength,
+                limit,
+            )
+    except asyncpg.PostgresError as exc:
+        logger.error("anonymous_quota_status_failed", error_type=type(exc).__name__)
+        raise DBError("Failed to read anonymous search quota") from exc
+    return QuotaStatus.model_validate(dict(row))
+
+
 __all__ = [
     "AnonymousQuotaReservation",
     "decrement_anonymous_daily_quota",
+    "get_anonymous_quota_status",
     "reserve_anonymous_daily_quota",
 ]

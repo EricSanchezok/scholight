@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import asyncpg
@@ -14,10 +14,11 @@ from scholight.api.search_access import (
     compensate_search_quota,
     reserve_search_quota,
 )
+from scholight.api.search_execution import PublicSearchError
 from scholight.config import settings
 from scholight.db import client as db_client
 from scholight.db.queries_anonymous_quota import AnonymousQuotaReservation
-from scholight.models.quota import UserQuotaReservation
+from scholight.models.quota import QuotaErrorDetails, QuotaStatus, UserQuotaReservation
 
 
 def _user() -> UserRecord:
@@ -66,18 +67,114 @@ async def test_anonymous_search_routes_to_strength_bucket(strength: str, limit: 
 
 @pytest.mark.asyncio
 async def test_anonymous_daily_limit_returns_stable_429() -> None:
-    with patch(
-        "scholight.api.search_access.reserve_anonymous_daily_quota",
-        new_callable=AsyncMock,
-        return_value=None,
+    status = QuotaStatus(
+        strength="standard",
+        daily_limit=100,
+        used=100,
+        remaining=0,
+    )
+    with (
+        patch(
+            "scholight.api.search_access.reserve_anonymous_daily_quota",
+            new_callable=AsyncMock,
+            return_value=None,
+        ),
+        patch(
+            "scholight.api.search_access.get_anonymous_quota_status",
+            new_callable=AsyncMock,
+            create=True,
+            return_value=status,
+        ),
+        patch(
+            "scholight.api.search_access._utc_now",
+            return_value=datetime(2026, 7, 23, 12, tzinfo=UTC),
+        ),
     ):
         with pytest.raises(SearchAccessError) as exc_info:
             await reserve_search_quota("192.0.2.20", None, strength="standard")
 
-    assert exc_info.value.status_code == 429
-    assert exc_info.value.code == "anonymous_daily_limit_exceeded"
-    assert exc_info.value.message == "Anonymous daily search limit exceeded."
-    assert exc_info.value.retry_after > 0
+    assert exc_info.value.quota == QuotaErrorDetails(
+        scope="anonymous_ip",
+        strength="standard",
+        window="day",
+        limit=100,
+        used=100,
+        remaining=0,
+        reset_at=datetime(2026, 7, 24, tzinfo=UTC),
+    )
+
+
+@pytest.mark.asyncio
+async def test_authenticated_daily_limit_reports_effective_override() -> None:
+    status = QuotaStatus(
+        strength="thorough",
+        daily_limit=17,
+        used=17,
+        remaining=0,
+    )
+    with (
+        patch(
+            "scholight.api.search_access.reserve_user_quota",
+            new_callable=AsyncMock,
+            return_value=None,
+        ),
+        patch(
+            "scholight.api.search_access.get_user_quota_status",
+            new_callable=AsyncMock,
+            create=True,
+            return_value=[status],
+        ),
+        patch(
+            "scholight.api.search_access._utc_now",
+            return_value=datetime(2026, 7, 23, 12, tzinfo=UTC),
+        ),
+    ):
+        with pytest.raises(SearchAccessError) as exc_info:
+            await reserve_search_quota(None, _user(), strength="thorough")
+
+    assert exc_info.value.quota == QuotaErrorDetails(
+        scope="user",
+        strength="thorough",
+        window="day",
+        limit=17,
+        used=17,
+        remaining=0,
+        reset_at=datetime(2026, 7, 24, tzinfo=UTC),
+    )
+
+
+def test_public_search_error_exposes_quota_context_to_http_clients() -> None:
+    error = PublicSearchError(
+        status_code=429,
+        code="user_daily_quota_exceeded",
+        message="Daily search quota exceeded.",
+        retryable=True,
+        retry_after=60,
+        quota={
+            "scope": "user",
+            "strength": "standard",
+            "window": "day",
+            "limit": 1000,
+            "used": 1000,
+            "remaining": 0,
+            "reset_at": "2026-07-24T00:00:00Z",
+        },
+    )
+
+    assert error.http_detail == {
+        "code": "user_daily_quota_exceeded",
+        "message": "Daily search quota exceeded.",
+        "retryable": True,
+        "quota": {
+            "scope": "user",
+            "strength": "standard",
+            "window": "day",
+            "limit": 1000,
+            "used": 1000,
+            "remaining": 0,
+            "reset_at": "2026-07-24T00:00:00Z",
+        },
+    }
 
 
 @pytest.mark.asyncio

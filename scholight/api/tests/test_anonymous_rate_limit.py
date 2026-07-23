@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -36,6 +36,8 @@ async def test_only_real_anonymous_searches_consume_minute_attempts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(settings, "anonymous_rate_limit_per_minute", 2)
+    now = datetime(2026, 7, 23, 12, tzinfo=UTC)
+    monkeypatch.setattr("scholight.api.search_access._utc_now", lambda: now)
     transport = httpx.ASGITransport(app=api_app, client=("192.0.2.11", 12345))
     result = SearchResult(query="retrieval", level=1, total_ms=1.0, hits=[])
     with (
@@ -58,14 +60,25 @@ async def test_only_real_anonymous_searches_consume_minute_attempts(
     assert [response.status_code for response in invalid] == [422] * 3
     assert [response.status_code for response in allowed] == [200, 200]
     assert limited.status_code == 429
+    retry_after = int(limited.headers["retry-after"])
+    reset_at = (now + timedelta(seconds=retry_after)).isoformat().replace("+00:00", "Z")
     assert limited.json() == {
         "detail": {
             "code": "anonymous_rate_limit_exceeded",
             "message": "Anonymous search rate limit exceeded.",
             "retryable": True,
+            "quota": {
+                "scope": "anonymous_ip",
+                "strength": "standard",
+                "window": "minute",
+                "limit": 2,
+                "used": 2,
+                "remaining": 0,
+                "reset_at": reset_at,
+            },
         }
     }
-    assert int(limited.headers["retry-after"]) >= 1
+    assert retry_after >= 1
     assert "x-request-id" in limited.headers
 
 

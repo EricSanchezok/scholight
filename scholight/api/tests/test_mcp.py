@@ -293,6 +293,75 @@ async def test_search_failures_become_mcp_tool_errors(
     assert result["structuredContent"]["error"]["code"] == code
 
 
+async def test_quota_failure_gives_agents_machine_and_human_context(
+    mcp_client: httpx.AsyncClient,
+) -> None:
+    with patch(
+        "scholight.api.mcp_server.execute_public_search",
+        new_callable=AsyncMock,
+        side_effect=PublicSearchError(
+            status_code=429,
+            code="user_daily_quota_exceeded",
+            message="Daily search quota exceeded.",
+            retryable=True,
+            retry_after=3600,
+            quota={
+                "scope": "user",
+                "strength": "standard",
+                "window": "day",
+                "limit": 1000,
+                "used": 1000,
+                "remaining": 0,
+                "reset_at": "2026-07-24T00:00:00Z",
+            },
+        ),
+    ):
+        called = await mcp_client.post(
+            "/mcp",
+            headers=_MCP_HEADERS,
+            json=_request(
+                "tools/call",
+                request_id=17,
+                params={
+                    "name": "search_papers",
+                    "arguments": {"query": "retrieval", "strength": "standard"},
+                },
+            ),
+        )
+
+    error = called.json()["result"]
+    assert error == {
+        "content": [
+            {
+                "type": "text",
+                "text": (
+                    "user_daily_quota_exceeded: Daily search quota exceeded. "
+                    "Standard daily quota exhausted (1000/1000 used); "
+                    "resets at 2026-07-24T00:00:00Z."
+                ),
+            }
+        ],
+        "structuredContent": {
+            "error": {
+                "code": "user_daily_quota_exceeded",
+                "message": "Daily search quota exceeded.",
+                "retryable": True,
+                "retry_after": 3600,
+                "quota": {
+                    "scope": "user",
+                    "strength": "standard",
+                    "window": "day",
+                    "limit": 1000,
+                    "used": 1000,
+                    "remaining": 0,
+                    "reset_at": "2026-07-24T00:00:00Z",
+                },
+            }
+        },
+        "isError": True,
+    }
+
+
 async def test_invalid_tool_input_does_not_execute_search(mcp_client: httpx.AsyncClient) -> None:
     with patch("scholight.api.mcp_server.execute_public_search", new_callable=AsyncMock) as execute:
         called = await mcp_client.post(

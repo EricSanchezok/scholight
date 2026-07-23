@@ -18,10 +18,21 @@ from scholight.db.client import DBError
 from scholight.db.queries_anonymous_quota import (
     AnonymousQuotaReservation,
     decrement_anonymous_daily_quota,
+    get_anonymous_quota_status,
     reserve_anonymous_daily_quota,
 )
-from scholight.db.queries_quota import decrement_user_quota, reserve_user_quota
-from scholight.models.quota import SearchStrengthValue, UserQuotaReservation
+from scholight.db.queries_quota import (
+    decrement_user_quota,
+    get_user_quota_status,
+    reserve_user_quota,
+)
+from scholight.models.quota import (
+    QuotaErrorDetails,
+    QuotaScope,
+    QuotaStatus,
+    SearchStrengthValue,
+    UserQuotaReservation,
+)
 
 logger = structlog.get_logger(__name__)
 _HMAC_CONTEXT = b"scholight:anonymous-quota:v1\0"
@@ -39,12 +50,14 @@ class SearchAccessError(Exception):
         code: str,
         message: str,
         retry_after: int,
+        quota: QuotaErrorDetails | None = None,
     ) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.code = code
         self.message = message
         self.retry_after = retry_after
+        self.quota = quota
 
 
 def anonymous_ip_digest(ip: str, secret: str) -> bytes:
@@ -64,7 +77,11 @@ def _monotonic() -> float:
     return time.monotonic()
 
 
-def check_anonymous_minute_limit(client_ip: str) -> None:
+def check_anonymous_minute_limit(
+    client_ip: str,
+    *,
+    strength: SearchStrengthValue,
+) -> None:
     """Consume one anonymous search attempt in the current fixed minute window."""
     now = _monotonic()
     window = int(now // _MINUTE_SECONDS)
@@ -74,11 +91,21 @@ def check_anonymous_minute_limit(client_ip: str) -> None:
         used = 0
     if used >= settings.anonymous_rate_limit_per_minute:
         retry_after = max(1, math.ceil(((window + 1) * _MINUTE_SECONDS) - now))
+        reset_at = _utc_now() + timedelta(seconds=retry_after)
         raise SearchAccessError(
             status_code=429,
             code="anonymous_rate_limit_exceeded",
             message="Anonymous search rate limit exceeded.",
             retry_after=retry_after,
+            quota=QuotaErrorDetails(
+                scope="anonymous_ip",
+                strength=strength,
+                window="minute",
+                limit=settings.anonymous_rate_limit_per_minute,
+                used=used,
+                remaining=0,
+                reset_at=reset_at,
+            ),
         )
     _minute_buckets[digest] = (window, used + 1)
     if len(_minute_buckets) > 4096:
@@ -100,13 +127,41 @@ def _seconds_until_next_utc_day(now: datetime | None = None) -> int:
 
 
 def _access_error(
-    *, status_code: int, code: str, message: str, retry_after: int
+    *,
+    status_code: int,
+    code: str,
+    message: str,
+    retry_after: int,
+    quota: QuotaErrorDetails | None = None,
 ) -> SearchAccessError:
     return SearchAccessError(
         status_code=status_code,
         code=code,
         message=message,
         retry_after=retry_after,
+        quota=quota,
+    )
+
+
+def _daily_quota_details(
+    *,
+    scope: QuotaScope,
+    status: QuotaStatus,
+) -> QuotaErrorDetails:
+    current = _utc_now()
+    reset_at = datetime.combine(
+        current.date() + timedelta(days=1),
+        datetime.min.time(),
+        tzinfo=UTC,
+    )
+    return QuotaErrorDetails(
+        scope=scope,
+        strength=status.strength,
+        window="day",
+        limit=status.daily_limit,
+        used=status.used,
+        remaining=status.remaining,
+        reset_at=reset_at,
     )
 
 
@@ -142,6 +197,15 @@ async def reserve_search_quota(
                 strength=normalized_strength,
                 default_limit=default_limit,
             )
+            statuses = (
+                []
+                if user_reservation is not None
+                else await get_user_quota_status(
+                    current_user.id,
+                    standard_default_limit=settings.authenticated_standard_daily_limit,
+                    thorough_default_limit=settings.authenticated_thorough_daily_limit,
+                )
+            )
         except DBError as exc:
             raise _access_error(
                 status_code=503,
@@ -154,11 +218,14 @@ async def reserve_search_quota(
                 strength=normalized_strength,
                 user=user_reservation,
             )
+        status = next(item for item in statuses if item.strength == normalized_strength)
+        quota = _daily_quota_details(scope="user", status=status)
         raise _access_error(
             status_code=429,
             code="user_daily_quota_exceeded",
             message="Daily search quota exceeded.",
             retry_after=_seconds_until_next_utc_day(),
+            quota=quota,
         )
 
     if client_ip is None:
@@ -168,7 +235,7 @@ async def reserve_search_quota(
             message="Search quota service is temporarily unavailable.",
             retry_after=5,
         )
-    check_anonymous_minute_limit(client_ip)
+    check_anonymous_minute_limit(client_ip, strength=normalized_strength)
     digest = anonymous_ip_digest(client_ip, settings.anonymous_quota_hmac_secret)
     limit = (
         settings.anonymous_standard_daily_limit
@@ -181,6 +248,15 @@ async def reserve_search_quota(
             strength=normalized_strength,
             limit=limit,
         )
+        anonymous_status = (
+            None
+            if anonymous is not None
+            else await get_anonymous_quota_status(
+                digest,
+                strength=normalized_strength,
+                limit=limit,
+            )
+        )
     except DBError as exc:
         raise _access_error(
             status_code=503,
@@ -189,11 +265,15 @@ async def reserve_search_quota(
             retry_after=5,
         ) from exc
     if anonymous is None:
+        if anonymous_status is None:
+            raise RuntimeError("anonymous quota status missing after exhausted reservation")
+        quota = _daily_quota_details(scope="anonymous_ip", status=anonymous_status)
         raise _access_error(
             status_code=429,
             code="anonymous_daily_limit_exceeded",
             message="Anonymous daily search limit exceeded.",
             retry_after=_seconds_until_next_utc_day(),
+            quota=quota,
         )
     return SearchQuotaReservation(strength=normalized_strength, anonymous=anonymous)
 

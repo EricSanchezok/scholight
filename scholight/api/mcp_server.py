@@ -187,9 +187,20 @@ def _tool_error(exc: PublicSearchError) -> CallToolResult:
     }
     if exc.retry_after is not None:
         error["retry_after"] = exc.retry_after
+    text = f"{exc.code}: {exc.message}"
+    if exc.quota is not None:
+        quota = exc.quota.model_dump(mode="json")
+        error["quota"] = quota
+        strength = exc.quota.strength.title()
+        window = "daily" if exc.quota.window == "day" else "minute"
+        text = (
+            f"{text} {strength} {window} quota exhausted "
+            f"({exc.quota.used}/{exc.quota.limit} used); "
+            f"resets at {quota['reset_at']}."
+        )
     return CallToolResult(
         isError=True,
-        content=[TextContent(type="text", text=f"{exc.code}: {exc.message}")],
+        content=[TextContent(type="text", text=text)],
         structuredContent={"error": error},
     )
 
