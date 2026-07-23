@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import Mock
+
 import pytest
 from fastapi import FastAPI
 
@@ -72,3 +74,21 @@ def test_browser_auth_contract_uses_cookie_refresh_without_request_body(
         "/AccessTokenResponse"
     )
     assert "requestBody" not in refresh
+
+
+def test_email_sender_uses_scholight_action_urls(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "jwt_secret", "a" * 32)
+    monkeypatch.setattr(settings, "public_web_url", "https://search.example/")
+    monkeypatch.setattr(settings, "aliyun_dm_access_key_id", "key-id")
+    monkeypatch.setattr(settings, "aliyun_dm_access_key_secret", "key-secret")
+    monkeypatch.setattr(settings, "aliyun_dm_account_name", "sender@example.com")
+    factory = Mock(return_value=Mock())
+    monkeypatch.setattr("cloud_auth.email.aliyun.AliyunDirectMailSender", factory)
+
+    create_app()
+
+    assert factory.call_args.kwargs["verification_url"] == ("https://search.example/verify-email")
+    assert factory.call_args.kwargs["password_reset_url"] == (
+        "https://search.example/reset-password"
+    )
+    assert factory.call_args.kwargs["brand"] == "Scholight"

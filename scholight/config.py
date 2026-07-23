@@ -106,6 +106,7 @@ class Settings(BaseSettings):
         return self
 
     # ── Auth ──
+    public_web_url: str = "http://127.0.0.1:5173"
     account_lockout_threshold: int = 5
     account_lockout_duration_minutes: int = 15
 

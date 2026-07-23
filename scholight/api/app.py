@@ -179,7 +179,10 @@ def create_app() -> FastAPI:
             access_key_id=settings.aliyun_dm_access_key_id,
             access_key_secret=settings.aliyun_dm_access_key_secret,
             account_name=settings.aliyun_dm_account_name,
+            verification_url=f"{settings.public_web_url.rstrip('/')}/verify-email",
+            password_reset_url=f"{settings.public_web_url.rstrip('/')}/reset-password",
             from_alias=settings.aliyun_dm_from_alias,
+            brand="Scholight",
             reply_to_address=settings.aliyun_dm_reply_to_address,
         )
 

@@ -61,6 +61,7 @@ uv run scholight search -q "attention mechanism"   # 测试搜索
 | `SCHOLIGHT_EMBEDDING_BASE_URL`                              |   ✅   | Embedding API 端点                                                                  |
 | `SCHOLIGHT_PG_HOST/PORT/DATABASE/USER/PASSWORD`             |   ✅   | PostgreSQL 连接                                                                     |
 | `SCHOLIGHT_AUTH_JWT_SECRET`                                 | API ✅ | 固定 JWT 密钥，API 启动要求至少 32 UTF-8 bytes                                      |
+| `SCHOLIGHT_PUBLIC_WEB_URL`                                  | API ✅ | 邮箱验证和密码重置邮件返回的产品公开地址                                             |
 | `SCHOLIGHT_ANONYMOUS_QUOTA_HMAC_SECRET`                     | API ✅ | 匿名 IP 摘要密钥，至少 32 UTF-8 bytes，独立于 JWT 密钥并跨实例/重启保持一致         |
 | `SCHOLIGHT_ACCESS_KEY_HMAC_SECRET`                          | API ✅ | Access Key HMAC-SHA256 密钥，至少 32 UTF-8 bytes；必须独立生成并跨实例/重启保持一致 |
 | `SCHOLIGHT_ANONYMOUS_RATE_LIMIT_PER_MINUTE`                 |        | 匿名共享分钟桶，默认 30 attempts/IP                                                 |
