@@ -324,6 +324,19 @@
   stroke-width: 1.8;
   stroke-dasharray: 6 6;
 }
+.chartStandardPoint,
+.chartThoroughPoint,
+.chartP95Point {
+  fill: var(--brand);
+  stroke: var(--canvas);
+  stroke-width: 1.5;
+}
+.chartThoroughPoint {
+  fill: var(--ink);
+}
+.chartP95Point {
+  fill: var(--chart-neutral);
+}
 .chartEmpty,
 .ledgerEmpty {
   display: grid;

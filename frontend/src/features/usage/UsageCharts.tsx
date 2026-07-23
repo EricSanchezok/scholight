@@ -146,23 +146,37 @@ export function VolumeChart({ points }: { points: UsageVolumePoint[] }) {
 
 type LatencyKey = "standard_p50_ms" | "thorough_p50_ms" | "overall_p95_ms";
 
-function lineSegments(points: UsageLatencyPoint[], key: LatencyKey, maximum: number): string[] {
+function latencyPosition(
+  length: number,
+  index: number,
+  value: number,
+  maximum: number,
+): { x: number; y: number } {
   const plotWidth = WIDTH - PLOT.left - PLOT.right;
   const plotHeight = HEIGHT - PLOT.top - PLOT.bottom;
+  return {
+    x: PLOT.left + (index / Math.max(length - 1, 1)) * plotWidth,
+    y: PLOT.top + plotHeight - (value / maximum) * plotHeight,
+  };
+}
+
+function lineSegments(points: UsageLatencyPoint[], key: LatencyKey, maximum: number): string[] {
   const segments: string[] = [];
   let current = "";
+  let currentLength = 0;
   points.forEach((point, index) => {
     const value = point[key];
     if (value === null) {
-      if (current) segments.push(current);
+      if (currentLength > 1) segments.push(current);
       current = "";
+      currentLength = 0;
       return;
     }
-    const x = PLOT.left + (index / Math.max(points.length - 1, 1)) * plotWidth;
-    const y = PLOT.top + plotHeight - (value / maximum) * plotHeight;
+    const { x, y } = latencyPosition(points.length, index, value, maximum);
     current += `${current ? " L" : "M"}${x.toFixed(2)} ${y.toFixed(2)}`;
+    currentLength += 1;
   });
-  if (current) segments.push(current);
+  if (currentLength > 1) segments.push(current);
   return segments;
 }
 
@@ -178,10 +192,30 @@ export function LatencyChart({ points }: { points: UsageLatencyPoint[] }) {
   const maximum = niceMaximum(Math.max(1000, ...values));
   const plotHeight = HEIGHT - PLOT.top - PLOT.bottom;
   const labels = tickIndexes(points.length);
-  const series: Array<{ key: LatencyKey; className: string | undefined }> = [
-    { key: "standard_p50_ms", className: styles.chartStandardLine },
-    { key: "thorough_p50_ms", className: styles.chartThoroughLine },
-    { key: "overall_p95_ms", className: styles.chartP95Line },
+  const series: Array<{
+    key: LatencyKey;
+    label: string;
+    lineClassName: string | undefined;
+    pointClassName: string | undefined;
+  }> = [
+    {
+      key: "standard_p50_ms",
+      label: "Standard median",
+      lineClassName: styles.chartStandardLine,
+      pointClassName: styles.chartStandardPoint,
+    },
+    {
+      key: "thorough_p50_ms",
+      label: "Thorough median",
+      lineClassName: styles.chartThoroughLine,
+      pointClassName: styles.chartThoroughPoint,
+    },
+    {
+      key: "overall_p95_ms",
+      label: "P95",
+      lineClassName: styles.chartP95Line,
+      pointClassName: styles.chartP95Point,
+    },
   ];
 
   return (
@@ -237,8 +271,29 @@ export function LatencyChart({ points }: { points: UsageLatencyPoint[] }) {
             })}
             {series.flatMap((item) =>
               lineSegments(points, item.key, maximum).map((path, index) => (
-                <path key={`${item.key}-${index}`} d={path} className={item.className} />
+                <path key={`${item.key}-${index}`} d={path} className={item.lineClassName} />
               )),
+            )}
+            {series.flatMap((item) =>
+              points.flatMap((point, index) => {
+                const value = point[item.key];
+                if (value === null) return [];
+                const { x, y } = latencyPosition(points.length, index, value, maximum);
+                return (
+                  <circle
+                    key={`${item.key}-${point.bucket_start}`}
+                    cx={x}
+                    cy={y}
+                    r="3.25"
+                    className={item.pointClassName}
+                    data-latency-point={item.key}
+                  >
+                    <title>
+                      {item.label}, {dateLabel(point.bucket_start, locale)}: {latencyLabel(value)}
+                    </title>
+                  </circle>
+                );
+              }),
             )}
             {labels.map((index) => {
               const point = points[index];

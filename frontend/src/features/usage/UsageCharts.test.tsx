@@ -38,10 +38,30 @@ describe("usage charts", () => {
       />,
     );
 
-    expect(container.querySelectorAll("path")).toHaveLength(4);
+    expect(container.querySelectorAll("path")).toHaveLength(2);
+    expect(container.querySelectorAll("[data-latency-point]")).toHaveLength(8);
     expect(screen.getByRole("table", { name: "Daily response-time data" })).toBeInTheDocument();
     expect(
       screen.getByRole("img", { name: /Daily response time.*95th percentile/ }),
     ).toBeInTheDocument();
+  });
+
+  it("renders isolated latency samples as visible points without empty line paths", () => {
+    const { container } = render(
+      <LatencyChart
+        points={[
+          {
+            bucket_start: "2026-07-23T00:00:00Z",
+            standard_p50_ms: 11441.1,
+            thorough_p50_ms: 3320.3,
+            overall_p95_ms: 19202.4,
+            sample_count: 4,
+          },
+        ]}
+      />,
+    );
+
+    expect(container.querySelectorAll("path")).toHaveLength(0);
+    expect(container.querySelectorAll("[data-latency-point]")).toHaveLength(3);
   });
 });
