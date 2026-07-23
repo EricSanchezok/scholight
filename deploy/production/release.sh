@@ -110,7 +110,8 @@ package_sha() {
   local inventory=""
   local path
   for path in "${SCRIPT_DIR}/compose.yaml" "${SCRIPT_DIR}/Caddyfile" \
-    "${SCRIPT_DIR}/bootstrap-db.sql" "${SCRIPT_DIR}/release.sh" \
+    "${SCRIPT_DIR}/bootstrap-db.sql" "${SCRIPT_DIR}/bootstrap.sh" \
+    "${SCRIPT_DIR}/release.sh" \
     "${SCRIPT_DIR}/smoke.sh" "${SCRIPT_DIR}/wait-ssm.sh"; do
     [[ -f ${path} && ! -L ${path} ]] || fail "production package file missing: ${path}"
     inventory+="${path##*/}:$(sha256_file "${path}")"$'\n'

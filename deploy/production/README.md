@@ -4,14 +4,15 @@ This package deploys one coordinated Scholight frontend/backend release to a sin
 
 ## Host prerequisites
 
-- Linux host with Docker Engine, Compose v2, AWS CLI, `curl`, and `flock`
-- EC2 instance role with ECR pull permissions
+- Amazon Linux 2023 x86_64 EC2 host with its AMI-provided AWS CLI and SSM Agent
+- EC2 instance role with ECR pull, SSM managed-instance, and the single Parameter Store read permission documented below
 - DNS for `SCHOLIGHT_DOMAIN` pointing to the host
 - inbound TCP 80/443 and outbound access to ECR, ACME, RDS, Zilliz, and the embedding API
-- `/etc/scholight/runtime.env` created from `runtime.env.example`, owned by root (or the dedicated deployment user), mode `0600`; symlinks are rejected
-- this directory installed at `/opt/scholight`
 
-Unknown AWS account, Region, instance, domain, and architecture values are intentionally not committed.
+`bootstrap.sh` installs Docker and the pinned, checksum-verified Compose v2 plugin,
+creates the host directories, installs the deployment package carried inside the
+backend image, and restores a missing runtime file. It does not replace an
+existing `/etc/scholight/runtime.env`.
 
 ## One-time AWS and GitHub setup
 
@@ -27,7 +28,7 @@ Configure GitHub OIDC roles instead of static AWS access keys. Repository or env
 - `AWS_DEPLOY_ROLE_ARN`
 - `ECR_BACKEND_REPOSITORY`
 - `ECR_FRONTEND_REPOSITORY`
-- `PRODUCTION_PLATFORM` (`linux/amd64` or `linux/arm64`)
+- `PRODUCTION_PLATFORM` (`linux/amd64`)
 - `PRODUCTION_INSTANCE_ID`
 - `PRODUCTION_DOMAIN` (for example, `scholight.example.com`)
 
@@ -55,21 +56,78 @@ login roles or stores credentials. `auth.*` is migrated only by cloud-auth's
 protected workflow. A Scholight release merely checks the installed auth schema
 version and migrates `scholight.*`.
 
-## Install on the production host
+## One-time bootstrap configuration
 
-```bash
-sudo install -d -m 0755 /opt/scholight /etc/scholight /var/lib/scholight
-sudo install -m 0644 deploy/production/compose.yaml /opt/scholight/compose.yaml
-sudo install -m 0644 deploy/production/Caddyfile /opt/scholight/Caddyfile
-sudo install -m 0600 deploy/production/bootstrap-db.sql /opt/scholight/bootstrap-db.sql
-sudo install -m 0755 deploy/production/release.sh /opt/scholight/release.sh
-sudo install -m 0755 deploy/production/smoke.sh /opt/scholight/smoke.sh
-sudo install -m 0755 deploy/production/wait-ssm.sh /opt/scholight/wait-ssm.sh
-sudo install -m 0600 deploy/production/runtime.env.example /etc/scholight/runtime.env
-sudoedit /etc/scholight/runtime.env
+Create a **Standard SecureString** named
+`/scholight/production/runtime-env` in `ap-southeast-1`. Paste the complete
+production `runtime.env` as its value, select the AWS-managed `alias/aws/ssm`
+key, and confirm that the UTF-8 value is at most 4096 bytes. Use the AWS console
+for this step so the value does not enter shell history, GitHub, CI logs, or this
+repository.
+
+Add only this inline permission to the existing `scholight-ec2` role:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "ssm:GetParameter",
+      "Resource": "arn:aws:ssm:ap-southeast-1:683390797772:parameter/scholight/production/runtime-env"
+    }
+  ]
+}
 ```
 
-Keep this package version synchronized with the repository. Each release carries a SHA-256 digest of `compose.yaml`, `Caddyfile`, `bootstrap-db.sql`, `release.sh`, `smoke.sh`, and `wait-ssm.sh`; deployment fails closed unless `/opt/scholight` matches that reviewed package. Upgrade these host files from the same merged revision before deploying a changed package. GitHub Actions never mutates host runtime secrets.
+Create the fixed command document from the reviewed repository file:
+
+```bash
+aws ssm create-document \
+  --region ap-southeast-1 \
+  --name Scholight-BootstrapAndRelease \
+  --document-type Command \
+  --document-format YAML \
+  --content file://deploy/production/ssm-document.yaml
+```
+
+Restrict the existing GitHub deploy role's `ssm:SendCommand` statement to the
+document and production instance. Keep command-result reads separate because
+those APIs do not support the same resource-level restriction:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "ssm:SendCommand",
+      "Resource": [
+        "arn:aws:ssm:ap-southeast-1:683390797772:document/Scholight-BootstrapAndRelease",
+        "arn:aws:ec2:ap-southeast-1:683390797772:instance/REPLACE_WITH_PRODUCTION_INSTANCE_ID"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ssm:GetCommandInvocation",
+        "ssm:ListCommandInvocations",
+        "ssm:CancelCommand"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+Remove any remaining permission to send `AWS-RunShellScript`. No new IAM role,
+S3 bucket, Secrets Manager secret, or custom KMS key is required.
+
+Each release carries a SHA-256 digest of `compose.yaml`, `Caddyfile`,
+`bootstrap-db.sql`, `bootstrap.sh`, `release.sh`, `smoke.sh`, and
+`wait-ssm.sh`. The backend image contains those exact files under
+`/opt/scholight-package`; bootstrap verifies their digest before changing the
+host package. GitHub Actions never sends or mutates host runtime secrets.
 
 ## Runtime and release state
 
@@ -81,19 +139,24 @@ Stable secrets live only in `/etc/scholight/runtime.env`. A release manifest is 
 - `deploy.lock` — host-side release serialization
 
 Keep JWT and anonymous quota HMAC secrets stable across releases and rollbacks.
+Parameter Store is a recovery copy: a normal release reads it only when
+`/etc/scholight/runtime.env` is absent. Configuration changes remain a separate
+manual change window and must update both copies before redeploying.
 
 ## Deploy
 
-```bash
-sudo /opt/scholight/release.sh deploy \
-  --contract-version 1 \
-  --package-sha "$PACKAGE_SHA256" \
-  --release-sha "$GIT_SHA" \
-  --backend-image "$BACKEND_IMAGE_DIGEST_REF" \
-  --frontend-image "$FRONTEND_IMAGE_DIGEST_REF"
-```
+Run the manual GitHub **Release** workflow with operation `deploy`. The workflow
+publishes digest-qualified images, sends only validated structured parameters to
+`Scholight-BootstrapAndRelease`, waits for the terminal SSM result, and performs
+an external HTTPS smoke test. Running the same release twice is supported.
 
-The transaction verifies the installed production package digest, validates runtime-file ownership and mode, validates Compose, logs into ECR with the instance role, pulls both images, validates the independently managed auth schema, runs only the Scholight migration, activates the pair, and runs bounded container and local TLS-ingress smoke checks. The local TLS checks resolve the production hostname to `127.0.0.1`; they deliberately do not hairpin through the instance's own public IP. After activation, GitHub Actions independently verifies the public hostname from an external runner. Pull or migration failure leaves the running application untouched. Candidate host-smoke failure restores the complete previous pair.
+The transaction converges Docker and the host package, validates runtime-file
+ownership and mode, validates Compose, logs into ECR with the instance role,
+pulls both images, validates the independently managed auth schema, runs only the
+Scholight migration, activates the pair, and runs bounded container and local
+TLS-ingress smoke checks. Pull, package, configuration, or migration failure
+leaves the running application untouched. Candidate host-smoke failure restores
+the complete previous pair.
 
 ## Roll back the application
 
@@ -140,4 +203,6 @@ For every Compose command above, use both `--env-file /etc/scholight/runtime.env
 
 ## Package upgrades
 
-The release contract version is `1`. Update the installed package before using a future workflow that emits a different contract version. Do not edit the production package independently without committing and reviewing the same changes in this repository.
+The release contract version is `1`. Do not edit the production package
+independently. A deploy always extracts the package from the reviewed backend
+image and installs it only after the package SHA matches the selected commit.

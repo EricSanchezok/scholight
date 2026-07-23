@@ -48,6 +48,22 @@ COPY --from=builder /app/scholight/ /app/scholight/
 COPY --from=builder /app/migrations/ /app/migrations/
 COPY --from=builder /app/start.py /app/start.py
 COPY global-bundle.pem /etc/ssl/certs/global-bundle.pem
+COPY deploy/production/bootstrap.sh /opt/scholight-package/bootstrap.sh
+COPY deploy/production/release.sh /opt/scholight-package/release.sh
+COPY deploy/production/smoke.sh /opt/scholight-package/smoke.sh
+COPY deploy/production/wait-ssm.sh /opt/scholight-package/wait-ssm.sh
+COPY deploy/production/compose.yaml /opt/scholight-package/compose.yaml
+COPY deploy/production/Caddyfile /opt/scholight-package/Caddyfile
+COPY deploy/production/bootstrap-db.sql /opt/scholight-package/bootstrap-db.sql
+RUN chmod 0755 \
+      /opt/scholight-package/bootstrap.sh \
+      /opt/scholight-package/release.sh \
+      /opt/scholight-package/smoke.sh \
+      /opt/scholight-package/wait-ssm.sh \
+    && chmod 0600 /opt/scholight-package/bootstrap-db.sql \
+    && chmod 0644 \
+      /opt/scholight-package/compose.yaml \
+      /opt/scholight-package/Caddyfile
 
 USER scholight
 EXPOSE 8000

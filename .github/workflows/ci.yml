@@ -158,8 +158,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends shellcheck
-          bash -n deploy/production/release.sh deploy/production/smoke.sh deploy/production/wait-ssm.sh
-          shellcheck deploy/production/release.sh deploy/production/smoke.sh deploy/production/wait-ssm.sh
+          bash -n deploy/production/bootstrap.sh deploy/production/release.sh deploy/production/smoke.sh deploy/production/wait-ssm.sh
+          shellcheck deploy/production/bootstrap.sh deploy/production/release.sh deploy/production/smoke.sh deploy/production/wait-ssm.sh
       - name: Validate production Compose
         env:
           SCHOLIGHT_BACKEND_IMAGE: registry.example/scholight/backend@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -208,6 +208,16 @@ jobs:
           tags: scholight-api:ci
           secrets: |
             github_token=${{ secrets.CLOUD_AUTH_READ_TOKEN }}
+      - name: Verify backend host package
+        if: github.event_name != 'pull_request'
+        run: |
+          docker run --rm --user 0 --entrypoint /bin/sh scholight-api:ci -ec '
+            for name in bootstrap.sh release.sh smoke.sh wait-ssm.sh compose.yaml Caddyfile bootstrap-db.sql; do
+              test -f "/opt/scholight-package/${name}"
+            done
+            test -x /opt/scholight-package/bootstrap.sh
+            test -x /opt/scholight-package/release.sh
+          '
       - name: Smoke-test built backend migrations with least-privilege roles
         if: github.event_name != 'pull_request'
         env:
