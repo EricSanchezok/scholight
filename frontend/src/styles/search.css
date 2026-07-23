@@ -142,12 +142,15 @@
   font-weight: 500;
 }
 .selectItem[data-highlighted] {
-  color: var(--brand);
-  background: var(--surface-selected);
+  color: var(--ink);
+  background: var(--surface-muted);
 }
 .selectItem[data-state="checked"] {
   color: var(--on-brand);
   background: var(--brand);
+}
+.selectContent .selectItem:focus-visible {
+  outline: 0;
 }
 .selectIndicator {
   position: absolute;

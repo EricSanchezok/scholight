@@ -432,11 +432,17 @@ test("custom strength dropdown preserves the Figma interaction", async ({ page }
   await page.setViewportSize({ width: 1440, height: 1024 });
   await page.goto("/");
   await page.getByRole("combobox", { name: "Search strength" }).click();
-  await expect(page.getByRole("option", { name: "Standard" })).toBeVisible();
-  await expect(page.getByRole("option", { name: "Thorough" })).toBeVisible();
+  const standard = page.getByRole("option", { name: "Standard" });
+  const thorough = page.getByRole("option", { name: "Thorough" });
+  await expect(standard).toBeVisible();
+  await expect(thorough).toBeVisible();
+  await thorough.hover();
+  await expect(thorough).toHaveCSS("color", "rgb(14, 15, 20)");
+  await expect(thorough).toHaveCSS("background-color", "rgb(244, 242, 236)");
+  await expect(standard).toHaveCSS("outline-style", "none");
   await settleMotion(page);
   await expect(page).toHaveScreenshot("strength-menu.png");
-  await page.getByRole("option", { name: "Thorough" }).click();
+  await thorough.click();
   await expect(page.getByRole("combobox", { name: "Search strength" })).toHaveText("Thorough");
 });
 
