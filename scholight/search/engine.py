@@ -9,6 +9,7 @@ import asyncio
 import copy
 import math
 import time
+from collections import Counter
 from datetime import date
 from typing import Any
 
@@ -26,7 +27,6 @@ from scholight.models.search import (
 )
 from scholight.search.base import PhaseError
 from scholight.search.errors import (
-    SearchInvariantError,
     SearchUnavailable,
     ThoroughSearchUnavailable,
 )
@@ -105,8 +105,8 @@ class SearchEngine:
         n_chunks = ctx.metadata.get("chunk_candidates", 0)
         n_chunk_papers = ctx.metadata.get("chunk_paper_count", 0)
 
-        # ── Validate, deterministically order, then truncate ────────
-        candidates = _validate_and_sort_candidates(ctx.raw_hits)
+        # ── Sanitize, deterministically order, then truncate ────────
+        candidates = _sanitize_and_sort_candidates(ctx.raw_hits)
         hits = _build_hits(candidates, request.top_k, chunk_evidence)
 
         phases = [
@@ -217,42 +217,61 @@ def _is_operational_search_error(exc: Exception) -> bool:
 # by arxiv_id.
 
 
-def _validate_and_sort_candidates(raw_hits: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Validate final core fields and return the full deterministic ordering."""
+def _sanitize_and_sort_candidates(raw_hits: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Drop unrankable rows and normalize incomplete display metadata."""
     candidates: list[dict[str, Any]] = []
-    for index, raw in enumerate(raw_hits):
+    dropped: Counter[str] = Counter()
+    normalized: Counter[str] = Counter()
+    for raw in raw_hits:
         raw_score = raw.get("score")
         if isinstance(raw_score, bool) or not isinstance(raw_score, (int, float)):
-            raise SearchInvariantError(f"candidate {index} must have a finite score")
+            dropped["score"] += 1
+            continue
         score = float(raw_score)
         if not math.isfinite(score):
-            raise SearchInvariantError(f"candidate {index} must have a finite score")
+            dropped["score"] += 1
+            continue
 
         arxiv_id = raw.get("arxiv_id")
         if not isinstance(arxiv_id, str) or not arxiv_id.strip():
-            raise SearchInvariantError(f"candidate {index} has invalid arxiv_id")
+            dropped["arxiv_id"] += 1
+            continue
+        normalized_arxiv_id = arxiv_id.strip()
+
         title = raw.get("title")
-        if not isinstance(title, str) or not title.strip():
-            raise SearchInvariantError(f"candidate {index} has invalid title")
+        normalized_title = title.strip() if isinstance(title, str) else ""
+        if not normalized_title:
+            normalized["title"] += 1
+            normalized_title = f"arXiv:{normalized_arxiv_id}"
 
-        for field_name in ("created", "updated"):
-            raw_date = raw.get(field_name)
-            if not isinstance(raw_date, str) or len(raw_date) != 10:
-                raise SearchInvariantError(f"candidate {index} has invalid {field_name}")
-            try:
-                parsed_date = date.fromisoformat(raw_date)
-            except ValueError as exc:
-                raise SearchInvariantError(f"candidate {index} has invalid {field_name}") from exc
-            if parsed_date.isoformat() != raw_date:
-                raise SearchInvariantError(f"candidate {index} has invalid {field_name}")
+        created = _coerce_date(raw.get("created"))
+        if created is None and raw.get("created") not in (None, ""):
+            normalized["created"] += 1
+        updated = _coerce_date(raw.get("updated"))
+        if updated is None and raw.get("updated") not in (None, ""):
+            normalized["updated"] += 1
 
-        version = raw.get("version")
-        if isinstance(version, bool) or not isinstance(version, int) or version < 1:
-            raise SearchInvariantError(f"candidate {index} has invalid version")
+        version = _coerce_positive_int(raw.get("version"))
+        if version is None and raw.get("version") is not None:
+            normalized["version"] += 1
 
         candidate = dict(raw)
         candidate["score"] = score
+        candidate["arxiv_id"] = normalized_arxiv_id
+        candidate["title"] = normalized_title
+        candidate["created"] = created
+        candidate["updated"] = updated
+        candidate["version"] = version
         candidates.append(candidate)
+
+    if dropped or normalized:
+        logger.warning(
+            "search_candidates_sanitized",
+            candidate_count=len(raw_hits),
+            kept_count=len(candidates),
+            dropped=dict(dropped),
+            normalized=dict(normalized),
+        )
 
     return sorted(candidates, key=lambda candidate: (-candidate["score"], candidate["arxiv_id"]))
 
@@ -281,17 +300,17 @@ def _build_hits(
                 arxiv_id=aid,
                 title=raw.get("title", ""),
                 authors=_coerce_list(raw.get("authors")),
-                abstract=raw.get("abstract", ""),
+                abstract=_coerce_optional_text(raw.get("abstract")),
                 categories=_coerce_list(raw.get("categories")),
-                created=raw.get("created", ""),
-                updated=raw.get("updated", ""),
-                version=_coerce_int(raw.get("version")),
+                created=_coerce_date(raw.get("created")),
+                updated=_coerce_date(raw.get("updated")),
+                version=_coerce_positive_int(raw.get("version")),
                 updated_history=_coerce_list(raw.get("updated_history")),
-                license=raw.get("license", ""),
-                comments=raw.get("comments", ""),
-                doi=raw.get("doi", ""),
-                journal_ref=raw.get("journal_ref", ""),
-                acm_class=raw.get("acm_class", ""),
+                license=_coerce_text(raw.get("license")),
+                comments=_coerce_text(raw.get("comments")),
+                doi=_coerce_text(raw.get("doi")),
+                journal_ref=_coerce_text(raw.get("journal_ref")),
+                acm_class=_coerce_text(raw.get("acm_class")),
                 chunks=chunks,
             )
         )
@@ -309,13 +328,35 @@ def _coerce_list(value: object) -> list[str]:
     return []
 
 
-def _coerce_int(value: object) -> int:
-    if isinstance(value, int):
-        return value
+def _coerce_text(value: object) -> str:
+    return value if isinstance(value, str) else ""
+
+
+def _coerce_optional_text(value: object) -> str | None:
+    return value if isinstance(value, str) and value else None
+
+
+def _coerce_date(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
     try:
-        return int(str(value))
+        parsed = date.fromisoformat(normalized)
+    except ValueError:
+        return None
+    return normalized if parsed.isoformat() == normalized else None
+
+
+def _coerce_positive_int(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value >= 1 else None
+    try:
+        parsed = int(str(value))
     except (ValueError, TypeError):
-        return 0
+        return None
+    return parsed if parsed >= 1 else None
 
 
 async def _collection_row_counts() -> tuple[int | None, int | None]:

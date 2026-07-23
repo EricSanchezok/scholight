@@ -10,11 +10,7 @@ import pytest
 from pymilvus.exceptions import MilvusException
 
 from scholight.api.search_access import SearchQuotaReservation
-from scholight.search.errors import (
-    SearchInvariantError,
-    SearchUnavailable,
-    ThoroughSearchUnavailable,
-)
+from scholight.search.errors import SearchUnavailable, ThoroughSearchUnavailable
 
 
 @pytest.mark.asyncio
@@ -110,7 +106,7 @@ async def test_standard_operational_failure_uses_search_unavailable_code(
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "failure",
-    [SearchInvariantError("candidate score must be finite"), asyncio.CancelledError()],
+    [ValueError("program error"), asyncio.CancelledError()],
 )
 async def test_pre_commit_program_or_cancel_failure_returns_500_and_compensates_once(
     api_client: httpx.AsyncClient, failure: BaseException

@@ -118,6 +118,49 @@ async def test_missing_enrichment_row_is_degraded_with_null_abstract(
 
 
 @pytest.mark.asyncio
+async def test_missing_core_metadata_returns_nulls_instead_of_failing(
+    api_client: httpx.AsyncClient,
+) -> None:
+    reservation = SearchQuotaReservation(strength="standard")
+    hit = _hit(1, "A", score=1.0)
+    hit.created = None
+    hit.updated = None
+    hit.version = None
+    core_result = _result(hit)
+
+    with (
+        patch(
+            "scholight.api.search_execution.reserve_search_quota",
+            new_callable=AsyncMock,
+            return_value=reservation,
+        ),
+        patch(
+            "scholight.search.engine.SearchEngine.search",
+            new_callable=AsyncMock,
+            return_value=core_result,
+        ),
+        patch(
+            "scholight.api.search_execution.batch_get_arxiv_papers",
+            return_value={"A": {"arxiv_id": "A", "abstract": "Abstract A"}},
+        ),
+        patch(
+            "scholight.api.search_execution.compensate_search_quota",
+            new_callable=AsyncMock,
+        ) as compensate,
+    ):
+        response = await api_client.post("/search", json={"query": "retrieval"})
+
+    public_hit = response.json()["hits"][0]
+    assert (response.status_code, public_hit["submitted_at"], public_hit["updated_at"]) == (
+        200,
+        None,
+        None,
+    )
+    assert public_hit["version"] is None
+    compensate.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "failure",
     [

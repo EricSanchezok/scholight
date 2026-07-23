@@ -41,18 +41,18 @@ class SearchRequest(BaseModel):
 
 
 class SearchHit(BaseModel):
-    """A single search result with complete paper metadata."""
+    """A single ranked result with optional paper metadata."""
 
     rank: int
     score: float
     arxiv_id: str
     title: str
     authors: list[str]
-    abstract: str
+    abstract: str | None
     categories: list[str]
-    created: str
-    updated: str
-    version: int
+    created: str | None
+    updated: str | None
+    version: int | None
     updated_history: list[str]
     license: str
     comments: str

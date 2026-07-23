@@ -300,9 +300,12 @@ def _render_hit(rank: int, hit: SearchHit) -> None:
         _emit_wrapped_styled("authors", ", ".join(hit.authors), fg="magenta")
     if hit.abstract:
         _emit_wrapped("abstract", hit.abstract)
-    _emit("created", hit.created)
-    _emit("updated", hit.updated)
-    _emit("version", str(hit.version))
+    if hit.created:
+        _emit("created", hit.created)
+    if hit.updated:
+        _emit("updated", hit.updated)
+    if hit.version is not None:
+        _emit("version", str(hit.version))
     if hit.updated_history:
         _emit("updated_history", ", ".join(hit.updated_history))
     _emit("license", hit.license)

@@ -11,8 +11,14 @@ from scholight.api.models.search import PublicSearchHit, PublicSearchResponse, S
 from scholight.models.search import SearchHit, SearchResult
 
 
-def _utc_midnight(value: str) -> datetime:
-    return datetime.combine(date.fromisoformat(value), time.min, tzinfo=UTC)
+def _utc_midnight(value: str | None) -> datetime | None:
+    if value is None:
+        return None
+    try:
+        parsed = date.fromisoformat(value)
+    except ValueError:
+        return None
+    return datetime.combine(parsed, time.min, tzinfo=UTC)
 
 
 def _map_hit(

@@ -20,7 +20,6 @@ from scholight.search import engine as engine_module
 from scholight.search.base import PhaseError, PipelineContext
 from scholight.search.engine import SearchEngine
 from scholight.search.errors import (
-    SearchInvariantError,
     SearchUnavailable,
     ThoroughSearchUnavailable,
 )
@@ -289,46 +288,76 @@ async def test_equal_scores_sort_by_arxiv_id_before_limit_and_rank() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("score", [float("nan"), float("inf"), float("-inf")])
-async def test_non_finite_candidate_score_violates_core_invariant(score: float) -> None:
-    request = SearchRequest(query="test", level=1, top_k=10)
+async def test_invalid_rank_candidates_are_skipped_and_valid_candidates_fill_limit() -> None:
+    request = SearchRequest(query="test", level=1, top_k=2)
     context = _level1_context(request)
-    context.raw_hits = [_paper("A", score)]
+    context.raw_hits = [
+        _paper("bad-score", float("nan")),
+        _paper("", 10.0),
+        _paper("B", 0.9),
+        _paper("A", 1.0),
+    ]
     engine = SearchEngine()
 
     with (
         patch.object(engine, "_resolve_l1_pipeline", return_value=StubLevel1Pipeline(context)),
-        pytest.raises(SearchInvariantError, match="finite score"),
+        patch(
+            "scholight.search.engine._collection_row_counts",
+            new_callable=AsyncMock,
+            return_value=(None, None),
+        ),
     ):
-        await engine.search(request)
+        result = await engine.search(request)
+
+    assert [(hit.rank, hit.arxiv_id) for hit in result.hits] == [(1, "A"), (2, "B")]
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("field", "invalid_value"),
-    [
-        ("arxiv_id", ""),
-        ("title", "   "),
-        ("created", "20240101"),
-        ("updated", "not-a-date"),
-        ("version", 0),
-    ],
-)
-async def test_missing_or_invalid_candidate_metadata_violates_core_invariant(
-    field: str, invalid_value: object
-) -> None:
+async def test_missing_optional_candidate_metadata_is_normalized() -> None:
     request = SearchRequest(query="test", level=1, top_k=10)
     context = _level1_context(request)
     candidate = _paper("A", 1.0)
-    candidate[field] = invalid_value
+    candidate.update(title="   ", created="", updated="not-a-date", version=0)
     context.raw_hits = [candidate]
     engine = SearchEngine()
 
     with (
         patch.object(engine, "_resolve_l1_pipeline", return_value=StubLevel1Pipeline(context)),
-        pytest.raises(SearchInvariantError, match=field),
+        patch(
+            "scholight.search.engine._collection_row_counts",
+            new_callable=AsyncMock,
+            return_value=(None, None),
+        ),
     ):
-        await engine.search(request)
+        result = await engine.search(request)
+
+    hit = result.hits[0]
+    assert (hit.title, hit.created, hit.updated, hit.version) == (
+        "arXiv:A",
+        None,
+        None,
+        None,
+    )
+
+
+@pytest.mark.asyncio
+async def test_all_invalid_rank_candidates_return_empty_result() -> None:
+    request = SearchRequest(query="test", level=1, top_k=10)
+    context = _level1_context(request)
+    context.raw_hits = [_paper("", 1.0), _paper("A", float("inf"))]
+    engine = SearchEngine()
+
+    with (
+        patch.object(engine, "_resolve_l1_pipeline", return_value=StubLevel1Pipeline(context)),
+        patch(
+            "scholight.search.engine._collection_row_counts",
+            new_callable=AsyncMock,
+            return_value=(None, None),
+        ),
+    ):
+        result = await engine.search(request)
+
+    assert result.hits == []
 
 
 @pytest.mark.asyncio

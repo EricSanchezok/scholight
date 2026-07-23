@@ -165,14 +165,13 @@ def _format_markdown(response: PublicSearchResponse) -> str:
     if response.degraded:
         lines.extend(["", "Some paper metadata could not be enriched."])
     for hit in response.hits:
-        lines.extend(
-            [
-                "",
-                f"## {hit.rank}. [{hit.title}]({hit.arxiv_url})",
-                f"**Authors:** {', '.join(hit.authors)}",
-                f"**arXiv:** {hit.arxiv_id} · **Categories:** {', '.join(hit.categories)}",
-            ]
-        )
+        lines.extend(["", f"## {hit.rank}. [{hit.title}]({hit.arxiv_url})"])
+        if hit.authors:
+            lines.append(f"**Authors:** {', '.join(hit.authors)}")
+        metadata = [f"**arXiv:** {hit.arxiv_id}"]
+        if hit.categories:
+            metadata.append(f"**Categories:** {', '.join(hit.categories)}")
+        lines.append(" · ".join(metadata))
         abstract = _trim_abstract(hit.abstract)
         if abstract is not None:
             lines.extend(["", abstract])

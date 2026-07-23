@@ -14,13 +14,23 @@ import { useAuth } from "../auth/context";
 import { productConfig } from "../config/product";
 import { SearchForm } from "../components/SearchForm";
 import { SearchResultsSkeleton } from "../components/SearchResultsSkeleton";
-import { citationFor, formatAuthors, formatDate, parseSearchParameters } from "../lib/format";
+import {
+  citationFor,
+  parseSearchParameters,
+  searchResultBylineParts,
+  searchResultMetadataParts,
+} from "../lib/format";
 import { useI18n } from "../i18n/I18nProvider";
 import { styles } from "../styles/classes";
 
 function ResultItem({ hit, index }: { hit: SearchHit; index: number }) {
   const { locale, messages } = useI18n();
   const [copied, setCopied] = useState(false);
+  const byline = searchResultBylineParts(hit);
+  const metadata = searchResultMetadataParts(hit, locale, {
+    submitted: messages.search.submitted,
+    score: messages.search.score,
+  });
   const copyCitation = async () => {
     await navigator.clipboard.writeText(citationFor(hit));
     setCopied(true);
@@ -33,15 +43,8 @@ function ResultItem({ hit, index }: { hit: SearchHit; index: number }) {
           {hit.title}
         </a>
       </h2>
-      <p className={styles.authors}>
-        {formatAuthors(hit.authors)} · {new Date(hit.submitted_at).getUTCFullYear()} · arXiv:
-        {hit.arxiv_id}
-      </p>
-      <p className={styles.metadata}>
-        {hit.categories.join(" · ")} · {messages.search.submitted}{" "}
-        {formatDate(hit.submitted_at, "short", locale)} · v{hit.version} · {messages.search.score}{" "}
-        {hit.score.toFixed(3)}
-      </p>
+      <p className={styles.authors}>{byline.join(" · ")}</p>
+      <p className={styles.metadata}>{metadata.join(" · ")}</p>
       {hit.abstract && <p className={styles.abstract}>{hit.abstract}</p>}
       <div className={styles.resultActions}>
         <a href={hit.arxiv_url} target="_blank" rel="noopener noreferrer">

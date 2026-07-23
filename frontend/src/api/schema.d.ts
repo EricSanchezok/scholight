@@ -728,20 +728,14 @@ export interface components {
        * @description Unnormalized retrieval signal; compare only within the current response, never across queries, strengths, indexes, models, or time.
        */
       score: number;
-      /**
-       * Submitted At
-       * Format: date-time
-       */
-      submitted_at: string;
+      /** Submitted At */
+      submitted_at: string | null;
       /** Title */
       title: string;
-      /**
-       * Updated At
-       * Format: date-time
-       */
-      updated_at: string;
+      /** Updated At */
+      updated_at: string | null;
       /** Version */
-      version: number;
+      version: number | null;
     };
     /**
      * PublicSearchRequest

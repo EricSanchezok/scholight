@@ -160,9 +160,9 @@ class PublicSearchHit(BaseModel):
     authors: list[str]
     abstract: str | None
     categories: list[str]
-    submitted_at: datetime
-    updated_at: datetime
-    version: int = Field(ge=1)
+    submitted_at: datetime | None
+    updated_at: datetime | None
+    version: int | None = Field(ge=1)
     arxiv_url: AnyHttpUrl
     pdf_url: AnyHttpUrl
 

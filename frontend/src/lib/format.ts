@@ -4,8 +4,15 @@ import { formatResearchDate } from "../i18n/format";
 import type { AppLocale } from "../i18n/I18nProvider";
 
 export function formatAuthors(authors: string[]): string {
+  if (authors.length === 0) return "Unknown authors";
   if (authors.length <= 2) return authors.join(", ");
   return `${authors[0]} et al.`;
+}
+
+function validDate(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
 export function formatDate(
@@ -19,9 +26,33 @@ export function formatDate(
 }
 
 export function citationFor(hit: SearchHit): string {
-  const authors = hit.authors.join(", ");
-  const year = new Date(hit.submitted_at).getUTCFullYear();
+  const authors = hit.authors.length > 0 ? hit.authors.join(", ") : "Unknown authors";
+  const submitted = validDate(hit.submitted_at);
+  const year = submitted?.getUTCFullYear() ?? "n.d.";
   return `${authors} (${year}). ${hit.title}. arXiv:${hit.arxiv_id}. ${hit.arxiv_url}`;
+}
+
+export function searchResultBylineParts(hit: SearchHit): string[] {
+  const parts = [formatAuthors(hit.authors)];
+  const submitted = validDate(hit.submitted_at);
+  if (submitted !== null) parts.push(String(submitted.getUTCFullYear()));
+  parts.push(`arXiv:${hit.arxiv_id}`);
+  return parts;
+}
+
+export function searchResultMetadataParts(
+  hit: SearchHit,
+  locale: AppLocale | undefined,
+  labels: { submitted: string; score: string },
+): string[] {
+  const parts: string[] = [];
+  if (hit.categories.length > 0) parts.push(hit.categories.join(" · "));
+  if (validDate(hit.submitted_at) !== null && hit.submitted_at !== null) {
+    parts.push(`${labels.submitted} ${formatDate(hit.submitted_at, "short", locale)}`);
+  }
+  if (hit.version !== null) parts.push(`v${hit.version}`);
+  parts.push(`${labels.score} ${hit.score.toFixed(3)}`);
+  return parts;
 }
 
 export interface SearchParameters {

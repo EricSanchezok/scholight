@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import type { SearchHit } from "../api/types";
-import { buildSearchUrl, citationFor, formatAuthors, parseSearchParameters } from "./format";
+import {
+  buildSearchUrl,
+  citationFor,
+  formatAuthors,
+  parseSearchParameters,
+  searchResultBylineParts,
+  searchResultMetadataParts,
+} from "./format";
 
 const hit: SearchHit = {
   rank: 1,
@@ -26,6 +33,28 @@ describe("search presentation helpers", () => {
   it("builds the documented plain-text citation", () => {
     expect(citationFor(hit)).toBe(
       "Ada Lovelace, Alan Turing, Grace Hopper (2024). A Paper About Retrieval. arXiv:2401.12345. https://arxiv.org/abs/2401.12345",
+    );
+  });
+
+  it("formats missing paper metadata without invalid dates or dangling separators", () => {
+    const sparseHit: SearchHit = {
+      ...hit,
+      authors: [],
+      categories: [],
+      submitted_at: null,
+      updated_at: null,
+      version: null,
+    };
+
+    expect(searchResultBylineParts(sparseHit)).toEqual(["Unknown authors", "arXiv:2401.12345"]);
+    expect(
+      searchResultMetadataParts(sparseHit, undefined, {
+        submitted: "Submitted",
+        score: "Score",
+      }),
+    ).toEqual(["Score 12.750"]);
+    expect(citationFor(sparseHit)).toBe(
+      "Unknown authors (n.d.). A Paper About Retrieval. arXiv:2401.12345. https://arxiv.org/abs/2401.12345",
     );
   });
 

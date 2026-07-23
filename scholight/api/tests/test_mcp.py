@@ -12,11 +12,17 @@ import httpx
 import pytest
 import pytest_asyncio
 from cloud_auth.models.user import UserRecord
+from pydantic import AnyHttpUrl
 
 from scholight.api.access_keys import AccessKeyError
 from scholight.api.app import create_app
 from scholight.api.deps import SearchActor
-from scholight.api.models.search import PublicSearchRequest, PublicSearchResponse, SearchStrength
+from scholight.api.models.search import (
+    PublicSearchHit,
+    PublicSearchRequest,
+    PublicSearchResponse,
+    SearchStrength,
+)
 from scholight.api.search_access import reset_anonymous_minute_limits
 from scholight.api.search_execution import PublicSearchError, SearchInvocation
 from scholight.config import settings
@@ -170,8 +176,23 @@ async def test_anonymous_tool_call_returns_markdown_and_public_response_structur
         query="retrieval",
         strength=SearchStrength.STANDARD,
         degraded=False,
-        hits=[],
-        result_count=0,
+        hits=[
+            PublicSearchHit(
+                rank=1,
+                score=1.0,
+                arxiv_id="2401.12345",
+                title="Sparse metadata paper",
+                authors=[],
+                abstract=None,
+                categories=[],
+                submitted_at=None,
+                updated_at=None,
+                version=None,
+                arxiv_url=AnyHttpUrl("https://arxiv.org/abs/2401.12345"),
+                pdf_url=AnyHttpUrl("https://arxiv.org/pdf/2401.12345"),
+            )
+        ],
+        result_count=1,
         elapsed_ms=1.25,
     )
     with patch(
@@ -196,7 +217,11 @@ async def test_anonymous_tool_call_returns_markdown_and_public_response_structur
     result = called.json()["result"]
     assert result["isError"] is False
     assert result["structuredContent"] == response.model_dump(mode="json")
-    assert "retrieval" in result["content"][0]["text"]
+    markdown = result["content"][0]["text"]
+    assert "retrieval" in markdown
+    assert "**arXiv:** 2401.12345" in markdown
+    assert "**Authors:**" not in markdown
+    assert "**Categories:**" not in markdown
     execute_call = execute.await_args
     assert execute_call is not None
     invocation = execute_call.args[1]

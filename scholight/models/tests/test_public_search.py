@@ -155,6 +155,27 @@ def test_public_search_hit_serializes_raw_score_null_abstract_and_urls() -> None
     assert dumped["pdf_url"] == "https://arxiv.org/pdf/2401.12345"
 
 
+def test_public_search_hit_accepts_missing_date_and_version_metadata() -> None:
+    hit = PublicSearchHit.model_validate(
+        {
+            "rank": 1,
+            "score": 12.75,
+            "arxiv_id": "2401.12345",
+            "title": "A Paper",
+            "authors": [],
+            "abstract": None,
+            "categories": [],
+            "submitted_at": None,
+            "updated_at": None,
+            "version": None,
+            "arxiv_url": "https://arxiv.org/abs/2401.12345",
+            "pdf_url": "https://arxiv.org/pdf/2401.12345",
+        }
+    )
+
+    assert (hit.submitted_at, hit.updated_at, hit.version) == (None, None, None)
+
+
 def test_public_search_response_excludes_internal_diagnostics() -> None:
     response = PublicSearchResponse(
         query="test",

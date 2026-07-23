@@ -622,9 +622,16 @@
             "type": "number"
           },
           "submitted_at": {
-            "format": "date-time",
-            "title": "Submitted At",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submitted At"
           },
           "title": {
             "minLength": 1,
@@ -632,14 +639,28 @@
             "type": "string"
           },
           "updated_at": {
-            "format": "date-time",
-            "title": "Updated At",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
           },
           "version": {
-            "minimum": 1.0,
-            "title": "Version",
-            "type": "integer"
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
           }
         },
         "required": [
