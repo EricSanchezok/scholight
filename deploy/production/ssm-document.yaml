@@ -1,0 +1,109 @@
+schemaVersion: "2.2"
+description: Bootstrap and release Scholight on the production EC2 instance.
+parameters:
+  Operation:
+    type: String
+    description: Fixed release operation.
+    allowedValues:
+      - deploy
+      - rollback
+    interpolationType: ENV_VAR
+  AwsRegion:
+    type: String
+    description: AWS region containing the production EC2 instance and ECR repositories.
+    allowedValues:
+      - ap-southeast-1
+    interpolationType: ENV_VAR
+  ReleaseSha:
+    type: String
+    description: Immutable Git revision for a deploy operation.
+    default: ""
+    allowedPattern: '^$|^[0-9a-f]{40}$'
+    interpolationType: ENV_VAR
+  PackageSha:
+    type: String
+    description: SHA-256 of the reviewed production host package.
+    default: ""
+    allowedPattern: '^$|^[0-9a-f]{64}$'
+    interpolationType: ENV_VAR
+  BackendImage:
+    type: String
+    description: Digest-qualified production backend image.
+    default: ""
+    allowedPattern: '^$|^683390797772\.dkr\.ecr\.ap-southeast-1\.amazonaws\.com/scholight/backend@sha256:[0-9a-f]{64}$'
+    interpolationType: ENV_VAR
+  FrontendImage:
+    type: String
+    description: Digest-qualified production frontend image.
+    default: ""
+    allowedPattern: '^$|^683390797772\.dkr\.ecr\.ap-southeast-1\.amazonaws\.com/scholight/frontend@sha256:[0-9a-f]{64}$'
+    interpolationType: ENV_VAR
+mainSteps:
+  - action: aws:runShellScript
+    name: BootstrapAndRelease
+    precondition:
+      StringEquals:
+        - platformType
+        - Linux
+    inputs:
+      timeoutSeconds: "1800"
+      runCommand:
+        - |
+          # shellcheck disable=SC2154
+          # SSM injects the validated document parameters below.
+          set -euo pipefail
+
+          [[ "$(id -u)" == 0 ]] || {
+            echo "SSM command must run as root" >&2
+            exit 1
+          }
+          case "${SSM_Operation}" in
+            rollback)
+              exec /opt/scholight/release.sh rollback
+              ;;
+            deploy)
+              ;;
+            *)
+              echo "Unsupported operation" >&2
+              exit 1
+              ;;
+          esac
+
+          [[ "${SSM_AwsRegion}" == "ap-southeast-1" ]]
+          [[ "${SSM_ReleaseSha}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${SSM_PackageSha}" =~ ^[0-9a-f]{64}$ ]]
+          [[ "${SSM_BackendImage}" =~ ^683390797772\.dkr\.ecr\.ap-southeast-1\.amazonaws\.com/scholight/backend@sha256:[0-9a-f]{64}$ ]]
+          [[ "${SSM_FrontendImage}" =~ ^683390797772\.dkr\.ecr\.ap-southeast-1\.amazonaws\.com/scholight/frontend@sha256:[0-9a-f]{64}$ ]]
+
+          if ! command -v docker >/dev/null 2>&1; then
+            dnf install -y docker
+          fi
+          systemctl enable --now docker
+
+          registry=${SSM_BackendImage%%/*}
+          aws ecr get-login-password --region "${SSM_AwsRegion}" |
+            docker login --username AWS --password-stdin "${registry}"
+          docker pull "${SSM_BackendImage}"
+
+          workdir=$(mktemp -d)
+          container=""
+          cleanup() {
+            if [[ -n "${container}" ]]; then
+              docker rm -f "${container}" >/dev/null 2>&1 || true
+            fi
+            rm -rf "${workdir}"
+          }
+          trap cleanup EXIT
+          container=$(docker create "${SSM_BackendImage}")
+          docker cp "${container}:/opt/scholight-package/." "${workdir}/"
+          docker rm "${container}" >/dev/null
+          container=""
+          chmod 0755 "${workdir}/bootstrap.sh"
+
+          SCHOLIGHT_SOURCE_PACKAGE_DIR="${workdir}" \
+            "${workdir}/bootstrap.sh" deploy \
+              --contract-version 1 \
+              --package-sha "${SSM_PackageSha}" \
+              --release-sha "${SSM_ReleaseSha}" \
+              --backend-image "${SSM_BackendImage}" \
+              --frontend-image "${SSM_FrontendImage}"

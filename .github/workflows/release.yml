@@ -190,17 +190,30 @@ jobs:
       - name: Deploy through Systems Manager
         env:
           INSTANCE_ID: ${{ vars.PRODUCTION_INSTANCE_ID }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
           RELEASE_SHA: ${{ needs.prepare.outputs.release_sha }}
           PACKAGE_SHA: ${{ needs.prepare.outputs.package_sha }}
           BACKEND_IMAGE: ${{ needs.release-manifest.outputs.backend_image }}
           FRONTEND_IMAGE: ${{ needs.release-manifest.outputs.frontend_image }}
         run: |
-          command=$(printf 'sudo /opt/scholight/release.sh deploy --contract-version 1 --package-sha %q --release-sha %q --backend-image %q --frontend-image %q' \
-            "$PACKAGE_SHA" "$RELEASE_SHA" "$BACKEND_IMAGE" "$FRONTEND_IMAGE")
+          parameters=$(jq -cn \
+            --arg region "$AWS_REGION" \
+            --arg release "$RELEASE_SHA" \
+            --arg package "$PACKAGE_SHA" \
+            --arg backend "$BACKEND_IMAGE" \
+            --arg frontend "$FRONTEND_IMAGE" \
+            '{
+              Operation: ["deploy"],
+              AwsRegion: [$region],
+              ReleaseSha: [$release],
+              PackageSha: [$package],
+              BackendImage: [$backend],
+              FrontendImage: [$frontend]
+            }')
           command_id=$(aws ssm send-command \
             --instance-ids "$INSTANCE_ID" \
-            --document-name AWS-RunShellScript \
-            --parameters "commands=[\"$command\"]" \
+            --document-name Scholight-BootstrapAndRelease \
+            --parameters "$parameters" \
             --query 'Command.CommandId' --output text)
           bash deploy/production/wait-ssm.sh "$command_id" "$INSTANCE_ID"
       - name: Verify public deployment from the runner
@@ -252,10 +265,14 @@ jobs:
       - name: Roll back through Systems Manager
         env:
           INSTANCE_ID: ${{ vars.PRODUCTION_INSTANCE_ID }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
         run: |
+          parameters=$(jq -cn \
+            --arg region "$AWS_REGION" \
+            '{Operation: ["rollback"], AwsRegion: [$region]}')
           command_id=$(aws ssm send-command \
             --instance-ids "$INSTANCE_ID" \
-            --document-name AWS-RunShellScript \
-            --parameters 'commands=["sudo /opt/scholight/release.sh rollback"]' \
+            --document-name Scholight-BootstrapAndRelease \
+            --parameters "$parameters" \
             --query 'Command.CommandId' --output text)
           bash deploy/production/wait-ssm.sh "$command_id" "$INSTANCE_ID"

@@ -148,9 +148,104 @@ def test_release_workflow_verifies_package_and_waits_for_terminal_ssm_status() -
     workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
 
     assert "package_sha" in workflow
-    assert "--package-sha" in workflow
+    assert "PackageSha" in workflow
     assert "deploy/production/wait-ssm.sh" in workflow
     assert "aws ssm wait command-executed" not in workflow
+
+
+def test_release_workflow_uses_fixed_bootstrap_document() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+
+    assert "--document-name Scholight-BootstrapAndRelease" in workflow
+    assert "AWS-RunShellScript" not in workflow
+    assert "Operation:" in workflow
+    assert "AwsRegion:" in workflow
+    assert "ReleaseSha:" in workflow
+    assert "PackageSha:" in workflow
+    assert "BackendImage:" in workflow
+    assert "FrontendImage:" in workflow
+
+
+def test_ssm_document_has_only_fixed_validated_release_parameters() -> None:
+    document = yaml.safe_load((PRODUCTION / "ssm-document.yaml").read_text(encoding="utf-8"))
+    parameters = document["parameters"]
+
+    assert document["schemaVersion"] == "2.2"
+    assert document["description"].startswith("Bootstrap and release Scholight")
+    assert set(parameters) == {
+        "Operation",
+        "AwsRegion",
+        "ReleaseSha",
+        "PackageSha",
+        "BackendImage",
+        "FrontendImage",
+    }
+    assert parameters["Operation"]["allowedValues"] == ["deploy", "rollback"]
+    assert parameters["AwsRegion"]["allowedValues"] == ["ap-southeast-1"]
+    assert parameters["ReleaseSha"]["allowedPattern"] == r"^$|^[0-9a-f]{40}$"
+    assert parameters["PackageSha"]["allowedPattern"] == r"^$|^[0-9a-f]{64}$"
+    assert (
+        r"683390797772\.dkr\.ecr\.ap-southeast-1\.amazonaws\.com/scholight/backend"
+        in (parameters["BackendImage"]["allowedPattern"])
+    )
+    assert (
+        r"683390797772\.dkr\.ecr\.ap-southeast-1\.amazonaws\.com/scholight/frontend"
+        in (parameters["FrontendImage"]["allowedPattern"])
+    )
+    assert all(value.get("interpolationType") == "ENV_VAR" for value in parameters.values())
+
+    serialized = (PRODUCTION / "ssm-document.yaml").read_text(encoding="utf-8")
+    assert "AWS-RunShellScript" not in serialized
+    assert "/scholight/production/runtime-env" not in serialized
+    assert "docker cp" in serialized
+    assert "/opt/scholight-package" in serialized
+
+
+def test_ssm_document_embedded_shell_is_syntactically_valid() -> None:
+    document = yaml.safe_load((PRODUCTION / "ssm-document.yaml").read_text(encoding="utf-8"))
+    script = document["mainSteps"][0]["inputs"]["runCommand"][0]
+
+    result = subprocess.run(
+        ["bash", "-n"],
+        input=script,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_backend_image_carries_the_complete_host_deployment_package() -> None:
+    dockerfile = (ROOT / "docker" / "scholight-api" / "Dockerfile").read_text(encoding="utf-8")
+
+    for name in (
+        "bootstrap.sh",
+        "release.sh",
+        "smoke.sh",
+        "wait-ssm.sh",
+        "compose.yaml",
+        "Caddyfile",
+        "bootstrap-db.sql",
+    ):
+        assert f"deploy/production/{name}" in dockerfile
+    assert "/opt/scholight-package" in dockerfile
+    assert dockerfile.index("/opt/scholight-package") < dockerfile.index("USER scholight")
+
+
+def test_bootstrap_is_part_of_the_release_package_digest() -> None:
+    release_script = (PRODUCTION / "release.sh").read_text(encoding="utf-8")
+
+    assert '"${SCRIPT_DIR}/bootstrap.sh"' in release_script
+
+
+def test_ci_validates_bootstrap_with_shellcheck() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+    assert "bash -n deploy/production/bootstrap.sh" in workflow
+    assert "shellcheck deploy/production/bootstrap.sh" in workflow
+    assert "Verify backend host package" in workflow
+    assert "/opt/scholight-package/${name}" in workflow
 
 
 def test_host_smoke_uses_local_tls_ingress_instead_of_public_ip_hairpin() -> None:
