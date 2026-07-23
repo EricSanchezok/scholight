@@ -28,9 +28,9 @@
   font-size: 14px;
   line-height: 22px;
 }
-.docs header {
+.docsHero {
   max-width: 760px;
-  margin-bottom: 72px;
+  margin-bottom: 64px;
 }
 .eyebrow {
   margin: 0 0 11px;
@@ -48,51 +48,335 @@
   line-height: 1.16;
   letter-spacing: -0.025em;
 }
-.docs header > p:last-child {
+.docsHero > p:not(.eyebrow) {
   margin: 0;
   color: var(--muted);
   font-size: 18px;
   line-height: 1.6;
 }
-.docSections {
+.deploymentAddress {
+  display: grid;
+  max-width: 760px;
+  margin: 32px 0 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  grid-template-columns: 1fr 1fr;
+}
+.deploymentAddress > div {
+  display: grid;
+  min-width: 0;
+  padding: 16px 0 17px;
+  gap: 6px;
+}
+.deploymentAddress > div + div {
+  padding-left: 24px;
+  border-left: 1px solid var(--line-soft);
+}
+.deploymentAddress dt {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.deploymentAddress dd {
+  margin: 0;
+  overflow: hidden;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.docsLayout {
+  display: grid;
+  align-items: start;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: 72px;
+}
+.docsSidebar {
+  position: sticky;
+  top: 112px;
+}
+.docsSidebar nav {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+.docsNavGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.docsNavGroup p {
+  margin: 0 0 3px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.docsNavGroup a {
+  min-height: 28px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 28px;
+}
+.docsNavGroup a:hover {
+  color: var(--brand-link);
+}
+.docsContent {
+  min-width: 0;
   border-top: 1px solid var(--ink);
 }
-.docSections section {
-  display: grid;
-  padding: 35px 0 38px;
+.docsSection {
+  padding: 54px 0 66px;
   border-bottom: 1px solid var(--line-soft);
-  grid-template-columns: 110px 1fr;
+  scroll-margin-top: 96px;
 }
-.docSections section > span {
-  padding-top: 5px;
+.docsSection:first-child {
+  padding-top: 42px;
+}
+.docsSectionLabel {
+  margin: 0 0 16px;
+  color: var(--brand);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+.docsSection h2 {
+  max-width: 740px;
+  margin: 0 0 16px;
+  font-family: var(--font-display);
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.015em;
+}
+.docsSection h3 {
+  margin: 34px 0 11px;
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 600;
+}
+.docsSection > p,
+.docsSplit p,
+.docsSteps p {
+  max-width: 750px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.8;
+}
+.docsSection > .docsLead {
+  max-width: 720px;
+  font-size: 16px;
+  line-height: 1.75;
+}
+.docsSection code,
+.deploymentAddress code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+.docsSection p code,
+.docsSteps code {
+  color: var(--ink-soft);
+  font-size: 0.9em;
+}
+.codeBlock {
+  max-width: 860px;
+  margin: 24px 0 0;
+  overflow: hidden;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+}
+.codeBlockHeader {
+  display: flex;
+  min-height: 42px;
+  padding: 0 14px 0 18px;
+  border-bottom: 1px solid var(--line-soft);
+  align-items: center;
+  justify-content: space-between;
+}
+.codeBlockHeader span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.codeBlockHeader button {
+  min-width: 78px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 4px;
+  color: var(--brand-link);
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+.codeBlockHeader button:hover {
+  background: var(--surface-selected);
+}
+.codeBlock pre {
+  margin: 0;
+  padding: 20px;
+  overflow-x: auto;
+  color: var(--ink-soft);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: pre;
+}
+.docsCallout {
+  max-width: 860px;
+  margin-top: 24px;
+  padding: 17px 20px;
+  border-left: 3px solid var(--brand);
+  background: var(--surface-selected);
+}
+.docsCallout strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 13px;
+}
+.docsCallout p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.65;
+}
+.docsSteps {
+  display: grid;
+  max-width: 860px;
+  margin: 30px 0 0;
+  padding: 0;
+  border-top: 1px solid var(--line-soft);
+  list-style: none;
+}
+.docsSteps li {
+  display: grid;
+  padding: 20px 0;
+  border-bottom: 1px solid var(--line-soft);
+  grid-template-columns: 40px 1fr;
+}
+.docsSteps li > span {
   color: var(--brand);
   font-size: 12px;
   font-weight: 600;
 }
-.docSections h2 {
-  margin: 0 0 12px;
-  font-family: var(--font-display);
-  font-size: 25px;
+.docsSteps strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 14px;
 }
-.docSections p {
-  max-width: 750px;
-  margin: 0;
+.docsSteps a,
+.docsLinks a {
+  color: var(--brand-link);
+  font-weight: 600;
+}
+.endpointTable {
+  max-width: 860px;
+  margin-top: 28px;
+  border-top: 1px solid var(--line);
+}
+.endpointRow {
+  display: grid;
+  min-height: 78px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line-soft);
+  align-items: center;
+  grid-template-columns: minmax(170px, 0.8fr) 100px minmax(270px, 1.2fr);
+  gap: 20px;
+}
+.endpointRow > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+.endpointRow strong {
+  font-size: 13px;
+}
+.endpointRow > div span {
   color: var(--muted);
-  line-height: 1.75;
+  font-size: 11px;
 }
-.docSections pre {
-  max-width: 850px;
-  margin: 20px 0 0;
-  padding: 18px 20px;
-  overflow-x: auto;
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius-sm);
+.endpointRow > span {
+  color: var(--brand);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.endpointRow > code {
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: var(--ink-soft);
-  background: var(--surface-muted);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+}
+.docsLinks {
+  display: flex;
+  margin-top: 18px !important;
+  gap: 24px;
+}
+.docsSplit {
+  display: grid;
+  max-width: 860px;
+  margin-top: 30px;
+  border-top: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
+  grid-template-columns: 1fr 1fr;
+}
+.docsSplit > div {
+  min-width: 0;
+  padding: 22px 24px 25px 0;
+}
+.docsSplit > div + div {
+  padding-right: 0;
+  padding-left: 24px;
+  border-left: 1px solid var(--line-soft);
+}
+.docsSplit h3 {
+  margin: 0 0 8px;
+}
+.docsChoice {
+  margin: 0 0 7px !important;
+  color: var(--brand) !important;
+  font-size: 11px !important;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.docsNote {
+  max-width: 860px !important;
+  margin-top: 24px !important;
+  padding-top: 18px;
+  border-top: 1px solid var(--line-soft);
+  font-size: 13px !important;
+}
+.skillLocations {
+  max-width: 860px;
+  margin-top: 20px;
+  border-top: 1px solid var(--line-soft);
+}
+.skillLocations > div {
+  display: grid;
+  min-height: 52px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line-soft);
+  align-items: center;
+  grid-template-columns: 160px 1fr;
+  gap: 24px;
+}
+.skillLocations span {
+  color: var(--muted);
   font-size: 12px;
-  line-height: 1.65;
-  white-space: pre;
+}
+.skillLocations code {
+  overflow-wrap: anywhere;
+  font-size: 12px;
 }
 
 .authPage {

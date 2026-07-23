@@ -144,15 +144,75 @@
     width: calc(100% - 40px);
     padding: 65px 0 90px;
   }
-  .docs header {
+  .docsHero {
     margin-bottom: 50px;
   }
   .docs h1 {
     font-size: 39px;
   }
-  .docSections section {
-    grid-template-columns: 45px 1fr;
-    gap: 6px;
+  .deploymentAddress {
+    grid-template-columns: 1fr;
+  }
+  .deploymentAddress > div + div {
+    padding-left: 0;
+    border-top: 1px solid var(--line-soft);
+    border-left: 0;
+  }
+  .docsLayout {
+    grid-template-columns: 1fr;
+    gap: 36px;
+  }
+  .docsSidebar {
+    position: static;
+    overflow-x: auto;
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+  .docsSidebar nav {
+    width: max-content;
+    padding: 14px 0;
+    flex-direction: row;
+    gap: 34px;
+  }
+  .docsNavGroup {
+    display: grid;
+    grid-auto-flow: column;
+    align-items: center;
+    gap: 16px;
+  }
+  .docsNavGroup p {
+    margin: 0 3px 0 0;
+  }
+  .docsSection {
+    padding: 42px 0 50px;
+  }
+  .docsSection h2 {
+    font-size: 26px;
+  }
+  .docsSection > .docsLead {
+    font-size: 15px;
+  }
+  .endpointRow {
+    grid-template-columns: 1fr auto;
+    gap: 8px 16px;
+  }
+  .endpointRow > code {
+    grid-column: 1 / -1;
+  }
+  .docsSplit {
+    grid-template-columns: 1fr;
+  }
+  .docsSplit > div {
+    padding: 22px 0;
+  }
+  .docsSplit > div + div {
+    padding-left: 0;
+    border-top: 1px solid var(--line-soft);
+    border-left: 0;
+  }
+  .skillLocations > div {
+    grid-template-columns: 1fr;
+    gap: 5px;
   }
   .historyToolbar {
     height: auto;
