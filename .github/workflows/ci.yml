@@ -58,16 +58,13 @@ jobs:
       - name: Ruff format
         run: uv run ruff format --check
       - name: Mypy
-        run: |
-          uv run mypy scholight
-          uv run mypy skills/scholight-search/scripts/search.py
-          uv run python -m py_compile skills/scholight-search/scripts/search.py
+        run: uv run mypy scholight
       - name: Unit tests
         run: uv run pytest scholight/ tests/ -v --tb=short
       - name: Bandit
         run: uv run bandit -c pyproject.toml -r scholight/ --severity-level medium
       - name: Vulture
-        run: uv run vulture scholight/ skills/scholight-search/scripts/search.py
+        run: uv run vulture scholight/
 
   frontend:
     runs-on: ubuntu-latest

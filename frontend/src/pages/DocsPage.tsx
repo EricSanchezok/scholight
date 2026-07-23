@@ -30,7 +30,6 @@ const navigation = [
     links: [
       ["REST API", "#rest-api"],
       ["MCP server", "#mcp-server"],
-      ["Search Skill", "#search-skill"],
     ],
   },
   {
@@ -66,8 +65,7 @@ export function DocsPage({ origin }: DocsPageProps = {}) {
         <p className={styles.eyebrow}>Documentation</p>
         <h1>Using Scholight</h1>
         <p>
-          Search Scholight&apos;s arXiv index from the web, a REST client, an MCP agent, or an
-          installed Search Skill.
+          Search Scholight&apos;s arXiv index from the web, a REST client, or an MCP-enabled agent.
         </p>
       </header>
 
@@ -211,24 +209,8 @@ export function DocsPage({ origin }: DocsPageProps = {}) {
             </p>
           </section>
 
-          <section className={styles.docsSection} id="search-skill">
-            <p className={styles.docsSectionLabel}>05 · Search Skill</p>
-            <h2>Use Scholight from an installed Search Skill</h2>
-            <p className={styles.docsLead}>
-              If your organization has installed the Scholight Search Skill in your agent
-              environment, configure its API URL and optional Access Key before running a search.
-            </p>
-            <h3>Configure and search</h3>
-            <CopyCodeBlock code={code.skillSearch} language="bash" />
-            <p className={styles.docsNote}>
-              <code>SCHOLIGHT_API_KEY</code> is optional. Run{" "}
-              <code>python3 &lt;skill_dir&gt;/scripts/search.py --help</code> to see the installed
-              CLI&apos;s available filters.
-            </p>
-          </section>
-
           <section className={styles.docsSection} id="search-behavior">
-            <p className={styles.docsSectionLabel}>06 · Search behavior</p>
+            <p className={styles.docsSectionLabel}>05 · Search behavior</p>
             <h2>Choose depth deliberately</h2>
             <div className={styles.docsSplit}>
               <div>
@@ -255,7 +237,7 @@ export function DocsPage({ origin }: DocsPageProps = {}) {
           </section>
 
           <section className={styles.docsSection} id="errors-limits">
-            <p className={styles.docsSectionLabel}>07 · Errors and limits</p>
+            <p className={styles.docsSectionLabel}>06 · Errors and limits</p>
             <h2>Handle failures by category</h2>
             <div className={styles.endpointTable}>
               <EndpointRow

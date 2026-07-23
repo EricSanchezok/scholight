@@ -45,7 +45,7 @@ uv run scholight store health   # 验证 Zilliz Cloud 连通性
 uv run scholight search -q "attention mechanism"   # 测试搜索
 ```
 
-程序化接入请从站内 `/docs` 开始；Agent CLI 入口见 [Scholight Search Skill](skills/scholight-search/SKILL.md)。
+程序化接入与 MCP 配置请从站内 `/docs` 开始。
 
 ---
 

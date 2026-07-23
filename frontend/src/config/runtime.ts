@@ -7,7 +7,6 @@ export function apiPath(path: `/${string}`): string {
 }
 
 export type DeploymentUrls = {
-  api: string;
   search: string;
   mcp: string;
 };
@@ -21,7 +20,6 @@ export function buildDeploymentUrls(
   const api = new URL(normalizedApiPath, `${web}/`).toString().replace(/\/$/, "");
 
   return {
-    api,
     search: `${api}/search`,
     mcp: `${api}/mcp`,
   };

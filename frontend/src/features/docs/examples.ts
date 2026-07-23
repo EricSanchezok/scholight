@@ -24,13 +24,6 @@ export function buildDocsExamples(urls: DeploymentUrls) {
     }
   }
 }`,
-    skillSearch: `SCHOLIGHT_API_URL=${urls.api} \\
-SCHOLIGHT_API_KEY=sk_live_xxx \\
-python3 <skill_dir>/scripts/search.py search \\
-  "retrieval augmented generation" \\
-  --strength standard \\
-  --limit 5 \\
-  --category cs.AI`,
     response: `{
   "query": "retrieval augmented generation",
   "strength": "standard",

@@ -7,15 +7,14 @@ import { buildDeploymentUrls, DocsPage } from "./DocsPage";
 describe("buildDeploymentUrls", () => {
   it("derives every public endpoint from the browser-visible deployment origin", () => {
     expect(buildDeploymentUrls("http://10.24.8.12:8080", "/api")).toEqual({
-      api: "http://10.24.8.12:8080/api",
       search: "http://10.24.8.12:8080/api/search",
       mcp: "http://10.24.8.12:8080/api/mcp",
     });
   });
 
   it("normalizes trailing slashes without losing a configured API path", () => {
-    expect(buildDeploymentUrls("https://papers.example.org/", "/gateway/api/").api).toBe(
-      "https://papers.example.org/gateway/api",
+    expect(buildDeploymentUrls("https://papers.example.org/", "/gateway/api/").search).toBe(
+      "https://papers.example.org/gateway/api/search",
     );
   });
 });
@@ -34,9 +33,6 @@ describe("DocsPage", () => {
     );
     expect(screen.getAllByText(new RegExp(`${origin}/api/search`)).length).toBeGreaterThan(0);
     expect(screen.getAllByText(new RegExp(`${origin}/api/mcp`)).length).toBeGreaterThan(0);
-    expect(
-      screen.getAllByText(/SCHOLIGHT_API_URL=https:\/\/papers\.internal\.example\/api/).length,
-    ).toBeGreaterThan(0);
     expect(screen.queryByText(/https:\/\/example\.com\/api/)).not.toBeInTheDocument();
     expect(
       screen.queryByRole("link", { name: "Open interactive API docs" }),
@@ -45,6 +41,8 @@ describe("DocsPage", () => {
     expect(screen.queryByText("Inspect the Skill source")).not.toBeInTheDocument();
     expect(screen.queryByText("Deployment URLs")).not.toBeInTheDocument();
     expect(screen.queryByText("Live address.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Search Skill")).not.toBeInTheDocument();
+    expect(screen.queryByText(/SCHOLIGHT_API_URL/)).not.toBeInTheDocument();
     expect(screen.queryByText(/github\.com\/EricSanchezok\/scholight/)).not.toBeInTheDocument();
   });
 
