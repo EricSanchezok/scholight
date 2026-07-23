@@ -162,7 +162,9 @@ def test_frontend_serves_agent_documents_without_spa_fallback() -> None:
     assert "try_files /docs.md =404;" in nginx
     assert "try_files /robots.txt =404;" in nginx
     assert "try_files /index.html =404;" in nginx
-    assert """add_header Link '</docs.md>; rel="alternate"; type="text/markdown"' always;""" in nginx
+    assert (
+        """add_header Link '</docs.md>; rel="alternate"; type="text/markdown"' always;""" in nginx
+    )
     assert 'rel="alternate"' in index
     assert 'type="text/markdown"' in index
     assert 'href="/docs.md"' in index
