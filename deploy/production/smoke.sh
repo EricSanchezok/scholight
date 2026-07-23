@@ -63,6 +63,12 @@ retry "local TLS frontend ingress" curl --fail --silent --show-error \
 retry "local TLS API ingress" curl --fail --silent --show-error \
   --resolve "${LOCAL_INGRESS_RESOLVE}" \
   --output /dev/null "https://${SCHOLIGHT_DOMAIN}/api/openapi.json"
+retry "agent discovery document" curl --fail --silent --show-error \
+  --resolve "${LOCAL_INGRESS_RESOLVE}" \
+  --output /dev/null "https://${SCHOLIGHT_DOMAIN}/llms.txt"
+retry "agent integration documentation" curl --fail --silent --show-error \
+  --resolve "${LOCAL_INGRESS_RESOLVE}" \
+  --output /dev/null "https://${SCHOLIGHT_DOMAIN}/docs.md"
 
 for path in livez readyz; do
   status=$(curl --silent --show-error --resolve "${LOCAL_INGRESS_RESOLVE}" \

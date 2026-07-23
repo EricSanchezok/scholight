@@ -239,6 +239,8 @@ jobs:
           }
           retry "https://${PRODUCTION_DOMAIN}/healthz"
           retry "https://${PRODUCTION_DOMAIN}/api/openapi.json"
+          retry "https://${PRODUCTION_DOMAIN}/llms.txt"
+          retry "https://${PRODUCTION_DOMAIN}/docs.md"
           for path in livez readyz; do
             status=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
               "https://${PRODUCTION_DOMAIN}/api/${path}")

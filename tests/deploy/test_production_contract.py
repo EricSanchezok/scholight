@@ -131,6 +131,43 @@ def test_caddy_blocks_internal_health_and_routes_api_directly() -> None:
     assert caddyfile.index("respond @internal_health 404") < caddyfile.index("handle_path /api/*")
 
 
+def test_frontend_publishes_real_agent_discovery_documents() -> None:
+    public = ROOT / "frontend" / "public"
+    llms = (public / "llms.txt").read_text(encoding="utf-8")
+    docs = (public / "docs.md").read_text(encoding="utf-8")
+    robots = (public / "robots.txt").read_text(encoding="utf-8")
+
+    assert llms.startswith("# Scholight\n")
+    assert "> " in llms
+    assert "(/docs.md)" in llms
+    assert "(/api/openapi.json)" in llms
+    assert "(/api/mcp)" in llms
+    assert "same origin" in docs.lower()
+    assert "/api/search" in docs
+    assert "/api/mcp" in docs
+    assert "/api/openapi.json" in docs
+    assert "sk_live_" in docs
+    assert "User-agent: *" in robots
+    assert "Allow: /" in robots
+
+
+def test_frontend_serves_agent_documents_without_spa_fallback() -> None:
+    nginx = (ROOT / "frontend" / "nginx.conf").read_text(encoding="utf-8")
+    index = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
+
+    for path in ("/llms.txt", "/.well-known/llms.txt", "/docs.md", "/robots.txt"):
+        assert f"location = {path}" in nginx
+    assert "default_type text/markdown;" in nginx
+    assert "try_files /llms.txt =404;" in nginx
+    assert "try_files /docs.md =404;" in nginx
+    assert "try_files /robots.txt =404;" in nginx
+    assert "try_files /index.html =404;" in nginx
+    assert """add_header Link '</docs.md>; rel="alternate"; type="text/markdown"' always;""" in nginx
+    assert 'rel="alternate"' in index
+    assert 'type="text/markdown"' in index
+    assert 'href="/docs.md"' in index
+
+
 def test_release_workflow_is_manual_oidc_and_digest_driven() -> None:
     workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
 
@@ -255,6 +292,8 @@ def test_host_smoke_uses_local_tls_ingress_instead_of_public_ip_hairpin() -> Non
     assert "${SCHOLIGHT_DOMAIN}:443:127.0.0.1" in smoke
     assert "https://${SCHOLIGHT_DOMAIN}/healthz" in smoke
     assert "https://${SCHOLIGHT_DOMAIN}/api/openapi.json" in smoke
+    assert "https://${SCHOLIGHT_DOMAIN}/llms.txt" in smoke
+    assert "https://${SCHOLIGHT_DOMAIN}/docs.md" in smoke
 
 
 def test_release_workflow_checks_ingress_from_an_external_runner() -> None:
@@ -264,6 +303,8 @@ def test_release_workflow_checks_ingress_from_an_external_runner() -> None:
     assert "Verify public deployment from the runner" in workflow
     assert "https://${PRODUCTION_DOMAIN}/healthz" in workflow
     assert "https://${PRODUCTION_DOMAIN}/api/openapi.json" in workflow
+    assert "https://${PRODUCTION_DOMAIN}/llms.txt" in workflow
+    assert "https://${PRODUCTION_DOMAIN}/docs.md" in workflow
 
 
 def test_external_actions_are_pinned_to_full_commit_shas() -> None:
