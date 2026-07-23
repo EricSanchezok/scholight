@@ -11,6 +11,7 @@ import { ledgerRowMotion } from "../app/motion";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { EditorialRowsSkeleton } from "../components/EditorialSkeleton";
 import { DeleteSearchIcon, SearchIcon, TrashIcon } from "../components/icons";
+import { PageRefreshButton } from "../components/PageRefreshButton";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { productConfig } from "../config/product";
 import { formatFullDateTime } from "../i18n/format";
@@ -82,9 +83,16 @@ export function HistoryPage() {
 
   return (
     <main className={styles.historyPage}>
-      <header className={styles.historyHeading}>
-        <h1>Search history</h1>
-        <p>Revisit your previous research questions or remove the searches you no longer need.</p>
+      <header className={`${styles.historyHeading} ${styles.pageHeadingAction}`}>
+        <div>
+          <h1>Search history</h1>
+          <p>Revisit your previous research questions or remove the searches you no longer need.</p>
+        </div>
+        <PageRefreshButton
+          label="search history"
+          refreshing={history.isFetching}
+          onRefresh={() => history.refetch()}
+        />
       </header>
       <section aria-label="Search history">
         <div className={styles.historyToolbar}>

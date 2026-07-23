@@ -2,7 +2,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { ApiError } from "../../api/errors";
 import type { AccessKey, CreatedAccessKey } from "../../api/types";
@@ -115,15 +115,28 @@ export function AccessKeyFormDialog({
 export function SecretDialog({ secret, onDone }: { secret: CreatedAccessKey; onDone: () => void }) {
   const input = useRef<HTMLInputElement>(null);
   const copyButton = useRef<HTMLButtonElement>(null);
-  const [message, setMessage] = useState("");
+  const resetTimer = useRef<number | undefined>(undefined);
+  const [copyState, setCopyState] = useState<"idle" | "copying" | "copied" | "error">("idle");
+  const message =
+    copyState === "copied"
+      ? "Access key copied."
+      : copyState === "error"
+        ? "Copy failed. The key is selected so you can copy it manually."
+        : "";
+
+  useEffect(() => () => window.clearTimeout(resetTimer.current), []);
+
   const copy = async () => {
+    window.clearTimeout(resetTimer.current);
+    setCopyState("copying");
     try {
       await navigator.clipboard.writeText(secret.key);
-      setMessage("Access key copied.");
+      setCopyState("copied");
+      resetTimer.current = window.setTimeout(() => setCopyState("idle"), 1800);
     } catch {
       input.current?.focus();
       input.current?.select();
-      setMessage("Copy failed. The key is selected so you can copy it manually.");
+      setCopyState("error");
     }
   };
   return (
@@ -157,16 +170,23 @@ export function SecretDialog({ secret, onDone }: { secret: CreatedAccessKey; onD
             ref={copyButton}
             className={styles.primaryButton}
             type="button"
+            disabled={copyState === "copying"}
+            aria-busy={copyState === "copying"}
             onClick={() => void copy()}
           >
-            Copy key
+            {copyState === "copying" ? "Copying…" : copyState === "copied" ? "Copied" : "Copy key"}
           </button>
         </div>
         <p className={styles.secretHint}>
           Store it in a password manager or server-side secret store.
         </p>
-        <p className="sr-only" aria-live="polite">
-          {message}
+        {copyState === "error" && (
+          <p className={styles.formMessageError} role="alert">
+            {message}
+          </p>
+        )}
+        <p className="sr-only" role="status" aria-live="polite">
+          {copyState === "copied" ? message : ""}
         </p>
         <div className={styles.dialogActions}>
           <button className={styles.darkButton} type="button" onClick={onDone}>

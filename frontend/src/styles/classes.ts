@@ -110,6 +110,8 @@ export const styles: Readonly<Record<string, string>> = Object.freeze({
   notice: "notice",
   noticeError: "noticeError",
   pagination: "pagination",
+  pageHeadingAction: "pageHeadingAction",
+  pageRefreshButton: "pageRefreshButton",
   passwordForm: "passwordForm",
   passwordHint: "passwordHint",
   performanceGrid: "performanceGrid",

@@ -14,6 +14,7 @@ import {
 import { queryKeys } from "../app/queryKeys";
 import { productConfig } from "../config/product";
 import { EditorialRowsSkeleton, SkeletonPulse } from "../components/EditorialSkeleton";
+import { PageRefreshButton } from "../components/PageRefreshButton";
 import { LatencyChart, VolumeChart } from "../features/usage/UsageCharts";
 import { formatCompactDateTime, formatUtcTime } from "../i18n/format";
 import { useI18n } from "../i18n/I18nProvider";
@@ -67,6 +68,10 @@ export function UsagePage() {
     getNextPageParam: (page) => page.next_cursor ?? undefined,
   });
   const items = records.data?.pages.flatMap((page) => page.items) ?? [];
+  const refreshing =
+    summary.isFetching || volume.isFetching || latency.isFetching || records.isFetching;
+  const refreshUsage = () =>
+    Promise.all([summary.refetch(), volume.refetch(), latency.refetch(), records.refetch()]);
 
   const downloadCsv = async () => {
     setExporting(true);
@@ -88,9 +93,16 @@ export function UsagePage() {
 
   return (
     <main className={styles.ledgerPage}>
-      <header className={styles.ledgerHeading}>
-        <h1>Usage &amp; quota</h1>
-        <p>Understand how your research activity uses today’s allowance.</p>
+      <header className={`${styles.ledgerHeading} ${styles.pageHeadingAction}`}>
+        <div>
+          <h1>Usage &amp; quota</h1>
+          <p>Understand how your research activity uses today’s allowance.</p>
+        </div>
+        <PageRefreshButton
+          label="usage and quota"
+          refreshing={refreshing}
+          onRefresh={refreshUsage}
+        />
       </header>
 
       <section className={styles.quotaSection} aria-labelledby="today-usage">

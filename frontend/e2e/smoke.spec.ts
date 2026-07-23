@@ -483,6 +483,11 @@ test("usage, access keys, and account match the editorial account center", async
   await page.goto("/access-keys");
   await expect(page.getByRole("heading", { name: "Access keys" })).toBeVisible();
   await expect(page.getByText("literature-review", { exact: true })).toBeVisible();
+  const keyLedgerWidth = await page.locator(".keyTableWrap").evaluate((element) => ({
+    client: element.clientWidth,
+    scroll: element.scrollWidth,
+  }));
+  expect(keyLedgerWidth.scroll).toBe(keyLedgerWidth.client);
   await expect(page).toHaveScreenshot("access-keys.png", { fullPage: true });
   await page.getByRole("button", { name: "Create new key" }).click();
   await page.getByRole("combobox", { name: "Expiration" }).click();

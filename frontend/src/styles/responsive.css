@@ -201,6 +201,10 @@
   .ledgerHeading {
     margin-bottom: 28px;
   }
+  .pageHeadingAction {
+    flex-direction: column;
+    gap: 18px;
+  }
   .ledgerHeading h1,
   .accountIntro h1 {
     font-size: 34px;
@@ -246,6 +250,9 @@
   .usageTable,
   .keyTable {
     min-width: 780px;
+  }
+  .keyTableWrap {
+    overflow-x: auto;
   }
   .keyLedgerHeading {
     align-items: flex-start;

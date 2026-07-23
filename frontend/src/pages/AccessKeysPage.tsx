@@ -10,6 +10,7 @@ import { ledgerRowMotion } from "../app/motion";
 import { queryKeys } from "../app/queryKeys";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { EditorialRowsSkeleton } from "../components/EditorialSkeleton";
+import { PageRefreshButton } from "../components/PageRefreshButton";
 import {
   AccessKeyFormDialog,
   expiryValue,
@@ -51,14 +52,14 @@ export function AccessKeysPage() {
   });
   const visible = (keys.data ?? []).filter((key) => accessKeyStatus(key) !== "revoked");
   const activeCount = visible.filter((key) => accessKeyStatus(key) === "active").length;
-  const refresh = () => queryClient.invalidateQueries({ queryKey: queryKeys.accessKeys });
+  const invalidateKeys = () => queryClient.invalidateQueries({ queryKey: queryKeys.accessKeys });
   const create = useMutation({
     mutationFn: ({ name, expiry }: { name: string; expiry: ExpiryPreset }) =>
       accessKeyApi.create({ name, scopes: ["search"], expires_at: expiryValue(expiry) ?? null }),
     onSuccess: async (data) => {
       setCreateOpen(false);
       setSecret(data);
-      await refresh();
+      await invalidateKeys();
     },
   });
   const update = useMutation({
@@ -71,22 +72,29 @@ export function AccessKeysPage() {
     },
     onSuccess: async () => {
       setEditKey(null);
-      await refresh();
+      await invalidateKeys();
     },
   });
   const revoke = useMutation({
     mutationFn: (key: AccessKey) => accessKeyApi.revoke(key.id),
     onSuccess: async () => {
       setRevokeKey(null);
-      await refresh();
+      await invalidateKeys();
     },
   });
 
   return (
     <main className={styles.ledgerPage}>
-      <header className={styles.ledgerHeading}>
-        <h1>Access keys</h1>
-        <p>Create keys for tools and agents that search Scholight on your behalf.</p>
+      <header className={`${styles.ledgerHeading} ${styles.pageHeadingAction}`}>
+        <div>
+          <h1>Access keys</h1>
+          <p>Create keys for tools and agents that search Scholight on your behalf.</p>
+        </div>
+        <PageRefreshButton
+          label="access keys"
+          refreshing={keys.isFetching}
+          onRefresh={() => keys.refetch()}
+        />
       </header>
       <section className={styles.keyLedger} aria-labelledby="access-key-count">
         <div className={styles.keyLedgerHeading}>

@@ -116,6 +116,45 @@
   font-size: 14px;
   line-height: 22px;
 }
+.pageHeadingAction {
+  align-items: flex-start;
+  flex-direction: row;
+  justify-content: space-between;
+  gap: 24px;
+}
+.pageHeadingAction > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+}
+.pageRefreshButton {
+  display: inline-flex;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--ink-soft);
+  background: transparent;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  cursor: pointer;
+  font: 600 12px var(--font-ui);
+}
+.pageRefreshButton:hover:not(:disabled) {
+  border-color: var(--line-strong);
+  color: var(--brand);
+}
+.pageRefreshButton:disabled {
+  opacity: 0.62;
+  cursor: wait;
+}
+.pageRefreshButton svg {
+  width: 15px;
+  height: 15px;
+}
 .quotaSection {
   padding: 24px 0 44px;
   border-top: 1px solid var(--line);
@@ -311,9 +350,12 @@
   font-size: 12px;
   font-weight: 600;
 }
-.usageTableWrap,
-.keyTableWrap {
+.usageTableWrap {
   overflow-x: auto;
+}
+.keyTableWrap {
+  min-width: 0;
+  overflow-x: clip;
 }
 .usageTable,
 .keyTable {
@@ -415,10 +457,10 @@
   font-size: 12px;
 }
 .keyTable th:nth-child(1) {
-  width: 23%;
+  width: 22%;
 }
 .keyTable th:nth-child(2) {
-  width: 30%;
+  width: 29%;
 }
 .keyTable th:nth-child(3) {
   width: 16%;
@@ -427,19 +469,26 @@
   width: 17%;
 }
 .keyTable th:nth-child(5) {
-  width: 11%;
+  width: 12%;
 }
 .keyTable th:last-child {
-  width: 34px;
+  width: 4%;
 }
 .keyTable td {
   height: 72px;
+  min-width: 0;
+  overflow: hidden;
   font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .keyTable code {
+  display: block;
+  overflow: hidden;
   color: var(--muted);
   font-family: var(--font-ui);
   font-size: 12px;
+  text-overflow: ellipsis;
 }
 .keyTable td:nth-child(3),
 .keyTable td:nth-child(4) {
@@ -614,6 +663,9 @@
 .secretHint {
   margin-top: 18px !important;
 }
+.secretDialog .formMessageError {
+  margin-top: 14px;
+}
 .secretDialog .dialogActions {
   margin-top: 28px;
 }
@@ -666,6 +718,9 @@
   color: var(--muted);
   font-size: 13px;
   line-height: 1.5;
+}
+.accountSectionIntro .pageRefreshButton {
+  margin-top: 20px;
 }
 .accountSectionBody {
   min-width: 0;

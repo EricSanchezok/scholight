@@ -16,6 +16,7 @@ import { useAuth } from "../auth/context";
 import { clearSession } from "../auth/session";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { EditorialRowsSkeleton } from "../components/EditorialSkeleton";
+import { PageRefreshButton } from "../components/PageRefreshButton";
 import { formatFullDateTime } from "../i18n/format";
 import { useI18n, type AppLocale } from "../i18n/I18nProvider";
 import type { Messages } from "../i18n/en";
@@ -215,6 +216,11 @@ export function AccountPage() {
         <div className={styles.accountSectionIntro}>
           <h2>Active sessions</h2>
           <p>Devices currently signed in to your Scholight account.</p>
+          <PageRefreshButton
+            label="active sessions"
+            refreshing={sessions.isFetching}
+            onRefresh={() => sessions.refetch()}
+          />
         </div>
         <div className={styles.accountSectionBody}>
           {sessions.error && !sessions.data ? (

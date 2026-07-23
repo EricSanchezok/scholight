@@ -47,3 +47,15 @@ export const CloseIcon = (props: SVGProps<SVGSVGElement>) => (
     <path d="m6 6 12 12M18 6 6 18" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
   </Icon>
 );
+
+export const RefreshIcon = (props: SVGProps<SVGSVGElement>) => (
+  <Icon {...props}>
+    <path
+      d="M19 8.5A7.5 7.5 0 1 0 19.1 15M19 4.5v4h-4"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </Icon>
+);
