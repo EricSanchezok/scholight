@@ -168,4 +168,4 @@ dev = [
 
 [tool.uv.sources]
 # Immutable identity/session SDK revision; products never depend on a moving branch.
-cloud-auth = { git = "https://github.com/EricSanchezok/cloud-auth.git", rev = "9cac803ce51d2b475224d97b542ef21e8483817c" }
+cloud-auth = { git = "https://github.com/EricSanchezok/cloud-auth.git", rev = "9e82bb25f38a33aaa309933bfb0affb6d47c1df2" }

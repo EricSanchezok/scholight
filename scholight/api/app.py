@@ -193,7 +193,7 @@ def create_app() -> FastAPI:
         get_auth_router(
             user_manager=user_manager,
             get_current_user=get_current_user,
-            register_rate_limiter=RegisterRateLimiter(max_success=50, window_seconds=3600),
+            register_rate_limiter=RegisterRateLimiter(max_attempts=50, window_seconds=3600),
             refresh_cookie=RefreshCookieConfig(
                 name="scholight_refresh",
                 max_age_seconds=settings.jwt_refresh_token_ttl_days * 24 * 60 * 60,

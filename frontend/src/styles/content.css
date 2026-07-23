@@ -243,6 +243,10 @@
   font-weight: 600;
   cursor: pointer;
 }
+.secondaryButton:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
 .historyToolbar {
   display: flex;
   height: 48px;

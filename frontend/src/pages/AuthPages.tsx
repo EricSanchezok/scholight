@@ -191,31 +191,52 @@ export function RegisterPage() {
 export function CheckEmailPage() {
   const [params] = useSearchParams();
   const email = params.get("email") ?? "your email address";
-  const [status, setStatus] = useState("");
+  const [resendState, setResendState] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const resend = async () => {
+    if (resendState === "sending") return;
+    setResendState("sending");
     try {
       await authApi.resendVerification(email);
-      setStatus("A new verification email has been sent.");
+      setResendState("sent");
     } catch {
-      setStatus("If the address can receive verification mail, a new message will arrive shortly.");
+      setResendState("error");
     }
   };
   return (
     <AuthShell
-      title="Verify your address"
-      intro="We sent a verification link. Open it to finish creating your Scholight account."
+      title="Check your email"
+      intro="If this address is new or still awaiting verification, a verification link will arrive shortly."
     >
       <div className={styles.authInfo}>
         <p>
-          The link was sent to <strong>{email}</strong>.
+          Check <strong>{email}</strong>. Verification links expire after 24 hours.
         </p>
-        <button className={styles.secondaryButton} type="button" onClick={() => void resend()}>
-          Resend verification
+        <button
+          aria-busy={resendState === "sending"}
+          className={styles.secondaryButton}
+          disabled={resendState === "sending"}
+          type="button"
+          onClick={() => void resend()}
+        >
+          {resendState === "sending" ? "Sending…" : "Resend verification"}
         </button>
-        <FormMessage success={status} />
+        <FormMessage
+          error={
+            resendState === "error"
+              ? "Unable to request another link. Please try again in a moment."
+              : undefined
+          }
+          success={
+            resendState === "sent"
+              ? "If the account is awaiting verification, a new link will arrive shortly."
+              : undefined
+          }
+        />
       </div>
       <p className={styles.authFoot}>
-        <Link to={routes.login.path}>Back to sign in</Link>
+        Already verified? <Link to={routes.login.path}>Sign in</Link>
+        {" · "}
+        <Link to={routes.register.path}>Use a different email</Link>
       </p>
     </AuthShell>
   );
