@@ -168,7 +168,9 @@ async def _locked_target_by_id(
     )
 
 
-def _require_active_target(row: asyncpg.Record | dict[str, Any] | None) -> None:
+def _require_active_target(
+    row: asyncpg.Record | dict[str, Any] | None,
+) -> asyncpg.Record | dict[str, Any]:
     if row is None:
         raise AdminTargetNotFoundError("Quota administration target not found")
     if (
@@ -177,6 +179,7 @@ def _require_active_target(row: asyncpg.Record | dict[str, Any] | None) -> None:
         or _row_value(row, "product_status") == "blocked"
     ):
         raise TargetUserInactiveError("Quota administration target is not active")
+    return row
 
 
 async def update_user_quota_overrides(
@@ -192,9 +195,7 @@ async def update_user_quota_overrides(
     requested = {"standard": standard, "thorough": thorough}
     try:
         async with get_pool().acquire() as connection, connection.transaction():
-            row = await _locked_target_by_id(connection, target_user_id)
-            _require_active_target(row)
-            assert row is not None
+            row = _require_active_target(await _locked_target_by_id(connection, target_user_id))
             await connection.execute(
                 "INSERT INTO scholight.user_profiles (user_id) VALUES ($1) "
                 "ON CONFLICT (user_id) DO NOTHING",
@@ -301,9 +302,7 @@ async def grant_quota_admin(email: str, *, event_id: UUID) -> bool:
     try:
         async with get_pool().acquire() as connection, connection.transaction():
             await connection.execute("SELECT pg_advisory_xact_lock($1)", _ADMIN_LIFECYCLE_LOCK_ID)
-            row = await _locked_target_by_email(connection, email)
-            _require_active_target(row)
-            assert row is not None
+            row = _require_active_target(await _locked_target_by_email(connection, email))
             if bool(row["is_admin"]):
                 return False
             await connection.execute(
