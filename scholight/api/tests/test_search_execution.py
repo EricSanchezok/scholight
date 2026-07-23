@@ -34,7 +34,7 @@ def test_search_execution_has_no_transport_imports() -> None:
 
 @pytest.mark.asyncio
 async def test_execute_public_search_uses_invocation_client_ip() -> None:
-    reservation = SearchQuotaReservation(operation="search_level1")
+    reservation = SearchQuotaReservation(strength="standard")
     result = SearchResult(query="retrieval", level=1, total_ms=1.0, hits=[])
 
     with (
@@ -55,4 +55,4 @@ async def test_execute_public_search_uses_invocation_client_ip() -> None:
         )
 
     assert response.result_count == 0
-    reserve.assert_awaited_once_with("192.0.2.20", None, search_level=1)
+    reserve.assert_awaited_once_with("192.0.2.20", None, strength="standard")

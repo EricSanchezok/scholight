@@ -16,7 +16,7 @@ from scholight.db.client import DBError
 from scholight.db.queries_history import bulk_soft_delete_search_entries, get_search_history
 
 pytestmark = pytest.mark.pg_integration
-_MIGRATION = Path(__file__).parents[3] / "migrations/005_create_search_history.sql"
+_BASELINE = Path(__file__).parents[3] / "migrations/001_scholight_baseline.sql"
 
 
 def _database_url() -> str:
@@ -27,12 +27,13 @@ def _database_url() -> str:
 
 
 async def _reset_database(pool: asyncpg.Pool) -> None:
-    await pool.execute("DROP TABLE IF EXISTS public.search_history CASCADE")
+    await pool.execute("DROP SCHEMA IF EXISTS scholight CASCADE")
     await pool.execute("DROP SCHEMA IF EXISTS auth CASCADE")
     await pool.execute("CREATE SCHEMA auth")
+    await pool.execute("CREATE SCHEMA scholight")
     await pool.execute("CREATE TABLE auth.users (id BIGINT PRIMARY KEY)")
     await pool.execute("INSERT INTO auth.users (id) VALUES (1), (2)")
-    await pool.execute(_MIGRATION.read_text(encoding="utf-8"))
+    await pool.execute(_BASELINE.read_text(encoding="utf-8"))
 
 
 async def _insert_history(
@@ -40,17 +41,17 @@ async def _insert_history(
     *,
     user_id: int,
     query: str,
-    level: int = 1,
+    strength: str = "standard",
 ) -> int:
     return cast(
         int,
         await pool.fetchval(
-            "INSERT INTO public.search_history "
-            "(user_id, query_text, level, filters, num_results, response_time_ms) "
+            "INSERT INTO scholight.search_history "
+            "(user_id, query_text, strength, filters, result_count, response_time_ms) "
             "VALUES ($1, $2, $3, NULL, 1, 1) RETURNING id",
             user_id,
             query,
-            level,
+            strength,
         ),
     )
 
@@ -125,8 +126,7 @@ async def test_history_page_and_total_share_repeatable_read_snapshot() -> None:
     try:
         await _reset_database(pool)
         first_id = await _insert_history(pool, user_id=1, query="first")
-        second_id = await _insert_history(pool, user_id=1, query="second", level=2)
-        await _insert_history(pool, user_id=1, query="legacy", level=3)
+        second_id = await _insert_history(pool, user_id=1, query="second", strength="thorough")
         await _insert_history(pool, user_id=2, query="other owner")
 
         count_complete = asyncio.Event()
@@ -137,22 +137,20 @@ async def test_history_page_and_total_share_repeatable_read_snapshot() -> None:
             await count_complete.wait()
             async with pool.acquire() as writer, writer.transaction():
                 await writer.execute(
-                    "UPDATE public.search_history SET deleted_at = statement_timestamp() "
+                    "UPDATE scholight.search_history SET deleted_at = statement_timestamp() "
                     "WHERE id = $1",
                     first_id,
                 )
                 new_id = await writer.fetchval(
-                    "INSERT INTO public.search_history "
-                    "(user_id, query_text, level, num_results, response_time_ms) "
-                    "VALUES (1, 'new', 1, 1, 1) RETURNING id"
+                    "INSERT INTO scholight.search_history "
+                    "(user_id, query_text, strength, result_count, response_time_ms) "
+                    "VALUES (1, 'new', 'standard', 1, 1) RETURNING id"
                 )
             resume_page.set()
             snapshot_page = await page_task
 
         assert snapshot_page.total == 2
         assert {item.id for item in snapshot_page.items} == {first_id, second_id}
-        assert snapshot_page.legacy_level3_count == 1
-
         with patch("scholight.db.queries_history.get_pool", return_value=pool):
             current_page = await get_search_history(1, limit=20, offset=0)
 
@@ -179,15 +177,16 @@ async def test_literal_q_bulk_owner_isolation_rollback_and_replay() -> None:
         assert [item.id for item in literal_page.items] == [literal_id]
 
         await pool.execute(
-            "CREATE FUNCTION public.reject_second_history_delete() RETURNS trigger "
+            "CREATE FUNCTION scholight.reject_second_history_delete() RETURNS trigger "
             "LANGUAGE plpgsql AS $$ BEGIN "
             f"IF OLD.id = $trigger_id${second_id}$trigger_id$ "
             "THEN RAISE EXCEPTION 'forced'; END IF; "
             "RETURN NEW; END $$"
         )
         await pool.execute(
-            "CREATE TRIGGER reject_second_history_delete BEFORE UPDATE ON public.search_history "
-            "FOR EACH ROW EXECUTE FUNCTION public.reject_second_history_delete()"
+            "CREATE TRIGGER reject_second_history_delete BEFORE UPDATE "
+            "ON scholight.search_history "
+            "FOR EACH ROW EXECUTE FUNCTION scholight.reject_second_history_delete()"
         )
         with (
             patch("scholight.db.queries_history.get_pool", return_value=pool),
@@ -196,15 +195,15 @@ async def test_literal_q_bulk_owner_isolation_rollback_and_replay() -> None:
             await bulk_soft_delete_search_entries(1, [literal_id, second_id])
         assert (
             await pool.fetchval(
-                "SELECT count(*) FROM public.search_history "
+                "SELECT count(*) FROM scholight.search_history "
                 "WHERE id = ANY($1::bigint[]) AND deleted_at IS NULL",
                 [literal_id, second_id],
             )
             == 2
         )
 
-        await pool.execute("DROP TRIGGER reject_second_history_delete ON public.search_history")
-        await pool.execute("DROP FUNCTION public.reject_second_history_delete()")
+        await pool.execute("DROP TRIGGER reject_second_history_delete ON scholight.search_history")
+        await pool.execute("DROP FUNCTION scholight.reject_second_history_delete()")
         with patch("scholight.db.queries_history.get_pool", return_value=pool):
             deleted = await bulk_soft_delete_search_entries(
                 1,
@@ -218,7 +217,7 @@ async def test_literal_q_bulk_owner_isolation_rollback_and_replay() -> None:
         assert (deleted, replayed) == (3, 0)
         assert (
             await pool.fetchval(
-                "SELECT deleted_at IS NULL FROM public.search_history WHERE id = $1",
+                "SELECT deleted_at IS NULL FROM scholight.search_history WHERE id = $1",
                 other_owner_id,
             )
             is True

@@ -8,8 +8,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from cloud_auth.db.asyncpg import AsyncpgUserDatabase
-from cloud_auth.models.user import QuotaStatus, UserRecord
+from cloud_auth.models.user import UserRecord
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 
@@ -34,13 +33,16 @@ from scholight.api.usage import (
     parse_range_value,
     resolve_usage_range,
 )
-from scholight.db.client import DBError, get_pool
+from scholight.config import settings
+from scholight.db.client import DBError
+from scholight.db.queries_quota import get_user_quota_status
 from scholight.db.queries_usage import (
     query_latency,
     query_usage_records,
     query_usage_summary,
     query_volume,
 )
+from scholight.models.quota import QuotaStatus
 
 router = APIRouter()
 _EXPORT_LIMIT = 10_000
@@ -79,15 +81,18 @@ def _quota(value: QuotaStatus | None) -> DailyQuotaUsage:
 async def usage_summary(
     current_user: UserRecord = Depends(get_current_user),
 ) -> UsageSummaryResponse:
-    db = AsyncpgUserDatabase(pool_factory=get_pool)
     try:
-        quotas = await db.get_quota_status(current_user.id)
+        quotas = await get_user_quota_status(
+            current_user.id,
+            standard_default_limit=settings.authenticated_standard_daily_limit,
+            thorough_default_limit=settings.authenticated_thorough_daily_limit,
+        )
         stats = await query_usage_summary(current_user.id)
     except Exception as exc:
         raise _error(503, "usage_service_unavailable", "Usage service unavailable.") from exc
-    by_operation = {quota.operation: quota for quota in quotas}
-    standard = _quota(by_operation.get("search_level1"))
-    thorough = _quota(by_operation.get("search_level2"))
+    by_strength = {quota.strength: quota for quota in quotas}
+    standard = _quota(by_strength.get("standard"))
+    thorough = _quota(by_strength.get("thorough"))
     success = int(stats["success_count"])
     degraded = int(stats["degraded_count"])
     failed = int(stats["failed_count"])

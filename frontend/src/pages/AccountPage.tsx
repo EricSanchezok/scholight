@@ -16,7 +16,6 @@ import { useAuth } from "../auth/context";
 import { clearSession } from "../auth/session";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { EditorialRowsSkeleton } from "../components/EditorialSkeleton";
-import { DeleteAccountDialog } from "../features/account/DeleteAccountDialog";
 import { formatFullDateTime } from "../i18n/format";
 import { useI18n, type AppLocale } from "../i18n/I18nProvider";
 import type { Messages } from "../i18n/en";
@@ -54,7 +53,6 @@ export function AccountPage() {
   const [passwordMessage, setPasswordMessage] = useState("");
   const [pendingSession, setPendingSession] = useState<Session | null>(null);
   const [revokeOthersOpen, setRevokeOthersOpen] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
   const profile = useQuery({
     queryKey: queryKeys.profile,
     queryFn: accountApi.profile,
@@ -85,15 +83,6 @@ export function AccountPage() {
     onSuccess: async () => {
       setRevokeOthersOpen(false);
       await queryClient.invalidateQueries({ queryKey: queryKeys.sessions });
-    },
-  });
-  const deleteAccount = useMutation({
-    mutationFn: ({ password, confirmation }: { password: string; confirmation: string }) =>
-      accountApi.deleteAccount({ password, confirmation }),
-    onSuccess: () => {
-      clearSession();
-      queryClient.clear();
-      navigate(routes.home.path, { replace: true });
     },
   });
   const {
@@ -248,7 +237,7 @@ export function AccountPage() {
               {orderedSessions.map((session, index) => (
                 <m.div className={styles.sessionRow} key={session.id} {...ledgerRowMotion(index)}>
                   <div>
-                    <strong>{parseUserAgent(session.user_agent)}</strong>
+                    <strong>{parseUserAgent(session.user_agent ?? null)}</strong>
                     <span>{seenAt(session.last_seen_at, session.current, locale, messages)}</span>
                   </div>
                   {session.current ? (
@@ -271,21 +260,6 @@ export function AccountPage() {
               )}
             </div>
           )}
-        </div>
-      </section>
-      <section className={`${styles.accountSection} ${styles.dangerSection}`}>
-        <div className={styles.accountSectionIntro}>
-          <h2>Delete account</h2>
-          <p>Permanently remove your account, search history, access keys, and usage records.</p>
-        </div>
-        <div className={styles.accountSectionBody}>
-          <button
-            className={styles.deleteAccountButton}
-            type="button"
-            onClick={() => setDeleteOpen(true)}
-          >
-            Delete account
-          </button>
         </div>
       </section>
       <ConfirmDialog
@@ -331,16 +305,6 @@ export function AccountPage() {
               : undefined
         }
         onConfirm={() => revokeOthers.mutate()}
-      />
-      <DeleteAccountDialog
-        open={deleteOpen}
-        busy={deleteAccount.isPending}
-        error={deleteAccount.error}
-        onOpenChange={(open) => {
-          setDeleteOpen(open);
-          if (!open) deleteAccount.reset();
-        }}
-        onConfirm={(password, confirmation) => deleteAccount.mutate({ password, confirmation })}
       />
     </main>
   );

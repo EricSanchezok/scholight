@@ -37,14 +37,13 @@ def _pool_with(connection: MagicMock) -> MagicMock:
     return pool
 
 
-def _row(entry_id: int, *, level: int = 1) -> dict[str, object]:
+def _row(entry_id: int, *, strength: str = "standard") -> dict[str, object]:
     return {
         "id": entry_id,
         "query_text": "retrieval",
-        "level": level,
-        "strategy": None,
+        "strength": strength,
         "filters": None,
-        "num_results": 3,
+        "result_count": 3,
         "response_time_ms": 12.5,
         "created_at": datetime(2026, 7, 21, 10, tzinfo=UTC),
     }
@@ -53,7 +52,7 @@ def _row(entry_id: int, *, level: int = 1) -> dict[str, object]:
 @pytest.mark.asyncio
 async def test_history_page_uses_one_readonly_repeatable_read_snapshot() -> None:
     connection = MagicMock()
-    connection.fetchrow = AsyncMock(return_value={"total": 1, "legacy_level3_count": 0})
+    connection.fetchrow = AsyncMock(return_value={"total": 1})
     connection.fetch = AsyncMock(return_value=[_row(9)])
 
     with patch("scholight.db.queries_history.get_pool", return_value=_pool_with(connection)):
@@ -63,17 +62,17 @@ async def test_history_page_uses_one_readonly_repeatable_read_snapshot() -> None
     connection.transaction.assert_called_once_with(isolation="repeatable_read", readonly=True)
     count_sql = connection.fetchrow.await_args.args[0]
     page_sql = connection.fetch.await_args.args[0]
-    assert "count(*) FILTER (WHERE level IN (1, 2)) AS total" in count_sql
-    assert "count(*) FILTER (WHERE level = 3) AS legacy_level3_count" in count_sql
-    assert "level IN (1, 2)" in page_sql
+    assert "FROM scholight.search_history" in count_sql
+    assert "strength" in page_sql
     assert "ORDER BY created_at DESC, id DESC" in page_sql
     assert "ILIKE" not in count_sql + page_sql
+    assert "level" not in count_sql + page_sql
 
 
 @pytest.mark.asyncio
 async def test_history_q_is_literal_and_uses_distinct_static_sql() -> None:
     connection = MagicMock()
-    connection.fetchrow = AsyncMock(return_value={"total": 0, "legacy_level3_count": 0})
+    connection.fetchrow = AsyncMock(return_value={"total": 0})
     connection.fetch = AsyncMock(return_value=[])
 
     with patch("scholight.db.queries_history.get_pool", return_value=_pool_with(connection)):
@@ -94,26 +93,6 @@ async def test_history_q_is_literal_and_uses_distinct_static_sql() -> None:
 
 
 @pytest.mark.asyncio
-async def test_legacy_level3_rows_are_excluded_and_warned_once() -> None:
-    connection = MagicMock()
-    connection.fetchrow = AsyncMock(return_value={"total": 1, "legacy_level3_count": 2})
-    connection.fetch = AsyncMock(return_value=[_row(1)])
-
-    with (
-        patch("scholight.db.queries_history.get_pool", return_value=_pool_with(connection)),
-        patch("scholight.db.queries_history.logger.warning") as warning,
-    ):
-        page = await get_search_history(42)
-
-    assert (page.total, page.legacy_level3_count) == (1, 2)
-    warning.assert_called_once_with(
-        "legacy_search_history_excluded",
-        user_id=42,
-        count=2,
-    )
-
-
-@pytest.mark.asyncio
 async def test_bulk_delete_is_one_owner_scoped_statement_and_counts_rows() -> None:
     connection = MagicMock()
     connection.fetch = AsyncMock(return_value=[{"id": 3}, {"id": 1}])
@@ -123,7 +102,7 @@ async def test_bulk_delete_is_one_owner_scoped_statement_and_counts_rows() -> No
 
     sql, user_id, ids = connection.fetch.await_args.args
     assert (deleted, user_id, ids) == (2, 42, [3, 1, 99])
-    assert "UPDATE public.search_history" in sql
+    assert "UPDATE scholight.search_history" in sql
     assert "deleted_at IS NULL" in sql
     assert "id = ANY($2::bigint[])" in sql
     assert "RETURNING id" in sql

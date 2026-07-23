@@ -1,24 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  REFRESH_TOKEN_KEY,
-  getAccessToken,
-  refreshAccessToken,
-  subscribeToSessionChanges,
-} from "./session";
+import { clearSession, establishSession, getAccessToken, refreshAccessToken } from "./session";
 
 describe("session refresh", () => {
   beforeEach(() => {
-    localStorage.setItem(REFRESH_TOKEN_KEY, "refresh-one");
+    clearSession(false);
     vi.restoreAllMocks();
   });
 
-  it("coalesces concurrent refreshes into a single request", async () => {
+  it("coalesces cookie refreshes into one credentialed request", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
         JSON.stringify({
           access_token: "access-two",
-          refresh_token: "refresh-two",
           token_type: "bearer",
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
@@ -26,16 +20,24 @@ describe("session refresh", () => {
     );
 
     const [first, second] = await Promise.all([refreshAccessToken(), refreshAccessToken()]);
+
     expect(first).toBe("access-two");
     expect(second).toBe("access-two");
     expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/auth/refresh",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "same-origin",
+      }),
+    );
+    expect(fetchMock.mock.calls[0]?.[1]).not.toHaveProperty("body");
     expect(getAccessToken()).toBe("access-two");
-    expect(localStorage.getItem(REFRESH_TOKEN_KEY)).toBe("refresh-two");
+    expect(Object.keys(localStorage)).toHaveLength(0);
   });
 
-  it("notifies the current tab when refresh invalidates the session", async () => {
-    const listener = vi.fn();
-    const unsubscribe = subscribeToSessionChanges(listener);
+  it("clears the in-memory access token when the cookie session is invalid", async () => {
+    establishSession({ access_token: "stale-access", token_type: "bearer" }, false);
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ detail: "Invalid session" }), {
         status: 401,
@@ -45,9 +47,7 @@ describe("session refresh", () => {
 
     await expect(refreshAccessToken()).rejects.toThrow("Unable to refresh session");
 
-    expect(listener).toHaveBeenCalledTimes(1);
     expect(getAccessToken()).toBeNull();
-    expect(localStorage.getItem(REFRESH_TOKEN_KEY)).toBeNull();
-    unsubscribe();
+    expect(Object.keys(localStorage)).toHaveLength(0);
   });
 });

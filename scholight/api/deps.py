@@ -10,12 +10,15 @@ from uuid import UUID
 from cloud_auth.config import AuthConfig
 from cloud_auth.db.asyncpg import AsyncpgUserDatabase
 from cloud_auth.dependencies import create_get_current_user as _create_get_current_user
+from cloud_auth.exceptions import AuthError, DBError as AuthDBError
+from cloud_auth.manager import UserManager
 from cloud_auth.models.user import UserRecord
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from scholight.api.access_keys import AccessKeyError, resolve_access_key
 from scholight.db.client import DBError
+from scholight.db.queries_profile import ProductAccessBlockedError, ensure_product_access
 
 security = HTTPBearer(scheme_name="BearerAuth")
 optional_security = HTTPBearer(auto_error=False, scheme_name="BearerAuth")
@@ -34,19 +37,30 @@ class SearchActor:
 # cloud-auth's create_get_current_user returns an async callable that
 # resolves to a UserRecord; type the lazy-bound handle so ``await`` type-checks.
 _get_current_user_callable: Callable[..., Awaitable[UserRecord]] | None = None
-_auth_config: AuthConfig | None = None
+_user_manager: UserManager | None = None
 
 
-def wire_dependencies(*, db: AsyncpgUserDatabase, auth_config: AuthConfig) -> None:
+def wire_dependencies(
+    *,
+    db: AsyncpgUserDatabase,
+    auth_config: AuthConfig,
+    user_manager: UserManager,
+) -> None:
     """在 create_app() 中调用一次, 连接 cloud-auth SDK 的依赖。"""
-    global _auth_config, _get_current_user_callable
+    global _get_current_user_callable, _user_manager
     # cloud_auth declares the factory return as Callable[..., object];
     # the actual closure is async and resolves to UserRecord.
     _get_current_user_callable = cast(
         "Callable[..., Awaitable[UserRecord]]",
         _create_get_current_user(db=db, config=auth_config),
     )
-    _auth_config = auth_config
+    _user_manager = user_manager
+
+
+def get_user_manager() -> UserManager:
+    if _user_manager is None:
+        raise RuntimeError("Dependencies not wired — call wire_dependencies() in create_app()")
+    return _user_manager
 
 
 async def _resolve_current_user(
@@ -56,27 +70,33 @@ async def _resolve_current_user(
         raise RuntimeError("Dependencies not wired — call wire_dependencies() in create_app()")
     try:
         user = await _get_current_user_callable(credentials=credentials)
-        if _auth_config is not None:
-            from cloud_auth.exceptions import AuthError
-
-            from scholight.api.sessions import session_id_from_access_token
-            from scholight.db.queries_sessions import touch_session
-
-            try:
-                session_id = session_id_from_access_token(
-                    credentials.credentials,
-                    config=_auth_config,
-                )
-            except AuthError:
-                session_id = None
-            if session_id is not None and not await touch_session(user.id, session_id):
-                raise HTTPException(
-                    status_code=401,
-                    detail="Session revoked or expired",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
+        if _user_manager is None:
+            raise RuntimeError("Dependencies not wired — call wire_dependencies() in create_app()")
+        session_id = _user_manager.session_id_from_access_token(credentials.credentials)
+        if not await _user_manager.touch_session(user.id, session_id):
+            raise HTTPException(
+                status_code=401,
+                detail="Session revoked or expired",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        try:
+            await ensure_product_access(user.id)
+        except ProductAccessBlockedError as exc:
+            raise HTTPException(status_code=403, detail="Scholight access is blocked") from exc
         return user
-    except HTTPException as exc:
+    except (AuthDBError, DBError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Authentication service unavailable",
+            headers={"Retry-After": "5"},
+        ) from exc
+    except (AuthError, HTTPException) as exc:
+        if isinstance(exc, AuthError):
+            raise HTTPException(
+                status_code=401,
+                detail=str(exc),
+                headers={"WWW-Authenticate": "Bearer"},
+            ) from exc
         if exc.status_code != 401:
             raise
         headers = dict(exc.headers or {})

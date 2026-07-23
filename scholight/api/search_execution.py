@@ -85,7 +85,6 @@ def _schedule_usage(
     actor: _SearchActor | None,
     *,
     request_id: str,
-    level: int,
     strength: Literal["standard", "thorough"],
     outcome: Literal["success", "degraded", "failed"],
     quota_units: int,
@@ -100,7 +99,6 @@ def _schedule_usage(
         UsageEvent(
             request_id=request_id,
             user_id=actor.user.id,
-            operation="search_level1" if level == 1 else "search_level2",
             strength=strength,
             actor_type=actor.actor_type,
             access_key_id=actor.access_key_id,
@@ -179,7 +177,7 @@ async def execute_public_search(
         reservation = await reserve_search_quota(
             invocation.client_ip,
             current_user,
-            search_level=internal_request.level,
+            strength=body.strength.value,
         )
     except SearchAccessError as exc:
         raise _execution_error(
@@ -200,7 +198,6 @@ async def execute_public_search(
         _schedule_usage(
             invocation.actor,
             request_id=invocation.request_id,
-            level=internal_request.level,
             strength=body.strength.value,
             outcome="failed",
             quota_units=0,
@@ -223,7 +220,6 @@ async def execute_public_search(
         _schedule_usage(
             invocation.actor,
             request_id=invocation.request_id,
-            level=internal_request.level,
             strength=body.strength.value,
             outcome="failed",
             quota_units=0,
@@ -251,7 +247,6 @@ async def execute_public_search(
         _schedule_usage(
             invocation.actor,
             request_id=invocation.request_id,
-            level=internal_request.level,
             strength=body.strength.value,
             outcome="failed",
             quota_units=0,
@@ -279,7 +274,6 @@ async def execute_public_search(
         _schedule_usage(
             invocation.actor,
             request_id=invocation.request_id,
-            level=internal_request.level,
             strength=body.strength.value,
             outcome="failed",
             quota_units=0,
@@ -313,7 +307,6 @@ async def execute_public_search(
         _schedule_usage(
             invocation.actor,
             request_id=invocation.request_id,
-            level=internal_request.level,
             strength=body.strength.value,
             outcome="failed",
             quota_units=0,
@@ -346,7 +339,6 @@ async def execute_public_search(
             request_id=invocation.request_id,
             user_id=current_user.id,
             query_text=internal_request.query,
-            level=internal_request.level,
             strength=body.strength.value,
             filters=filters if filters else None,
             result_count=len(result.hits),
@@ -355,7 +347,6 @@ async def execute_public_search(
         _schedule_usage(
             invocation.actor,
             request_id=invocation.request_id,
-            level=internal_request.level,
             strength=body.strength.value,
             outcome="degraded" if degraded else "success",
             quota_units=1,

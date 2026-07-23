@@ -32,16 +32,27 @@ Configure GitHub OIDC roles instead of static AWS access keys. Repository or env
 
 Add the read-only `CLOUD_AUTH_READ_TOKEN` repository secret. Create a protected GitHub environment named `production` with required reviewers. The publish role may push only to the two ECR repositories; the deploy role may send and inspect SSM commands only for the production instance. The EC2 instance role needs ECR pull and SSM managed-instance permissions.
 
-Use distinct existing PostgreSQL login roles: `scholight_app` receives only the schema usage and DML privileges required by the API, while `scholight_migrator` owns the application schemas and may run DDL. Never use the RDS master or `postgres` identity for the public API. Run `bootstrap-db.sql` as the database owner before the first migration and again immediately after it; the second pass transfers known legacy objects, grants current-object privileges, and installs default privileges for future migrator-owned tables and sequences:
+Use three distinct existing PostgreSQL login roles: `auth_migrator` owns only
+`auth`, `scholight_migrator` owns only `scholight`, and `scholight_app`
+receives only runtime DML. Neither migrator receives database-level `CREATE`;
+each migration runner refuses a schema that is missing or owned by another role.
+Never use the RDS master or `postgres` identity for the public API.
+
+Run `bootstrap-db.sql` as the database owner before cloud-auth migration, after
+cloud-auth migration, and after Scholight migration:
 
 ```bash
 psql "$DATABASE_ADMIN_URL" \
   -v app_role=scholight_app \
-  -v migrator_role=scholight_migrator \
+  -v auth_migrator_role=auth_migrator \
+  -v product_migrator_role=scholight_migrator \
   -f deploy/production/bootstrap-db.sql
 ```
 
-The roles themselves and their passwords remain infrastructure-managed. The script never creates login roles or stores credentials. For an existing installation, run it once with the old database owner before switching `SCHOLIGHT_MIGRATION_PG_USER`, run the unified migration as `scholight_migrator`, then run the script again before starting the API.
+The roles and passwords remain infrastructure-managed. The script never creates
+login roles or stores credentials. `auth.*` is migrated only by cloud-auth's
+protected workflow. A Scholight release merely checks the installed auth schema
+version and migrates `scholight.*`.
 
 ## Install on the production host
 
@@ -81,7 +92,7 @@ sudo /opt/scholight/release.sh deploy \
   --frontend-image "$FRONTEND_IMAGE_DIGEST_REF"
 ```
 
-The transaction verifies the installed production package digest, validates runtime-file ownership and mode, validates Compose, logs into ECR with the instance role, pulls both images, runs the unified cloud-auth → Scholight migration command, activates the pair, and runs bounded internal/external smoke checks. Pull failure leaves the running application untouched. Migration failure does not activate the candidate, but earlier migration files may already be committed; every ordinary release migration must therefore remain backward-compatible with the running release. Candidate smoke failure restores the complete previous pair.
+The transaction verifies the installed production package digest, validates runtime-file ownership and mode, validates Compose, logs into ECR with the instance role, pulls both images, validates the independently managed auth schema, runs only the Scholight migration, activates the pair, and runs bounded internal/external smoke checks. Pull or migration failure leaves the running application untouched. Candidate smoke failure restores the complete previous pair.
 
 ## Roll back the application
 

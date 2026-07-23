@@ -1,6 +1,4 @@
-"""Migration runner — applies ``migrations/*.sql`` files in sorted order,
-tracking applied migrations in a ``_migrations`` table.
-"""
+"""Scholight-owned schema migration runner."""
 
 from __future__ import annotations
 
@@ -10,6 +8,7 @@ from pathlib import Path
 
 import asyncpg
 import structlog
+from cloud_auth.migrate import assert_schema_compatible
 
 from scholight.db.migration_policy import migration_checksum, validate_expand_only_sql
 
@@ -26,8 +25,15 @@ _MIGRATION_LOCK_ID = 7_192_003_901
 
 
 async def run_migrations(pool: asyncpg.Pool) -> None:
-    """Apply pending Scholight migrations under one PostgreSQL advisory lock."""
+    """Validate independently managed auth, then migrate ``scholight.*``."""
+    await assert_schema_compatible(pool)
     async with pool.acquire() as conn:
+        owns_schema = await conn.fetchval(
+            "SELECT pg_get_userbyid(nspowner) = current_user "
+            "FROM pg_namespace WHERE nspname = 'scholight'"
+        )
+        if owns_schema is not True:
+            raise RuntimeError("Scholight schema is missing or not owned by the migration role")
         await conn.execute("SELECT pg_advisory_lock($1)", _MIGRATION_LOCK_ID)
         try:
             await apply_migrations(conn)
@@ -57,29 +63,23 @@ async def apply_migrations(conn: asyncpg.Connection) -> None:
         migrations.append((version, match.group(2), filepath))
 
     await conn.execute(
-        "CREATE TABLE IF NOT EXISTS _migrations ("
+        "CREATE TABLE IF NOT EXISTS scholight.schema_migrations ("
         "version INTEGER NOT NULL PRIMARY KEY, "
         "name TEXT NOT NULL, "
-        "checksum TEXT, "
+        "checksum TEXT NOT NULL, "
         "applied_at TIMESTAMPTZ NOT NULL DEFAULT now()"
         ")"
     )
-    await conn.execute("ALTER TABLE _migrations ADD COLUMN IF NOT EXISTS checksum TEXT")
     for version, name, filepath in migrations:
         sql = filepath.read_text(encoding="utf-8")
         checksum = migration_checksum(sql)
         applied = await conn.fetchrow(
-            "SELECT name, checksum FROM _migrations WHERE version = $1", version
+            "SELECT name, checksum FROM scholight.schema_migrations WHERE version = $1",
+            version,
         )
         if applied is not None:
             recorded_checksum = applied["checksum"]
-            if recorded_checksum is None:
-                await conn.execute(
-                    "UPDATE _migrations SET checksum = $2 WHERE version = $1",
-                    version,
-                    checksum,
-                )
-            elif recorded_checksum != checksum:
+            if recorded_checksum != checksum:
                 msg = f"applied migration checksum mismatch: {filepath.name}"
                 raise RuntimeError(msg)
             logger.debug("migration already applied", version=version, name=name)
@@ -89,7 +89,8 @@ async def apply_migrations(conn: asyncpg.Connection) -> None:
         async with conn.transaction():
             await conn.execute(sql)
             await conn.execute(
-                "INSERT INTO _migrations (version, name, checksum) VALUES ($1, $2, $3)",
+                "INSERT INTO scholight.schema_migrations "
+                "(version, name, checksum) VALUES ($1, $2, $3)",
                 version,
                 name,
                 checksum,

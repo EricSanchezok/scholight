@@ -167,8 +167,5 @@ dev = [
 ]
 
 [tool.uv.sources]
-# cloud-auth SDK — SanchezCloud 统一用户认证/配额系统
-#   • 本地开发时: 使用 path 依赖（需要 cloud-auth 目录在 scholight 根目录下）
-#   • 部署模式时: 用 git SSH（需配 SSH key: ssh-keygen -t ed25519 → GitHub Deploy Keys）
-# cloud-auth = { git = "ssh://git@github.com/EricSanchezok/cloud-auth.git", branch = "main" }
-cloud-auth = { path = "cloud-auth", editable = true }
+# Immutable identity/session SDK revision; products never depend on a moving branch.
+cloud-auth = { git = "https://github.com/EricSanchezok/cloud-auth.git", rev = "40d26c58d019cbc59b98cab9ee7db7eb14af6b15" }

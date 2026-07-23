@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import date
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import asyncpg
 import pytest
-from cloud_auth.models.user import QuotaResult, UserRecord
+from cloud_auth.models.user import UserRecord
 
 from scholight.api.search_access import (
     SearchAccessError,
@@ -17,6 +17,7 @@ from scholight.api.search_access import (
 from scholight.config import settings
 from scholight.db import client as db_client
 from scholight.db.queries_anonymous_quota import AnonymousQuotaReservation
+from scholight.models.quota import UserQuotaReservation
 
 
 def _user() -> UserRecord:
@@ -30,14 +31,15 @@ def _user() -> UserRecord:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(("search_level", "limit"), [(1, 100), (2, 30)])
-async def test_anonymous_search_routes_to_independent_daily_bucket(
-    search_level: int, limit: int
-) -> None:
+@pytest.mark.parametrize(
+    ("strength", "limit"),
+    [("standard", 100), ("thorough", 30)],
+)
+async def test_anonymous_search_routes_to_strength_bucket(strength: str, limit: int) -> None:
     token = AnonymousQuotaReservation(
-        quota_date=datetime(2026, 7, 21, tzinfo=UTC).date(),
+        quota_date=date(2026, 7, 21),
         ip_digest=b"d" * 32,
-        search_level=search_level,
+        strength=strength,  # type: ignore[arg-type]
         used_count=1,
     )
 
@@ -48,16 +50,16 @@ async def test_anonymous_search_routes_to_independent_daily_bucket(
             return_value=token,
         ) as reserve_anonymous,
         patch(
-            "scholight.api.search_access.check_and_increment_quota",
+            "scholight.api.search_access.reserve_user_quota",
             new_callable=AsyncMock,
         ) as reserve_user,
     ):
-        reservation = await reserve_search_quota("192.0.2.20", None, search_level=search_level)
+        reservation = await reserve_search_quota("192.0.2.20", None, strength=strength)
 
     assert reservation.anonymous is token
     anonymous_call = reserve_anonymous.await_args
     assert anonymous_call is not None
-    assert anonymous_call.kwargs == {"search_level": search_level, "limit": limit}
+    assert anonymous_call.kwargs == {"strength": strength, "limit": limit}
     assert len(anonymous_call.args[0]) == 32
     reserve_user.assert_not_awaited()
 
@@ -70,7 +72,7 @@ async def test_anonymous_daily_limit_returns_stable_429() -> None:
         return_value=None,
     ):
         with pytest.raises(SearchAccessError) as exc_info:
-            await reserve_search_quota("192.0.2.20", None, search_level=1)
+            await reserve_search_quota("192.0.2.20", None, strength="standard")
 
     assert exc_info.value.status_code == 429
     assert exc_info.value.code == "anonymous_daily_limit_exceeded"
@@ -79,89 +81,59 @@ async def test_anonymous_daily_limit_returns_stable_429() -> None:
 
 
 @pytest.mark.asyncio
-async def test_authenticated_search_uses_only_cloud_auth_quota() -> None:
-    now = datetime(2026, 7, 21, 12, tzinfo=UTC)
-    result = QuotaResult(allowed=True, current_count=1, daily_limit=1000)
+async def test_authenticated_search_uses_scholight_quota_only() -> None:
+    token = UserQuotaReservation(
+        user_id=42,
+        strength="thorough",
+        quota_date=date(2026, 7, 21),
+        used_count=1,
+        daily_limit=1000,
+    )
 
     with (
-        patch("scholight.api.search_access._utc_now", return_value=now),
         patch(
-            "scholight.api.search_access.check_and_increment_quota",
+            "scholight.api.search_access.reserve_user_quota",
             new_callable=AsyncMock,
-            return_value=result,
+            return_value=token,
         ) as reserve_user,
         patch(
             "scholight.api.search_access.reserve_anonymous_daily_quota",
             new_callable=AsyncMock,
         ) as reserve_anonymous,
     ):
-        reservation = await reserve_search_quota(None, _user(), search_level=2)
+        reservation = await reserve_search_quota(None, _user(), strength="thorough")
 
-    assert (
-        reservation.operation,
-        reservation.user_id,
-        reservation.user_quota_date,
-        reservation.user_quota_completed_date,
-    ) == ("search_level2", 42, now.date(), now.date())
-    reserve_user.assert_awaited_once()
+    assert reservation.user is token
+    reserve_user.assert_awaited_once_with(42, strength="thorough", default_limit=1000)
     reserve_anonymous.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_user_compensation_is_one_shot_within_same_utc_day() -> None:
-    now = datetime(2026, 7, 21, 12, tzinfo=UTC)
-    result = QuotaResult(allowed=True, current_count=1, daily_limit=1000)
+async def test_user_compensation_is_one_shot_for_exact_reservation_date() -> None:
+    token = UserQuotaReservation(
+        user_id=42,
+        strength="standard",
+        quota_date=date(2026, 7, 21),
+        used_count=1,
+        daily_limit=1000,
+    )
 
     with (
-        patch("scholight.api.search_access._utc_now", return_value=now),
         patch(
-            "scholight.api.search_access.check_and_increment_quota",
+            "scholight.api.search_access.reserve_user_quota",
             new_callable=AsyncMock,
-            return_value=result,
+            return_value=token,
         ),
         patch(
-            "scholight.api.search_access.decrement_quota",
+            "scholight.api.search_access.decrement_user_quota",
             new_callable=AsyncMock,
         ) as decrement,
     ):
-        reservation = await reserve_search_quota(None, _user(), search_level=1)
+        reservation = await reserve_search_quota(None, _user(), strength="standard")
         await compensate_search_quota(reservation)
         await compensate_search_quota(reservation)
 
-    decrement.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_user_quota_check_crossing_utc_midnight_never_decrements_new_day() -> None:
-    before = datetime(2026, 7, 21, 23, 59, 59, tzinfo=UTC)
-    after = datetime(2026, 7, 22, 0, 0, 1, tzinfo=UTC)
-    result = QuotaResult(allowed=True, current_count=1, daily_limit=1000)
-
-    with (
-        patch("scholight.api.search_access._utc_now", side_effect=[before, after, after]),
-        patch(
-            "scholight.api.search_access.check_and_increment_quota",
-            new_callable=AsyncMock,
-            return_value=result,
-        ),
-        patch(
-            "scholight.api.search_access.decrement_quota",
-            new_callable=AsyncMock,
-        ) as decrement,
-        patch("scholight.api.search_access.logger.warning") as warning,
-    ):
-        reservation = await reserve_search_quota(None, _user(), search_level=1)
-        await compensate_search_quota(reservation)
-
-    assert (reservation.user_quota_date, reservation.user_quota_completed_date) == (
-        before.date(),
-        after.date(),
-    )
-    decrement.assert_not_awaited()
-    warning.assert_called_once_with(
-        "user_search_quota_compensation_skipped",
-        reason="quota_check_crossed_utc_date",
-    )
+    decrement.assert_awaited_once_with(token)
 
 
 @pytest.mark.asyncio

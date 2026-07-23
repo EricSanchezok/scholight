@@ -7,10 +7,12 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from types import SimpleNamespace
+from typing import Literal, cast
 from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
+from cloud_auth.models.user import UserRecord
 from fastapi import FastAPI
 
 from scholight.api.deps import SearchActor, get_current_user, get_optional_search_actor
@@ -20,14 +22,15 @@ from scholight.models.history import SearchHistoryEntry
 from scholight.models.search import SearchResult
 
 
-def _history_entry(entry_id: int = 9, *, level: int = 2) -> SearchHistoryEntry:
+def _history_entry(
+    entry_id: int = 9, *, strength: Literal["standard", "thorough"] = "thorough"
+) -> SearchHistoryEntry:
     return SearchHistoryEntry(
         id=entry_id,
         query_text="retrieval",
-        level=level,
-        strategy="internal-only",
+        strength=strength,
         filters={"categories": ["cs.AI"]},
-        num_results=3,
+        result_count=3,
         response_time_ms=12.5,
         created_at=datetime(2026, 7, 21, 10, 15, 30, 123000, tzinfo=UTC),
     )
@@ -52,7 +55,7 @@ async def test_history_returns_public_page_and_normalizes_query(
     active_user: object,
 ) -> None:
     _authenticate(api_app, active_user)
-    page = SimpleNamespace(items=[_history_entry()], total=1, legacy_level3_count=0)
+    page = SimpleNamespace(items=[_history_entry()], total=1)
 
     with patch(
         "scholight.api.routes.search.get_search_history",
@@ -89,7 +92,7 @@ async def test_history_returns_public_page_and_normalizes_query(
 
 
 @pytest.mark.asyncio
-async def test_history_sanitizes_malformed_legacy_filters_without_failing_page(
+async def test_history_sanitizes_malformed_filters_without_failing_page(
     api_app: FastAPI,
     api_client: httpx.AsyncClient,
     active_user: object,
@@ -102,7 +105,7 @@ async def test_history_sanitizes_malformed_legacy_filters_without_failing_page(
         "date_from": "not-a-date",
         "date_to": "2024-12-31",
     }
-    page = SimpleNamespace(items=[entry], total=1, legacy_level3_count=0)
+    page = SimpleNamespace(items=[entry], total=1)
 
     with patch(
         "scholight.api.routes.search.get_search_history",
@@ -127,7 +130,7 @@ async def test_history_empty_q_is_normalized_to_none(
     active_user: object,
 ) -> None:
     _authenticate(api_app, active_user)
-    page = SimpleNamespace(items=[], total=0, legacy_level3_count=0)
+    page = SimpleNamespace(items=[], total=0)
 
     with patch(
         "scholight.api.routes.search.get_search_history",
@@ -212,7 +215,7 @@ async def test_bulk_delete_request_is_strict(
 
 
 @pytest.mark.asyncio
-async def test_single_delete_success_and_404_remain_compatible(
+async def test_single_delete_success_and_404(
     api_app: FastAPI,
     api_client: httpx.AsyncClient,
     active_user: object,
@@ -286,9 +289,9 @@ async def test_authenticated_final_200_schedules_normalized_history(
     active_user: object,
 ) -> None:
     api_app.dependency_overrides[get_optional_search_actor] = lambda: SearchActor(
-        user=active_user, actor_type="web"
+        user=cast("UserRecord", active_user), actor_type="web"
     )
-    reservation = SearchQuotaReservation(operation="search_level1")
+    reservation = SearchQuotaReservation(strength="standard")
     result = SearchResult(query="retrieval", level=1, total_ms=1.0, hits=[])
 
     with (
@@ -319,7 +322,6 @@ async def test_authenticated_final_200_schedules_normalized_history(
     schedule.assert_called_once()
     assert schedule.call_args.kwargs["user_id"] == 42
     assert schedule.call_args.kwargs["query_text"] == "retrieval"
-    assert schedule.call_args.kwargs["level"] == 1
     assert schedule.call_args.kwargs["filters"] == {"categories": ["cs.AI"]}
     assert schedule.call_args.kwargs["result_count"] == 0
     assert schedule.call_args.kwargs["strength"] == "standard"
@@ -343,7 +345,6 @@ async def test_history_write_failure_is_consumed_and_structured() -> None:
             request_id="request-123",
             user_id=42,
             query_text="private query",
-            level=2,
             strength="thorough",
             filters=None,
             result_count=3,

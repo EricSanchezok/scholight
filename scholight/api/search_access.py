@@ -7,20 +7,21 @@ import ipaddress
 import math
 import time
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
+from typing import cast
 
 import structlog
-from cloud_auth.db.queries_quota import check_and_increment_quota, decrement_quota
-from cloud_auth.exceptions import DBError as AuthDBError
 from cloud_auth.models.user import UserRecord
 
 from scholight.config import settings
-from scholight.db.client import DBError, get_pool
+from scholight.db.client import DBError
 from scholight.db.queries_anonymous_quota import (
     AnonymousQuotaReservation,
     decrement_anonymous_daily_quota,
     reserve_anonymous_daily_quota,
 )
+from scholight.db.queries_quota import decrement_user_quota, reserve_user_quota
+from scholight.models.quota import SearchStrengthValue, UserQuotaReservation
 
 logger = structlog.get_logger(__name__)
 _HMAC_CONTEXT = b"scholight:anonymous-quota:v1\0"
@@ -113,10 +114,8 @@ def _access_error(
 class SearchQuotaReservation:
     """A successful quota reservation and its one-shot compensation identity."""
 
-    operation: str
-    user_id: int | None = None
-    user_quota_date: date | None = None
-    user_quota_completed_date: date | None = None
+    strength: SearchStrengthValue
+    user: UserQuotaReservation | None = None
     anonymous: AnonymousQuotaReservation | None = None
     compensated: bool = False
 
@@ -125,31 +124,36 @@ async def reserve_search_quota(
     client_ip: str | None,
     current_user: UserRecord | None,
     *,
-    search_level: int,
+    strength: str,
 ) -> SearchQuotaReservation:
     """Reserve the correct user or anonymous quota before core search."""
-    operation = f"search_level{search_level}"
+    if strength not in {"standard", "thorough"}:
+        raise ValueError("strength must be standard or thorough")
+    normalized_strength = cast("SearchStrengthValue", strength)
     if current_user is not None:
-        quota_date = _utc_now().date()
+        default_limit = (
+            settings.authenticated_standard_daily_limit
+            if normalized_strength == "standard"
+            else settings.authenticated_thorough_daily_limit
+        )
         try:
-            result = await check_and_increment_quota(get_pool, current_user.id, operation)
-        except AuthDBError as exc:
+            user_reservation = await reserve_user_quota(
+                current_user.id,
+                strength=normalized_strength,
+                default_limit=default_limit,
+            )
+        except DBError as exc:
             raise _access_error(
                 status_code=503,
                 code="quota_service_unavailable",
                 message="Search quota service is temporarily unavailable.",
                 retry_after=5,
             ) from exc
-        quota_completed_date = _utc_now().date()
-        reservation = SearchQuotaReservation(
-            operation=operation,
-            user_id=current_user.id,
-            user_quota_date=quota_date,
-            user_quota_completed_date=quota_completed_date,
-        )
-        if result.allowed:
-            return reservation
-        await compensate_search_quota(reservation)
+        if user_reservation is not None:
+            return SearchQuotaReservation(
+                strength=normalized_strength,
+                user=user_reservation,
+            )
         raise _access_error(
             status_code=429,
             code="user_daily_quota_exceeded",
@@ -168,13 +172,13 @@ async def reserve_search_quota(
     digest = anonymous_ip_digest(client_ip, settings.anonymous_quota_hmac_secret)
     limit = (
         settings.anonymous_standard_daily_limit
-        if search_level == 1
+        if normalized_strength == "standard"
         else settings.anonymous_thorough_daily_limit
     )
     try:
         anonymous = await reserve_anonymous_daily_quota(
             digest,
-            search_level=search_level,
+            strength=normalized_strength,
             limit=limit,
         )
     except DBError as exc:
@@ -191,7 +195,7 @@ async def reserve_search_quota(
             message="Anonymous daily search limit exceeded.",
             retry_after=_seconds_until_next_utc_day(),
         )
-    return SearchQuotaReservation(operation=operation, anonymous=anonymous)
+    return SearchQuotaReservation(strength=normalized_strength, anonymous=anonymous)
 
 
 async def compensate_search_quota(reservation: SearchQuotaReservation) -> None:
@@ -205,18 +209,12 @@ async def compensate_search_quota(reservation: SearchQuotaReservation) -> None:
         except DBError:
             logger.warning("anonymous_search_quota_compensation_failed")
         return
-    if reservation.user_id is None:
+    if reservation.user is None:
         return
-    if reservation.user_quota_date != reservation.user_quota_completed_date:
-        logger.warning(
-            "user_search_quota_compensation_skipped",
-            reason="quota_check_crossed_utc_date",
-        )
-        return
-    if reservation.user_quota_completed_date != _utc_now().date():
-        logger.warning("user_search_quota_compensation_skipped", reason="utc_date_changed")
-        return
-    await decrement_quota(get_pool, reservation.user_id, reservation.operation)
+    try:
+        await decrement_user_quota(reservation.user)
+    except DBError:
+        logger.warning("user_search_quota_compensation_failed")
 
 
 __all__ = [

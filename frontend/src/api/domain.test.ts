@@ -47,10 +47,7 @@ describe("typed API client", () => {
 
   it("sends the in-memory access token for signed-in search", async () => {
     const { establishSession } = await import("../auth/session");
-    establishSession(
-      { access_token: "access", refresh_token: "refresh", token_type: "bearer" },
-      false,
-    );
+    establishSession({ access_token: "access", token_type: "bearer" }, false);
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify(response), {
         status: 200,
@@ -65,10 +62,7 @@ describe("typed API client", () => {
 
   it("uses authenticated typed endpoints for private usage data", async () => {
     const { establishSession } = await import("../auth/session");
-    establishSession(
-      { access_token: "private-access", refresh_token: "refresh", token_type: "bearer" },
-      false,
-    );
+    establishSession({ access_token: "private-access", token_type: "bearer" }, false);
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -99,10 +93,7 @@ describe("typed API client", () => {
 
   it("converts the authenticated CSV export response into a download blob", async () => {
     const { establishSession } = await import("../auth/session");
-    establishSession(
-      { access_token: "private-access", refresh_token: "refresh", token_type: "bearer" },
-      false,
-    );
+    establishSession({ access_token: "private-access", token_type: "bearer" }, false);
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response("created_at,strength\n2026-07-22,standard", {
         status: 200,

@@ -85,6 +85,23 @@
         "title": "AccessKeyResponse",
         "type": "object"
       },
+      "AccessTokenResponse": {
+        "description": "Token response used when the refresh token is stored in an HttpOnly cookie.",
+        "properties": {
+          "access_token": {
+            "title": "Access Token",
+            "type": "string"
+          },
+          "token_type": {
+            "default": "bearer",
+            "title": "Token Type",
+            "type": "string"
+          }
+        },
+        "required": ["access_token"],
+        "title": "AccessTokenResponse",
+        "type": "object"
+      },
       "BulkDeleteSearchHistoryRequest": {
         "additionalProperties": false,
         "description": "Strict owner-scoped history IDs, stably deduplicated.",
@@ -278,25 +295,6 @@
         },
         "required": ["used", "daily_limit", "remaining"],
         "title": "DailyQuotaUsage",
-        "type": "object"
-      },
-      "DeleteAccountRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "confirmation": {
-            "maxLength": 16,
-            "title": "Confirmation",
-            "type": "string"
-          },
-          "password": {
-            "maxLength": 1024,
-            "minLength": 1,
-            "title": "Password",
-            "type": "string"
-          }
-        },
-        "required": ["password", "confirmation"],
-        "title": "DeleteAccountRequest",
         "type": "object"
       },
       "ForgotPasswordRequest": {
@@ -761,47 +759,6 @@
         "title": "PublicSearchResponse",
         "type": "object"
       },
-      "QuotaStatus": {
-        "properties": {
-          "daily_limit": {
-            "title": "Daily Limit",
-            "type": "integer"
-          },
-          "operation": {
-            "enum": [
-              "search_level1",
-              "search_level2",
-              "search_level3",
-              "survey",
-              "research_project"
-            ],
-            "title": "Operation",
-            "type": "string"
-          },
-          "remaining": {
-            "title": "Remaining",
-            "type": "integer"
-          },
-          "used": {
-            "title": "Used",
-            "type": "integer"
-          }
-        },
-        "required": ["operation", "daily_limit", "used", "remaining"],
-        "title": "QuotaStatus",
-        "type": "object"
-      },
-      "RefreshRequest": {
-        "properties": {
-          "refresh_token": {
-            "title": "Refresh Token",
-            "type": "string"
-          }
-        },
-        "required": ["refresh_token"],
-        "title": "RefreshRequest",
-        "type": "object"
-      },
       "RegisterRequest": {
         "properties": {
           "display_name": {
@@ -873,28 +830,9 @@
             "type": "integer"
           },
           "last_seen_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Seen At"
-          },
-          "revoked_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Revoked At"
+            "format": "date-time",
+            "title": "Last Seen At",
+            "type": "string"
           },
           "user_agent": {
             "anyOf": [
@@ -908,15 +846,7 @@
             "title": "User Agent"
           }
         },
-        "required": [
-          "id",
-          "created_at",
-          "last_seen_at",
-          "expires_at",
-          "user_agent",
-          "revoked_at",
-          "current"
-        ],
+        "required": ["id", "created_at", "last_seen_at", "expires_at", "current"],
         "title": "SessionResponse",
         "type": "object"
       },
@@ -931,26 +861,6 @@
         },
         "required": ["standard", "thorough"],
         "title": "TodayUsage",
-        "type": "object"
-      },
-      "TokenResponse": {
-        "properties": {
-          "access_token": {
-            "title": "Access Token",
-            "type": "string"
-          },
-          "refresh_token": {
-            "title": "Refresh Token",
-            "type": "string"
-          },
-          "token_type": {
-            "default": "bearer",
-            "title": "Token Type",
-            "type": "string"
-          }
-        },
-        "required": ["access_token", "refresh_token"],
-        "title": "TokenResponse",
         "type": "object"
       },
       "UpdateAccessKeyRequest": {
@@ -1505,7 +1415,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TokenResponse"
+                  "$ref": "#/components/schemas/AccessTokenResponse"
                 }
               }
             },
@@ -1552,40 +1462,20 @@
     },
     "/auth/refresh": {
       "post": {
-        "operationId": "_refresh_auth_refresh_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RefreshRequest"
-              }
-            }
-          },
-          "required": true
-        },
+        "operationId": "_refresh_cookie_auth_refresh_post",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TokenResponse"
+                  "$ref": "#/components/schemas/AccessTokenResponse"
                 }
               }
             },
             "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
           }
         },
-        "summary": " Refresh",
+        "summary": " Refresh Cookie",
         "tags": ["auth"]
       }
     },
@@ -2282,43 +2172,6 @@
         "tags": ["access-keys"]
       }
     },
-    "/user/account": {
-      "delete": {
-        "operationId": "delete_account_user_account_delete",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DeleteAccountRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "summary": "Delete Account",
-        "tags": ["account"]
-      }
-    },
     "/user/profile": {
       "get": {
         "operationId": "get_profile_user_profile_get",
@@ -2424,34 +2277,6 @@
           }
         ],
         "summary": " Update Profile",
-        "tags": ["user"]
-      }
-    },
-    "/user/quotas": {
-      "get": {
-        "operationId": "get_quotas_user_quotas_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/QuotaStatus"
-                  },
-                  "title": "Response Get Quotas User Quotas Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "summary": "Get Quotas",
         "tags": ["user"]
       }
     },

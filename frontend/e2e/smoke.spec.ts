@@ -34,10 +34,9 @@ test.beforeEach(async ({ page }) => {
 });
 
 async function mockAuthenticated(page: Page) {
-  await page.addInitScript(() => localStorage.setItem("scholight.refresh_token", "refresh-token"));
   await page.route("**/api/auth/refresh", (route) =>
     route.fulfill({
-      json: { access_token: "access-token", refresh_token: "rotated-token", token_type: "bearer" },
+      json: { access_token: "access-token", token_type: "bearer" },
     }),
   );
   await page.route("**/api/user/profile", (route) =>
@@ -339,10 +338,9 @@ test("desktop results retain the left-aligned reading column", async ({ page }, 
 test("signed-in history follows the compact editorial layout", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "chromium", "desktop-only geometry assertion");
   await page.setViewportSize({ width: 1440, height: 1024 });
-  await page.addInitScript(() => localStorage.setItem("scholight.refresh_token", "refresh-token"));
   await page.route("**/api/auth/refresh", (route) =>
     route.fulfill({
-      json: { access_token: "access-token", refresh_token: "rotated-token", token_type: "bearer" },
+      json: { access_token: "access-token", token_type: "bearer" },
     }),
   );
   await page.route("**/api/user/profile", (route) =>

@@ -18,7 +18,7 @@ def _reservation() -> AnonymousQuotaReservation:
     return AnonymousQuotaReservation(
         quota_date=datetime(2026, 7, 21, tzinfo=UTC).date(),
         ip_digest=b"d" * 32,
-        search_level=1,
+        strength="standard",
         used_count=1,
     )
 

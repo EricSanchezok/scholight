@@ -11,13 +11,13 @@ from scholight.config import settings
 def setup_cors(app: FastAPI) -> None:
     """Configure CORS middleware from application settings.
 
-    Uses ``allow_credentials=False`` because the API uses Bearer token
-    authentication (Authorization header), not cookies.
+    Refresh tokens use an HttpOnly cookie, while access tokens use the
+    Authorization header. Configured origins are explicit, never wildcarded.
     """
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_allow_origins,
-        allow_credentials=False,
+        allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )

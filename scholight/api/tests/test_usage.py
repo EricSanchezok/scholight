@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
-from cloud_auth.models.user import QuotaStatus, UserRecord
+from cloud_auth.models.user import UserRecord
 from fastapi import FastAPI
 
 from scholight.api.deps import SearchActor
@@ -22,6 +22,7 @@ from scholight.api.usage import (
     fill_volume_days,
     resolve_usage_range,
 )
+from scholight.models.quota import QuotaStatus
 
 
 def test_usage_csv_openapi_declares_text_response(api_app: FastAPI) -> None:
@@ -108,7 +109,6 @@ def test_authenticated_usage_event_fields(
         _schedule_usage(
             actor,
             request_id="request-1",
-            level=2,
             strength="thorough",
             outcome=outcome,  # type: ignore[arg-type]
             quota_units=quota_units,
@@ -133,7 +133,6 @@ def test_anonymous_or_rejected_request_schedules_no_usage_event() -> None:
         _schedule_usage(
             None,
             request_id="request-1",
-            level=1,
             strength="standard",
             outcome="failed",
             quota_units=0,
@@ -151,8 +150,8 @@ async def test_summary_uses_daily_quota_and_monthly_event_statistics(
     active_user: UserRecord,
 ) -> None:
     quotas = [
-        QuotaStatus(operation="search_level1", daily_limit=100, used=18, remaining=82),
-        QuotaStatus(operation="search_level2", daily_limit=30, used=4, remaining=26),
+        QuotaStatus(strength="standard", daily_limit=100, used=18, remaining=82),
+        QuotaStatus(strength="thorough", daily_limit=30, used=4, remaining=26),
     ]
     stats = {
         "searches_this_month": 184,
@@ -165,7 +164,7 @@ async def test_summary_uses_daily_quota_and_monthly_event_statistics(
 
     with (
         patch(
-            "scholight.api.routes.usage.AsyncpgUserDatabase.get_quota_status",
+            "scholight.api.routes.usage.get_user_quota_status",
             AsyncMock(return_value=quotas),
         ),
         patch("scholight.api.routes.usage.query_usage_summary", AsyncMock(return_value=stats)),

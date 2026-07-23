@@ -3,16 +3,14 @@ import { apiClient, withAuthRetry, type ApiResult } from "./client";
 import type {
   HistoryPage,
   LoginRequest,
-  QuotaStatus,
   RegisterRequest,
   AccessKey,
   CreateAccessKeyRequest,
   CreatedAccessKey,
-  DeleteAccountRequest,
   SearchRequest,
   SearchResponse,
   Session,
-  TokenResponse,
+  AccessTokenResponse,
   UpdateAccessKeyRequest,
   UserProfile,
   UsageLatency,
@@ -29,7 +27,8 @@ async function unwrap<T>(promise: Promise<ApiResult<T>>): Promise<T> {
 }
 
 export const authApi = {
-  login: (body: LoginRequest) => unwrap<TokenResponse>(apiClient.POST("/auth/login", { body })),
+  login: (body: LoginRequest) =>
+    unwrap<AccessTokenResponse>(apiClient.POST("/auth/login", { body })),
   register: (body: RegisterRequest) => unwrap(apiClient.POST("/auth/register", { body })),
   resendVerification: (email: string) =>
     unwrap(apiClient.POST("/auth/resend-verification", { body: { email } })),
@@ -70,8 +69,6 @@ export const accountApi = {
         "protected",
       ),
     ),
-  quotas: () =>
-    unwrap<QuotaStatus[]>(withAuthRetry(() => apiClient.GET("/user/quotas"), "protected")),
   sessions: () =>
     unwrap<Session[]>(withAuthRetry(() => apiClient.GET("/auth/sessions"), "protected")),
   revokeSession: (sessionId: number) =>
@@ -86,8 +83,6 @@ export const accountApi = {
     ),
   revokeOtherSessions: () =>
     unwrap(withAuthRetry(() => apiClient.POST("/auth/sessions/revoke-others"), "protected")),
-  deleteAccount: (body: DeleteAccountRequest) =>
-    unwrap(withAuthRetry(() => apiClient.DELETE("/user/account", { body }), "protected")),
 };
 
 export const accessKeyApi = {

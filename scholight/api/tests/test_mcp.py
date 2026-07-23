@@ -373,7 +373,7 @@ async def test_rest_and_mcp_share_minute_bucket_but_handshake_does_not_consume_i
     reservation = AnonymousQuotaReservation(
         quota_date=datetime(2026, 7, 21, tzinfo=UTC).date(),
         ip_digest=b"d" * 32,
-        search_level=1,
+        strength="standard",
         used_count=1,
     )
     search_result = SearchResult(query="retrieval", level=1, total_ms=1.0, hits=[])

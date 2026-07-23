@@ -54,3 +54,21 @@ def test_create_app_accepts_jwt_secret_at_minimum_length(
     monkeypatch.setattr(settings, "jwt_secret", "a" * 32)
 
     assert isinstance(create_app(), FastAPI)
+
+
+def test_browser_auth_contract_uses_cookie_refresh_without_request_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "jwt_secret", "a" * 32)
+    schema = create_app().openapi()
+
+    login_schema = schema["paths"]["/auth/login"]["post"]["responses"]["200"]["content"][
+        "application/json"
+    ]["schema"]
+    refresh = schema["paths"]["/auth/refresh"]["post"]
+
+    assert login_schema["$ref"].endswith("/AccessTokenResponse")
+    assert refresh["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith(
+        "/AccessTokenResponse"
+    )
+    assert "requestBody" not in refresh

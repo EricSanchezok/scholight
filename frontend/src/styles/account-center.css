@@ -801,31 +801,3 @@
   color: var(--muted);
   font-size: 13px;
 }
-.dangerSection {
-  min-height: 150px;
-  border-bottom: 0;
-}
-.dangerSection h2 {
-  color: var(--danger);
-}
-.dangerSection .accountSectionBody {
-  display: flex;
-  justify-content: flex-end;
-}
-.deleteAccountButton {
-  width: 140px;
-  height: 44px;
-  border: 1px solid var(--danger);
-  border-radius: 2px;
-  color: var(--danger);
-  background: var(--danger-soft);
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 600;
-}
-.dialogDangerEyebrow {
-  color: var(--danger);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-}

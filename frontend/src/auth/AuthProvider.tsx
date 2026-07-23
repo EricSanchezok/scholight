@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { accountApi, authApi } from "../api/domain";
 import type { LoginRequest, UserProfile } from "../api/types";
@@ -8,20 +8,14 @@ import { AuthContext, type AuthStatus } from "./context";
 import {
   clearSession,
   establishSession,
-  hasRefreshToken,
   refreshAccessToken,
   subscribeToSessionChanges,
 } from "./session";
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
-  const [status, setStatus] = useState<AuthStatus>(hasRefreshToken() ? "checking" : "anonymous");
+  const [status, setStatus] = useState<AuthStatus>("checking");
   const [user, setUser] = useState<UserProfile | null>(null);
-  const statusRef = useRef(status);
-  useEffect(() => {
-    statusRef.current = status;
-  }, [status]);
-
   const loadProfile = useCallback(async () => {
     const profile = await accountApi.profile();
     setUser(profile);
@@ -32,13 +26,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let active = true;
     const restore = async () => {
-      if (!hasRefreshToken()) {
-        if (active) {
-          setUser(null);
-          setStatus("anonymous");
-        }
-        return;
-      }
       try {
         await refreshAccessToken();
         const profile = await accountApi.profile();
@@ -57,19 +44,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     void restore();
     const unsubscribe = subscribeToSessionChanges(() => {
-      if (!hasRefreshToken()) {
-        setUser(null);
-        setStatus("anonymous");
-        queryClient.removeQueries({ queryKey: queryKeys.privateRoot });
-      } else if (statusRef.current === "anonymous") {
-        setStatus("checking");
-        void refreshAccessToken()
-          .then(() => loadProfile())
-          .catch(() => {
-            clearSession(false);
-            setStatus("anonymous");
-          });
-      }
+      setStatus("checking");
+      void refreshAccessToken()
+        .then(() => loadProfile())
+        .catch(() => {
+          clearSession(false);
+          setUser(null);
+          setStatus("anonymous");
+          queryClient.removeQueries({ queryKey: queryKeys.privateRoot });
+        });
     });
     return () => {
       active = false;

@@ -35,7 +35,6 @@ async def test_usage_insert_is_request_id_idempotent() -> None:
     event = UsageEvent(
         request_id="request-1",
         user_id=42,
-        operation="search_level1",
         strength="standard",
         actor_type="web",
         access_key_id=None,

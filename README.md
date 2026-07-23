@@ -17,8 +17,7 @@ scholight/
 │   ├── scheduler/    摄入编排与每日同步
 │   ├── cli/          Click CLI（search / scheduler / store）
 │   ├── models/       Pydantic 数据模型
-│   └── db/           PostgreSQL 查询层（搜索历史）
-├── cloud-auth/       共享 Auth SDK（独立仓库）
+│   └── db/           PostgreSQL 查询层（Scholight 产品数据）
 ├── scripts/          运维与评测脚本
 ├── docker/           Docker 部署
 └── migrations/       PostgreSQL 迁移文件
@@ -29,7 +28,7 @@ scholight/
 | 组件                 | 用途                                                       |
 | -------------------- | ---------------------------------------------------------- |
 | Zilliz Cloud         | 向量数据库（Milvus 兼容），存储 303 万篇论文 + 1.72 亿段落 |
-| PostgreSQL (AWS RDS) | 用户认证（cloud-auth） + 搜索历史                          |
+| PostgreSQL (AWS RDS) | `auth.*` 共享身份 + `scholight.*` 产品账户、额度与历史      |
 | Embedding API        | 文本向量化（Qwen3-Embedding-0.6B，硅基流动 / faro-hosted） |
 
 ---
@@ -67,6 +66,8 @@ uv run scholight search -q "attention mechanism"   # 测试搜索
 | `SCHOLIGHT_ANONYMOUS_RATE_LIMIT_PER_MINUTE`                 |        | 匿名共享分钟桶，默认 30 attempts/IP                                                 |
 | `SCHOLIGHT_ANONYMOUS_STANDARD_DAILY_LIMIT`                  |        | 匿名 Standard UTC 日额度，默认 100/IP                                               |
 | `SCHOLIGHT_ANONYMOUS_THOROUGH_DAILY_LIMIT`                  |        | 匿名 Thorough UTC 日额度，默认 30/IP                                                |
+| `SCHOLIGHT_AUTHENTICATED_STANDARD_DAILY_LIMIT`              |        | 登录用户 Standard UTC 日默认额度，默认 1000                                         |
+| `SCHOLIGHT_AUTHENTICATED_THOROUGH_DAILY_LIMIT`              |        | 登录用户 Thorough UTC 日默认额度，默认 1000                                         |
 | `SCHOLIGHT_CORS_ALLOW_ORIGINS`                              | API ✅ | 明确的前端 origin JSON 列表；生产环境禁止 `*`                                       |
 | `SCHOLIGHT_PROXY_HEADERS` / `SCHOLIGHT_FORWARDED_ALLOW_IPS` | API ✅ | 反向代理信任设置；启用时必须列出明确代理 IP/CIDR，禁止 `*`                          |
 | `SCHOLIGHT_DATA_ROOT`                                       |        | 论文 PDF 和日志的本地存储路径（默认 `./data`）                                      |
@@ -198,7 +199,7 @@ curl -sS -X DELETE "$API/user/access-keys/KEY_UUID" \
   -H "Authorization: Bearer $JWT"
 ```
 
-Usage 只保存计量和 server search time，不保存 query、标题、摘要、IP、完整 Key 或内部检索诊断。`summary` 的当天用量来自 `auth.daily_usage`；趋势来自幂等的 `public.usage_events`。
+Usage 只保存计量和 server search time，不保存 query、标题、摘要、IP、完整 Key 或内部检索诊断。当天登录用户额度来自 `scholight.user_daily_search_usage`，覆盖值来自 `scholight.user_quota_overrides`，趋势来自幂等的 `scholight.usage_events`；cloud-auth 不参与额度或 Usage。
 
 ```bash
 curl -sS "$API/user/usage/summary" -H "Authorization: Bearer $JWT"
@@ -212,18 +213,15 @@ curl -sS -OJ "$API/user/usage/export.csv?from=2026-07-01&to=2026-07-31" \
   -H "Authorization: Bearer $JWT"
 ```
 
-Session 以 cloud-auth 的 refresh-token family 为单位。新 access JWT 带 `sid`，旧 JWT 在过渡期仍可认证，但不会被标记为 current session。
+Session 以 cloud-auth 的、按 `client_id=scholight` 隔离的 refresh-token family 为单位。Access JWT 必须带 `aud=scholight` 和 `sid`；缺少任一字段均拒绝。浏览器 Refresh Token 仅存在 `Secure + HttpOnly + SameSite=Strict` Cookie，Access Token 只存在内存。
 
 ```bash
 curl -sS "$API/auth/sessions" -H "Authorization: Bearer $JWT"
 curl -sS -X DELETE "$API/auth/sessions/SESSION_ID" -H "Authorization: Bearer $JWT"
 curl -sS -X POST "$API/auth/sessions/revoke-others" -H "Authorization: Bearer $JWT"
-
-# 不可恢复：撤销所有凭据、清除产品数据、匿名化并禁用账户
-curl -sS -X DELETE "$API/user/account" \
-  -H "Authorization: Bearer $JWT" -H 'Content-Type: application/json' \
-  -d '{"password":"current-password","confirmation":"DELETE"}'
 ```
+
+当前不提供自助删除共享身份。产品封禁只修改 `scholight.user_profiles`，不会禁用同一用户在其他 SanchezCloud 产品中的身份。
 
 ### 可调超参数
 
@@ -288,45 +286,23 @@ uv run scholight scheduler status         # 调度任务状态
 
 本仓库根目录的 Compose 文件用于本地构建和运维。正式环境使用独立的
 [`deploy/production/`](deploy/production/README.md) 部署包：Caddy 是唯一公开入口，
-前后端按 digest 协调发布，migration 按 cloud-auth → Scholight 顺序显式运行。
+前后端按 digest 协调发布。cloud-auth 由其受保护工作流独立迁移
+`auth.*`；Scholight 发布只校验 auth schema 版本并迁移 `scholight.*`。
+完整边界及新产品接入规则见
+[`docs/architecture/data-ownership.md`](docs/architecture/data-ownership.md)。
 
 ```bash
 cp .env.example .env   # 填入所有必填配置和明确的前端/代理值
 docker compose --env-file .env build
 
-# 由 release operator 在生产 precheck 后显式执行；API 启动不会自动迁移
+# auth.* 已由 cloud-auth workflow 迁移后，只执行 Scholight migration
 docker compose --env-file .env --profile migrate run --rm migrate
 docker compose --env-file .env up -d api
 ```
 
-反向代理只应信任明确的 Caddy IP/CIDR，不能把 `SCHOLIGHT_FORWARDED_ALLOW_IPS` 设为 `*`；不要公开路由 `/livez` 或 `/readyz`。生产 CORS 必须使用实际前端 origin 列表，`.env.example` 的 localhost 仅为占位值。匿名和 Access Key HMAC 配置只注入 API service，不注入 migrate 或 scheduler。
+反向代理只应信任明确的 Caddy IP/CIDR，不能把 `SCHOLIGHT_FORWARDED_ALLOW_IPS` 设为 `*`；不要公开路由 `/livez` 或 `/readyz`。生产 CORS 必须使用实际前端 origin 列表并允许凭据。匿名和 Access Key HMAC 配置只注入 API service，不注入 migrate 或 scheduler。
 
-Migration 007–009 分别新增 `public.access_keys`、`public.usage_events`，并对现有 `auth.refresh_tokens` additive 增加 `user_agent`/`last_seen_at`。发布时仍严格按 cloud-auth migrations → Scholight migrations 顺序执行；不得由开发流程连接或迁移生产 RDS。应用回滚保留这些 additive schema，旧版本不会引用它们。
-
-Migration 006 只新增 `public.anonymous_daily_search_usage`，不修改已上线的 migration 005 或 `search_history`。不得由开发流程连接或迁移生产 RDS；release operator 使用以下检查：
-
-```sql
--- precheck：必须是 005/history 存在，006 表不存在
-SELECT version, name FROM public._migrations WHERE version = 5;
-SELECT to_regclass('public.search_history');
-SELECT to_regclass('public.anonymous_daily_search_usage');
-
--- migration runner 完成后的 postcheck
-SELECT version, name FROM public._migrations WHERE version = 6;
-SELECT column_name, data_type, is_nullable
-FROM information_schema.columns
-WHERE table_schema = 'public'
-  AND table_name = 'anonymous_daily_search_usage'
-ORDER BY ordinal_position;
-SELECT conname, pg_get_constraintdef(oid)
-FROM pg_constraint
-WHERE conrelid = 'public.anonymous_daily_search_usage'::regclass
-ORDER BY conname;
-```
-
-Precheck 必须确认 version 5/history 存在且新表不存在；postcheck 必须确认 version 6、精确列/约束以及没有 raw-IP 列。随后在回滚事务中用合成 32-byte digest 验证 runtime 角色可 reserve/decrement；不得使用真实 IP。
-
-应用回滚应切回上一套完整、协调的前后端 release，并保留 migration 006 表及 tracking；旧代码不会引用该表。不要把 `DROP TABLE` 当作普通回滚，也不要因应用回滚轮换 HMAC 密钥。同一 UTC 日内所有 API 实例必须使用相同 HMAC 密钥。
+当前未部署且无用户，因此 PostgreSQL 使用单一干净 baseline，不保留旧 migration、legacy 列、兼容视图或 public schema 产品表。`auth_migrator` 和 `scholight_migrator` 分别拥有自己的 schema，均没有数据库级 `CREATE`；两个 runner 都会验证 schema 已由基础设施预置且归当前角色所有。此重建只涉及 PostgreSQL，绝不能 drop、重建或回填 Zilliz collection。
 
 容器只运行 FastAPI 服务器。arXiv 同步守护进程（paper-sync、PDF 下载、段落切分、向量入库）运行在宿主机或独立 scheduler profile，不进入 API 容器。
 

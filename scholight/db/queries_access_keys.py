@@ -36,7 +36,7 @@ async def get_access_key_by_prefix(prefix: str) -> AccessKeyRecord | None:
         row = await get_pool().fetchrow(
             "SELECT id, user_id, name, key_prefix, key_last4, key_digest, scopes, "
             "created_at, last_used_at, expires_at, revoked_at "
-            "FROM public.access_keys WHERE key_prefix = $1",
+            "FROM scholight.access_keys WHERE key_prefix = $1",
             prefix,
         )
     except asyncpg.PostgresError as exc:
@@ -56,14 +56,14 @@ async def insert_access_key(record: AccessKeyRecord) -> AccessKeyRecord:
                 record.user_id,
             )
             active_count = await connection.fetchval(
-                "SELECT count(*) FROM public.access_keys WHERE user_id = $1 "
+                "SELECT count(*) FROM scholight.access_keys WHERE user_id = $1 "
                 "AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())",
                 record.user_id,
             )
             if int(active_count) >= _ACCESS_KEY_LIMIT:
                 raise AccessKeyLimitReachedError("Active access-key limit reached")
             row = await connection.fetchrow(
-                "INSERT INTO public.access_keys "
+                "INSERT INTO scholight.access_keys "
                 "(id, user_id, name, key_prefix, key_last4, key_digest, scopes, expires_at) "
                 "VALUES ($1, $2, $3, $4, $5, $6, $7, $8) "
                 "RETURNING id, user_id, name, key_prefix, key_last4, key_digest, scopes, "
@@ -91,7 +91,7 @@ async def list_access_keys(user_id: int) -> list[AccessKeyRecord]:
         rows = await get_pool().fetch(
             "SELECT id, user_id, name, key_prefix, key_last4, key_digest, scopes, "
             "created_at, last_used_at, expires_at, revoked_at "
-            "FROM public.access_keys WHERE user_id = $1 ORDER BY created_at DESC, id DESC",
+            "FROM scholight.access_keys WHERE user_id = $1 ORDER BY created_at DESC, id DESC",
             user_id,
         )
     except asyncpg.PostgresError as exc:
@@ -110,7 +110,7 @@ async def update_access_key(
     """Update mutable metadata using both key and owner identity."""
     try:
         row = await get_pool().fetchrow(
-            "UPDATE public.access_keys SET name = $3, expires_at = $4 "
+            "UPDATE scholight.access_keys SET name = $3, expires_at = $4 "
             "WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL "
             "RETURNING id, user_id, name, key_prefix, key_last4, key_digest, scopes, "
             "created_at, last_used_at, expires_at, revoked_at",
@@ -130,7 +130,7 @@ async def revoke_access_key(key_id: UUID, user_id: int) -> bool:
     try:
         async with get_pool().acquire() as connection:
             result = await connection.execute(
-                "UPDATE public.access_keys SET revoked_at = now() "
+                "UPDATE scholight.access_keys SET revoked_at = now() "
                 "WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL",
                 key_id,
                 user_id,
@@ -145,7 +145,7 @@ async def touch_access_key_last_used(key_id: UUID, user_id: int) -> None:
     """Update last-used metadata at most once every five minutes."""
     try:
         await get_pool().execute(
-            "UPDATE public.access_keys SET last_used_at = now() "
+            "UPDATE scholight.access_keys SET last_used_at = now() "
             "WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL "
             "AND (last_used_at IS NULL OR last_used_at < now() - interval '5 minutes')",
             key_id,

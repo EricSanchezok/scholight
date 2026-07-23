@@ -19,7 +19,6 @@ async def _write_search_history(
     request_id: str,
     user_id: int,
     query_text: str,
-    level: int,
     strength: str,
     filters: dict[str, object] | None,
     result_count: int,
@@ -30,10 +29,9 @@ async def _write_search_history(
         await log_search(
             user_id=user_id,
             query_text=query_text,
-            level=level,
-            strategy=None,
+            strength=strength,
             filters=filters,
-            num_results=result_count,
+            result_count=result_count,
             response_time_ms=elapsed_ms,
         )
     except Exception as exc:
@@ -54,7 +52,6 @@ def schedule_search_history_write(
     request_id: str,
     user_id: int,
     query_text: str,
-    level: int,
     strength: str,
     filters: dict[str, object] | None,
     result_count: int,
@@ -66,7 +63,6 @@ def schedule_search_history_write(
             request_id=request_id,
             user_id=user_id,
             query_text=query_text,
-            level=level,
             strength=strength,
             filters=filters,
             result_count=result_count,

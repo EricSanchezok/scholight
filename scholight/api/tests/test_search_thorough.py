@@ -21,7 +21,7 @@ from scholight.search.errors import (
 async def test_thorough_operational_failure_returns_503_and_compensates_once(
     api_client: httpx.AsyncClient,
 ) -> None:
-    reservation = SearchQuotaReservation(operation="search_level2")
+    reservation = SearchQuotaReservation(strength="thorough")
     failure = ThoroughSearchUnavailable(
         phase_name="rrf_fusion",
         cause=MilvusException(message="private endpoint unavailable", code=1),
@@ -69,7 +69,7 @@ async def test_thorough_operational_failure_returns_503_and_compensates_once(
 async def test_standard_operational_failure_uses_search_unavailable_code(
     api_client: httpx.AsyncClient,
 ) -> None:
-    reservation = SearchQuotaReservation(operation="search_level1")
+    reservation = SearchQuotaReservation(strength="standard")
     failure = SearchUnavailable(
         phase_name="paper_search",
         cause=MilvusException(message="private endpoint unavailable", code=1),
@@ -115,7 +115,7 @@ async def test_standard_operational_failure_uses_search_unavailable_code(
 async def test_pre_commit_program_or_cancel_failure_returns_500_and_compensates_once(
     api_client: httpx.AsyncClient, failure: BaseException
 ) -> None:
-    reservation = SearchQuotaReservation(operation="search_level2")
+    reservation = SearchQuotaReservation(strength="thorough")
 
     with (
         patch(

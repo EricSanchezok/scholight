@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -17,6 +18,11 @@ from scholight.api.deps import get_optional_current_user
 def auth_app(monkeypatch: pytest.MonkeyPatch) -> tuple[FastAPI, AsyncMock]:
     resolver = AsyncMock()
     monkeypatch.setattr(deps, "_get_current_user_callable", resolver)
+    manager = MagicMock()
+    manager.session_id_from_access_token.return_value = uuid4()
+    manager.touch_session = AsyncMock(return_value=True)
+    monkeypatch.setattr(deps, "_user_manager", manager)
+    monkeypatch.setattr(deps, "ensure_product_access", AsyncMock())
     app = FastAPI()
 
     @app.get("/")

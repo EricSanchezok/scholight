@@ -22,7 +22,6 @@ class UsageEvent(BaseModel):
 
     request_id: str = Field(min_length=1, max_length=128)
     user_id: int
-    operation: Literal["search_level1", "search_level2"]
     strength: Literal["standard", "thorough"]
     actor_type: Literal["web", "access_key"]
     access_key_id: UUID | None
@@ -38,14 +37,13 @@ async def insert_usage_event(event: UsageEvent) -> bool:
     """Insert once by request id; retries are harmless."""
     try:
         result = await get_pool().execute(
-            "INSERT INTO public.usage_events "
-            "(request_id, user_id, operation, strength, actor_type, access_key_id, outcome, "
+            "INSERT INTO scholight.usage_events "
+            "(request_id, user_id, strength, actor_type, access_key_id, outcome, "
             "quota_units, result_count, search_duration_ms, status_code, error_code) "
-            "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) "
+            "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) "
             "ON CONFLICT (request_id) DO NOTHING",
             event.request_id,
             event.user_id,
-            event.operation,
             event.strength,
             event.actor_type,
             event.access_key_id,
@@ -77,7 +75,7 @@ async def query_usage_summary(user_id: int) -> dict[str, Any]:
             "count(*) FILTER (WHERE outcome = 'success')::BIGINT AS success_count, "
             "count(*) FILTER (WHERE outcome = 'degraded')::BIGINT AS degraded_count, "
             "count(*) FILTER (WHERE outcome = 'failed')::BIGINT AS failed_count "
-            "FROM public.usage_events WHERE user_id = $1 "
+            "FROM scholight.usage_events WHERE user_id = $1 "
             "AND created_at >= date_trunc('month', now())",
             user_id,
         )
@@ -101,7 +99,7 @@ async def query_volume(
             "AS standard, "
             "COALESCE(sum(quota_units) FILTER (WHERE strength = 'thorough'), 0)::BIGINT "
             "AS thorough "
-            "FROM public.usage_events WHERE user_id = $1 "
+            "FROM scholight.usage_events WHERE user_id = $1 "
             "AND created_at >= $2 AND created_at < $3 "
             "AND ($4::UUID IS NULL OR access_key_id = $4) "
             "GROUP BY bucket_start ORDER BY bucket_start",
@@ -133,7 +131,7 @@ async def query_latency(
                 "FILTER (WHERE strength = 'thorough') AS thorough_p50_ms, "
                 "percentile_cont(0.95) WITHIN GROUP (ORDER BY search_duration_ms) "
                 "AS overall_p95_ms, count(*)::BIGINT AS sample_count "
-                "FROM public.usage_events WHERE user_id = $1 "
+                "FROM scholight.usage_events WHERE user_id = $1 "
                 "AND created_at >= $2 AND created_at < $3 "
                 "AND ($4::UUID IS NULL OR access_key_id = $4) "
                 "AND outcome IN ('success', 'degraded') "
@@ -157,7 +155,7 @@ def _records_sql(*, include_cursor: bool) -> str:
             "k.name AS access_key_name, k.key_last4 AS access_key_last4, "
             "u.strength, u.search_duration_ms, u.result_count, u.outcome, "
             "u.quota_units, u.status_code, u.error_code "
-            "FROM public.usage_events u LEFT JOIN public.access_keys k "
+            "FROM scholight.usage_events u LEFT JOIN scholight.access_keys k "
             "ON k.id = u.access_key_id AND k.user_id = u.user_id "
             "WHERE u.user_id = $1 AND u.created_at >= $2 AND u.created_at < $3 "
             "AND ($4::VARCHAR IS NULL OR u.strength = $4) "
@@ -172,7 +170,7 @@ def _records_sql(*, include_cursor: bool) -> str:
         "k.name AS access_key_name, k.key_last4 AS access_key_last4, "
         "u.strength, u.search_duration_ms, u.result_count, u.outcome, "
         "u.quota_units, u.status_code, u.error_code "
-        "FROM public.usage_events u LEFT JOIN public.access_keys k "
+        "FROM scholight.usage_events u LEFT JOIN scholight.access_keys k "
         "ON k.id = u.access_key_id AND k.user_id = u.user_id "
         "WHERE u.user_id = $1 AND u.created_at >= $2 AND u.created_at < $3 "
         "AND ($4::VARCHAR IS NULL OR u.strength = $4) "

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -13,10 +14,9 @@ class SearchHistoryRecord(BaseModel):
     id: int
     user_id: int
     query_text: str
-    level: int
-    strategy: str | None = None
+    strength: Literal["standard", "thorough"]
     filters: dict[str, object] | None = None
-    num_results: int
+    result_count: int
     response_time_ms: float | None = None
     created_at: datetime | None = None
     deleted_at: datetime | None = None
@@ -27,10 +27,9 @@ class SearchHistoryEntry(BaseModel):
 
     id: int
     query_text: str
-    level: int
-    strategy: str | None = None
+    strength: Literal["standard", "thorough"]
     filters: dict[str, object] | None = None
-    num_results: int
+    result_count: int
     response_time_ms: float | None = None
     created_at: datetime | None = None
 
@@ -40,7 +39,6 @@ class SearchHistoryPage(BaseModel):
 
     items: list[SearchHistoryEntry]
     total: int
-    legacy_level3_count: int
 
 
 __all__ = [

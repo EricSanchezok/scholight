@@ -178,9 +178,11 @@ def test_ci_runs_built_backend_migrations_against_postgres() -> None:
     assert "tags: scholight-api:ci" in workflow
     assert "for _ in 1 2; do" in workflow
     assert "/app/.venv/bin/scholight store migrate" in workflow
-    assert "to_regclass('public._migrations')" in workflow
-    assert "to_regclass('public.search_history')" in workflow
-    assert "to_regclass('public.anonymous_daily_search_usage')" in workflow
+    assert "to_regclass('auth.schema_migrations')" in workflow
+    assert "to_regclass('scholight.schema_migrations')" in workflow
+    assert "to_regclass('scholight.search_history')" in workflow
+    assert "to_regclass('scholight.anonymous_daily_search_usage')" in workflow
+    assert "WHERE schemaname = 'public'" in workflow
 
 
 def test_cloud_auth_checkout_path_is_not_a_tracked_symlink() -> None:
@@ -202,10 +204,14 @@ def test_database_bootstrap_is_reviewed_and_ci_exercises_least_privilege_roles()
 
     assert "bootstrap-db.sql" in release_script
     assert "ALTER DEFAULT PRIVILEGES" in bootstrap
-    assert "ALTER TABLE %I.%I OWNER TO %I" in bootstrap
+    assert "CREATE SCHEMA IF NOT EXISTS auth AUTHORIZATION %I" in bootstrap
+    assert "CREATE SCHEMA IF NOT EXISTS scholight AUTHORIZATION %I" in bootstrap
+    assert "GRANT REFERENCES ON TABLE auth.users" in bootstrap
     assert "SCHOLIGHT_PG_USER=scholight_migrator" in workflow
+    assert "AUTH_DATABASE_URL=" in workflow
     assert "-U scholight_app" in workflow
-    assert "REVOKE ALL ON TABLE public.%I" in bootstrap
+    assert "REVOKE ALL ON TABLE auth.schema_migrations" in bootstrap
+    assert "REVOKE ALL ON TABLE scholight.schema_migrations" in bootstrap
     assert "CREATE TABLE public.app_role_must_not_create" in workflow
 
 

@@ -49,21 +49,25 @@ async def test_reserve_uses_one_atomic_upsert_and_returns_token() -> None:
     with patch(
         "scholight.db.queries_anonymous_quota.get_pool", return_value=_pool_with(connection)
     ):
-        reservation = await reserve_anonymous_daily_quota(digest, search_level=1, limit=100)
+        reservation = await reserve_anonymous_daily_quota(
+            digest,
+            strength="standard",
+            limit=100,
+        )
 
     assert reservation == AnonymousQuotaReservation(
         quota_date=date(2026, 7, 21),
         ip_digest=digest,
-        search_level=1,
+        strength="standard",
         used_count=1,
     )
     sql, *parameters = connection.fetchrow.await_args.args
-    assert "INSERT INTO public.anonymous_daily_search_usage" in sql
-    assert "ON CONFLICT (quota_date, ip_digest, search_level)" in sql
+    assert "INSERT INTO scholight.anonymous_daily_search_usage" in sql
+    assert "ON CONFLICT (quota_date, ip_digest, strength)" in sql
     assert "WHERE usage.used_count < $3::integer" in sql
     assert "RETURNING quota_date, used_count" in sql
     assert "SELECT used_count" not in sql
-    assert parameters == [digest, 1, 100]
+    assert parameters == [digest, "standard", 100]
 
 
 @pytest.mark.asyncio
@@ -74,7 +78,11 @@ async def test_reserve_returns_none_when_daily_limit_is_exhausted() -> None:
     with patch(
         "scholight.db.queries_anonymous_quota.get_pool", return_value=_pool_with(connection)
     ):
-        reservation = await reserve_anonymous_daily_quota(b"d" * 32, search_level=2, limit=30)
+        reservation = await reserve_anonymous_daily_quota(
+            b"d" * 32,
+            strength="thorough",
+            limit=30,
+        )
 
     assert reservation is None
 
@@ -84,7 +92,7 @@ async def test_decrement_uses_reservation_original_date_and_identity() -> None:
     reservation = AnonymousQuotaReservation(
         quota_date=date(2026, 7, 21),
         ip_digest=b"d" * 32,
-        search_level=2,
+        strength="thorough",
         used_count=10,
     )
     connection = MagicMock()
@@ -99,7 +107,7 @@ async def test_decrement_uses_reservation_original_date_and_identity() -> None:
     sql, *parameters = connection.fetchval.await_args.args
     assert "used_count = used_count - 1" in sql
     assert "AND used_count > 0" in sql
-    assert parameters == [date(2026, 7, 21), b"d" * 32, 2]
+    assert parameters == [date(2026, 7, 21), b"d" * 32, "thorough"]
 
 
 @pytest.mark.asyncio
@@ -107,7 +115,7 @@ async def test_decrement_returns_false_when_reservation_row_is_missing() -> None
     reservation = AnonymousQuotaReservation(
         quota_date=date(2026, 7, 21),
         ip_digest=b"d" * 32,
-        search_level=1,
+        strength="standard",
         used_count=1,
     )
     connection = MagicMock()
@@ -123,11 +131,15 @@ async def test_decrement_returns_false_when_reservation_row_is_missing() -> None
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("digest", "search_level", "limit"),
-    [(b"short", 1, 100), (b"d" * 32, 3, 100), (b"d" * 32, 1, 0)],
+    ("digest", "strength", "limit"),
+    [
+        (b"short", "standard", 100),
+        (b"d" * 32, "invalid", 100),
+        (b"d" * 32, "standard", 0),
+    ],
 )
 async def test_reserve_rejects_invalid_invariants_before_database_access(
-    digest: bytes, search_level: int, limit: int
+    digest: bytes, strength: str, limit: int
 ) -> None:
     get_pool = MagicMock()
 
@@ -135,7 +147,7 @@ async def test_reserve_rejects_invalid_invariants_before_database_access(
         patch("scholight.db.queries_anonymous_quota.get_pool", get_pool),
         pytest.raises(ValueError),
     ):
-        await reserve_anonymous_daily_quota(digest, search_level=search_level, limit=limit)
+        await reserve_anonymous_daily_quota(digest, strength=strength, limit=limit)
 
     get_pool.assert_not_called()
 
@@ -149,7 +161,11 @@ async def test_reserve_wraps_postgres_error_without_sensitive_details() -> None:
         patch("scholight.db.queries_anonymous_quota.get_pool", return_value=_pool_with(connection)),
         pytest.raises(DBError, match="anonymous search quota") as exc_info,
     ):
-        await reserve_anonymous_daily_quota(b"d" * 32, search_level=1, limit=100)
+        await reserve_anonymous_daily_quota(
+            b"d" * 32,
+            strength="standard",
+            limit=100,
+        )
 
     assert "private SQL detail" not in str(exc_info.value)
 
@@ -159,7 +175,7 @@ async def test_decrement_wraps_postgres_error_without_retry() -> None:
     reservation = AnonymousQuotaReservation(
         quota_date=date(2026, 7, 21),
         ip_digest=b"d" * 32,
-        search_level=1,
+        strength="standard",
         used_count=1,
     )
     connection = MagicMock()

@@ -43,7 +43,7 @@ def _result(*hits: SearchHit) -> SearchResult:
 async def test_final_enrichment_runs_one_batch_and_preserves_core_rank(
     api_client: httpx.AsyncClient,
 ) -> None:
-    reservation = SearchQuotaReservation(operation="search_level1")
+    reservation = SearchQuotaReservation(strength="standard")
     core_result = _result(_hit(1, "B", score=1.0), _hit(2, "A", score=0.9))
     enrichment = MagicMock(
         return_value={
@@ -86,7 +86,7 @@ async def test_final_enrichment_runs_one_batch_and_preserves_core_rank(
 async def test_missing_enrichment_row_is_degraded_with_null_abstract(
     api_client: httpx.AsyncClient,
 ) -> None:
-    reservation = SearchQuotaReservation(operation="search_level1")
+    reservation = SearchQuotaReservation(strength="standard")
     core_result = _result(_hit(1, "A", score=1.0), _hit(2, "B", score=0.9))
 
     with (
@@ -131,7 +131,7 @@ async def test_missing_enrichment_row_is_degraded_with_null_abstract(
 async def test_known_enrichment_failure_returns_degraded_without_compensation(
     api_client: httpx.AsyncClient, failure: Exception
 ) -> None:
-    reservation = SearchQuotaReservation(operation="search_level1")
+    reservation = SearchQuotaReservation(strength="standard")
     core_result = _result(_hit(1, "A", score=1.0))
 
     with (
@@ -165,7 +165,7 @@ async def test_known_enrichment_failure_returns_degraded_without_compensation(
 async def test_zero_core_hits_skip_final_enrichment(
     api_client: httpx.AsyncClient,
 ) -> None:
-    reservation = SearchQuotaReservation(operation="search_level1")
+    reservation = SearchQuotaReservation(strength="standard")
     enrichment = MagicMock()
 
     with (
@@ -195,7 +195,7 @@ async def test_zero_core_hits_skip_final_enrichment(
 async def test_post_commit_enrichment_program_error_returns_500_with_compensation(
     api_client: httpx.AsyncClient,
 ) -> None:
-    reservation = SearchQuotaReservation(operation="search_level1")
+    reservation = SearchQuotaReservation(strength="standard")
     core_result = _result(_hit(1, "A", score=1.0))
 
     with (
@@ -235,7 +235,7 @@ async def test_post_commit_enrichment_program_error_returns_500_with_compensatio
 async def test_post_commit_mapper_error_returns_500_with_compensation(
     api_client: httpx.AsyncClient,
 ) -> None:
-    reservation = SearchQuotaReservation(operation="search_level1")
+    reservation = SearchQuotaReservation(strength="standard")
     core_result = _result(_hit(1, "A", score=1.0))
 
     with (

@@ -6,7 +6,7 @@ ARG PYTHON_IMAGE=python:3.11-slim-bookworm@sha256:b18992999dbe963a45a8a4da40ac2b
 FROM ${PYTHON_IMAGE} AS builder
 
 ARG PRIVATE_DEP_ARCHIVE=https://api.github.com/repos/EricSanchezok/cloud-auth/tarball
-ARG PRIVATE_DEP_REVISION=a2831ef75f7d16d7fa7c8ab812917c6c49cb47b4
+ARG PRIVATE_DEP_REVISION=40d26c58d019cbc59b98cab9ee7db7eb14af6b15
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl \
@@ -44,7 +44,6 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY --from=builder /app/.venv/ /app/.venv/
-COPY --from=builder /app/cloud-auth/ /app/cloud-auth/
 COPY --from=builder /app/scholight/ /app/scholight/
 COPY --from=builder /app/migrations/ /app/migrations/
 COPY --from=builder /app/start.py /app/start.py

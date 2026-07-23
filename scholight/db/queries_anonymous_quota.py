@@ -4,19 +4,21 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+from typing import cast
 
 import asyncpg
 import structlog
 
 from scholight.db.client import DBError, get_pool
+from scholight.models.quota import SearchStrengthValue
 
 logger = structlog.get_logger(__name__)
 
 _RESERVE_SQL = """
-INSERT INTO public.anonymous_daily_search_usage AS usage (
+INSERT INTO scholight.anonymous_daily_search_usage AS usage (
     quota_date,
     ip_digest,
-    search_level,
+    strength,
     used_count,
     created_at,
     updated_at
@@ -24,12 +26,12 @@ INSERT INTO public.anonymous_daily_search_usage AS usage (
 SELECT
     (statement_timestamp() AT TIME ZONE 'UTC')::date,
     $1::bytea,
-    $2::smallint,
+    $2::text,
     1,
     statement_timestamp(),
     statement_timestamp()
 WHERE $3::integer > 0
-ON CONFLICT (quota_date, ip_digest, search_level)
+ON CONFLICT (quota_date, ip_digest, strength)
 DO UPDATE
 SET
     used_count = usage.used_count + 1,
@@ -39,13 +41,13 @@ RETURNING quota_date, used_count
 """
 
 _DECREMENT_SQL = """
-UPDATE public.anonymous_daily_search_usage
+UPDATE scholight.anonymous_daily_search_usage
 SET
     used_count = used_count - 1,
     updated_at = statement_timestamp()
 WHERE quota_date = $1
   AND ip_digest = $2
-  AND search_level = $3
+  AND strength = $3
   AND used_count > 0
 RETURNING used_count
 """
@@ -57,30 +59,36 @@ class AnonymousQuotaReservation:
 
     quota_date: date
     ip_digest: bytes
-    search_level: int
+    strength: SearchStrengthValue
     used_count: int
 
 
-def _validate_reservation_input(ip_digest: bytes, search_level: int, limit: int) -> None:
+def _validate_reservation_input(ip_digest: bytes, strength: str, limit: int) -> SearchStrengthValue:
     if len(ip_digest) != 32:
         raise ValueError("ip_digest must contain exactly 32 bytes")
-    if search_level not in (1, 2):
-        raise ValueError("search_level must be 1 or 2")
+    if strength not in {"standard", "thorough"}:
+        raise ValueError("strength must be standard or thorough")
     if isinstance(limit, bool) or limit <= 0:
         raise ValueError("limit must be a positive integer")
+    return cast("SearchStrengthValue", strength)
 
 
 async def reserve_anonymous_daily_quota(
     ip_digest: bytes,
     *,
-    search_level: int,
+    strength: str,
     limit: int,
 ) -> AnonymousQuotaReservation | None:
     """Atomically reserve one daily slot, or return ``None`` when exhausted."""
-    _validate_reservation_input(ip_digest, search_level, limit)
+    normalized_strength = _validate_reservation_input(ip_digest, strength, limit)
     try:
         async with get_pool().acquire() as connection:
-            row = await connection.fetchrow(_RESERVE_SQL, ip_digest, search_level, limit)
+            row = await connection.fetchrow(
+                _RESERVE_SQL,
+                ip_digest,
+                normalized_strength,
+                limit,
+            )
     except asyncpg.PostgresError as exc:
         logger.error("anonymous_quota_reserve_failed", error_type=type(exc).__name__)
         raise DBError("Failed to reserve anonymous search quota") from exc
@@ -90,7 +98,7 @@ async def reserve_anonymous_daily_quota(
     return AnonymousQuotaReservation(
         quota_date=row["quota_date"],
         ip_digest=ip_digest,
-        search_level=search_level,
+        strength=normalized_strength,
         used_count=row["used_count"],
     )
 
@@ -103,7 +111,7 @@ async def decrement_anonymous_daily_quota(reservation: AnonymousQuotaReservation
                 _DECREMENT_SQL,
                 reservation.quota_date,
                 reservation.ip_digest,
-                reservation.search_level,
+                reservation.strength,
             )
     except asyncpg.PostgresError as exc:
         logger.warning("anonymous_quota_decrement_failed", error_type=type(exc).__name__)

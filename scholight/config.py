@@ -3,6 +3,8 @@
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
 
+AUTH_CLIENT_ID = "scholight"
+
 
 class Settings(BaseSettings):
     """Application settings with SCHOLIGHT_ prefix."""
@@ -78,7 +80,7 @@ class Settings(BaseSettings):
     # ── PostgreSQL ──
     pg_host: str = "sii-pg.cf0m0gegaz1c.ap-east-1.rds.amazonaws.com"
     pg_port: int = 5432
-    pg_database: str = "postgres"
+    pg_database: str = "sanchezcloud"
     pg_user: str = "postgres"
     pg_password: str = ""
     pg_ssl_root_cert: str = "global-bundle.pem"
@@ -93,6 +95,7 @@ class Settings(BaseSettings):
     jwt_secret: str = ""
     jwt_access_token_ttl_minutes: int = 15
     jwt_refresh_token_ttl_days: int = 7
+    auth_refresh_cookie_secure: bool = True
 
     @model_validator(mode="after")
     def _sync_jwt_secret(self) -> "Settings":
@@ -114,6 +117,8 @@ class Settings(BaseSettings):
     anonymous_standard_daily_limit: int = Field(default=100, gt=0)
     anonymous_thorough_daily_limit: int = Field(default=30, gt=0)
     anonymous_quota_hmac_secret: str = ""
+    authenticated_standard_daily_limit: int = Field(default=1000, ge=0)
+    authenticated_thorough_daily_limit: int = Field(default=1000, ge=0)
 
     # ── Aliyun DirectMail ──
     aliyun_dm_access_key_id: str = ""

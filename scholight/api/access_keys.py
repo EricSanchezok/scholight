@@ -21,6 +21,7 @@ from scholight.db.queries_access_keys import (
     insert_access_key,
     touch_access_key_last_used,
 )
+from scholight.db.queries_profile import ProductAccessBlockedError, ensure_product_access
 
 _KEY_MARKER = "sk_live_"
 _LOOKUP_HEX_LENGTH = 16
@@ -126,6 +127,10 @@ async def resolve_access_key(plaintext: str) -> tuple[AccessKeyRecord, UserRecor
     user = await db.get_user_by_id(record.user_id)
     if user is None or user.status != "active":
         raise AccessKeyError("invalid_access_key")
+    try:
+        await ensure_product_access(user.id)
+    except ProductAccessBlockedError as exc:
+        raise AccessKeyError("product_access_blocked") from exc
     await touch_access_key_last_used(record.id, record.user_id)
     return record, user
 

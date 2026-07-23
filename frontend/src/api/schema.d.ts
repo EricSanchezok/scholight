@@ -81,8 +81,8 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Refresh */
-    post: operations["_refresh_auth_refresh_post"];
+    /** Refresh Cookie */
+    post: operations["_refresh_cookie_auth_refresh_post"];
     delete?: never;
     options?: never;
     head?: never;
@@ -363,23 +363,6 @@ export interface paths {
     patch: operations["patch_key_user_access_keys__key_id__patch"];
     trace?: never;
   };
-  "/user/account": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    post?: never;
-    /** Delete Account */
-    delete: operations["delete_account_user_account_delete"];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   "/user/profile": {
     parameters: {
       query?: never;
@@ -397,23 +380,6 @@ export interface paths {
     head?: never;
     /** Update Profile */
     patch: operations["_update_profile_user_profile_patch"];
-    trace?: never;
-  };
-  "/user/quotas": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get Quotas */
-    get: operations["get_quotas_user_quotas_get"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
     trace?: never;
   };
   "/user/usage/export.csv": {
@@ -533,6 +499,19 @@ export interface components {
       scopes: "search"[];
     };
     /**
+     * AccessTokenResponse
+     * @description Token response used when the refresh token is stored in an HttpOnly cookie.
+     */
+    AccessTokenResponse: {
+      /** Access Token */
+      access_token: string;
+      /**
+       * Token Type
+       * @default bearer
+       */
+      token_type: string;
+    };
+    /**
      * BulkDeleteSearchHistoryRequest
      * @description Strict owner-scoped history IDs, stably deduplicated.
      */
@@ -601,13 +580,6 @@ export interface components {
       remaining: number;
       /** Used */
       used: number;
-    };
-    /** DeleteAccountRequest */
-    DeleteAccountRequest: {
-      /** Confirmation */
-      confirmation: string;
-      /** Password */
-      password: string;
     };
     /** ForgotPasswordRequest */
     ForgotPasswordRequest: {
@@ -844,26 +816,6 @@ export interface components {
       result_count: number;
       strength: components["schemas"]["SearchStrength"];
     };
-    /** QuotaStatus */
-    QuotaStatus: {
-      /** Daily Limit */
-      daily_limit: number;
-      /**
-       * Operation
-       * @enum {string}
-       */
-      operation:
-        "search_level1" | "search_level2" | "search_level3" | "survey" | "research_project";
-      /** Remaining */
-      remaining: number;
-      /** Used */
-      used: number;
-    };
-    /** RefreshRequest */
-    RefreshRequest: {
-      /** Refresh Token */
-      refresh_token: string;
-    };
     /** RegisterRequest */
     RegisterRequest: {
       /** Display Name */
@@ -905,29 +857,18 @@ export interface components {
       expires_at: string;
       /** Id */
       id: number;
-      /** Last Seen At */
-      last_seen_at: string | null;
-      /** Revoked At */
-      revoked_at: string | null;
+      /**
+       * Last Seen At
+       * Format: date-time
+       */
+      last_seen_at: string;
       /** User Agent */
-      user_agent: string | null;
+      user_agent?: string | null;
     };
     /** TodayUsage */
     TodayUsage: {
       standard: components["schemas"]["DailyQuotaUsage"];
       thorough: components["schemas"]["DailyQuotaUsage"];
-    };
-    /** TokenResponse */
-    TokenResponse: {
-      /** Access Token */
-      access_token: string;
-      /** Refresh Token */
-      refresh_token: string;
-      /**
-       * Token Type
-       * @default bearer
-       */
-      token_type: string;
     };
     /** UpdateAccessKeyRequest */
     UpdateAccessKeyRequest: {
@@ -1194,7 +1135,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["TokenResponse"];
+          "application/json": components["schemas"]["AccessTokenResponse"];
         };
       };
       /** @description Validation Error */
@@ -1228,18 +1169,14 @@ export interface operations {
       };
     };
   };
-  _refresh_auth_refresh_post: {
+  _refresh_cookie_auth_refresh_post: {
     parameters: {
       query?: never;
       header?: never;
       path?: never;
       cookie?: never;
     };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["RefreshRequest"];
-      };
-    };
+    requestBody?: never;
     responses: {
       /** @description Successful Response */
       200: {
@@ -1247,16 +1184,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["TokenResponse"];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["HTTPValidationError"];
+          "application/json": components["schemas"]["AccessTokenResponse"];
         };
       };
     };
@@ -1775,37 +1703,6 @@ export interface operations {
       };
     };
   };
-  delete_account_user_account_delete: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["DeleteAccountRequest"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["HTTPValidationError"];
-        };
-      };
-    };
-  };
   get_profile_user_profile_get: {
     parameters: {
       query?: never;
@@ -1888,26 +1785,6 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["HTTPValidationError"];
-        };
-      };
-    };
-  };
-  get_quotas_user_quotas_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["QuotaStatus"][];
         };
       };
     };
