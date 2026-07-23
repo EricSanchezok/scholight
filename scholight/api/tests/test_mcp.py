@@ -108,9 +108,56 @@ async def test_initialize_and_list_tools_do_not_execute_search(
 
     assert initialized.status_code == 200
     assert initialized.json()["result"]["protocolVersion"] == "2025-11-25"
+    assert initialized.json()["result"]["instructions"] == (
+        "Use Scholight to find and compare AI research papers. "
+        "Call search_papers for literature discovery, related-work research, method comparisons, "
+        "or author, category, and date-filtered paper searches. Prefer standard for most requests; "
+        "use thorough when nuanced queries benefit from deeper ranking despite higher latency and "
+        "consumption of the separate Thorough quota."
+    )
     assert listed.status_code == 200
     tools = listed.json()["result"]["tools"]
     assert [tool["name"] for tool in tools] == ["search_papers"]
+    assert tools[0]["description"] == (
+        "Find ranked AI research papers relevant to a natural-language question or topic. Use this "
+        "tool for literature discovery, related-work research, method comparisons, and author, "
+        "category, or date-filtered research. Results include titles, authors, abstracts, dates, "
+        "categories, and paper and PDF links. Preserve the returned rank order. Use standard by "
+        "default; use thorough for nuanced queries when deeper ranking justifies higher latency and "
+        "consumption of the separate Thorough quota."
+    )
+    properties = tools[0]["inputSchema"]["properties"]
+    assert {name: properties[name]["description"] for name in properties} == {
+        "query": (
+            "A focused natural-language research question or topic. Include the task, method, "
+            "domain, or comparison that matters; avoid a loose list of unrelated keywords."
+        ),
+        "strength": (
+            "Search depth. Use standard by default for fast, iterative discovery. Use thorough "
+            "when the question is nuanced and deeper ranking justifies higher latency and "
+            "consumption of the separate Thorough quota."
+        ),
+        "limit": (
+            "Maximum number of ranked papers to return. Use 5 for a focused answer and increase "
+            "only when the user needs broader coverage."
+        ),
+        "categories": (
+            "Optional exact subject category codes such as cs.AI or cs.CL. Multiple values match "
+            "papers in any listed category. Use only when requested or known with confidence."
+        ),
+        "authors": (
+            "Optional exact author names. Multiple values match papers containing any listed "
+            "author. Use only when the user asks for specific authors; otherwise omit."
+        ),
+        "date_from": (
+            "Optional inclusive earliest submission date in YYYY-MM-DD format. Omit when the user "
+            "did not request a lower time boundary."
+        ),
+        "date_to": (
+            "Optional inclusive latest submission date in YYYY-MM-DD format. Omit when the user "
+            "did not request an upper time boundary."
+        ),
+    }
     assert tools[0]["annotations"]["readOnlyHint"] is True
     assert tools[0]["annotations"]["destructiveHint"] is False
     execute.assert_not_awaited()

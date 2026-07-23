@@ -206,15 +206,78 @@ def _tool_error(exc: PublicSearchError) -> CallToolResult:
 
 
 async def search_papers(
-    query: Annotated[str, Field(min_length=1, max_length=500)],
-    strength: Literal["standard", "thorough"] = "standard",
-    limit: Annotated[int, Field(ge=1, le=20)] = 5,
-    categories: Annotated[list[str] | None, Field(max_length=10)] = None,
-    authors: Annotated[list[str] | None, Field(max_length=10)] = None,
-    date_from: date | None = None,
-    date_to: date | None = None,
+    query: Annotated[
+        str,
+        Field(
+            min_length=1,
+            max_length=500,
+            description=(
+                "A focused natural-language research question or topic. Include the task, method, "
+                "domain, or comparison that matters; avoid a loose list of unrelated keywords."
+            ),
+        ),
+    ],
+    strength: Annotated[
+        Literal["standard", "thorough"],
+        Field(
+            description=(
+                "Search depth. Use standard by default for fast, iterative discovery. Use thorough "
+                "when the question is nuanced and deeper ranking justifies higher latency and "
+                "consumption of the separate Thorough quota."
+            )
+        ),
+    ] = "standard",
+    limit: Annotated[
+        int,
+        Field(
+            ge=1,
+            le=20,
+            description=(
+                "Maximum number of ranked papers to return. Use 5 for a focused answer and increase "
+                "only when the user needs broader coverage."
+            ),
+        ),
+    ] = 5,
+    categories: Annotated[
+        list[str] | None,
+        Field(
+            max_length=10,
+            description=(
+                "Optional exact subject category codes such as cs.AI or cs.CL. Multiple values match "
+                "papers in any listed category. Use only when requested or known with confidence."
+            ),
+        ),
+    ] = None,
+    authors: Annotated[
+        list[str] | None,
+        Field(
+            max_length=10,
+            description=(
+                "Optional exact author names. Multiple values match papers containing any listed "
+                "author. Use only when the user asks for specific authors; otherwise omit."
+            ),
+        ),
+    ] = None,
+    date_from: Annotated[
+        date | None,
+        Field(
+            description=(
+                "Optional inclusive earliest submission date in YYYY-MM-DD format. Omit when the "
+                "user did not request a lower time boundary."
+            )
+        ),
+    ] = None,
+    date_to: Annotated[
+        date | None,
+        Field(
+            description=(
+                "Optional inclusive latest submission date in YYYY-MM-DD format. Omit when the user "
+                "did not request an upper time boundary."
+            )
+        ),
+    ] = None,
 ) -> CallToolResult:
-    """Search papers using Standard for speed or Thorough for deeper ranking."""
+    """Search Scholight for ranked AI research papers."""
     request = PublicSearchRequest(
         query=query,
         strength=SearchStrength(strength),
@@ -241,7 +304,13 @@ def create_mcp_app() -> tuple[FastMCP[Any], ASGIApp]:
     """Create a fresh MCP server and ASGI app for one FastAPI application."""
     server = FastMCP(
         name="Scholight",
-        instructions="Search AI research papers from Scholight's arXiv index.",
+        instructions=(
+            "Use Scholight to find and compare AI research papers. "
+            "Call search_papers for literature discovery, related-work research, method comparisons, "
+            "or author, category, and date-filtered paper searches. Prefer standard for most requests; "
+            "use thorough when nuanced queries benefit from deeper ranking despite higher latency and "
+            "consumption of the separate Thorough quota."
+        ),
         stateless_http=True,
         json_response=True,
         streamable_http_path="/mcp",
@@ -249,7 +318,14 @@ def create_mcp_app() -> tuple[FastMCP[Any], ASGIApp]:
     )
     server.tool(
         name="search_papers",
-        description="Search arXiv papers indexed by Scholight and return ranked paper metadata.",
+        description=(
+            "Find ranked AI research papers relevant to a natural-language question or topic. Use this "
+            "tool for literature discovery, related-work research, method comparisons, and author, "
+            "category, or date-filtered research. Results include titles, authors, abstracts, dates, "
+            "categories, and paper and PDF links. Preserve the returned rank order. Use standard by "
+            "default; use thorough for nuanced queries when deeper ranking justifies higher latency and "
+            "consumption of the separate Thorough quota."
+        ),
         annotations=ToolAnnotations(
             readOnlyHint=True,
             destructiveHint=False,
