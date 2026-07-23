@@ -138,12 +138,18 @@ expected_owner_uid() {
 
 validate_platform() {
   [[ $(uname -m) == x86_64 ]] || fail "bootstrap supports only x86_64"
-  [[ -f ${OS_RELEASE} && ! -L ${OS_RELEASE} ]] || \
-    fail "operating system metadata is missing: ${OS_RELEASE}"
+  local os_release_path=${OS_RELEASE}
+  if [[ -L ${OS_RELEASE} ]]; then
+    [[ $(readlink "${OS_RELEASE}") == ../usr/lib/os-release ]] || \
+      fail "operating system metadata has an unexpected symlink target: ${OS_RELEASE}"
+    os_release_path="${ROOT_PREFIX}/usr/lib/os-release"
+  fi
+  [[ -f ${os_release_path} && ! -L ${os_release_path} ]] || \
+    fail "operating system metadata is missing: ${os_release_path}"
   local os_id
   local version_id
-  os_id=$(sed -n 's/^ID=//p' "${OS_RELEASE}" | tr -d '"')
-  version_id=$(sed -n 's/^VERSION_ID=//p' "${OS_RELEASE}" | tr -d '"')
+  os_id=$(sed -n 's/^ID=//p' "${os_release_path}" | tr -d '"')
+  version_id=$(sed -n 's/^VERSION_ID=//p' "${os_release_path}" | tr -d '"')
   [[ ${os_id} == amzn && ${version_id} == 2023 ]] || \
     fail "bootstrap supports only Amazon Linux 2023"
 }

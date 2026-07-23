@@ -170,6 +170,20 @@ def test_existing_runtime_env_is_never_fetched_or_rewritten(tmp_path: Path) -> N
     assert "aws " not in commands
 
 
+def test_amazon_linux_os_release_symlink_is_accepted(tmp_path: Path) -> None:
+    env, source, _ = bootstrap_environment(tmp_path, runtime_contents())
+    fake_root = Path(env["SCHOLIGHT_BOOTSTRAP_ROOT"])
+    os_release = fake_root / "etc" / "os-release"
+    canonical_os_release = fake_root / "usr" / "lib" / "os-release"
+    canonical_os_release.parent.mkdir(parents=True)
+    os_release.replace(canonical_os_release)
+    os_release.symlink_to("../usr/lib/os-release")
+
+    result = run_bootstrap(env, source)
+
+    assert result.returncode == 0, result.stderr
+
+
 def test_missing_runtime_env_fetches_only_the_fixed_secure_parameter(tmp_path: Path) -> None:
     env, source, log = bootstrap_environment(tmp_path, None)
 
