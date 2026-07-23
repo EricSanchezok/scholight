@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import AbstractAsyncContextManager
+from datetime import datetime
 from types import TracebackType
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID
@@ -17,6 +18,7 @@ from scholight.db.queries_admin import (
     find_admin_target_by_email,
     grant_quota_admin,
     is_quota_admin,
+    list_admin_audit_events,
     revoke_quota_admin,
     update_user_quota_overrides,
 )
@@ -263,3 +265,55 @@ async def test_revoke_refuses_to_remove_last_active_admin() -> None:
     statements = [call.args[0] for call in connection.execute.await_args_list]
     assert not any("UPDATE scholight.user_profiles" in sql for sql in statements)
     assert not any("admin_audit_events" in sql for sql in statements)
+
+
+@pytest.mark.asyncio
+async def test_revoke_inactive_admin_preserves_the_only_other_valid_admin() -> None:
+    connection = MagicMock()
+    connection.fetchrow = AsyncMock(
+        return_value={
+            "id": 7,
+            "email": "disabled@example.com",
+            "account_status": "disabled",
+            "email_verified": True,
+            "product_status": "active",
+            "is_admin": True,
+        }
+    )
+    connection.fetchval = AsyncMock(return_value=1)
+    connection.execute = AsyncMock()
+
+    with patch("scholight.db.queries_admin.get_pool", return_value=_pool(connection)):
+        changed = await revoke_quota_admin(
+            "disabled@example.com",
+            event_id=UUID("00000000-0000-0000-0000-000000000001"),
+        )
+
+    assert changed is True
+    statements = [call.args[0] for call in connection.execute.await_args_list]
+    assert any("UPDATE scholight.user_profiles" in sql for sql in statements)
+
+
+@pytest.mark.asyncio
+async def test_audit_list_decodes_default_asyncpg_json_strings() -> None:
+    pool = MagicMock()
+    pool.fetch = AsyncMock(
+        return_value=[
+            {
+                "event_id": UUID("00000000-0000-0000-0000-000000000001"),
+                "actor_type": "user",
+                "actor_identifier": "admin@example.com",
+                "target_user_id": 7,
+                "target_email": "reader@example.com",
+                "action": "quota_overrides_updated",
+                "before_state": '{"standard":1000,"thorough":null}',
+                "after_state": '{"standard":5000,"thorough":null}',
+                "created_at": datetime(2026, 7, 23),
+            }
+        ]
+    )
+
+    with patch("scholight.db.queries_admin.get_pool", return_value=pool):
+        events = await list_admin_audit_events(20)
+
+    assert events[0].before_state == {"standard": 1000, "thorough": None}

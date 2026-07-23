@@ -68,6 +68,13 @@ def _row_value(row: asyncpg.Record | dict[str, Any], key: str) -> Any:
     return row.get(key)
 
 
+def _json_state(value: Any) -> dict[str, Any]:
+    decoded = json.loads(value) if isinstance(value, str) else value
+    if not isinstance(decoded, dict):
+        raise DBError("Invalid administration audit state")
+    return decoded
+
+
 async def is_quota_admin(user_id: int) -> bool:
     """Check current product administration state on every request."""
     try:
@@ -267,8 +274,8 @@ async def list_admin_audit_events(limit: int) -> list[AdminAuditEvent]:
             ),
             target_email=str(row["target_email"]),
             action=row["action"],
-            before_state=dict(row["before_state"]),
-            after_state=dict(row["after_state"]),
+            before_state=_json_state(row["before_state"]),
+            after_state=_json_state(row["after_state"]),
             created_at=row["created_at"],
         )
         for row in rows
@@ -341,7 +348,12 @@ async def revoke_quota_admin(email: str, *, event_id: UUID) -> bool:
                 "WHERE profiles.is_admin IS TRUE AND profiles.status = 'active' "
                 "AND users.status = 'active' AND users.email_verified_at IS NOT NULL"
             )
-            if int(active_admins or 0) <= 1:
+            target_is_valid = (
+                row["account_status"] == "active"
+                and bool(row["email_verified"])
+                and row["product_status"] == "active"
+            )
+            if target_is_valid and int(active_admins or 0) <= 1:
                 raise LastAdminError("Cannot revoke the last active quota administrator")
             await connection.execute(
                 "UPDATE scholight.user_profiles SET is_admin = FALSE, "
