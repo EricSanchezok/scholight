@@ -7,12 +7,9 @@ export function apiPath(path: `/${string}`): string {
 }
 
 export type DeploymentUrls = {
-  web: string;
   api: string;
   search: string;
   mcp: string;
-  openapi: string;
-  interactiveApi: string;
 };
 
 export function buildDeploymentUrls(
@@ -24,11 +21,8 @@ export function buildDeploymentUrls(
   const api = new URL(normalizedApiPath, `${web}/`).toString().replace(/\/$/, "");
 
   return {
-    web,
     api,
     search: `${api}/search`,
     mcp: `${api}/mcp`,
-    openapi: `${api}/openapi.json`,
-    interactiveApi: `${api}/docs`,
   };
 }

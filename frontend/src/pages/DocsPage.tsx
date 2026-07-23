@@ -1,6 +1,6 @@
 import { CopyCodeBlock } from "../components/CopyCodeBlock";
 import { buildDeploymentUrls, runtimeConfig } from "../config/runtime";
-import { buildDocsExamples, scholightRepositoryUrl } from "../features/docs/examples";
+import { buildDocsExamples } from "../features/docs/examples";
 import { styles } from "../styles/classes";
 import { routes } from "../app/routes";
 
@@ -38,7 +38,6 @@ const navigation = [
     links: [
       ["Search behavior", "#search-behavior"],
       ["Errors and limits", "#errors-limits"],
-      ["Deployment URLs", "#deployment-urls"],
     ],
   },
 ] as const;
@@ -65,21 +64,11 @@ export function DocsPage({ origin }: DocsPageProps = {}) {
       <header className={styles.docsHero}>
         <div className={styles.accentLine} />
         <p className={styles.eyebrow}>Documentation</p>
-        <h1>Build with Scholight</h1>
+        <h1>Using Scholight</h1>
         <p>
-          Search Scholight&apos;s arXiv index from the web, a REST client, an MCP agent, or the
-          dependency-free Search Skill.
+          Search Scholight&apos;s arXiv index from the web, a REST client, an MCP agent, or an
+          installed Search Skill.
         </p>
-        <dl className={styles.deploymentAddress}>
-          <div>
-            <dt>This deployment</dt>
-            <dd>{urls.web}</dd>
-          </div>
-          <div>
-            <dt>API base URL</dt>
-            <dd>{urls.api}</dd>
-          </div>
-        </dl>
       </header>
 
       <div className={styles.docsLayout}>
@@ -107,13 +96,6 @@ export function DocsPage({ origin }: DocsPageProps = {}) {
               add filters only when they improve the question.
             </p>
             <CopyCodeBlock code={code.anonymousCurl} language="bash" />
-            <div className={styles.docsCallout}>
-              <strong>Live address.</strong>
-              <p>
-                This example already uses <code>{urls.search}</code>, the search endpoint visible
-                from the Scholight instance you are reading now.
-              </p>
-            </div>
           </section>
 
           <section className={styles.docsSection} id="authentication">
@@ -160,11 +142,10 @@ export function DocsPage({ origin }: DocsPageProps = {}) {
 
           <section className={styles.docsSection} id="rest-api">
             <p className={styles.docsSectionLabel}>03 · REST API</p>
-            <h2>One stable public search contract</h2>
+            <h2>Search papers through the REST API</h2>
             <p className={styles.docsLead}>
-              Request and response validation comes from the server&apos;s OpenAPI schema. The links
-              below always point to this deployment, so field definitions cannot drift into a second
-              handwritten reference.
+              Send a JSON request to the search endpoint. Authentication is optional; add an Access
+              Key when you want the search associated with your account and authenticated quota.
             </p>
             <div className={styles.endpointTable}>
               <EndpointRow
@@ -173,27 +154,23 @@ export function DocsPage({ origin }: DocsPageProps = {}) {
                 url={urls.search}
                 description="Anonymous or Access Key"
               />
-              <EndpointRow
-                label="OpenAPI schema"
-                method="GET"
-                url={urls.openapi}
-                description="Machine-readable contract"
-              />
-              <EndpointRow
-                label="Interactive API"
-                method="GET"
-                url={urls.interactiveApi}
-                description="Try requests in the browser"
-              />
             </div>
-            <p className={styles.docsLinks}>
-              <a href={urls.interactiveApi} target="_blank" rel="noreferrer">
-                Open interactive API docs
-              </a>
-              <a href={urls.openapi} target="_blank" rel="noreferrer">
-                View OpenAPI JSON
-              </a>
-            </p>
+            <div className={styles.docsSplit}>
+              <div>
+                <h3>Required</h3>
+                <p>
+                  <code>query</code> is a natural-language research question. It accepts between 1
+                  and 500 characters.
+                </p>
+              </div>
+              <div>
+                <h3>Optional</h3>
+                <p>
+                  Choose <code>strength</code> and <code>limit</code>, then filter by arXiv
+                  categories, authors, or submission dates when useful.
+                </p>
+              </div>
+            </div>
             <h3>Response essentials</h3>
             <p>
               Use <code>rank</code> as the authoritative order. The <code>score</code> is an
@@ -236,37 +213,17 @@ export function DocsPage({ origin }: DocsPageProps = {}) {
 
           <section className={styles.docsSection} id="search-skill">
             <p className={styles.docsSectionLabel}>05 · Search Skill</p>
-            <h2>Give an agent a small, inspectable CLI</h2>
+            <h2>Use Scholight from an installed Search Skill</h2>
             <p className={styles.docsLead}>
-              The repository includes a Skill with a Python standard-library CLI. Install that
-              directory into your agent&apos;s Skill location, then point it at this API base.
+              If your organization has installed the Scholight Search Skill in your agent
+              environment, configure its API URL and optional Access Key before running a search.
             </p>
-            <h3>Download and install</h3>
-            <CopyCodeBlock code={code.skillInstall} language="bash" />
-            <div className={styles.skillLocations}>
-              <div>
-                <span>Codex</span>
-                <code>~/.codex/skills/scholight-search</code>
-              </div>
-              <div>
-                <span>Claude Code</span>
-                <code>~/.claude/skills/scholight-search</code>
-              </div>
-              <div>
-                <span>Cursor / Windsurf</span>
-                <code>&lt;project&gt;/.skills/scholight-search</code>
-              </div>
-              <div>
-                <span>Other agents</span>
-                <code>&lt;agent_skill_dir&gt;/scholight-search</code>
-              </div>
-            </div>
-            <h3>Verify with a search</h3>
+            <h3>Configure and search</h3>
             <CopyCodeBlock code={code.skillSearch} language="bash" />
-            <p className={styles.docsLinks}>
-              <a href={`${scholightRepositoryUrl}/tree/main/skills/scholight-search`}>
-                Inspect the Skill source
-              </a>
+            <p className={styles.docsNote}>
+              <code>SCHOLIGHT_API_KEY</code> is optional. Run{" "}
+              <code>python3 &lt;skill_dir&gt;/scripts/search.py --help</code> to see the installed
+              CLI&apos;s available filters.
             </p>
           </section>
 
@@ -329,50 +286,6 @@ export function DocsPage({ origin }: DocsPageProps = {}) {
             <p className={styles.docsNote}>
               Anonymous and authenticated daily limits differ. Sign in to review current quota and
               recent usage; initialize and tool-list MCP requests do not consume search quota.
-            </p>
-          </section>
-
-          <section className={styles.docsSection} id="deployment-urls">
-            <p className={styles.docsSectionLabel}>08 · Deployment URLs</p>
-            <h2>One frontend build, different reachable addresses</h2>
-            <p className={styles.docsLead}>
-              Every address on this page is derived at runtime from the URL in the browser plus the
-              shared <code>/api</code> proxy path. The same image can therefore serve a public
-              domain, an internal cluster hostname, and localhost without rebuilding the Docs page.
-            </p>
-            <div className={styles.endpointTable}>
-              <EndpointRow
-                label="Web"
-                method="CURRENT"
-                url={urls.web}
-                description="Browser-visible origin"
-              />
-              <EndpointRow
-                label="REST base"
-                method="DERIVED"
-                url={urls.api}
-                description="Current origin plus /api"
-              />
-              <EndpointRow
-                label="MCP"
-                method="DERIVED"
-                url={urls.mcp}
-                description="Current API base plus /mcp"
-              />
-            </div>
-            <div className={styles.docsCallout}>
-              <strong>Keep the proxy contract.</strong>
-              <p>
-                Each deployment should expose its own backend under <code>/api</code> on the same
-                origin as its frontend. Do not publish container-only hostnames in browser
-                configuration.
-              </p>
-            </div>
-            <h3>Email links are configured separately</h3>
-            <p>
-              Set <code>SCHOLIGHT_PUBLIC_WEB_URL</code> per API instance to the address that users
-              of that instance can open from verification and password-reset email. The backend does
-              not infer this value from forwarded headers.
             </p>
           </section>
         </div>

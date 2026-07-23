@@ -150,14 +150,6 @@
   .docs h1 {
     font-size: 39px;
   }
-  .deploymentAddress {
-    grid-template-columns: 1fr;
-  }
-  .deploymentAddress > div + div {
-    padding-left: 0;
-    border-top: 1px solid var(--line-soft);
-    border-left: 0;
-  }
   .docsLayout {
     grid-template-columns: 1fr;
     gap: 36px;
@@ -209,10 +201,6 @@
     padding-left: 0;
     border-top: 1px solid var(--line-soft);
     border-left: 0;
-  }
-  .skillLocations > div {
-    grid-template-columns: 1fr;
-    gap: 5px;
   }
   .historyToolbar {
     height: auto;

@@ -1,7 +1,5 @@
 import type { DeploymentUrls } from "../../config/runtime";
 
-export const scholightRepositoryUrl = "https://github.com/EricSanchezok/scholight";
-
 export function buildDocsExamples(urls: DeploymentUrls) {
   return {
     anonymousCurl: `curl -sS -X POST ${urls.search} \\
@@ -26,8 +24,6 @@ export function buildDocsExamples(urls: DeploymentUrls) {
     }
   }
 }`,
-    skillInstall: `git clone --depth 1 ${scholightRepositoryUrl}.git scholight-source
-cp -R scholight-source/skills/scholight-search <agent_skill_dir>/scholight-search`,
     skillSearch: `SCHOLIGHT_API_URL=${urls.api} \\
 SCHOLIGHT_API_KEY=sk_live_xxx \\
 python3 <skill_dir>/scripts/search.py search \\

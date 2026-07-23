@@ -54,39 +54,6 @@
   font-size: 18px;
   line-height: 1.6;
 }
-.deploymentAddress {
-  display: grid;
-  max-width: 760px;
-  margin: 32px 0 0;
-  border-top: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
-  grid-template-columns: 1fr 1fr;
-}
-.deploymentAddress > div {
-  display: grid;
-  min-width: 0;
-  padding: 16px 0 17px;
-  gap: 6px;
-}
-.deploymentAddress > div + div {
-  padding-left: 24px;
-  border-left: 1px solid var(--line-soft);
-}
-.deploymentAddress dt {
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-.deploymentAddress dd {
-  margin: 0;
-  overflow: hidden;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .docsLayout {
   display: grid;
   align-items: start;
@@ -173,8 +140,7 @@
   font-size: 16px;
   line-height: 1.75;
 }
-.docsSection code,
-.deploymentAddress code {
+.docsSection code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 .docsSection p code,
@@ -230,24 +196,6 @@
   line-height: 1.7;
   white-space: pre;
 }
-.docsCallout {
-  max-width: 860px;
-  margin-top: 24px;
-  padding: 17px 20px;
-  border-left: 3px solid var(--brand);
-  background: var(--surface-selected);
-}
-.docsCallout strong {
-  display: block;
-  margin-bottom: 4px;
-  font-size: 13px;
-}
-.docsCallout p {
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: 13px;
-  line-height: 1.65;
-}
 .docsSteps {
   display: grid;
   max-width: 860px;
@@ -272,8 +220,7 @@
   margin-bottom: 4px;
   font-size: 14px;
 }
-.docsSteps a,
-.docsLinks a {
+.docsSteps a {
   color: var(--brand-link);
   font-weight: 600;
 }
@@ -316,11 +263,6 @@
   color: var(--ink-soft);
   font-size: 11px;
 }
-.docsLinks {
-  display: flex;
-  margin-top: 18px !important;
-  gap: 24px;
-}
 .docsSplit {
   display: grid;
   max-width: 860px;
@@ -356,29 +298,6 @@
   border-top: 1px solid var(--line-soft);
   font-size: 13px !important;
 }
-.skillLocations {
-  max-width: 860px;
-  margin-top: 20px;
-  border-top: 1px solid var(--line-soft);
-}
-.skillLocations > div {
-  display: grid;
-  min-height: 52px;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--line-soft);
-  align-items: center;
-  grid-template-columns: 160px 1fr;
-  gap: 24px;
-}
-.skillLocations span {
-  color: var(--muted);
-  font-size: 12px;
-}
-.skillLocations code {
-  overflow-wrap: anywhere;
-  font-size: 12px;
-}
-
 .authPage {
   display: grid;
   min-height: 100vh;
