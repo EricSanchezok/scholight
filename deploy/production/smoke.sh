@@ -51,21 +51,25 @@ read_env_value() {
 }
 
 SCHOLIGHT_DOMAIN=$(read_env_value SCHOLIGHT_DOMAIN)
+LOCAL_INGRESS_RESOLVE="${SCHOLIGHT_DOMAIN}:443:127.0.0.1"
 
 retry "API readiness" compose exec -T api \
   curl --fail --silent --show-error http://127.0.0.1:8000/readyz
 retry "frontend health" compose exec -T frontend \
   wget -q -O /dev/null http://127.0.0.1:8080/healthz
-retry "public frontend ingress" curl --fail --silent --show-error \
+retry "local TLS frontend ingress" curl --fail --silent --show-error \
+  --resolve "${LOCAL_INGRESS_RESOLVE}" \
   --output /dev/null "https://${SCHOLIGHT_DOMAIN}/healthz"
-retry "public API ingress" curl --fail --silent --show-error \
+retry "local TLS API ingress" curl --fail --silent --show-error \
+  --resolve "${LOCAL_INGRESS_RESOLVE}" \
   --output /dev/null "https://${SCHOLIGHT_DOMAIN}/api/openapi.json"
 
 for path in livez readyz; do
-  status=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+  status=$(curl --silent --show-error --resolve "${LOCAL_INGRESS_RESOLVE}" \
+    --output /dev/null --write-out '%{http_code}' \
     "https://${SCHOLIGHT_DOMAIN}/api/${path}")
   if [[ ${status} != 404 ]]; then
-    printf 'Public /api/%s returned %s, expected 404\n' "${path}" "${status}" >&2
+    printf 'TLS ingress /api/%s returned %s, expected 404\n' "${path}" "${status}" >&2
     exit 1
   fi
 done

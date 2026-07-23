@@ -151,6 +151,24 @@ def test_release_workflow_verifies_package_and_waits_for_terminal_ssm_status() -
     assert "aws ssm wait command-executed" not in workflow
 
 
+def test_host_smoke_uses_local_tls_ingress_instead_of_public_ip_hairpin() -> None:
+    smoke = (PRODUCTION / "smoke.sh").read_text(encoding="utf-8")
+
+    assert "--resolve" in smoke
+    assert "${SCHOLIGHT_DOMAIN}:443:127.0.0.1" in smoke
+    assert "https://${SCHOLIGHT_DOMAIN}/healthz" in smoke
+    assert "https://${SCHOLIGHT_DOMAIN}/api/openapi.json" in smoke
+
+
+def test_release_workflow_checks_ingress_from_an_external_runner() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+
+    assert "PRODUCTION_DOMAIN: ${{ vars.PRODUCTION_DOMAIN }}" in workflow
+    assert "Verify public deployment from the runner" in workflow
+    assert "https://${PRODUCTION_DOMAIN}/healthz" in workflow
+    assert "https://${PRODUCTION_DOMAIN}/api/openapi.json" in workflow
+
+
 def test_external_actions_are_pinned_to_full_commit_shas() -> None:
     action_reference = re.compile(r"^\s*uses:\s*([^\s]+)@([^\s#]+)", re.MULTILINE)
     for name in ("ci.yml", "release.yml"):

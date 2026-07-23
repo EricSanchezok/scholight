@@ -203,6 +203,37 @@ jobs:
             --parameters "commands=[\"$command\"]" \
             --query 'Command.CommandId' --output text)
           bash deploy/production/wait-ssm.sh "$command_id" "$INSTANCE_ID"
+      - name: Verify public deployment from the runner
+        env:
+          PRODUCTION_DOMAIN: ${{ vars.PRODUCTION_DOMAIN }}
+        run: |
+          [[ "$PRODUCTION_DOMAIN" =~ ^[A-Za-z0-9.-]+$ ]] || {
+            echo "PRODUCTION_DOMAIN must be a DNS hostname" >&2
+            exit 1
+          }
+          retry() {
+            local url=$1
+            for attempt in {1..12}; do
+              if curl --fail --silent --show-error --output /dev/null "$url"; then
+                return 0
+              fi
+              if ((attempt < 12)); then
+                sleep 5
+              fi
+            done
+            echo "External smoke check failed: $url" >&2
+            return 1
+          }
+          retry "https://${PRODUCTION_DOMAIN}/healthz"
+          retry "https://${PRODUCTION_DOMAIN}/api/openapi.json"
+          for path in livez readyz; do
+            status=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+              "https://${PRODUCTION_DOMAIN}/api/${path}")
+            [[ "$status" == 404 ]] || {
+              echo "Public /api/${path} returned ${status}, expected 404" >&2
+              exit 1
+            }
+          done
 
   rollback:
     if: inputs.operation == 'rollback'

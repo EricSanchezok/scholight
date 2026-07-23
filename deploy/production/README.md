@@ -29,6 +29,7 @@ Configure GitHub OIDC roles instead of static AWS access keys. Repository or env
 - `ECR_FRONTEND_REPOSITORY`
 - `PRODUCTION_PLATFORM` (`linux/amd64` or `linux/arm64`)
 - `PRODUCTION_INSTANCE_ID`
+- `PRODUCTION_DOMAIN` (for example, `scholight.example.com`)
 
 Add the read-only `CLOUD_AUTH_READ_TOKEN` repository secret. Create a protected GitHub environment named `production` with required reviewers. The publish role may push only to the two ECR repositories; the deploy role may send and inspect SSM commands only for the production instance. The EC2 instance role needs ECR pull and SSM managed-instance permissions.
 
@@ -92,7 +93,7 @@ sudo /opt/scholight/release.sh deploy \
   --frontend-image "$FRONTEND_IMAGE_DIGEST_REF"
 ```
 
-The transaction verifies the installed production package digest, validates runtime-file ownership and mode, validates Compose, logs into ECR with the instance role, pulls both images, validates the independently managed auth schema, runs only the Scholight migration, activates the pair, and runs bounded internal/external smoke checks. Pull or migration failure leaves the running application untouched. Candidate smoke failure restores the complete previous pair.
+The transaction verifies the installed production package digest, validates runtime-file ownership and mode, validates Compose, logs into ECR with the instance role, pulls both images, validates the independently managed auth schema, runs only the Scholight migration, activates the pair, and runs bounded container and local TLS-ingress smoke checks. The local TLS checks resolve the production hostname to `127.0.0.1`; they deliberately do not hairpin through the instance's own public IP. After activation, GitHub Actions independently verifies the public hostname from an external runner. Pull or migration failure leaves the running application untouched. Candidate host-smoke failure restores the complete previous pair.
 
 ## Roll back the application
 
