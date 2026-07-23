@@ -194,6 +194,13 @@ def test_baseline_only_creates_product_tables_in_scholight_schema() -> None:
     assert "plaintext" not in sql.lower()
     assert "WHERE revoked_at IS NULL" in normalized
     assert "CREATE TABLE scholight.usage_events" in normalized
+    assert "is_admin BOOLEAN NOT NULL DEFAULT FALSE" in normalized
+    assert "CREATE TABLE scholight.admin_audit_events" in normalized
+    assert "event_id UUID NOT NULL UNIQUE" in normalized
+    assert "actor_type IN ('user', 'cli')" in normalized
+    assert "action IN ('quota_overrides_updated', 'admin_granted', 'admin_revoked')" in normalized
+    assert "before_state JSONB NOT NULL" in normalized
+    assert "after_state JSONB NOT NULL" in normalized
     assert "request_id VARCHAR(128) NOT NULL UNIQUE" in normalized
     assert "quota_units INTEGER NOT NULL" in normalized
     assert "access_key_id UUID" in normalized

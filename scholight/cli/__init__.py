@@ -77,6 +77,15 @@ def cli() -> None:
 
 cli.add_command(
     _lazy(
+        "scholight.cli.admin",
+        "admin_group",
+        "admin",
+        group=True,
+        help="Manage Scholight quota administrators",
+    )
+)
+cli.add_command(
+    _lazy(
         "scholight.cli.scheduler",
         "scheduler_group",
         "scheduler",

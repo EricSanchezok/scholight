@@ -4,6 +4,7 @@
 CREATE TABLE scholight.user_profiles (
     user_id       BIGINT PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
     status        TEXT NOT NULL DEFAULT 'active',
+    is_admin      BOOLEAN NOT NULL DEFAULT FALSE,
     blocked_at    TIMESTAMPTZ,
     block_reason  TEXT,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -26,8 +27,34 @@ CREATE TABLE scholight.user_quota_overrides (
     CONSTRAINT user_quota_overrides_strength
         CHECK (strength IN ('standard', 'thorough')),
     CONSTRAINT user_quota_overrides_daily_limit
-        CHECK (daily_limit >= 0)
+        CHECK (daily_limit BETWEEN 0 AND 1000000)
 );
+
+CREATE TABLE scholight.admin_audit_events (
+    id                BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    event_id          UUID NOT NULL UNIQUE,
+    actor_type        TEXT NOT NULL,
+    actor_user_id     BIGINT REFERENCES auth.users(id) ON DELETE SET NULL,
+    actor_identifier  TEXT NOT NULL,
+    target_user_id    BIGINT REFERENCES auth.users(id) ON DELETE SET NULL,
+    target_email      TEXT NOT NULL,
+    action            TEXT NOT NULL,
+    before_state      JSONB NOT NULL,
+    after_state       JSONB NOT NULL,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT admin_audit_events_actor_type
+        CHECK (actor_type IN ('user', 'cli')),
+    CONSTRAINT admin_audit_events_actor_identity
+        CHECK (
+            (actor_type = 'user' AND actor_user_id IS NOT NULL)
+            OR (actor_type = 'cli' AND actor_user_id IS NULL)
+        ),
+    CONSTRAINT admin_audit_events_action
+        CHECK (action IN ('quota_overrides_updated', 'admin_granted', 'admin_revoked'))
+);
+
+CREATE INDEX admin_audit_events_created_idx
+    ON scholight.admin_audit_events (created_at DESC, id DESC);
 
 CREATE TABLE scholight.user_daily_search_usage (
     quota_date  DATE NOT NULL,
