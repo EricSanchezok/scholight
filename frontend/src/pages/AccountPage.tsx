@@ -206,7 +206,7 @@ export function AccountPage() {
                 {passwordMessage}
               </p>
             )}
-            <button className={styles.darkButton} disabled={isSubmitting}>
+            <button className={styles.primaryButton} disabled={isSubmitting}>
               {isSubmitting ? "Changing…" : "Change password"}
             </button>
           </form>

@@ -504,6 +504,19 @@ test("usage, access keys, and account match the editorial account center", async
   await expect(page.getByRole("heading", { name: "Account settings" })).toBeVisible();
   await expect(page.getByText("Chrome on macOS")).toBeVisible();
   await expect(page.getByText("Safari on macOS")).toBeVisible();
+  const saveButtonMetrics = await page
+    .getByRole("button", { name: "Save changes" })
+    .evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      return { width: rect.width, height: rect.height, right: rect.right };
+    });
+  const passwordButtonMetrics = await page
+    .getByRole("button", { name: "Change password" })
+    .evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      return { width: rect.width, height: rect.height, right: rect.right };
+    });
+  expect(passwordButtonMetrics).toEqual(saveButtonMetrics);
   expect(
     (await new AxeBuilder({ page }).analyze()).violations.filter((item) =>
       ["serious", "critical"].includes(item.impact ?? ""),
