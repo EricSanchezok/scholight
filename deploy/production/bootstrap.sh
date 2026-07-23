@@ -120,6 +120,14 @@ package_sha() {
   sha256_text "${inventory}"
 }
 
+package_is_complete() {
+  local directory=$1
+  local name
+  for name in "${PACKAGE_FILES[@]}"; do
+    [[ -f ${directory}/${name} && ! -L ${directory}/${name} ]] || return 1
+  done
+}
+
 file_mode() {
   stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"
 }
@@ -337,8 +345,8 @@ ensure_runtime_env() {
 install_package() {
   local source_digest=$1
   local installed_digest=""
-  if [[ -f ${HOST_PACKAGE_DIR}/release.sh ]]; then
-    installed_digest=$(package_sha "${HOST_PACKAGE_DIR}" 2>/dev/null || true)
+  if package_is_complete "${HOST_PACKAGE_DIR}"; then
+    installed_digest=$(package_sha "${HOST_PACKAGE_DIR}")
   fi
   if [[ ${installed_digest} == "${source_digest}" ]]; then
     return

@@ -184,6 +184,18 @@ def test_amazon_linux_os_release_symlink_is_accepted(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
 
 
+def test_incomplete_legacy_host_package_is_replaced(tmp_path: Path) -> None:
+    env, source, _ = bootstrap_environment(tmp_path, runtime_contents())
+    host_package = Path(env["SCHOLIGHT_BOOTSTRAP_ROOT"]) / "opt" / "scholight"
+    host_package.mkdir(parents=True)
+    make_executable(host_package / "release.sh", "#!/usr/bin/env bash\nexit 99\n")
+
+    result = run_bootstrap(env, source)
+
+    assert result.returncode == 0, result.stderr
+    assert package_sha(host_package) == package_sha(source)
+
+
 def test_missing_runtime_env_fetches_only_the_fixed_secure_parameter(tmp_path: Path) -> None:
     env, source, log = bootstrap_environment(tmp_path, None)
 
