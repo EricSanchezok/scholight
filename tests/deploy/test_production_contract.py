@@ -207,6 +207,9 @@ def test_database_bootstrap_is_reviewed_and_ci_exercises_least_privilege_roles()
     assert "CREATE SCHEMA IF NOT EXISTS auth AUTHORIZATION %I" in bootstrap
     assert "CREATE SCHEMA IF NOT EXISTS scholight AUTHORIZATION %I" in bootstrap
     assert "GRANT REFERENCES ON TABLE auth.users" in bootstrap
+    assert "GRANT SELECT, INSERT, UPDATE ON TABLE auth.users" in bootstrap
+    assert "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE auth.users" not in bootstrap
+    assert 'FOR ROLE :"auth_migrator_role"' not in bootstrap
     assert "SCHOLIGHT_PG_USER=scholight_migrator" in workflow
     assert "AUTH_DATABASE_URL=" in workflow
     assert "-U scholight_app" in workflow

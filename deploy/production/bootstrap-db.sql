@@ -46,7 +46,7 @@ GRANT USAGE, CREATE ON SCHEMA scholight TO :"product_migrator_role";
 
 -- These grants become available after the independent cloud-auth baseline.
 SELECT format(
-  'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE auth.users, '
+  'GRANT SELECT, INSERT, UPDATE ON TABLE auth.users, '
   'auth.refresh_tokens TO %I',
   :'app_role'
 )
@@ -71,6 +71,7 @@ SELECT format(
 )
 FROM information_schema.sequences
 WHERE sequence_schema = 'auth'
+  AND sequence_name IN ('users_id_seq', 'refresh_tokens_id_seq')
 ORDER BY sequence_name \gexec
 
 -- These grants become available after the Scholight baseline.
@@ -95,10 +96,6 @@ FROM information_schema.sequences
 WHERE sequence_schema = 'scholight'
 ORDER BY sequence_name \gexec
 
-ALTER DEFAULT PRIVILEGES FOR ROLE :"auth_migrator_role" IN SCHEMA auth
-  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO :"app_role";
-ALTER DEFAULT PRIVILEGES FOR ROLE :"auth_migrator_role" IN SCHEMA auth
-  GRANT USAGE, SELECT ON SEQUENCES TO :"app_role";
 ALTER DEFAULT PRIVILEGES FOR ROLE :"product_migrator_role" IN SCHEMA scholight
   GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO :"app_role";
 ALTER DEFAULT PRIVILEGES FOR ROLE :"product_migrator_role" IN SCHEMA scholight

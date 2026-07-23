@@ -269,6 +269,12 @@ jobs:
                    AND to_regclass('scholight.anonymous_daily_search_usage') IS NOT NULL
                    AND to_regclass('auth.users') IS NOT NULL
                    AND to_regclass('auth.refresh_tokens') IS NOT NULL
+                   AND NOT has_table_privilege(
+                     'scholight_app', 'auth.users', 'DELETE'
+                   )
+                   AND NOT has_table_privilege(
+                     'scholight_app', 'auth.refresh_tokens', 'DELETE'
+                   )
                    AND NOT EXISTS (
                      SELECT 1 FROM scholight.schema_migrations WHERE checksum IS NULL
                    )
