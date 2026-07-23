@@ -128,9 +128,7 @@ def test_caddy_blocks_internal_health_and_routes_api_directly() -> None:
     assert "reverse_proxy api:8000" in caddyfile
     assert "reverse_proxy frontend:8080" in caddyfile
     assert "format json" in caddyfile
-    assert caddyfile.index("respond @internal_health 404") < caddyfile.index(
-        "handle_path /api/*"
-    )
+    assert caddyfile.index("respond @internal_health 404") < caddyfile.index("handle_path /api/*")
 
 
 def test_release_workflow_is_manual_oidc_and_digest_driven() -> None:
