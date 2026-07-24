@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from contextlib import AbstractAsyncContextManager
 from pathlib import Path
 from types import TracebackType
@@ -10,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from scholight.db.migrate import _MIGRATION_LOCK_ID, apply_migrations, run_migrations
+from scholight.db.migration_policy import validate_expand_only_sql
 
 
 class _AsyncContext(AbstractAsyncContextManager[MagicMock]):
@@ -172,6 +174,43 @@ async def test_duplicate_migration_version_fails_before_database_changes(tmp_pat
     conn.execute.assert_not_awaited()
 
 
+@pytest.mark.asyncio
+async def test_reviewed_delegated_actor_contract_migration_is_applied(tmp_path: Path) -> None:
+    source = Path(__file__).parents[3] / "migrations/004_allow_delegated_usage_actor.sql"
+    migration = tmp_path / source.name
+    migration.write_bytes(source.read_bytes())
+    conn = MagicMock()
+    conn.execute = AsyncMock()
+    conn.fetchrow = AsyncMock(return_value=None)
+    conn.transaction.return_value = _Transaction()
+
+    with patch("scholight.db.migrate._MIGRATIONS_DIR", tmp_path):
+        await apply_migrations(conn)
+
+    assert any(
+        call.args == (migration.read_text(encoding="utf-8"),)
+        for call in conn.execute.await_args_list
+    )
+
+
+@pytest.mark.asyncio
+async def test_unreviewed_contract_migration_still_fails_closed(tmp_path: Path) -> None:
+    (tmp_path / "004_allow_delegated_usage_actor.sql").write_text(
+        "-- scholight: migration-phase=contract\n"
+        "ALTER TABLE scholight.usage_events DROP CONSTRAINT another_constraint;",
+        encoding="utf-8",
+    )
+    conn = MagicMock()
+    conn.execute = AsyncMock()
+    conn.fetchrow = AsyncMock(return_value=None)
+
+    with (
+        patch("scholight.db.migrate._MIGRATIONS_DIR", tmp_path),
+        pytest.raises(ValueError, match="destructive migration rejected"),
+    ):
+        await apply_migrations(conn)
+
+
 def test_baseline_only_creates_product_tables_in_scholight_schema() -> None:
     migration = Path(__file__).parents[3] / "migrations/001_scholight_baseline.sql"
 
@@ -212,9 +251,41 @@ def test_baseline_only_creates_product_tables_in_scholight_schema() -> None:
     assert "ALTER TABLE auth." not in normalized
 
 
+def test_baseline_checksum_is_immutable_after_production_release() -> None:
+    migration = Path(__file__).parents[3] / "migrations/001_scholight_baseline.sql"
+
+    checksum = hashlib.sha256(migration.read_bytes()).hexdigest()
+
+    assert checksum == "f6415146424ee607efa87ce854f1fe6bccd9c47923ec1f31f6dfb87a51bc0810"
+
+
 def test_admin_metrics_migration_is_product_scoped_and_expand_only() -> None:
     migration = Path(__file__).parents[3] / "migrations/003_admin_metrics.sql"
 
     sql = " ".join(migration.read_text(encoding="utf-8").split()).lower()
 
     assert "scholight." in sql and "auth." not in sql and "drop " not in sql
+
+
+def test_delegated_actor_migration_only_replaces_expected_constraints() -> None:
+    migration = Path(__file__).parents[3] / "migrations/004_allow_delegated_usage_actor.sql"
+
+    sql = " ".join(migration.read_text(encoding="utf-8").split()).lower()
+
+    assert sql.count("drop constraint") == 2
+    assert "drop constraint usage_events_actor_type" in sql
+    assert "drop constraint usage_events_key_actor" in sql
+    assert "drop table" not in sql
+    assert "truncate" not in sql
+    assert "delete from" not in sql
+    assert "auth." not in sql
+    assert "actor_type in ('web', 'access_key', 'delegated')" in sql
+    assert "actor_type in ('web', 'delegated')" in sql
+
+
+def test_delegated_actor_migration_requires_explicit_checksum_approval() -> None:
+    migration = Path(__file__).parents[3] / "migrations/004_allow_delegated_usage_actor.sql"
+    sql = migration.read_text(encoding="utf-8")
+
+    with pytest.raises(ValueError, match="destructive migration rejected"):
+        validate_expand_only_sql(sql)

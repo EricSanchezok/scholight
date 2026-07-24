@@ -157,7 +157,7 @@ CREATE TABLE scholight.usage_events (
     CONSTRAINT usage_events_strength
         CHECK (strength IN ('standard', 'thorough')),
     CONSTRAINT usage_events_actor_type
-        CHECK (actor_type IN ('web', 'access_key', 'delegated')),
+        CHECK (actor_type IN ('web', 'access_key')),
     CONSTRAINT usage_events_outcome
         CHECK (outcome IN ('success', 'degraded', 'failed')),
     CONSTRAINT usage_events_quota_units
@@ -169,7 +169,7 @@ CREATE TABLE scholight.usage_events (
     CONSTRAINT usage_events_key_actor
         CHECK (
             (actor_type = 'access_key' AND access_key_id IS NOT NULL)
-            OR (actor_type IN ('web', 'delegated') AND access_key_id IS NULL)
+            OR (actor_type = 'web' AND access_key_id IS NULL)
         )
 );
 

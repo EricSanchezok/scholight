@@ -22,6 +22,14 @@ _MIGRATIONS_DIR = Path(
 )
 # Stable application-scoped PostgreSQL advisory lock for Scholight migrations.
 _MIGRATION_LOCK_ID = 7_192_003_901
+# Exact, reviewed contract migrations. Binding the digest to the version and name prevents the
+# approval from authorizing different SQL or the same SQL under an unrelated migration identity.
+_APPROVED_CONTRACT_MIGRATIONS = {
+    (
+        4,
+        "allow_delegated_usage_actor",
+    ): "09d7bc9fc1358cdcdcc66a754992aa72eee31ad550a71f0dde481e612ff45186"
+}
 
 
 async def run_migrations(pool: asyncpg.Pool) -> None:
@@ -85,7 +93,14 @@ async def apply_migrations(conn: asyncpg.Connection) -> None:
             logger.debug("migration already applied", version=version, name=name)
             continue
 
-        validate_expand_only_sql(sql)
+        approved_checksum = _APPROVED_CONTRACT_MIGRATIONS.get((version, name))
+        approved_destructive_checksums = (
+            frozenset({checksum}) if approved_checksum == checksum else frozenset()
+        )
+        validate_expand_only_sql(
+            sql,
+            approved_destructive_checksums=approved_destructive_checksums,
+        )
         async with conn.transaction():
             await conn.execute(sql)
             await conn.execute(
