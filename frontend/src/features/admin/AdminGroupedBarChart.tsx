@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import { formatUtcDay } from "../../i18n/format";
+import { formatCompactNumber, formatNumber, formatUtcDay } from "../../i18n/format";
 import { useI18n } from "../../i18n/I18nProvider";
 import { styles } from "../../styles/classes";
 
@@ -51,14 +51,6 @@ function lastActiveIndex(points: AdminChartPoint[]): number {
   return Math.max(points.length - 1, 0);
 }
 
-function compactCount(value: number, locale: string): string {
-  if (Math.abs(value) < 1000) return value.toLocaleString(locale);
-  return new Intl.NumberFormat(locale, {
-    notation: "compact",
-    maximumFractionDigits: 1,
-  }).format(value);
-}
-
 export function AdminGroupedBarChart({
   title,
   description,
@@ -88,7 +80,7 @@ export function AdminGroupedBarChart({
   const inspectedIndex = selectedIndex ?? lastActiveIndex(points);
   const inspectedPoint = points[inspectedIndex];
   const showDirectValues = points.length <= 7;
-  const exactCount = (value: number) => value.toLocaleString(locale);
+  const exactCount = (value: number) => formatNumber(value, locale);
   const inspectedLabel = inspectedPoint
     ? `${formatUtcDay(inspectedPoint.day, locale)} · ${primaryLabel} ${exactCount(
         inspectedPoint.primary,
@@ -140,7 +132,7 @@ export function AdminGroupedBarChart({
                     textAnchor="end"
                     className={styles.chartAxisLabel}
                   >
-                    {compactCount(value, locale)}
+                    {formatCompactNumber(value, locale)}
                   </text>
                 </g>
               );
@@ -185,7 +177,7 @@ export function AdminGroupedBarChart({
                       textAnchor="middle"
                       className={styles.adminChartValue}
                     >
-                      {compactCount(point.primary, locale)}
+                      {formatCompactNumber(point.primary, locale)}
                     </text>
                   )}
                   {showDirectValues && point.secondary > 0 && (
@@ -195,7 +187,7 @@ export function AdminGroupedBarChart({
                       textAnchor="middle"
                       className={styles.adminChartValue}
                     >
-                      {compactCount(point.secondary, locale)}
+                      {formatCompactNumber(point.secondary, locale)}
                     </text>
                   )}
                   {labels.has(index) && (

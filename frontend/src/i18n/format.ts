@@ -2,6 +2,17 @@ import type { AppLocale } from "./I18nProvider";
 
 export const defaultLocale: AppLocale = "en";
 
+export function formatNumber(value: number, locale: AppLocale = defaultLocale): string {
+  return new Intl.NumberFormat(locale).format(value);
+}
+
+export function formatCompactNumber(value: number, locale: AppLocale = defaultLocale): string {
+  return new Intl.NumberFormat(locale, {
+    notation: Math.abs(value) < 1000 ? "standard" : "compact",
+    maximumFractionDigits: 1,
+  }).format(value);
+}
+
 export function formatCalendarDate(
   value: string | number | Date,
   locale: AppLocale = defaultLocale,
