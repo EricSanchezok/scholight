@@ -26,6 +26,12 @@ describe("DocsPage", () => {
     render(<DocsPage origin={origin} />);
 
     expect(screen.getByRole("heading", { name: "Using Scholight" })).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Search academic literature through Scholight on the web, from a REST client, or with an MCP-enabled agent.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/arXiv index/i)).not.toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: "Documentation" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Quick start" })).toHaveAttribute(
       "href",

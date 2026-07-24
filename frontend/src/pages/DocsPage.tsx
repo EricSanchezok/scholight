@@ -65,7 +65,8 @@ export function DocsPage({ origin }: DocsPageProps = {}) {
         <p className={styles.eyebrow}>Documentation</p>
         <h1>Using Scholight</h1>
         <p>
-          Search Scholight&apos;s arXiv index from the web, a REST client, or an MCP-enabled agent.
+          Search academic literature through Scholight on the web, from a REST client, or with an
+          MCP-enabled agent.
         </p>
       </header>
 
