@@ -159,7 +159,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends shellcheck
           bash -n deploy/production/bootstrap.sh deploy/production/release.sh deploy/production/smoke.sh deploy/production/wait-ssm.sh
+          sh -n frontend/runtime/render-docs.sh
           shellcheck deploy/production/bootstrap.sh deploy/production/release.sh deploy/production/smoke.sh deploy/production/wait-ssm.sh
+          shellcheck -s sh frontend/runtime/render-docs.sh
       - name: Validate production Compose
         env:
           SCHOLIGHT_BACKEND_IMAGE: registry.example/scholight/backend@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa

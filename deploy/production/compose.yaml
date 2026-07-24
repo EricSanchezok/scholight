@@ -41,6 +41,8 @@ services:
 
   frontend:
     image: ${SCHOLIGHT_FRONTEND_IMAGE:?SCHOLIGHT_FRONTEND_IMAGE must be a digest-qualified reference}
+    environment:
+      SCHOLIGHT_PUBLIC_WEB_URL: ${SCHOLIGHT_PUBLIC_WEB_URL:?SCHOLIGHT_PUBLIC_WEB_URL is required}
     expose:
       - "8080"
     healthcheck:

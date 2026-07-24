@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "predev": "SCHOLIGHT_PUBLIC_WEB_URL=${SCHOLIGHT_PUBLIC_WEB_URL:-http://127.0.0.1:5173} sh runtime/render-docs.sh runtime public",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",

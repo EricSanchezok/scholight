@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -10,6 +11,7 @@ import yaml
 
 ROOT = Path(__file__).parents[2]
 PRODUCTION = ROOT / "deploy" / "production"
+FRONTEND_RUNTIME = ROOT / "frontend" / "runtime"
 DIGEST_REFERENCE = re.compile(r"^[^\s:@]+(?:/[^\s:@]+)+@sha256:[0-9a-f]{64}$")
 
 
@@ -131,24 +133,66 @@ def test_caddy_blocks_internal_health_and_routes_api_directly() -> None:
     assert caddyfile.index("respond @internal_health 404") < caddyfile.index("handle_path /api/*")
 
 
-def test_frontend_publishes_real_agent_discovery_documents() -> None:
+def test_frontend_agent_document_templates_use_canonical_url_placeholder() -> None:
+    llms = (FRONTEND_RUNTIME / "llms.txt.template").read_text(encoding="utf-8")
+    docs = (FRONTEND_RUNTIME / "docs.md.template").read_text(encoding="utf-8")
     public = ROOT / "frontend" / "public"
-    llms = (public / "llms.txt").read_text(encoding="utf-8")
-    docs = (public / "docs.md").read_text(encoding="utf-8")
     robots = (public / "robots.txt").read_text(encoding="utf-8")
 
     assert llms.startswith("# Scholight\n")
     assert "> " in llms
-    assert "(/docs.md)" in llms
-    assert "(/api/openapi.json)" in llms
-    assert "(/api/mcp)" in llms
-    assert "same origin" in docs.lower()
-    assert "/api/search" in docs
-    assert "/api/mcp" in docs
-    assert "/api/openapi.json" in docs
+    assert "(@@SCHOLIGHT_PUBLIC_WEB_URL@@/docs.md)" in llms
+    assert "(@@SCHOLIGHT_PUBLIC_WEB_URL@@/api/openapi.json)" in llms
+    assert "(@@SCHOLIGHT_PUBLIC_WEB_URL@@/api/mcp)" in llms
+    assert "export SCHOLIGHT_BASE_URL=@@SCHOLIGHT_PUBLIC_WEB_URL@@" in docs
+    assert "@@SCHOLIGHT_PUBLIC_WEB_URL@@/api/search" in docs
+    assert "@@SCHOLIGHT_PUBLIC_WEB_URL@@/api/mcp" in docs
+    assert "@@SCHOLIGHT_PUBLIC_WEB_URL@@/api/openapi.json" in docs
     assert "sk_live_" in docs
+    assert "example.org" not in docs
+    assert "YOUR_SCHOLIGHT_ORIGIN" not in docs
     assert "User-agent: *" in robots
     assert "Allow: /" in robots
+
+
+def test_frontend_renders_agent_documents_from_public_web_url(tmp_path: Path) -> None:
+    output = tmp_path / "rendered"
+    env = {
+        **os.environ,
+        "SCHOLIGHT_PUBLIC_WEB_URL": "https://scholight.sanchezcloud.net",
+    }
+
+    result = subprocess.run(
+        ["sh", str(FRONTEND_RUNTIME / "render-docs.sh"), str(FRONTEND_RUNTIME), str(output)],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    docs = (output / "docs.md").read_text(encoding="utf-8")
+    llms = (output / "llms.txt").read_text(encoding="utf-8")
+    assert result.returncode == 0, result.stderr
+    assert "https://scholight.sanchezcloud.net/api/search" in docs
+    assert "https://scholight.sanchezcloud.net/api/mcp" in docs
+    assert "https://scholight.sanchezcloud.net/docs.md" in llms
+    assert "@@SCHOLIGHT_PUBLIC_WEB_URL@@" not in docs + llms
+
+
+def test_frontend_rejects_invalid_public_web_url(tmp_path: Path) -> None:
+    output = tmp_path / "rendered"
+    env = {**os.environ, "SCHOLIGHT_PUBLIC_WEB_URL": "https://example.com/forged/path"}
+
+    result = subprocess.run(
+        ["sh", str(FRONTEND_RUNTIME / "render-docs.sh"), str(FRONTEND_RUNTIME), str(output)],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert not output.exists()
 
 
 def test_frontend_serves_agent_documents_without_spa_fallback() -> None:
@@ -158,8 +202,8 @@ def test_frontend_serves_agent_documents_without_spa_fallback() -> None:
     for path in ("/llms.txt", "/.well-known/llms.txt", "/docs.md", "/robots.txt"):
         assert f"location = {path}" in nginx
     assert "default_type text/markdown;" in nginx
-    assert "try_files /llms.txt =404;" in nginx
-    assert "try_files /docs.md =404;" in nginx
+    assert "alias /tmp/scholight-docs/llms.txt;" in nginx
+    assert "alias /tmp/scholight-docs/docs.md;" in nginx
     assert "try_files /robots.txt =404;" in nginx
     assert "try_files /index.html =404;" in nginx
     assert (
@@ -168,6 +212,20 @@ def test_frontend_serves_agent_documents_without_spa_fallback() -> None:
     assert 'rel="alternate"' in index
     assert 'type="text/markdown"' in index
     assert 'href="/docs.md"' in index
+
+
+def test_frontend_runtime_receives_only_the_existing_canonical_url_setting() -> None:
+    compose = yaml.safe_load((PRODUCTION / "compose.yaml").read_text(encoding="utf-8"))
+    environment = compose["services"]["frontend"]["environment"]
+    dockerfile = (ROOT / "frontend" / "Dockerfile").read_text(encoding="utf-8")
+
+    assert environment == {
+        "SCHOLIGHT_PUBLIC_WEB_URL": "${SCHOLIGHT_PUBLIC_WEB_URL:?SCHOLIGHT_PUBLIC_WEB_URL is required}"
+    }
+    assert "runtime/render-docs.sh" in dockerfile
+    assert "/docker-entrypoint.d/40-render-scholight-docs.sh" in dockerfile
+    assert "runtime/docs.md.template" in dockerfile
+    assert "runtime/llms.txt.template" in dockerfile
 
 
 def test_release_workflow_is_manual_oidc_and_digest_driven() -> None:
@@ -283,6 +341,8 @@ def test_ci_validates_bootstrap_with_shellcheck() -> None:
 
     assert "bash -n deploy/production/bootstrap.sh" in workflow
     assert "shellcheck deploy/production/bootstrap.sh" in workflow
+    assert "sh -n frontend/runtime/render-docs.sh" in workflow
+    assert "shellcheck -s sh frontend/runtime/render-docs.sh" in workflow
     assert "Verify backend host package" in workflow
     assert "/opt/scholight-package/${name}" in workflow
 

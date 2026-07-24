@@ -2,21 +2,25 @@
 
 Scholight provides academic paper search through the web, a REST API, and a stateless MCP server.
 
-## Deployment-relative URLs
+## Service URLs
 
-Use the same origin as this document for every integration URL. For example, if this document was fetched from `https://papers.example.org/docs.md`, set:
+This document was generated for the Scholight service at:
 
-```bash
-export SCHOLIGHT_BASE_URL=https://papers.example.org
+```text
+@@SCHOLIGHT_PUBLIC_WEB_URL@@
 ```
 
-The public integration paths are:
+Shell examples use the same canonical address:
 
-- REST search: `/api/search`
-- MCP server: `/api/mcp`
-- OpenAPI schema: `/api/openapi.json`
+```bash
+export SCHOLIGHT_BASE_URL=@@SCHOLIGHT_PUBLIC_WEB_URL@@
+```
 
-Do not assume a fixed hostname. Scholight can be deployed at different public or private origins.
+The public integration endpoints are:
+
+- REST search: `@@SCHOLIGHT_PUBLIC_WEB_URL@@/api/search`
+- MCP server: `@@SCHOLIGHT_PUBLIC_WEB_URL@@/api/mcp`
+- OpenAPI schema: `@@SCHOLIGHT_PUBLIC_WEB_URL@@/api/openapi.json`
 
 ## Quick start
 
@@ -62,7 +66,7 @@ Never put an Access Key in browser code, source control, logs, or a URL. Web-log
 
 ## REST search
 
-Send `POST /api/search` with a JSON body.
+Send `POST @@SCHOLIGHT_PUBLIC_WEB_URL@@/api/search` with a JSON body.
 
 The main request fields are:
 
@@ -73,7 +77,7 @@ The main request fields are:
 - `filters.authors`: optional author names.
 - `filters.date_from` and `filters.date_to`: optional inclusive submission-date range in `YYYY-MM-DD` format.
 
-Use the OpenAPI schema at `/api/openapi.json` as the authoritative source for field types, validation constraints, and response models.
+Use the OpenAPI schema at `@@SCHOLIGHT_PUBLIC_WEB_URL@@/api/openapi.json` as the authoritative source for field types, validation constraints, and response models.
 
 Preserve the returned `rank` order. A paper's `score` is an unnormalized ranking signal and should only be compared within the same response. A successful response with `degraded: true` means some metadata enrichment was unavailable; the ranked search itself still succeeded.
 
@@ -85,7 +89,7 @@ Connect an MCP client to the stateless Streamable HTTP endpoint:
 {
   "mcpServers": {
     "scholight": {
-      "url": "https://YOUR_SCHOLIGHT_ORIGIN/api/mcp",
+      "url": "@@SCHOLIGHT_PUBLIC_WEB_URL@@/api/mcp",
       "headers": {
         "Authorization": "Bearer sk_live_xxx"
       }
@@ -94,7 +98,7 @@ Connect an MCP client to the stateless Streamable HTTP endpoint:
 }
 ```
 
-Replace `https://YOUR_SCHOLIGHT_ORIGIN` with the origin from which this document was fetched. The Authorization header may be omitted for anonymous searches.
+The Authorization header may be omitted for anonymous searches.
 
 The server exposes `search_papers`. Obtain its current tool and input descriptions through the MCP `tools/list` operation rather than copying a second schema from this document. Tool initialization and listing do not consume search quota.
 
