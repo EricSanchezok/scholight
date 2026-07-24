@@ -8,9 +8,9 @@
 # do not route /livez or /readyz publicly. If proxy headers are enabled, set the
 # exact proxy IP/subnet in SCHOLIGHT_FORWARDED_ALLOW_IPS; never use '*'.
 #
-# Start API and optional scheduler workers:
+# Start the API and native ingestion services:
 #   docker compose --env-file .env up -d api
-#   docker compose --env-file .env --profile scheduler up -d pdf-daemon md-daemon chunk-daemon
+#   docker compose --env-file .env up -d metadata-sync paper-ingest
 
 x-image: &scholight-image
   image: ${SCHOLIGHT_IMAGE:-scholight:0.1.0}
@@ -25,15 +25,6 @@ x-common-environment: &common-environment
   SCHOLIGHT_DATA_ROOT: /data
   SCHOLIGHT_ZILLIZ_URI: ${SCHOLIGHT_ZILLIZ_URI:-}
   SCHOLIGHT_ZILLIZ_TOKEN: ${SCHOLIGHT_ZILLIZ_TOKEN:-}
-
-x-scheduler-service: &scheduler-service
-  <<: *scholight-image
-  profiles: ["scheduler"]
-  restart: unless-stopped
-  volumes:
-    - scholight-data:/data
-  healthcheck:
-    disable: true
 
 services:
   frontend:
@@ -116,36 +107,53 @@ services:
     healthcheck:
       disable: true
 
-  paper-sync:
-    <<: *scheduler-service
-    command: ["/app/.venv/bin/scholight", "scheduler", "paper-sync"]
+  metadata-sync:
+    <<: *scholight-image
+    command: ["/app/.venv/bin/scholight", "scheduler", "serve-sync"]
     environment:
       <<: *common-environment
+      SCHOLIGHT_PG_HOST: ${SCHOLIGHT_PG_HOST:-}
+      SCHOLIGHT_PG_PORT: ${SCHOLIGHT_PG_PORT:-5432}
+      SCHOLIGHT_PG_DATABASE: ${SCHOLIGHT_PG_DATABASE:-sanchezcloud}
+      SCHOLIGHT_PG_USER: ${SCHOLIGHT_PG_USER:-postgres}
+      SCHOLIGHT_PG_PASSWORD: ${SCHOLIGHT_PG_PASSWORD:-}
+      SCHOLIGHT_PG_SSL_ROOT_CERT: /etc/ssl/certs/global-bundle.pem
       SCHOLIGHT_EMBEDDING_BASE_URL: ${SCHOLIGHT_EMBEDDING_BASE_URL:-}
       SCHOLIGHT_EMBEDDING_API_KEY: ${SCHOLIGHT_EMBEDDING_API_KEY:-}
       SCHOLIGHT_EMBEDDING_MODEL: ${SCHOLIGHT_EMBEDDING_MODEL:-}
-    restart: "no"
+      SCHOLIGHT_INGEST_RECENT_DAYS: ${SCHOLIGHT_INGEST_RECENT_DAYS:-90}
+      SCHOLIGHT_METADATA_SYNC_HOUR_UTC: ${SCHOLIGHT_METADATA_SYNC_HOUR_UTC:-8}
+      SCHOLIGHT_INGEST_MAX_ATTEMPTS: ${SCHOLIGHT_INGEST_MAX_ATTEMPTS:-8}
+      SCHOLIGHT_INGEST_LEASE_SECONDS: ${SCHOLIGHT_INGEST_LEASE_SECONDS:-7200}
+    restart: unless-stopped
+    healthcheck:
+      disable: true
+    networks:
+      - scholight
 
-  pdf-daemon:
-    <<: *scheduler-service
-    command: ["/app/.venv/bin/scholight", "scheduler", "pdf-daemon"]
+  paper-ingest:
+    <<: *scholight-image
+    command: ["/app/.venv/bin/scholight", "scheduler", "serve-ingest"]
     environment:
       <<: *common-environment
-
-  md-daemon:
-    <<: *scheduler-service
-    command: ["/app/.venv/bin/scholight", "scheduler", "md-daemon"]
-    environment:
-      <<: *common-environment
-
-  chunk-daemon:
-    <<: *scheduler-service
-    command: ["/app/.venv/bin/scholight", "scheduler", "chunk-daemon"]
-    environment:
-      <<: *common-environment
+      SCHOLIGHT_PG_HOST: ${SCHOLIGHT_PG_HOST:-}
+      SCHOLIGHT_PG_PORT: ${SCHOLIGHT_PG_PORT:-5432}
+      SCHOLIGHT_PG_DATABASE: ${SCHOLIGHT_PG_DATABASE:-sanchezcloud}
+      SCHOLIGHT_PG_USER: ${SCHOLIGHT_PG_USER:-postgres}
+      SCHOLIGHT_PG_PASSWORD: ${SCHOLIGHT_PG_PASSWORD:-}
+      SCHOLIGHT_PG_SSL_ROOT_CERT: /etc/ssl/certs/global-bundle.pem
       SCHOLIGHT_EMBEDDING_BASE_URL: ${SCHOLIGHT_EMBEDDING_BASE_URL:-}
       SCHOLIGHT_EMBEDDING_API_KEY: ${SCHOLIGHT_EMBEDDING_API_KEY:-}
       SCHOLIGHT_EMBEDDING_MODEL: ${SCHOLIGHT_EMBEDDING_MODEL:-}
+      SCHOLIGHT_INGEST_MAX_ATTEMPTS: ${SCHOLIGHT_INGEST_MAX_ATTEMPTS:-8}
+      SCHOLIGHT_INGEST_LEASE_SECONDS: ${SCHOLIGHT_INGEST_LEASE_SECONDS:-7200}
+    volumes:
+      - scholight-data:/data
+    restart: unless-stopped
+    healthcheck:
+      disable: true
+    networks:
+      - scholight
 
 secrets:
   github_token:

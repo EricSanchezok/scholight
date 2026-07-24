@@ -25,7 +25,6 @@ from scholight.store.ingest import (
     StoreError,
     arxiv_paper_exists,
     count_papers_without,
-    delete_arxiv_chunks_by_paper,
     delete_arxiv_paper,
     get_arxiv_chunks_by_paper,
     get_arxiv_paper,
@@ -48,7 +47,7 @@ from scholight.store.query import (
     search_arxiv_chunks,
     search_arxiv_papers,
 )
-from scholight.store.schema import COLLECTION_NAMES, drop_collections, ensure_collections
+from scholight.store.schema import COLLECTION_NAMES, ensure_collections
 
 __all__ = [
     # Client
@@ -61,7 +60,6 @@ __all__ = [
     "is_connected",
     # Schema
     "COLLECTION_NAMES",
-    "drop_collections",
     "ensure_collections",
     # Fields — single source of truth
     "CHUNK_ALL_FIELDS",
@@ -82,7 +80,6 @@ __all__ = [
     "update_arxiv_paper",
     "upsert_arxiv_papers",
     # Ingest — arxiv chunks
-    "delete_arxiv_chunks_by_paper",
     "get_arxiv_chunks_by_paper",
     "insert_arxiv_chunks",
     "update_arxiv_chunk",

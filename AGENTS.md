@@ -84,15 +84,13 @@ scholight/
 │   │   └── queries_history.py  搜索历史查询
 │   ├── scheduler/           摄入编排
 │   │   ├── __init__.py
-│   │   ├── arxiv_paper_sync.py  每日 OAI-PMH 元数据同步（双源容错）
-│   │   ├── pdf_download.py  arXiv PDF 下载
-│   │   ├── md_parse.py      PDF/LaTeX → Markdown 解析调度
-│   │   ├── chunk_ingest.py  Markdown → chunks → Milvus 全管线
-│   │   └── base.py          BatchScheduler ABC
+│   │   ├── metadata_sync.py 每日 OAI-PMH/API 元数据同步与任务入队
+│   │   ├── ingest_worker.py 单论文下载→解析→切块→Embedding→安全写入
+│   │   └── resources.py     确定版本资源下载与安全解包
 │   ├── cli/                  Click CLI 子命令集
 │   │   ├── __init__.py       CLI 入口注册（lazy-import 子命令）
 │   │   ├── search.py         scholight search
-│   │   ├── scheduler.py      scholight scheduler（paper-sync / pdf-daemon / md-daemon / chunk-daemon / status）
+│   │   ├── scheduler.py      scholight scheduler（sync / serve-sync / serve-ingest / status / backfill）
 │   │   └── store.py          scholight store（init / status / drop / backup / restore / health）
 │   └── utils/               公共工具
 │       ├── http.py          HTTP 请求重试 / 指数退避
@@ -114,7 +112,6 @@ scholight/
 ├── .env.example             环境变量模板
 ├── .pre-commit-config.yaml
 ├── docker-compose.yml
-├── run_sync_daemon.sh
 ├── .gitignore
 └── AGENTS.md                本文件
 ```
@@ -222,7 +219,7 @@ configure_logging(log_level="INFO", use_json=True, file_handler=("app.log", 50_0
 ## Python 环境规范
 
 - **虚拟环境**：项目使用 `.venv` 目录（`uv venv`），**禁止污染系统 Python**。
-- **运行时**：所有命令通过 `uv run` 执行（如 `uv run scholight scheduler paper-sync`），自动激活 `.venv`。
+- **运行时**：所有命令通过 `uv run` 执行（如 `uv run scholight scheduler sync`），自动激活 `.venv`。
 - **CLI 入口**：`scholight` 命令由 `pyproject.toml` 的 `[project.scripts]` 注册，指向 `scholight.cli:cli`。
 - **依赖管理**：全部依赖声明在 `pyproject.toml`，`uv.lock` 锁定版本，不单独使用 `requirements.txt`。
 - **环境变量**：配置通过 `SCHOLIGHT_` 前缀的环境变量注入，模板在 `.env.example`。

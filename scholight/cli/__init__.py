@@ -90,7 +90,7 @@ cli.add_command(
         "scheduler_group",
         "scheduler",
         group=True,
-        help="Daily arXiv pipeline daemons — paper-sync, pdf-daemon, md-daemon, chunk-daemon, status",
+        help="Durable arXiv metadata synchronization and paper ingestion",
     )
 )
 cli.add_command(

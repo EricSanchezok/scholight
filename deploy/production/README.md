@@ -1,6 +1,10 @@
 # Scholight production deployment package
 
-This package deploys one coordinated Scholight frontend/backend release to a single Docker Compose host. Caddy is the only public service. Application images are selected by immutable digest, migrations run explicitly before activation, and application rollback never reverses database migrations.
+This package deploys one coordinated Scholight frontend, API, metadata-sync, and
+paper-ingest release to a single Docker Compose host. Caddy is the only public
+service. Both ingestion services use the immutable backend digest; migrations
+run explicitly before activation, and application rollback never reverses
+database migrations.
 
 ## Host prerequisites
 
@@ -153,7 +157,7 @@ an external HTTPS smoke test. Running the same release twice is supported.
 The transaction converges Docker and the host package, validates runtime-file
 ownership and mode, validates Compose, logs into ECR with the instance role,
 pulls both images, validates the independently managed auth schema, runs only the
-Scholight migration, activates the pair, and runs bounded container and local
+Scholight migration, activates the coordinated web and ingestion services, and runs bounded container and local
 TLS-ingress smoke checks. Pull, package, configuration, or migration failure
 leaves the running application untouched. Candidate host-smoke failure restores
 the complete previous pair.

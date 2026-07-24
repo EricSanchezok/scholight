@@ -258,8 +258,12 @@ uv run scholight store init          # 创建 collection + 索引（首次部署
 ### 摄入调度
 
 ```bash
-uv run scholight scheduler paper-sync     # OAI-PMH 元数据同步
-uv run scholight scheduler status         # 调度任务状态
+uv run scholight scheduler sync                         # 单次连续元数据同步
+uv run scholight scheduler serve-sync                   # 每日元数据服务
+uv run scholight scheduler serve-ingest                 # 单论文统一摄入 worker
+uv run scholight scheduler status --json                # PostgreSQL 队列状态
+uv run scholight scheduler enqueue-backfill \
+  --from 2024-01-01 --to 2024-01-31 --limit 500         # 默认 dry-run
 ```
 
 ---
@@ -298,14 +302,19 @@ docker compose --env-file .env build
 
 # auth.* 已由 cloud-auth workflow 迁移后，只执行 Scholight migration
 docker compose --env-file .env --profile migrate run --rm migrate
-docker compose --env-file .env up -d api
+docker compose --env-file .env up -d api metadata-sync paper-ingest
 ```
 
 反向代理只应信任明确的 Caddy IP/CIDR，不能把 `SCHOLIGHT_FORWARDED_ALLOW_IPS` 设为 `*`；不要公开路由 `/livez` 或 `/readyz`。生产 CORS 必须使用实际前端 origin 列表并允许凭据。匿名和 Access Key HMAC 配置只注入 API service，不注入 migrate 或 scheduler。
 
-当前未部署且无用户，因此 PostgreSQL 使用单一干净 baseline，不保留旧 migration、legacy 列、兼容视图或 public schema 产品表。`auth_migrator` 和 `scholight_migrator` 分别拥有自己的 schema，均没有数据库级 `CREATE`；两个 runner 都会验证 schema 已由基础设施预置且归当前角色所有。此重建只涉及 PostgreSQL，绝不能 drop、重建或回填 Zilliz collection。
+PostgreSQL 的 expand-only migration 保存每日连续游标、摄入任务、重试与租约。
+`auth_migrator` 和 `scholight_migrator` 分别拥有自己的 schema，均没有数据库级
+`CREATE`；两个 runner 都会验证 schema 已由基础设施预置且归当前角色所有。
 
-容器只运行 FastAPI 服务器。arXiv 同步守护进程（paper-sync、PDF 下载、段落切分、向量入库）运行在宿主机或独立 scheduler profile，不进入 API 容器。
+生产 Compose 使用同一个 backend digest 运行 `metadata-sync` 和 `paper-ingest`。
+后者按单篇论文依次完成下载、解析、切块、Embedding 与安全写入；修订时始终先
+upsert 完整新 chunks，再按已核验的明确主键差集清理旧 chunks。部署和 migration
+不会 drop、重建或批量回填现有 Zilliz collection。
 
 ---
 

@@ -7,9 +7,9 @@ from pathlib import Path
 
 import click
 
-from scholight.store.client import close, connect, is_connected
+from scholight.store.client import connect, is_connected
 from scholight.store.export import export_collection_to_path, restore_collection_from_path
-from scholight.store.schema import create_collections, create_indexes, drop_collections
+from scholight.store.schema import create_collections, create_indexes
 
 _COLLECTIONS = ("arxiv_papers", "arxiv_chunks")
 
@@ -79,22 +79,6 @@ def status() -> None:
             click.echo(f"  {name:>17s}: {total} rows, {len(indexes)} indexes")
         else:
             click.echo(f"  {name}: NOT CREATED")
-
-
-@store_group.command()
-@click.option("--yes", is_flag=True, help="Skip confirmation prompt.")
-def drop(yes: bool) -> None:
-    """Drop arxiv_papers + arxiv_chunks collections (irreversible)."""
-    if not yes:
-        click.confirm(
-            "This will DELETE all arxiv_papers and arxiv_chunks data. Continue?",
-            abort=True,
-        )
-    client = connect()
-    drop_collections(client)
-    click.echo("Dropped arxiv_papers + arxiv_chunks collections.")
-    close()
-    click.echo("Connection closed.")
 
 
 @store_group.command()

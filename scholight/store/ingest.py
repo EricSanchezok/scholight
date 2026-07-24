@@ -393,15 +393,6 @@ def upsert_arxiv_chunks(chunks: list[dict[str, Any]]) -> dict[str, Any]:
     return cast("dict[str, Any]", result)
 
 
-def delete_arxiv_chunks_by_paper(arxiv_id: str) -> int:
-    """Delete all chunks for *arxiv_id*."""
-    client = get_client()
-    with _WRITE_LOCK:
-        count = _delete_chunks_locked(client, arxiv_id)
-    logger.info("arxiv chunks deleted by paper", arxiv_id=arxiv_id, count=count)
-    return count
-
-
 def update_arxiv_chunk(chunk_id: str, fields: dict[str, Any]) -> bool:
     """Update only *fields* on *chunk_id* via pymilvus partial_update.
 

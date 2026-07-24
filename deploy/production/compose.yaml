@@ -100,12 +100,67 @@ services:
       SCHOLIGHT_ALIYUN_DM_REPLY_TO_ADDRESS: ${SCHOLIGHT_ALIYUN_DM_REPLY_TO_ADDRESS:-true}
     expose:
       - "8000"
-    volumes:
-      - scholight-data:/data
     networks:
       scholight:
         ipv4_address: ${SCHOLIGHT_API_IP:-172.31.0.20}
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
+
+  metadata-sync:
+    <<: *api-image
+    command: ["/app/.venv/bin/scholight", "scheduler", "serve-sync"]
+    environment:
+      <<: *database-environment
+      SCHOLIGHT_PG_USER: ${SCHOLIGHT_APP_PG_USER:?SCHOLIGHT_APP_PG_USER is required}
+      SCHOLIGHT_PG_PASSWORD: ${SCHOLIGHT_APP_PG_PASSWORD:?SCHOLIGHT_APP_PG_PASSWORD is required}
+      SCHOLIGHT_LOG_LEVEL: ${SCHOLIGHT_LOG_LEVEL:-INFO}
+      SCHOLIGHT_ZILLIZ_URI: ${SCHOLIGHT_ZILLIZ_URI:?SCHOLIGHT_ZILLIZ_URI is required}
+      SCHOLIGHT_ZILLIZ_TOKEN: ${SCHOLIGHT_ZILLIZ_TOKEN:?SCHOLIGHT_ZILLIZ_TOKEN is required}
+      SCHOLIGHT_EMBEDDING_BASE_URL: ${SCHOLIGHT_EMBEDDING_BASE_URL:?SCHOLIGHT_EMBEDDING_BASE_URL is required}
+      SCHOLIGHT_EMBEDDING_API_KEY: ${SCHOLIGHT_EMBEDDING_API_KEY:?SCHOLIGHT_EMBEDDING_API_KEY is required}
+      SCHOLIGHT_EMBEDDING_MODEL: ${SCHOLIGHT_EMBEDDING_MODEL:?SCHOLIGHT_EMBEDDING_MODEL is required}
+      SCHOLIGHT_INGEST_RECENT_DAYS: ${SCHOLIGHT_INGEST_RECENT_DAYS:-90}
+      SCHOLIGHT_METADATA_SYNC_HOUR_UTC: ${SCHOLIGHT_METADATA_SYNC_HOUR_UTC:-8}
+      SCHOLIGHT_INGEST_MAX_ATTEMPTS: ${SCHOLIGHT_INGEST_MAX_ATTEMPTS:-8}
+      SCHOLIGHT_INGEST_LEASE_SECONDS: ${SCHOLIGHT_INGEST_LEASE_SECONDS:-7200}
+    networks:
+      - scholight
+    restart: unless-stopped
+    healthcheck:
+      disable: true
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
+
+  paper-ingest:
+    <<: *api-image
+    command: ["/app/.venv/bin/scholight", "scheduler", "serve-ingest"]
+    environment:
+      <<: *database-environment
+      SCHOLIGHT_PG_USER: ${SCHOLIGHT_APP_PG_USER:?SCHOLIGHT_APP_PG_USER is required}
+      SCHOLIGHT_PG_PASSWORD: ${SCHOLIGHT_APP_PG_PASSWORD:?SCHOLIGHT_APP_PG_PASSWORD is required}
+      SCHOLIGHT_LOG_LEVEL: ${SCHOLIGHT_LOG_LEVEL:-INFO}
+      SCHOLIGHT_DATA_ROOT: /data
+      SCHOLIGHT_ZILLIZ_URI: ${SCHOLIGHT_ZILLIZ_URI:?SCHOLIGHT_ZILLIZ_URI is required}
+      SCHOLIGHT_ZILLIZ_TOKEN: ${SCHOLIGHT_ZILLIZ_TOKEN:?SCHOLIGHT_ZILLIZ_TOKEN is required}
+      SCHOLIGHT_EMBEDDING_BASE_URL: ${SCHOLIGHT_EMBEDDING_BASE_URL:?SCHOLIGHT_EMBEDDING_BASE_URL is required}
+      SCHOLIGHT_EMBEDDING_API_KEY: ${SCHOLIGHT_EMBEDDING_API_KEY:?SCHOLIGHT_EMBEDDING_API_KEY is required}
+      SCHOLIGHT_EMBEDDING_MODEL: ${SCHOLIGHT_EMBEDDING_MODEL:?SCHOLIGHT_EMBEDDING_MODEL is required}
+      SCHOLIGHT_INGEST_MAX_ATTEMPTS: ${SCHOLIGHT_INGEST_MAX_ATTEMPTS:-8}
+      SCHOLIGHT_INGEST_LEASE_SECONDS: ${SCHOLIGHT_INGEST_LEASE_SECONDS:-7200}
+    volumes:
+      - scholight-data:/data
+    networks:
+      - scholight
+    restart: unless-stopped
+    healthcheck:
+      disable: true
     logging:
       driver: json-file
       options:

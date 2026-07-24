@@ -277,6 +277,8 @@ jobs:
                    AND to_regclass('scholight.schema_migrations') IS NOT NULL
                    AND to_regclass('scholight.search_history') IS NOT NULL
                    AND to_regclass('scholight.anonymous_daily_search_usage') IS NOT NULL
+                   AND to_regclass('scholight.ingestion_sync_state') IS NOT NULL
+                   AND to_regclass('scholight.ingestion_jobs') IS NOT NULL
                    AND to_regclass('auth.users') IS NOT NULL
                    AND to_regclass('auth.refresh_tokens') IS NOT NULL
                    AND NOT has_table_privilege(
@@ -311,6 +313,14 @@ jobs:
                INSERT INTO scholight.anonymous_daily_search_usage
                  (quota_date, ip_digest, strength) VALUES
                  (CURRENT_DATE, decode(repeat('00', 32), 'hex'), 'standard');
+               INSERT INTO scholight.ingestion_sync_state (source)
+                 VALUES ('ci');
+               INSERT INTO scholight.ingestion_jobs
+                 (arxiv_id, target_version, source, max_attempts)
+                 VALUES ('2401.00001', 1, 'new', 8);
+               UPDATE scholight.ingestion_jobs
+                 SET status = 'succeeded'
+                 WHERE arxiv_id = '2401.00001';
                ROLLBACK;"
 
           if docker run --rm --network host \

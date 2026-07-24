@@ -1,8 +1,9 @@
-"""ArXiv OAI-PMH client — shared by paper_sync and sync_arxiv scripts."""
+"""arXiv metadata connectors and canonical ID parsing."""
 
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 import re
 from typing import Any
 from urllib.parse import urlencode
@@ -10,7 +11,12 @@ from urllib.parse import urlencode
 import httpx
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
-OAI_BASE = "https://oaipmh.arxiv.org/oai"
+OAI_PRIMARY = "https://oaipmh.arxiv.org/oai"
+OAI_FALLBACK = "https://export.arxiv.org/oai2"
+API_BASE = "https://export.arxiv.org/api/query"
+API_DELAY_SECONDS = 3.0
+API_PAGE_SIZE = 2000
+API_TOTAL_LIMIT = 30_000
 
 _RESUMPTION_RE = re.compile(r"<resumptionToken[^>]*>(.*?)</resumptionToken>", re.DOTALL)
 _RECORD_RE = re.compile(r"<record>.*?</record>", re.DOTALL)
@@ -65,15 +71,19 @@ class OAIHarvestError(Exception):
     """OAI-PMH harvesting failed."""
 
 
-def _oai_url(verb: str, metadata_prefix: str = "arXivRaw", **params: str) -> str:
+def _oai_url(
+    verb: str,
+    metadata_prefix: str = "arXivRaw",
+    *,
+    base: str = OAI_PRIMARY,
+    **params: str,
+) -> str:
     extra = urlencode(params) if params else ""
-    return (
-        f"{OAI_BASE}?verb={verb}&metadataPrefix={metadata_prefix}{('&' + extra) if extra else ''}"
-    )
+    return f"{base}?verb={verb}&metadataPrefix={metadata_prefix}{('&' + extra) if extra else ''}"
 
 
-def _oai_resume_url(token: str) -> str:
-    return f"{OAI_BASE}?verb=ListRecords&resumptionToken={token}"
+def _oai_resume_url(token: str, *, base: str = OAI_PRIMARY) -> str:
+    return f"{base}?verb=ListRecords&resumptionToken={token}"
 
 
 @retry(
@@ -118,6 +128,7 @@ async def iter_papers_oai(
     until_date: str,
     resume_token: str = "",
     logger: Any | None = None,
+    base: str = OAI_PRIMARY,
 ) -> list[dict[str, Any]]:
     """Fetch paper metadata from OAI-PMH ListRecords (async, returns full list).
 
@@ -132,9 +143,13 @@ async def iter_papers_oai(
 
     while True:
         if token:
-            url = _oai_resume_url(token)
+            url = _oai_resume_url(token, base=base)
         else:
-            url = _oai_url("ListRecords", **{"from": from_date, "until": until_date})
+            url = _oai_url(
+                "ListRecords",
+                base=base,
+                **{"from": from_date, "until": until_date},
+            )
 
         body = await _fetch_oai_page(url, logger=logger)
 
@@ -187,10 +202,10 @@ def _parse_record(record_xml: str) -> dict[str, Any] | None:
         return [a.strip() for a in re.split(r"\s+and\s+", raw) if a.strip()]
 
     # created = datestamp from <header>
-    created = _tag("datestamp", "")
+    created = _normalize_date(_tag("datestamp", ""))
     # updated = most recent <version><date>
     version_dates = re.findall(r"<date>(.*?)</date>", record_xml)
-    updated = version_dates[-1] if version_dates else created
+    updated = _normalize_date(version_dates[-1]) if version_dates else created
 
     return {
         "arxiv_id": arxiv_id,
@@ -200,9 +215,125 @@ def _parse_record(record_xml: str) -> dict[str, Any] | None:
         "categories": _tag("categories", "").split(),
         "created": created,
         "updated": updated,
+        "version": len(version_dates) if version_dates else 1,
+        "_version_available": bool(version_dates),
+        "updated_history": [_normalize_date(value) for value in version_dates],
         "license": _tag("license", ""),
         "comments": _tag("comments", ""),
         "doi": _tag("doi", ""),
         "journal_ref": _tag("journal-ref", ""),
         "acm_class": _tag("msc-class", "") or _tag("acm-class", ""),
+        "abstract_embedding": [],
+        "has_latex": False,
+        "has_pdf": False,
+        "has_markdown": False,
+        "has_chunks": False,
     }
+
+
+async def oai_health_check(base: str) -> bool:
+    try:
+        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+            response = await client.get(f"{base}?verb=Identify")
+            return response.status_code == 200
+    except httpx.HTTPError:
+        return False
+
+
+def _normalize_date(value: str) -> str:
+    try:
+        return dt.date.fromisoformat(value[:10]).isoformat()
+    except (TypeError, ValueError):
+        match = re.search(r"(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})", value)
+        if match is None:
+            return value[:10]
+        month = dt.datetime.strptime(match.group(2), "%b").month
+        return dt.date(int(match.group(3)), month, int(match.group(1))).isoformat()
+
+
+def _parse_api_entry(entry: str) -> dict[str, Any] | None:
+    id_match = re.search(r"<id>https?://arxiv\.org/abs/(.*?)</id>", entry)
+    if id_match is None:
+        return None
+    raw_id = id_match.group(1).strip()
+    version_match = re.search(r"v(\d+)$", raw_id)
+    arxiv_id = canonicalize_arxiv_id(re.sub(r"v\d+$", "", raw_id))
+    if arxiv_id is None:
+        return None
+
+    def _tag(name: str, default: str = "") -> str:
+        match = re.search(f"<{name}>(.*?)</{name}>", entry, re.DOTALL)
+        if match is None:
+            match = re.search(f"<arxiv:{name}[^>]*>(.*?)</arxiv:{name}>", entry, re.DOTALL)
+        return match.group(1).strip() if match else default
+
+    updated = _normalize_date(_tag("updated"))
+    return {
+        "arxiv_id": arxiv_id,
+        "title": _tag("title"),
+        "abstract": _tag("summary"),
+        "authors": re.findall(r"<author>.*?<name>(.*?)</name>.*?</author>", entry, re.DOTALL),
+        "categories": re.findall(r"""<category[^>]*term=["']([^"']+)["']""", entry),
+        "created": _normalize_date(_tag("published")),
+        "updated": updated,
+        "version": int(version_match.group(1)) if version_match else 1,
+        "_version_available": version_match is not None,
+        "_metadata_fields": {
+            "arxiv_id",
+            "title",
+            "abstract",
+            "authors",
+            "categories",
+            "created",
+            "updated",
+            "comments",
+            "doi",
+            "journal_ref",
+            *(["version"] if version_match else []),
+        },
+        "updated_history": [updated] if updated else [],
+        "license": "",
+        "comments": _tag("comment"),
+        "doi": _tag("doi"),
+        "journal_ref": _tag("journal_ref"),
+        "acm_class": "",
+        "abstract_embedding": [],
+        "has_latex": False,
+        "has_pdf": False,
+        "has_markdown": False,
+        "has_chunks": False,
+    }
+
+
+async def fetch_papers_api(date: dt.date) -> list[dict[str, Any]]:
+    """Fetch one submission day through the rate-limited Atom API fallback."""
+    stamp = date.strftime("%Y%m%d")
+    query = f"submittedDate:[{stamp}0000+TO+{stamp}2359]"
+    papers: list[dict[str, Any]] = []
+    start = 0
+    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+        while start < API_TOTAL_LIMIT:
+            response = await client.get(
+                API_BASE,
+                params={
+                    "search_query": query,
+                    "start": start,
+                    "max_results": API_PAGE_SIZE,
+                    "sortBy": "submittedDate",
+                    "sortOrder": "ascending",
+                },
+            )
+            if response.status_code in {429, 503}:
+                raise OAIHarvestError(f"arXiv API returned {response.status_code}")
+            response.raise_for_status()
+            entries = re.findall(r"<entry>(.*?)</entry>", response.text, re.DOTALL)
+            if not entries:
+                break
+            papers.extend(
+                paper for entry in entries if (paper := _parse_api_entry(entry)) is not None
+            )
+            if len(entries) < API_PAGE_SIZE:
+                break
+            start += API_PAGE_SIZE
+            await asyncio.sleep(API_DELAY_SECONDS)
+    return papers

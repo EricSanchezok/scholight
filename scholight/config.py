@@ -31,6 +31,12 @@ class Settings(BaseSettings):
     embedding_batch_size: int = 512
     embedding_concurrency: int = 8
 
+    # ── Native daily ingestion ──
+    ingest_recent_days: int = Field(default=90, ge=7, le=365)
+    metadata_sync_hour_utc: int = Field(default=8, ge=0, le=23)
+    ingest_max_attempts: int = Field(default=8, ge=1, le=32)
+    ingest_lease_seconds: int = Field(default=7200, ge=300, le=86400)
+
     # ── MinerU API ──
     mineru_api_key: str = ""
 

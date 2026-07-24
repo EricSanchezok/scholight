@@ -256,9 +256,8 @@ def create_collections(client: MilvusClient) -> None:
     Attaches a BM25 :class:`Function` to each collection so Zilliz Cloud
     automatically populates the ``*_bm25`` output fields on insert/upsert.
 
-    Collections that already exist with indexes are left untouched.  A bare
-    collection with no indexes is dropped and recreated (indexes are required
-    for search).
+    Collections that already exist are never replaced.  A bare collection
+    without indexes fails closed so an operator can inspect it explicitly.
     """
     _schema_map = {
         "arxiv_papers": ARXIV_PAPERS_SCHEMA,
@@ -277,14 +276,11 @@ def create_collections(client: MilvusClient) -> None:
         if client.has_collection(name):
             indexes = client.list_indexes(name)
             if not indexes:
-                logger.warning(
-                    "collection exists but has no indexes — recreating",
-                    collection=name,
+                raise RuntimeError(
+                    f"Collection {name!r} exists without indexes; refusing automatic replacement"
                 )
-                client.drop_collection(name)
-            else:
-                logger.info("collection already exists, skipping", collection=name)
-                continue
+            logger.info("collection already exists, skipping", collection=name)
+            continue
 
         schema = _schema_map[name]
         schema.add_function(_bm25_funcs[name])
@@ -348,11 +344,3 @@ def ensure_collections(client: MilvusClient) -> None:
     for name in COLLECTION_NAMES:
         client.load_collection(name, timeout=_COLLECTION_LOAD_TIMEOUT)
         logger.info("collection loaded", collection=name)
-
-
-def drop_collections(client: MilvusClient) -> None:
-    """Drop both collections if they exist."""
-    for name in reversed(COLLECTION_NAMES):
-        if client.has_collection(name):
-            client.drop_collection(name)
-            logger.info("collection dropped", collection=name)

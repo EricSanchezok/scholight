@@ -50,6 +50,11 @@ read_env_value() {
   printf '%s\n' "${value}"
 }
 
+service_running() {
+  local service=$1
+  [[ $(compose ps --services --status running "${service}") == "${service}" ]]
+}
+
 SCHOLIGHT_DOMAIN=$(read_env_value SCHOLIGHT_DOMAIN)
 LOCAL_INGRESS_RESOLVE="${SCHOLIGHT_DOMAIN}:443:127.0.0.1"
 
@@ -57,6 +62,8 @@ retry "API readiness" compose exec -T api \
   curl --fail --silent --show-error http://127.0.0.1:8000/readyz
 retry "frontend health" compose exec -T frontend \
   wget -q -O /dev/null http://127.0.0.1:8080/healthz
+retry "metadata-sync running" service_running metadata-sync
+retry "paper-ingest running" service_running paper-ingest
 retry "local TLS frontend ingress" curl --fail --silent --show-error \
   --resolve "${LOCAL_INGRESS_RESOLVE}" \
   --output /dev/null "https://${SCHOLIGHT_DOMAIN}/healthz"

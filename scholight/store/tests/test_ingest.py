@@ -11,7 +11,6 @@ from pymilvus.exceptions import MilvusException
 from scholight.store.ingest import (
     StoreError,
     _validate_chunk_insert,
-    delete_arxiv_chunks_by_paper,
     delete_arxiv_paper,
     insert_arxiv_chunks,
     update_arxiv_chunk,
@@ -256,33 +255,6 @@ class TestUpsertArxivPapers:
 
         msg = str(exc_info.value)
         assert "2/5" in msg
-
-
-# ── delete_arxiv_chunks_by_paper ──────────────────────────────────────────────
-
-
-class TestDeleteArxivChunksByPaper:
-    def test_delete_chunks_lets_storeerror_pass_through(self) -> None:
-        """StoreError from _delete_chunks_locked is re-raised, not caught."""
-        mock_client = MagicMock()
-        mock_delete_chunks = MagicMock(side_effect=StoreError("chunk delete failure"))
-
-        with patch("scholight.store.ingest._delete_chunks_locked", mock_delete_chunks):
-            with patch("scholight.store.ingest.get_client", return_value=mock_client):
-                with pytest.raises(StoreError, match="chunk delete failure"):
-                    delete_arxiv_chunks_by_paper("2401.00001")
-
-    def test_delete_chunks_returns_delete_count(self) -> None:
-        """Returns the count from _delete_chunks_locked."""
-        mock_client = MagicMock()
-        mock_delete_chunks = MagicMock(return_value=42)
-
-        with patch("scholight.store.ingest._delete_chunks_locked", mock_delete_chunks):
-            with patch("scholight.store.ingest.get_client", return_value=mock_client):
-                result = delete_arxiv_chunks_by_paper("2401.00001")
-
-        assert result == 42
-        mock_delete_chunks.assert_called_once_with(mock_client, "2401.00001")
 
 
 # ── _validate_chunk_insert ─────────────────────────────────────────────────────
