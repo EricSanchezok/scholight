@@ -38,6 +38,7 @@ def api_app(monkeypatch: pytest.MonkeyPatch) -> Iterator[FastAPI]:
     monkeypatch.setattr(settings, "jwt_secret", "j" * 32)
     monkeypatch.setattr(settings, "anonymous_quota_hmac_secret", "h" * 32)
     monkeypatch.setattr(settings, "access_key_hmac_secret", "k" * 32)
+    monkeypatch.setattr(settings, "mcp_delegation_jwt_secret", "d" * 32)
     monkeypatch.setattr(settings, "proxy_headers", False)
     monkeypatch.setattr(settings, "forwarded_allow_ips", "127.0.0.1")
     monkeypatch.setattr(settings, "cors_allow_origins", ["http://localhost:3000"])

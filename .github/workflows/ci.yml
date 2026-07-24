@@ -213,6 +213,7 @@ jobs:
           SCHOLIGHT_AUTH_JWT_SECRET: fixture-secret-at-least-thirty-two-bytes
           SCHOLIGHT_ANONYMOUS_QUOTA_HMAC_SECRET: another-fixture-secret-at-least-32-bytes
           SCHOLIGHT_ACCESS_KEY_HMAC_SECRET: access-key-fixture-secret-at-least-32-bytes
+          SCHOLIGHT_MCP_DELEGATION_JWT_SECRET: delegation-fixture-secret-at-least-32-bytes
           SCHOLIGHT_PUBLIC_WEB_URL: https://scholight.example.invalid
           SCHOLIGHT_CORS_ALLOW_ORIGINS: '["https://scholight.example.invalid"]'
         run: docker compose -f deploy/production/compose.yaml config --quiet

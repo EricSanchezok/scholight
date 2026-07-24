@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Literal, cast
 from uuid import UUID
 
+import jwt
 from cloud_auth.config import AuthConfig
 from cloud_auth.db.asyncpg import AsyncpgUserDatabase
 from cloud_auth.dependencies import create_get_current_user as _create_get_current_user
@@ -30,7 +31,7 @@ class SearchActor:
     """Authenticated identity used only by the public search surface."""
 
     user: UserRecord
-    actor_type: Literal["web", "access_key"]
+    actor_type: Literal["web", "access_key", "delegated"]
     access_key_id: UUID | None = None
 
 
@@ -39,6 +40,14 @@ class SearchActor:
 # resolves to a UserRecord; type the lazy-bound handle so ``await`` type-checks.
 _get_current_user_callable: Callable[..., Awaitable[UserRecord]] | None = None
 _user_manager: UserManager | None = None
+_user_db: AsyncpgUserDatabase | None = None
+
+
+class DelegationError(Exception):
+    def __init__(self, code: str, *, status_code: int = 401) -> None:
+        super().__init__(code)
+        self.code = code
+        self.status_code = status_code
 
 
 def wire_dependencies(
@@ -48,7 +57,7 @@ def wire_dependencies(
     user_manager: UserManager,
 ) -> None:
     """在 create_app() 中调用一次, 连接 cloud-auth SDK 的依赖。"""
-    global _get_current_user_callable, _user_manager
+    global _get_current_user_callable, _user_manager, _user_db
     # cloud_auth declares the factory return as Callable[..., object];
     # the actual closure is async and resolves to UserRecord.
     _get_current_user_callable = cast(
@@ -56,6 +65,7 @@ def wire_dependencies(
         _create_get_current_user(db=db, config=auth_config),
     )
     _user_manager = user_manager
+    _user_db = db
 
 
 def get_user_manager() -> UserManager:
@@ -200,3 +210,38 @@ async def resolve_access_key_search_actor(token: str) -> SearchActor:
     """Resolve a search-only access key without imposing a transport error model."""
     record, user = await resolve_access_key(token)
     return SearchActor(user=user, actor_type="access_key", access_key_id=record.id)
+
+
+async def resolve_delegated_search_actor(token: str) -> SearchActor:
+    """Verify a short-lived OpenPaper delegation and resolve its shared user."""
+    from scholight.config import settings
+
+    try:
+        claims = jwt.decode(
+            token,
+            settings.mcp_delegation_jwt_secret,
+            algorithms=["HS256"],
+            audience="scholight-mcp",
+            issuer="openpaper",
+            options={"require": ["sub", "scope", "iat", "exp", "jti"]},
+        )
+        if claims.get("scope") != "search":
+            raise DelegationError("invalid_delegation")
+        user_id = int(claims["sub"])
+    except DelegationError:
+        raise
+    except (jwt.PyJWTError, TypeError, ValueError, KeyError) as exc:
+        raise DelegationError("invalid_delegation") from exc
+
+    if _user_db is None:
+        raise RuntimeError("Dependencies not wired — call wire_dependencies() in create_app()")
+    try:
+        user = await _user_db.get_user_by_id(user_id)
+        if user is None or user.status != "active":
+            raise DelegationError("delegation_user_unavailable", status_code=403)
+        await ensure_product_access(user.id)
+    except ProductAccessBlockedError as exc:
+        raise DelegationError("scholight_access_blocked", status_code=403) from exc
+    except (AuthDBError, DBError) as exc:
+        raise DelegationError("delegation_service_unavailable", status_code=503) from exc
+    return SearchActor(user=user, actor_type="delegated")

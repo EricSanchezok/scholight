@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import httpx
+import jwt
 import pytest
 import pytest_asyncio
 from cloud_auth.models.user import UserRecord
@@ -16,7 +17,11 @@ from pydantic import AnyHttpUrl
 
 from scholight.api.access_keys import AccessKeyError
 from scholight.api.app import create_app
-from scholight.api.deps import SearchActor
+from scholight.api.deps import (
+    DelegationError,
+    SearchActor,
+    resolve_delegated_search_actor,
+)
 from scholight.api.models.search import (
     PublicSearchHit,
     PublicSearchRequest,
@@ -70,6 +75,7 @@ async def mcp_client() -> AsyncIterator[httpx.AsyncClient]:
     monkeypatch.setattr(settings, "jwt_secret", "j" * 32)
     monkeypatch.setattr(settings, "anonymous_quota_hmac_secret", "h" * 32)
     monkeypatch.setattr(settings, "access_key_hmac_secret", "k" * 32)
+    monkeypatch.setattr(settings, "mcp_delegation_jwt_secret", "d" * 32)
     monkeypatch.setattr(settings, "proxy_headers", False)
     monkeypatch.setattr(settings, "forwarded_allow_ips", "127.0.0.1")
     monkeypatch.setattr(settings, "cors_allow_origins", ["http://localhost:3000"])
@@ -275,7 +281,78 @@ async def test_access_key_is_resolved_as_search_actor(
     assert execute_call.args[1].actor is actor
 
 
-@pytest.mark.parametrize("authorization", ["Bearer jwt-token", "Basic abc", "Bearer"])
+async def test_delegation_jwt_is_resolved_as_current_user(
+    mcp_client: httpx.AsyncClient,
+    active_user: UserRecord,
+) -> None:
+    actor = SearchActor(user=active_user, actor_type="delegated")
+    response = PublicSearchResponse(
+        query="retrieval",
+        strength=SearchStrength.STANDARD,
+        degraded=False,
+        hits=[],
+        result_count=0,
+        elapsed_ms=1.0,
+    )
+    token = jwt.encode(
+        {
+            "iss": "openpaper",
+            "aud": "scholight-mcp",
+            "sub": str(active_user.id),
+            "scope": "search",
+            "iat": int(datetime.now(UTC).timestamp()),
+            "exp": int(datetime.now(UTC).timestamp()) + 60,
+            "jti": str(uuid4()),
+        },
+        "d" * 32,
+        algorithm="HS256",
+    )
+    with (
+        patch(
+            "scholight.api.mcp_server.resolve_delegated_search_actor",
+            new_callable=AsyncMock,
+            return_value=actor,
+        ) as resolve,
+        patch(
+            "scholight.api.mcp_server.execute_public_search",
+            new_callable=AsyncMock,
+            return_value=response,
+        ) as execute,
+    ):
+        called = await mcp_client.post(
+            "/mcp",
+            headers={**_MCP_HEADERS, "authorization": f"Bearer {token}"},
+            json=_request(
+                "tools/call",
+                request_id=41,
+                params={"name": "search_papers", "arguments": {"query": "retrieval"}},
+            ),
+        )
+
+    assert called.status_code == 200
+    resolve.assert_awaited_once_with(token)
+    assert execute.await_args.args[1].actor is actor
+
+
+async def test_delegation_rejects_wrong_audience() -> None:
+    token = jwt.encode(
+        {
+            "iss": "openpaper",
+            "aud": "wrong",
+            "sub": "42",
+            "scope": "search",
+            "iat": int(datetime.now(UTC).timestamp()),
+            "exp": int(datetime.now(UTC).timestamp()) + 60,
+            "jti": str(uuid4()),
+        },
+        "d" * 32,
+        algorithm="HS256",
+    )
+    with pytest.raises(DelegationError, match="invalid_delegation"):
+        await resolve_delegated_search_actor(token)
+
+
+@pytest.mark.parametrize("authorization", ["Basic abc", "Bearer"])
 async def test_mcp_rejects_non_access_key_credentials(
     mcp_client: httpx.AsyncClient,
     authorization: str,

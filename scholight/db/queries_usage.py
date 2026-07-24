@@ -23,7 +23,7 @@ class UsageEvent(BaseModel):
     request_id: str = Field(min_length=1, max_length=128)
     user_id: int
     strength: Literal["standard", "thorough"]
-    actor_type: Literal["web", "access_key"]
+    actor_type: Literal["web", "access_key", "delegated"]
     access_key_id: UUID | None
     outcome: Literal["success", "degraded", "failed"]
     quota_units: int = Field(ge=0)

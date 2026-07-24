@@ -16,7 +16,11 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from structlog.contextvars import get_contextvars
 
 from scholight.api.access_keys import AccessKeyError
-from scholight.api.deps import resolve_access_key_search_actor
+from scholight.api.deps import (
+    DelegationError,
+    resolve_access_key_search_actor,
+    resolve_delegated_search_actor,
+)
 from scholight.api.models.search import (
     PublicSearchFilters,
     PublicSearchRequest,
@@ -70,7 +74,7 @@ def _error_response(
 
 
 class _MCPRequestBoundary:
-    """Apply exact Origin checks and access-key-only identity to MCP requests."""
+    """Apply exact Origin checks and search-scoped MCP identity."""
 
     def __init__(self, app: ASGIApp) -> None:
         self._app = app
@@ -95,12 +99,7 @@ class _MCPRequestBoundary:
         authorization = _header(scope, b"authorization")
         if authorization is not None:
             scheme, separator, token = authorization.partition(" ")
-            if (
-                separator != " "
-                or scheme.lower() != "bearer"
-                or not token
-                or not token.startswith("sk_live_")
-            ):
+            if separator != " " or scheme.lower() != "bearer" or not token:
                 response = _error_response(
                     401,
                     code="invalid_access_key",
@@ -110,13 +109,27 @@ class _MCPRequestBoundary:
                 await response(scope, receive, send)
                 return
             try:
-                actor = await resolve_access_key_search_actor(token)
+                actor = (
+                    await resolve_access_key_search_actor(token)
+                    if token.startswith("sk_live_")
+                    else await resolve_delegated_search_actor(token)
+                )
             except AccessKeyError as exc:
                 response = _error_response(
                     401,
                     code=exc.code,
                     message="Access key is invalid or unavailable.",
                     retryable=False,
+                )
+                await response(scope, receive, send)
+                return
+            except DelegationError as exc:
+                response = _error_response(
+                    exc.status_code,
+                    code=exc.code,
+                    message="Delegated identity is invalid or unavailable.",
+                    retryable=exc.status_code == 503,
+                    retry_after=5 if exc.status_code == 503 else None,
                 )
                 await response(scope, receive, send)
                 return
