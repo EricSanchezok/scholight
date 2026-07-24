@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import os
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -13,6 +14,7 @@ from scholight.db.queries_ingestion import (
     enqueue_ingestion_job,
     mark_sync_succeeded,
 )
+from scholight.db.tests.pg_ingestion_support import isolated_database_url
 
 
 @pytest.mark.asyncio
@@ -55,3 +57,18 @@ async def test_cursor_refuses_to_skip_a_date() -> None:
     with patch("scholight.db.queries_ingestion.get_pool", return_value=pool):
         with pytest.raises(DBError, match="skip"):
             await mark_sync_succeeded("arxiv", dt.date(2026, 7, 23))
+
+
+def test_destructive_pg_tests_reject_a_remote_database() -> None:
+    with (
+        patch.dict(
+            os.environ,
+            {
+                "SCHOLIGHT_TEST_DATABASE_URL": (
+                    "postgresql://postgres:secret@production.example/scholight_test_ingestion"
+                )
+            },
+        ),
+        pytest.raises(RuntimeError, match="loopback"),
+    ):
+        isolated_database_url()

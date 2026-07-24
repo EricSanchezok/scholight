@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from scholight.scheduler.resources import ResourceCorruptError, _extract_source
+from scholight.scheduler.resources import ResourceCorruptError, _extract_source, _valid_pdf
 
 
 def _archive(path: Path, name: str, content: bytes = b"content") -> None:
@@ -51,3 +51,10 @@ def test_source_rejection_preserves_existing_destination(tmp_path: Path) -> None
         _extract_source(archive, destination)
 
     assert existing.read_bytes() == b"previous"
+
+
+def test_pdf_signature_accepts_normal_pdf_header(tmp_path: Path) -> None:
+    pdf = tmp_path / "paper.pdf"
+    pdf.write_bytes(b"%PDF-1.7\n" + b"fixture" * 100)
+
+    assert _valid_pdf(pdf) is True

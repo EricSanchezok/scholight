@@ -137,14 +137,16 @@ async def process_job(job: IngestionJob, *, scratch_root: Path = _SCRATCH_ROOT) 
         return "installed"
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
+        with contextlib.suppress(OSError):
+            scratch.parent.rmdir()
 
 
-async def run_worker_once(worker_id: str) -> bool:
+async def run_worker_once(worker_id: str, *, scratch_root: Path = _SCRATCH_ROOT) -> bool:
     job = await claim_ingestion_job(worker_id, settings.ingest_lease_seconds)
     if job is None:
         return False
     try:
-        outcome = await process_job(job)
+        outcome = await process_job(job, scratch_root=scratch_root)
         await complete_ingestion_job(job.arxiv_id, worker_id)
         logger.info(
             "ingestion job completed",

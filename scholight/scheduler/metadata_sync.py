@@ -58,6 +58,9 @@ async def _normalize_and_embed(papers: list[dict[str, Any]]) -> None:
             raise RuntimeError("Embedding response count did not match metadata")
         for (index, _), vector in zip(non_empty, vectors):
             papers[index]["abstract_embedding"] = vector
+            available_fields = papers[index].get("_metadata_fields")
+            if isinstance(available_fields, set):
+                available_fields.add("abstract_embedding")
     for paper in papers:
         paper["abstract_embedding"] = paper.get("abstract_embedding") or (
             [0.0] * settings.embedding_dim
@@ -116,13 +119,19 @@ async def _sync_day(date: dt.date, reference: dt.date) -> tuple[int, str]:
     papers, source = await _fetch_day(date, reference)
     await _normalize_and_embed(papers)
     outcomes = await asyncio.to_thread(write_metadata_papers, papers)
-    for outcome in outcomes:
-        if outcome.kind is None:
+    for paper, outcome in zip(papers, outcomes, strict=True):
+        kind = outcome.kind
+        # Heal the cross-store interruption where Zilliz accepted a revision
+        # but PostgreSQL was unavailable before its durable job was created.
+        # Re-enqueueing is idempotent for an existing succeeded job.
+        if kind is None and bool(paper.get("_version_available")) and outcome.target_version > 1:
+            kind = "revision"
+        if kind is None:
             continue
         await enqueue_ingestion_job(
             outcome.arxiv_id,
             outcome.target_version,
-            outcome.kind,
+            kind,
             max_attempts=settings.ingest_max_attempts,
         )
     return len(papers), source

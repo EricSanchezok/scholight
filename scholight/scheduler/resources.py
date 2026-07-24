@@ -9,6 +9,9 @@ from pathlib import Path
 
 import httpx
 
+ARXIV_SOURCE_ORIGIN = "https://arxiv.org"
+ARXIV_PDF_ORIGINS = ("https://arxiv.org", "https://export.arxiv.org")
+
 _MAX_DOWNLOAD = 100 * 1024 * 1024
 _MAX_MEMBERS = 10_000
 _MAX_MEMBER = 50 * 1024 * 1024
@@ -60,7 +63,7 @@ def _valid_pdf(path: Path) -> bool:
     if not path.exists() or path.stat().st_size < 512:
         return False
     with path.open("rb") as stream:
-        return stream.read(5) == b"%PDF"
+        return stream.read(5).startswith(b"%PDF-")
 
 
 def _extract_source(archive_path: Path, destination: Path) -> None:
@@ -109,7 +112,7 @@ def fetch_paper_resource(arxiv_id: str, version: int, scratch: Path) -> Download
     """Fetch the exact arXiv revision, preferring source and falling back to PDF."""
     versioned_id = f"{arxiv_id}v{version}"
     source_archive = scratch / "source.tar"
-    source_status = _download(f"https://arxiv.org/src/{versioned_id}", source_archive)
+    source_status = _download(f"{ARXIV_SOURCE_ORIGIN}/src/{versioned_id}", source_archive)
     if source_status == 200:
         source_dir = scratch / "source"
         _extract_source(source_archive, source_dir)
@@ -121,7 +124,7 @@ def fetch_paper_resource(arxiv_id: str, version: int, scratch: Path) -> Download
 
     pdf_path = scratch / "paper.pdf"
     statuses: list[int] = []
-    for origin in ("https://arxiv.org", "https://export.arxiv.org"):
+    for origin in ARXIV_PDF_ORIGINS:
         status = _download(f"{origin}/pdf/{versioned_id}.pdf", pdf_path)
         statuses.append(status)
         if status == 200 and _valid_pdf(pdf_path):

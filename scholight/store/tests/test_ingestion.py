@@ -9,11 +9,13 @@ from pymilvus.exceptions import MilvusException
 
 from scholight.store.ingest import StoreError
 from scholight.store.ingestion import (
+    MAX_PAPER_CHUNKS,
     IngestionSafetyError,
     get_chunk_ids,
     install_paper_chunks,
     write_metadata_papers,
 )
+from scholight.store.tests.fake_ingestion_client import FakeIngestionClient
 
 
 def _chunk(index: int) -> dict[str, object]:
@@ -139,3 +141,128 @@ def test_metadata_revision_preserves_existing_resource_flags() -> None:
     assert outcomes[0].kind == "revision"
     sent = client.upsert.call_args.kwargs["data"][0]
     assert "has_chunks" not in sent
+
+
+def test_multi_batch_revision_finishes_all_upserts_before_exact_delete() -> None:
+    client = FakeIngestionClient()
+    client.papers["2401.00001"] = {"arxiv_id": "2401.00001", "version": 1}
+    client.chunks["old"] = {"chunk_id": "old", "arxiv_id": "2401.00001"}
+
+    with patch("scholight.store.ingestion.get_client", return_value=client):
+        install_paper_chunks(
+            "2401.00001",
+            [_chunk(index) for index in range(1001)],
+            target_version=1,
+            resource_flags={"has_pdf": True},
+        )
+
+    writes = [
+        (operation, collection)
+        for operation, collection, _details in client.operations
+        if operation in {"upsert", "delete"}
+    ]
+    assert writes == [
+        ("upsert", "arxiv_chunks"),
+        ("upsert", "arxiv_chunks"),
+        ("delete", "arxiv_chunks"),
+        ("upsert", "arxiv_papers"),
+    ]
+
+
+def test_second_chunk_batch_failure_performs_zero_deletes() -> None:
+    client = FakeIngestionClient()
+    client.papers["2401.00001"] = {"arxiv_id": "2401.00001", "version": 1}
+    client.chunks["old"] = {"chunk_id": "old", "arxiv_id": "2401.00001"}
+    client.fail_chunk_upsert_call = 2
+
+    with (
+        patch("scholight.store.ingestion.get_client", return_value=client),
+        pytest.raises(StoreError),
+    ):
+        install_paper_chunks(
+            "2401.00001",
+            [_chunk(index) for index in range(1001)],
+            target_version=1,
+            resource_flags={"has_pdf": True},
+        )
+
+    assert all(operation != "delete" for operation, _collection, _details in client.operations)
+
+
+def test_too_many_existing_chunks_fails_before_any_write() -> None:
+    client = FakeIngestionClient()
+    client.chunks = {
+        f"chunk-{index}": {
+            "chunk_id": f"chunk-{index}",
+            "arxiv_id": "2401.00001",
+        }
+        for index in range(MAX_PAPER_CHUNKS + 1)
+    }
+
+    with (
+        patch("scholight.store.ingestion.get_client", return_value=client),
+        pytest.raises(IngestionSafetyError, match="safe chunk replacement limit"),
+    ):
+        get_chunk_ids("2401.00001")
+
+    assert all(operation != "delete" for operation, _collection, _details in client.operations)
+
+
+def test_too_many_new_chunks_fails_before_store_access() -> None:
+    with (
+        patch("scholight.store.ingestion.get_client") as get_client,
+        pytest.raises(IngestionSafetyError, match="between 1 and 10000"),
+    ):
+        install_paper_chunks(
+            "2401.00001",
+            [_chunk(index) for index in range(MAX_PAPER_CHUNKS + 1)],
+            target_version=1,
+            resource_flags={"has_pdf": True},
+        )
+
+    get_client.assert_not_called()
+
+
+def test_version_change_before_install_performs_zero_writes() -> None:
+    client = FakeIngestionClient()
+    client.papers["2401.00001"] = {"arxiv_id": "2401.00001", "version": 2}
+
+    with (
+        patch("scholight.store.ingestion.get_client", return_value=client),
+        pytest.raises(IngestionSafetyError, match="version changed"),
+    ):
+        install_paper_chunks(
+            "2401.00001",
+            [_chunk(0)],
+            target_version=1,
+            resource_flags={"has_pdf": True},
+        )
+
+    assert all(
+        operation not in {"upsert", "delete"}
+        for operation, _collection, _details in client.operations
+    )
+
+
+def test_delete_failure_does_not_clear_has_chunks() -> None:
+    client = FakeIngestionClient()
+    client.papers["2401.00001"] = {
+        "arxiv_id": "2401.00001",
+        "version": 1,
+        "has_chunks": True,
+    }
+    client.chunks["old"] = {"chunk_id": "old", "arxiv_id": "2401.00001"}
+    client.fail_next_chunk_delete = True
+
+    with (
+        patch("scholight.store.ingestion.get_client", return_value=client),
+        pytest.raises(StoreError),
+    ):
+        install_paper_chunks(
+            "2401.00001",
+            [_chunk(0)],
+            target_version=1,
+            resource_flags={"has_pdf": True},
+        )
+
+    assert client.papers["2401.00001"]["has_chunks"] is True

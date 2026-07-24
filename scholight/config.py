@@ -1,9 +1,12 @@
 """Pydantic Settings for Scholight — all config via SCHOLIGHT_ env vars."""
 
+import os
+
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
 
 AUTH_CLIENT_ID = "scholight"
+_ENV_FILE = None if os.environ.get("SCHOLIGHT_DISABLE_DOTENV") == "1" else ".env"
 
 
 class Settings(BaseSettings):
@@ -11,7 +14,7 @@ class Settings(BaseSettings):
 
     model_config = {
         "env_prefix": "SCHOLIGHT_",
-        "env_file": ".env",
+        "env_file": _ENV_FILE,
         "extra": "ignore",
         "case_sensitive": False,
     }
