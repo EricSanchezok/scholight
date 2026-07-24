@@ -296,7 +296,7 @@ async def test_delegation_jwt_is_resolved_as_current_user(
     )
     token = jwt.encode(
         {
-            "iss": "openpaper",
+            "iss": "scholens",
             "aud": "scholight-mcp",
             "sub": str(active_user.id),
             "scope": "search",
@@ -339,7 +339,7 @@ async def test_delegation_jwt_is_resolved_as_current_user(
 async def test_delegation_rejects_wrong_audience() -> None:
     token = jwt.encode(
         {
-            "iss": "openpaper",
+            "iss": "scholens",
             "aud": "wrong",
             "sub": "42",
             "scope": "search",

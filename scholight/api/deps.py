@@ -213,7 +213,7 @@ async def resolve_access_key_search_actor(token: str) -> SearchActor:
 
 
 async def resolve_delegated_search_actor(token: str) -> SearchActor:
-    """Verify a short-lived OpenPaper delegation and resolve its shared user."""
+    """Verify a short-lived Scholens delegation and resolve its shared user."""
     from scholight.config import settings
 
     try:
@@ -222,7 +222,7 @@ async def resolve_delegated_search_actor(token: str) -> SearchActor:
             settings.mcp_delegation_jwt_secret,
             algorithms=["HS256"],
             audience="scholight-mcp",
-            issuer="openpaper",
+            issuer="scholens",
             options={"require": ["sub", "scope", "iat", "exp", "jti"]},
         )
         if claims.get("scope") != "search":

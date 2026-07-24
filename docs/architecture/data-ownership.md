@@ -6,7 +6,7 @@
 | --- | --- | --- | --- |
 | `cloud-auth` | 共享邮箱身份、密码、验证、全局账号状态、登录锁定、按产品隔离的 Refresh Session、JWT 签发与校验 | `auth.users`、`auth.refresh_tokens`、`auth.schema_migrations` | 产品角色、产品封禁、订阅、额度、Usage、Access Key、业务历史 |
 | `scholight` | 学术搜索、Scholight 产品准入/封禁、搜索额度、Access Key、Usage、搜索历史；arXiv/Zilliz 数据管线 | `scholight.*`、`scholight.schema_migrations` | auth migration、其他产品数据；任何身份外键以外的跨 schema 写入 |
-| `openpaper` | OpenPaper 文档与协作业务、产品角色/管理员、产品准入/封禁、产品订阅与 Usage | `openpaper.*`、`openpaper.schema_migrations` | auth migration、Scholight 数据 |
+| `scholens` | Scholens 文档与协作业务、产品角色/管理员、产品准入/封禁、产品订阅与 Usage | `scholens.*`、`scholens.schema_migrations` | auth migration、Scholight 数据 |
 
 三个产品共用一个数据库 `sanchezcloud`，但不共用产品表。`public` 不存放应用表。
 共享身份由 `auth.users.id` 表示；每个产品通过自己 schema 中以 `user_id` 为主键或外键的表扩展身份。
