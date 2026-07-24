@@ -108,20 +108,14 @@ def _extract_source(archive_path: Path, destination: Path) -> None:
         raise ResourceCorruptError("Source archive could not be extracted") from None
 
 
-def fetch_paper_resource(arxiv_id: str, version: int, scratch: Path) -> DownloadedResource:
-    """Fetch the exact arXiv revision, preferring source and falling back to PDF."""
+def _fetch_pdf_resource(
+    arxiv_id: str,
+    version: int,
+    scratch: Path,
+    *,
+    source_status: int | None = None,
+) -> DownloadedResource:
     versioned_id = f"{arxiv_id}v{version}"
-    source_archive = scratch / "source.tar"
-    source_status = _download(f"{ARXIV_SOURCE_ORIGIN}/src/{versioned_id}", source_archive)
-    if source_status == 200:
-        source_dir = scratch / "source"
-        _extract_source(source_archive, source_dir)
-        source_archive.unlink(missing_ok=True)
-        return DownloadedResource("latex", source_dir)
-    source_archive.unlink(missing_ok=True)
-    if source_status in {429, 500, 502, 503, 504}:
-        raise ResourceTemporaryError("arXiv source is temporarily unavailable")
-
     pdf_path = scratch / "paper.pdf"
     statuses: list[int] = []
     for origin in ARXIV_PDF_ORIGINS:
@@ -132,6 +126,51 @@ def fetch_paper_resource(arxiv_id: str, version: int, scratch: Path) -> Download
         pdf_path.unlink(missing_ok=True)
         if status in {429, 500, 502, 503, 504}:
             raise ResourceTemporaryError("arXiv PDF is temporarily unavailable")
-    if all(status == 404 for status in [source_status, *statuses]):
+    observed = [*([source_status] if source_status is not None else []), *statuses]
+    if observed and all(status == 404 for status in observed):
         raise ResourceUnavailableError("Exact arXiv revision was not found")
     raise ResourceCorruptError("Downloaded arXiv resources were invalid")
+
+
+def fetch_pdf_resource(arxiv_id: str, version: int, scratch: Path) -> DownloadedResource:
+    """Fetch and validate the PDF for one exact arXiv revision."""
+    return _fetch_pdf_resource(arxiv_id, version, scratch)
+
+
+def fetch_paper_resource(arxiv_id: str, version: int, scratch: Path) -> DownloadedResource:
+    """Fetch the exact arXiv revision, preferring source and falling back to PDF."""
+    versioned_id = f"{arxiv_id}v{version}"
+    source_archive = scratch / "source.download"
+    source_status = _download(f"{ARXIV_SOURCE_ORIGIN}/src/{versioned_id}", source_archive)
+    if source_status == 200:
+        if _valid_pdf(source_archive):
+            pdf_path = scratch / "paper.pdf"
+            source_archive.replace(pdf_path)
+            return DownloadedResource("pdf", pdf_path)
+        source_dir = scratch / "source"
+        try:
+            _extract_source(source_archive, source_dir)
+        except ResourceCorruptError:
+            # Some revisions have unavailable or malformed source packages
+            # while their exact-version PDF remains usable.
+            pass
+        else:
+            return DownloadedResource("latex", source_dir)
+        finally:
+            source_archive.unlink(missing_ok=True)
+        return _fetch_pdf_resource(
+            arxiv_id,
+            version,
+            scratch,
+            source_status=source_status,
+        )
+
+    source_archive.unlink(missing_ok=True)
+    if source_status in {429, 500, 502, 503, 504}:
+        raise ResourceTemporaryError("arXiv source is temporarily unavailable")
+    return _fetch_pdf_resource(
+        arxiv_id,
+        version,
+        scratch,
+        source_status=source_status,
+    )

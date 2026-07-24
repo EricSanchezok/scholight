@@ -178,7 +178,9 @@ def _parse_record(record_xml: str) -> dict[str, Any] | None:
     """Parse one OAI-PMH arXivRaw <record> into a paper dict.
 
     arXivRaw uses flat author strings ("Name1 and Name2") and version dates
-    (created = datestamp from <header>, updated = latest <version><date>).
+    (created = first version date, updated = latest version date). The OAI
+    header datestamp describes repository harvesting state, so it is only a
+    fallback when the record does not include version history.
 
     Returns None on parse failure.
     """
@@ -201,11 +203,14 @@ def _parse_record(record_xml: str) -> dict[str, Any] | None:
             return []
         return [a.strip() for a in re.split(r"\s+and\s+", raw) if a.strip()]
 
-    # created = datestamp from <header>
-    created = _normalize_date(_tag("datestamp", ""))
-    # updated = most recent <version><date>
-    version_dates = re.findall(r"<date>(.*?)</date>", record_xml)
-    updated = _normalize_date(version_dates[-1]) if version_dates else created
+    datestamp = _normalize_date(_tag("datestamp", ""))
+    version_dates = [
+        normalized
+        for value in re.findall(r"<date>(.*?)</date>", record_xml)
+        if (normalized := _normalize_date(value))
+    ]
+    created = version_dates[0] if version_dates else datestamp
+    updated = version_dates[-1] if version_dates else created
 
     return {
         "arxiv_id": arxiv_id,
@@ -217,7 +222,7 @@ def _parse_record(record_xml: str) -> dict[str, Any] | None:
         "updated": updated,
         "version": len(version_dates) if version_dates else 1,
         "_version_available": bool(version_dates),
-        "updated_history": [_normalize_date(value) for value in version_dates],
+        "updated_history": version_dates,
         "license": _tag("license", ""),
         "comments": _tag("comments", ""),
         "doi": _tag("doi", ""),
@@ -308,7 +313,9 @@ def _parse_api_entry(entry: str) -> dict[str, Any] | None:
 async def fetch_papers_api(date: dt.date) -> list[dict[str, Any]]:
     """Fetch one submission day through the rate-limited Atom API fallback."""
     stamp = date.strftime("%Y%m%d")
-    query = f"submittedDate:[{stamp}0000+TO+{stamp}2359]"
+    # Pass spaces and let httpx encode them. Literal "+" characters become
+    # "%2B", which arXiv interprets as part of the query and may reject.
+    query = f"submittedDate:[{stamp}0000 TO {stamp}2359]"
     papers: list[dict[str, Any]] = []
     start = 0
     async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:

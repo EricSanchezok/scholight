@@ -229,6 +229,35 @@ async def test_retry_dead_success_and_manual_reactivation(
 
 
 @pytest.mark.asyncio
+async def test_due_retry_is_not_starved_by_older_pending_work(
+    ingestion_pool: asyncpg.Pool,
+) -> None:
+    with patch("scholight.db.queries_ingestion.get_pool", return_value=ingestion_pool):
+        await enqueue_ingestion_job("2401.00001", 1, "new", max_attempts=8)
+        retry_candidate = await claim_ingestion_job("worker-a", 7200)
+        assert retry_candidate is not None
+        await fail_ingestion_job(
+            retry_candidate.arxiv_id,
+            "worker-a",
+            code="temporary",
+            message="retry",
+            retry_at=dt.datetime.now(dt.UTC) - dt.timedelta(seconds=1),
+        )
+        await enqueue_ingestion_job("2401.00002", 1, "new", max_attempts=8)
+        await ingestion_pool.execute(
+            """
+            UPDATE scholight.ingestion_jobs
+            SET available_at = now() - interval '1 day'
+            WHERE arxiv_id = '2401.00002'
+            """
+        )
+        claimed = await claim_ingestion_job("worker-b", 7200)
+
+    assert claimed is not None
+    assert claimed.arxiv_id == "2401.00001"
+
+
+@pytest.mark.asyncio
 async def test_sync_cursor_rejects_a_gap_and_preserves_last_success(
     ingestion_pool: asyncpg.Pool,
 ) -> None:

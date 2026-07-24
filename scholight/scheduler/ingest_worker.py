@@ -27,10 +27,12 @@ from scholight.pipeline.embedder import Embedder
 from scholight.pipeline.latex_md import LatexMdError, latex_to_markdown
 from scholight.pipeline.pdf_md import PDFMdError, pdf_to_markdown
 from scholight.scheduler.resources import (
+    DownloadedResource,
     ResourceCorruptError,
     ResourceTemporaryError,
     ResourceUnavailableError,
     fetch_paper_resource,
+    fetch_pdf_resource,
 )
 from scholight.sources.arxiv import canonicalize_arxiv_id
 from scholight.store.ingestion import (
@@ -60,6 +62,67 @@ def _retry_delay(attempt: int) -> dt.timedelta:
     return dt.timedelta(seconds=seconds)
 
 
+async def _parse_resource(
+    job: IngestionJob,
+    resource: DownloadedResource,
+    scratch: Path,
+) -> tuple[str, str, dict[str, bool]]:
+    if resource.kind == "pdf":
+        markdown = await asyncio.to_thread(pdf_to_markdown, resource.path, fast=True)
+        if not markdown.strip():
+            raise ResourceCorruptError("PDF parser produced empty markdown")
+        return (
+            markdown,
+            "pdf",
+            {
+                "has_pdf": True,
+                "has_latex": False,
+                "has_markdown": True,
+            },
+        )
+    if resource.kind != "latex":
+        raise ResourceCorruptError("Downloaded resource has an unsupported type")
+
+    try:
+        markdown = await asyncio.to_thread(latex_to_markdown, resource.path)
+        if not markdown.strip():
+            raise LatexMdError("LaTeX parser produced empty markdown")
+    except LatexMdError as exc:
+        logger.info(
+            "latex parse failed; falling back to exact PDF",
+            arxiv_id=job.arxiv_id,
+            target_version=job.target_version,
+            error_type=type(exc).__name__,
+        )
+        pdf = await asyncio.to_thread(
+            fetch_pdf_resource,
+            job.arxiv_id,
+            job.target_version,
+            scratch,
+        )
+        markdown = await asyncio.to_thread(pdf_to_markdown, pdf.path, fast=True)
+        if not markdown.strip():
+            raise ResourceCorruptError("PDF fallback parser produced empty markdown") from None
+        return (
+            markdown,
+            "pdf",
+            {
+                "has_pdf": True,
+                "has_latex": False,
+                "has_markdown": True,
+            },
+        )
+    return (
+        markdown,
+        "latex",
+        {
+            "has_pdf": False,
+            "has_latex": True,
+            "has_markdown": True,
+        },
+    )
+
+
 async def process_job(job: IngestionJob, *, scratch_root: Path = _SCRATCH_ROOT) -> str:
     """Build and safely install one exact revision. Return ``installed`` or ``obsolete``."""
     canonical = canonicalize_arxiv_id(job.arxiv_id)
@@ -82,7 +145,6 @@ async def process_job(job: IngestionJob, *, scratch_root: Path = _SCRATCH_ROOT) 
     shutil.rmtree(scratch, ignore_errors=True)
     scratch.mkdir(parents=True)
 
-    resource_flags = {"has_pdf": False, "has_latex": False, "has_markdown": True}
     try:
         resource = await asyncio.to_thread(
             fetch_paper_resource,
@@ -90,16 +152,7 @@ async def process_job(job: IngestionJob, *, scratch_root: Path = _SCRATCH_ROOT) 
             job.target_version,
             scratch,
         )
-        if resource.kind == "latex":
-            markdown = await asyncio.to_thread(latex_to_markdown, resource.path)
-            resource_flags["has_latex"] = True
-            source = "latex"
-        else:
-            markdown = await asyncio.to_thread(pdf_to_markdown, resource.path, fast=True)
-            resource_flags["has_pdf"] = True
-            source = "pdf"
-        if not markdown.strip():
-            raise ResourceCorruptError("Parser produced empty markdown")
+        markdown, source, resource_flags = await _parse_resource(job, resource, scratch)
 
         parsed = chunk_markdown(markdown, source=source)
         chunks: list[dict[str, Any]] = []

@@ -47,6 +47,7 @@ async def test_claim_uses_skip_locked_and_expiring_lease() -> None:
     assert result is None
     assert "FOR UPDATE SKIP LOCKED" in query
     assert "lease_expires_at <= now()" in query
+    assert "CASE WHEN status = 'retry' THEN 0 ELSE 1 END" in query
 
 
 @pytest.mark.asyncio

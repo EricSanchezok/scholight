@@ -257,7 +257,11 @@ async def claim_ingestion_job(worker_id: str, lease_seconds: int) -> IngestionJo
                 ) OR (
                     status = 'running' AND lease_expires_at <= now()
                 )
-                ORDER BY priority ASC, available_at ASC, created_at ASC
+                ORDER BY
+                    priority ASC,
+                    CASE WHEN status = 'retry' THEN 0 ELSE 1 END ASC,
+                    available_at ASC,
+                    created_at ASC
                 FOR UPDATE SKIP LOCKED
                 LIMIT 1
             )

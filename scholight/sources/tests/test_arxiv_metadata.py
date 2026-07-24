@@ -1,0 +1,80 @@
+"""Metadata semantics and API fallback request contracts."""
+
+from __future__ import annotations
+
+import datetime as dt
+from typing import Any
+from unittest.mock import patch
+
+import pytest
+
+from scholight.sources.arxiv import _parse_record, fetch_papers_api
+
+
+def test_oai_version_dates_define_created_and_updated() -> None:
+    paper = _parse_record(
+        """
+        <record>
+          <header>
+            <identifier>oai:arXiv.org:2401.00001</identifier>
+            <datestamp>2026-07-24</datestamp>
+          </header>
+          <metadata>
+            <title>Versioned paper</title>
+            <versions>
+              <version><date>2 Jan 2024</date></version>
+              <version><date>3 Feb 2024</date></version>
+            </versions>
+          </metadata>
+        </record>
+        """
+    )
+
+    assert paper is not None
+    assert (paper["created"], paper["updated"]) == ("2024-01-02", "2024-02-03")
+
+
+def test_oai_datestamp_is_fallback_when_version_dates_are_absent() -> None:
+    paper = _parse_record(
+        """
+        <record>
+          <header>
+            <identifier>oai:arXiv.org:2401.00001</identifier>
+            <datestamp>2026-07-24</datestamp>
+          </header>
+          <metadata><title>Unversioned paper</title></metadata>
+        </record>
+        """
+    )
+
+    assert paper is not None
+    assert (paper["created"], paper["updated"]) == ("2026-07-24", "2026-07-24")
+
+
+@pytest.mark.asyncio
+async def test_api_fallback_uses_spaces_in_submitted_date_query() -> None:
+    captured: dict[str, Any] = {}
+
+    class Response:
+        status_code = 200
+        text = ""
+
+        def raise_for_status(self) -> None:
+            return None
+
+    class Client:
+        async def __aenter__(self) -> Client:
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+        async def get(self, _url: str, *, params: dict[str, Any]) -> Response:
+            captured.update(params)
+            return Response()
+
+    with patch("scholight.sources.arxiv.httpx.AsyncClient", return_value=Client()):
+        papers = await fetch_papers_api(dt.date(2026, 7, 18))
+
+    assert papers == []
+    assert captured["search_query"] == "submittedDate:[202607180000 TO 202607182359]"
