@@ -31,6 +31,12 @@ async function unwrap<T>(promise: Promise<ApiResult<T>>): Promise<T> {
   throw await toApiError(result.response, result.error);
 }
 
+async function unwrapEmpty(promise: Promise<ApiResult<undefined>>): Promise<void> {
+  const result = await promise;
+  if (result.response.ok) return;
+  throw await toApiError(result.response, result.error);
+}
+
 export const authApi = {
   login: (body: LoginRequest) =>
     unwrap<AccessTokenResponse>(apiClient.POST("/auth/login", { body })),
@@ -109,7 +115,7 @@ export const accessKeyApi = {
       ),
     ),
   revoke: (keyId: string) =>
-    unwrap(
+    unwrapEmpty(
       withAuthRetry(
         () =>
           apiClient.DELETE("/user/access-keys/{key_id}", {

@@ -124,4 +124,16 @@ describe("typed API client", () => {
     expect(await request.clone().json()).toEqual({ standard: 5000, thorough: null });
     expect(request.headers.get("Authorization")).toBe("Bearer admin-access");
   });
+
+  it("accepts a successful empty response when an access key is revoked", async () => {
+    const { establishSession } = await import("../auth/session");
+    establishSession({ access_token: "private-access", token_type: "bearer" }, false);
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 204 }));
+
+    const { accessKeyApi } = await import("./domain");
+
+    await expect(accessKeyApi.revoke("00000000-0000-0000-0000-000000000001")).resolves.toBe(
+      undefined,
+    );
+  });
 });
