@@ -143,6 +143,57 @@ def test_metadata_revision_preserves_existing_resource_flags() -> None:
     assert "has_chunks" not in sent
 
 
+def test_metadata_updates_are_batched_by_identical_field_set() -> None:
+    client = MagicMock()
+    client.get.return_value = [
+        {
+            "arxiv_id": "2401.00001",
+            "version": 1,
+            "created": "2024-01-01",
+            "updated": "2024-01-01",
+            "has_latex": False,
+            "has_pdf": False,
+            "has_markdown": False,
+            "has_chunks": False,
+        },
+        {
+            "arxiv_id": "2401.00002",
+            "version": 1,
+            "created": "2024-01-01",
+            "updated": "2024-01-01",
+            "has_latex": False,
+            "has_pdf": False,
+            "has_markdown": False,
+            "has_chunks": False,
+        },
+    ]
+
+    with patch("scholight.store.ingestion.get_client", return_value=client):
+        write_metadata_papers(
+            [
+                {
+                    "arxiv_id": "2401.00001",
+                    "version": 1,
+                    "_version_available": True,
+                    "_metadata_fields": {"title"},
+                    "title": "title only",
+                },
+                {
+                    "arxiv_id": "2401.00002",
+                    "version": 1,
+                    "_version_available": True,
+                    "_metadata_fields": {"title", "abstract"},
+                    "title": "title and abstract",
+                    "abstract": "abstract",
+                },
+            ]
+        )
+
+    batches = [call.kwargs["data"] for call in client.upsert.call_args_list]
+    assert len(batches) == 2
+    assert all(len({frozenset(row) for row in batch}) == 1 for batch in batches)
+
+
 def test_multi_batch_revision_finishes_all_upserts_before_exact_delete() -> None:
     client = FakeIngestionClient()
     client.papers["2401.00001"] = {"arxiv_id": "2401.00001", "version": 1}

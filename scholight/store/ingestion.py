@@ -7,6 +7,7 @@ chunk set before deleting only verified stale primary keys.
 
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any, Literal, cast
 
@@ -154,15 +155,19 @@ def write_metadata_papers(papers: list[dict[str, Any]]) -> list[MetadataOutcome]
 
     if new_rows:
         upsert_arxiv_papers(new_rows)
+    updates_by_fields: defaultdict[tuple[str, ...], list[dict[str, Any]]] = defaultdict(list)
+    for update in updates:
+        updates_by_fields[tuple(sorted(update))].append(update)
     try:
         with _WRITE_LOCK:
-            for batch in batched(updates):
-                client.upsert(
-                    "arxiv_papers",
-                    data=batch,
-                    partial_update=True,
-                    consistency_level="Strong",
-                )
+            for homogeneous_updates in updates_by_fields.values():
+                for batch in batched(homogeneous_updates):
+                    client.upsert(
+                        "arxiv_papers",
+                        data=batch,
+                        partial_update=True,
+                        consistency_level="Strong",
+                    )
     except MilvusException as exc:
         raise StoreError("Unable to update paper metadata") from exc
     return outcomes
