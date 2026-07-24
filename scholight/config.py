@@ -161,9 +161,7 @@ def validate_api_runtime_settings() -> None:
     if len(settings.access_key_hmac_secret.encode("utf-8")) < 32:
         raise ValueError("SCHOLIGHT_ACCESS_KEY_HMAC_SECRET must contain at least 32 UTF-8 bytes")
     if len(settings.mcp_delegation_jwt_secret.encode("utf-8")) < 32:
-        raise ValueError(
-            "SCHOLIGHT_MCP_DELEGATION_JWT_SECRET must contain at least 32 UTF-8 bytes"
-        )
+        raise ValueError("SCHOLIGHT_MCP_DELEGATION_JWT_SECRET must contain at least 32 UTF-8 bytes")
     if settings.proxy_headers and settings.forwarded_allow_ips.strip() == "*":
         raise ValueError(
             "SCHOLIGHT_FORWARDED_ALLOW_IPS must not be '*' when proxy headers are enabled"
