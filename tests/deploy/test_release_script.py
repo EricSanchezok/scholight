@@ -48,6 +48,8 @@ def deployment_environment(tmp_path: Path) -> dict[str, str]:
         "#!/usr/bin/env bash\n"
         'printf \'docker %s\\n\' "$*" >>"${FAKE_COMMAND_LOG}"\n'
         "if [[ \"$*\" == 'login --username AWS --password-stdin '* ]]; then cat >/dev/null; fi\n"
+        "if [[ \"$*\" == *' config --quiet' && "
+        "${FAKE_CONFIG_FAIL:-0} == 1 ]]; then exit 41; fi\n"
         "if [[ \"$*\" == *'--profile migrate run --rm migrate'* && "
         "${FAKE_MIGRATE_FAIL:-0} == 1 ]]; then exit 42; fi\n",
     )
@@ -160,6 +162,12 @@ def test_release_scripts_do_not_execute_runtime_env_or_prune_images() -> None:
     assert "docker image prune" not in scripts
 
 
+def test_release_exit_trap_does_not_reference_function_local_candidate() -> None:
+    script = SCRIPT.read_text(encoding="utf-8")
+
+    assert """trap 'rm -f "${candidate}"' EXIT""" not in script
+
+
 def test_release_refuses_new_operation_when_transition_needs_reconciliation(tmp_path: Path) -> None:
     env = deployment_environment(tmp_path)
     state = Path(env["SCHOLIGHT_STATE_DIR"])
@@ -220,6 +228,16 @@ def test_migration_failure_does_not_activate_candidate(tmp_path: Path) -> None:
 
     commands = Path(env["FAKE_COMMAND_LOG"]).read_text(encoding="utf-8")
     assert result.returncode != 0 and " up -d " not in commands
+
+
+def test_config_failure_cleans_candidate_without_unbound_trap_error(tmp_path: Path) -> None:
+    env = deployment_environment(tmp_path)
+    env["FAKE_CONFIG_FAIL"] = "1"
+
+    result = run_release(*deploy_arguments(), env=env)
+
+    candidates = list(Path(env["SCHOLIGHT_STATE_DIR"]).glob("candidate.*.env"))
+    assert result.returncode != 0 and "unbound variable" not in result.stderr and not candidates
 
 
 def test_successful_deploy_promotes_candidate_after_migration(tmp_path: Path) -> None:

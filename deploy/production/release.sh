@@ -12,6 +12,7 @@ PREVIOUS_ENV="${STATE_DIR}/previous.env"
 LOCK_FILE="${STATE_DIR}/deploy.lock"
 FAILED_DIR="${STATE_DIR}/failed"
 TRANSITION_ENV="${STATE_DIR}/transition.env"
+CANDIDATE_ENV=""
 
 fail() {
   printf 'Error: %s\n' "$*" >&2
@@ -156,6 +157,12 @@ clear_transition() {
   rm -f "${TRANSITION_ENV}"
 }
 
+cleanup_candidate() {
+  if [[ -n ${CANDIDATE_ENV} ]]; then
+    rm -f -- "${CANDIDATE_ENV}"
+  fi
+}
+
 write_manifest() {
   local destination=$1
   local package_digest=$2
@@ -246,7 +253,8 @@ deploy() {
   local candidate
   candidate=$(mktemp "${STATE_DIR}/candidate.XXXXXX.env")
   write_manifest "${candidate}" "${installed_package_sha}" "${release_sha}" "${backend_image}" "${frontend_image}"
-  trap 'rm -f "${candidate}"' EXIT
+  CANDIDATE_ENV=${candidate}
+  trap cleanup_candidate EXIT
 
   compose "${candidate}" config --quiet
   ecr_login "${backend_image}" "${frontend_image}"
@@ -281,6 +289,7 @@ deploy() {
     mv "${current_snapshot}" "${PREVIOUS_ENV}"
   fi
   mv "${candidate}" "${CURRENT_ENV}"
+  CANDIDATE_ENV=""
   clear_transition
   trap - EXIT
   printf 'Deployed Scholight release %s\n' "${release_sha}"
