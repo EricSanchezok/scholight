@@ -91,6 +91,7 @@ export function AdminOperationsPage() {
               description="Papers discovered and full-text ingestion completed by UTC day."
               primaryLabel="Discovered"
               secondaryLabel="Full text completed"
+              valueLabel="Papers"
               points={data.intake.map((point) => ({
                 day: point.day,
                 primary: point.discovered,

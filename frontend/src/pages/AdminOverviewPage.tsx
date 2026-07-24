@@ -95,6 +95,7 @@ export function AdminOverviewPage() {
               description="Signed-in and anonymous searches for the selected 30-day period."
               primaryLabel="Signed in"
               secondaryLabel="Anonymous"
+              valueLabel="Searches"
               points={data.daily.map((point) => ({
                 day: point.day,
                 primary: point.authenticated,

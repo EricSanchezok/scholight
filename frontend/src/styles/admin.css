@@ -91,13 +91,51 @@
   font-size: 12px;
 }
 .adminChart {
-  min-height: 270px;
+  min-height: 366px;
   border-bottom: 1px solid var(--line-soft);
 }
 .adminChart svg {
   display: block;
   width: 100%;
-  min-height: 270px;
+  min-height: 330px;
+}
+.adminChartUnit,
+.adminChartValue {
+  fill: var(--muted-soft);
+  font-family: var(--font-ui);
+}
+.adminChartUnit {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.adminChartValue {
+  font-size: 9px;
+  font-weight: 600;
+}
+.adminChartActiveBand {
+  fill: var(--surface-muted);
+  opacity: 0.62;
+}
+.adminChartHitArea {
+  cursor: crosshair;
+  fill: transparent;
+}
+.adminChartHitArea:focus {
+  outline: none;
+  fill: transparent;
+  stroke: var(--focus);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+.adminChartReadout {
+  min-height: 21px;
+  margin: 0;
+  padding: 0 18px 10px 64px;
+  color: var(--ink-soft);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
 .adminBreakdown {
   margin-top: 42px;
