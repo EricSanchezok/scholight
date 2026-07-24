@@ -60,6 +60,7 @@ async def test_migrations_apply_once_and_replay_without_schema_changes(
         (1, "scholight_baseline"),
         (2, "ingestion_queue"),
         (3, "admin_metrics"),
+        (4, "allow_delegated_usage_actor"),
     ]
 
 
