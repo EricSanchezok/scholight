@@ -14,7 +14,11 @@ vi.mock("../api/domain", () => ({
     latency: vi.fn(),
     records: vi.fn(),
   },
-  adminApi: { auditEvents: vi.fn() },
+  adminApi: {
+    auditEvents: vi.fn(),
+    analyticsOverview: vi.fn(),
+    operationsOverview: vi.fn(),
+  },
 }));
 
 describe("private destination prefetch", () => {
@@ -31,6 +35,8 @@ describe("private destination prefetch", () => {
     vi.mocked(accountApi.profile).mockResolvedValue({} as never);
     vi.mocked(accountApi.sessions).mockResolvedValue([]);
     vi.mocked(adminApi.auditEvents).mockResolvedValue([]);
+    vi.mocked(adminApi.analyticsOverview).mockResolvedValue({} as never);
+    vi.mocked(adminApi.operationsOverview).mockResolvedValue({} as never);
   });
 
   it("warms every independent usage section", async () => {
@@ -59,5 +65,13 @@ describe("private destination prefetch", () => {
     await prefetchPrivateDestination("/admin/quotas", client);
 
     expect(adminApi.auditEvents).toHaveBeenCalledWith(20);
+  });
+
+  it("prefetches each read-only administration view", async () => {
+    await prefetchPrivateDestination("/admin", client);
+    await prefetchPrivateDestination("/admin/operations", client);
+
+    expect(adminApi.analyticsOverview).toHaveBeenCalledWith(30);
+    expect(adminApi.operationsOverview).toHaveBeenCalledWith(7, 20);
   });
 });

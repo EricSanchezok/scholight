@@ -1,3 +1,5 @@
+import type { AdminCapabilities } from "../api/types";
+
 export const routes = {
   home: { path: "/", segment: "" },
   search: { path: "/search", segment: "search" },
@@ -12,16 +14,32 @@ export const routes = {
   accessKeys: { path: "/access-keys", segment: "access-keys" },
   history: { path: "/history", segment: "history" },
   account: { path: "/account", segment: "account" },
+  adminOverview: { path: "/admin", segment: "admin" },
   quotaAdmin: { path: "/admin/quotas", segment: "admin/quotas" },
+  adminOperations: { path: "/admin/operations", segment: "admin/operations" },
   notFound: { path: "*", segment: "*" },
 } as const;
 
 export const accountRoutes = [
-  { id: "usage", adminOnly: false, ...routes.usage },
-  { id: "accessKeys", adminOnly: false, ...routes.accessKeys },
-  { id: "history", adminOnly: false, ...routes.history },
-  { id: "account", adminOnly: false, ...routes.account },
-  { id: "quotaAdmin", adminOnly: true, ...routes.quotaAdmin },
+  { id: "usage", ...routes.usage },
+  { id: "accessKeys", ...routes.accessKeys },
+  { id: "history", ...routes.history },
+  { id: "account", ...routes.account },
+  {
+    id: "adminOverview",
+    requiredCapability: "can_view_analytics",
+    ...routes.adminOverview,
+  },
+  {
+    id: "quotaAdmin",
+    requiredCapability: "can_manage_quotas",
+    ...routes.quotaAdmin,
+  },
+  {
+    id: "adminOperations",
+    requiredCapability: "can_view_operations",
+    ...routes.adminOperations,
+  },
 ] as const;
 
 export type AccountRoute = (typeof accountRoutes)[number];
@@ -32,8 +50,16 @@ export function accountRouteFor(pathname: string): AccountRoute | undefined {
   return accountRoutes.find((route) => route.path === pathname);
 }
 
-export function visibleAccountRoutes(canManageQuotas: boolean): readonly AccountRoute[] {
-  return accountRoutes.filter((route) => !route.adminOnly || canManageQuotas);
+export const emptyAdminCapabilities: AdminCapabilities = {
+  can_manage_quotas: false,
+  can_view_analytics: false,
+  can_view_operations: false,
+};
+
+export function visibleAccountRoutes(capabilities: AdminCapabilities): readonly AccountRoute[] {
+  return accountRoutes.filter(
+    (route) => !("requiredCapability" in route) || capabilities[route.requiredCapability],
+  );
 }
 
 export function withQuery(

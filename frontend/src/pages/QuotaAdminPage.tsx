@@ -114,6 +114,7 @@ export function QuotaAdminPage() {
   return (
     <main className={`${styles.ledgerPage} ${styles.adminPage}`}>
       <header className={styles.ledgerHeading}>
+        <span className={styles.eyebrow}>Administration</span>
         <h1>Quota administration</h1>
         <p>Adjust one known user’s daily Scholight allowance and keep every change auditable.</p>
       </header>

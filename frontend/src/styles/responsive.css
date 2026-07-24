@@ -391,6 +391,83 @@
     grid-template-columns: 1fr;
     gap: 7px;
   }
+  .adminSummaryLedger,
+  .adminOperationsSummary,
+  .adminOverviewSkeleton {
+    grid-template-columns: 1fr;
+  }
+  .adminSummaryLedger > div,
+  .adminOperationsSummary > div {
+    min-height: 0;
+    padding: 20px 0;
+    border-top: 1px solid var(--line-soft);
+    border-left: 0;
+  }
+  .adminSummaryLedger > div:first-child,
+  .adminOperationsSummary > div:first-child {
+    border-top: 0;
+  }
+  .adminSummaryLedger > div:nth-child(4) {
+    order: 2;
+  }
+  .adminSummaryLedger > div:nth-child(2) {
+    order: 3;
+  }
+  .adminSummaryLedger > div:nth-child(3) {
+    order: 4;
+  }
+  .adminOverviewSkeleton > span {
+    min-height: 110px;
+    border-top: 1px solid var(--line-soft);
+    border-left: 0;
+  }
+  .adminOverviewSkeleton > span:first-child {
+    border-top: 0;
+  }
+  .adminChartSection {
+    display: none;
+  }
+  .adminBreakdown {
+    margin-top: 48px;
+  }
+  .adminBreakdown h2 {
+    max-width: none;
+  }
+  .adminBreakdownGrid {
+    grid-template-columns: 1fr;
+  }
+  .adminBreakdownGrid > div,
+  .adminBreakdownGrid > div:nth-child(odd),
+  .adminBreakdownGrid > div:nth-child(even) {
+    padding: 17px 0;
+    border-top: 1px solid var(--line-soft);
+    grid-template-columns: 1fr;
+    gap: 5px;
+  }
+  .adminBreakdownGrid > div:first-child {
+    border-top: 0;
+  }
+  .adminQueue,
+  .adminIssues {
+    margin-top: 48px;
+  }
+  .adminQueueLedger > div {
+    grid-template-columns: 1fr auto;
+    gap: 5px 18px;
+  }
+  .adminQueueLedger > div > span {
+    grid-column: 1 / -1;
+  }
+  .adminQueueLedger small {
+    text-align: right;
+  }
+  .adminIssueRow {
+    grid-template-columns: 1fr;
+    gap: 9px;
+  }
+  .adminIssueRow time {
+    text-align: left;
+  }
 }
 
 @media (min-width: 768px) and (max-width: 1199px) {

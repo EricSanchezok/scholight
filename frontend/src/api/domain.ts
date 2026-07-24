@@ -18,6 +18,8 @@ import type {
   UsageSummary,
   UsageVolume,
   AdminCapabilities,
+  AdminAnalytics,
+  AdminOperations,
   AdminUserLookup,
   AdminAuditEvent,
   QuotaOverrideRequest,
@@ -193,6 +195,23 @@ export const adminApi = {
   capabilities: () =>
     unwrap<AdminCapabilities>(
       withAuthRetry(() => apiClient.GET("/admin/capabilities"), "protected"),
+    ),
+  analyticsOverview: (days = 30) =>
+    unwrap<AdminAnalytics>(
+      withAuthRetry(
+        () => apiClient.GET("/admin/analytics/overview", { params: { query: { days } } }),
+        "protected",
+      ),
+    ),
+  operationsOverview: (days = 7, issueLimit = 20) =>
+    unwrap<AdminOperations>(
+      withAuthRetry(
+        () =>
+          apiClient.GET("/admin/operations/overview", {
+            params: { query: { days, issue_limit: issueLimit } },
+          }),
+        "protected",
+      ),
     ),
   lookupUser: (email: string) =>
     unwrap<AdminUserLookup>(

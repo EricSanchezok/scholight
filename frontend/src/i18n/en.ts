@@ -17,7 +17,9 @@ export const en = {
     accessKeys: "Access Keys",
     history: "Search history",
     account: "Account settings",
+    adminOverview: "Administration overview",
     quotaAdmin: "Quota administration",
+    adminOperations: "Operations",
   },
   common: {
     retry: "Retry",
@@ -68,7 +70,9 @@ export const en = {
     usage: "Usage & quota — Scholight",
     accessKeys: "Access keys — Scholight",
     account: "Account settings — Scholight",
+    adminOverview: "Administration overview — Scholight",
     quotaAdmin: "Quota administration — Scholight",
+    adminOperations: "Operations — Scholight",
   },
 } as const;
 

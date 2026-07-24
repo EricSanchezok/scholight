@@ -18,4 +18,7 @@ export const queryKeys = {
   usageRecords: [...privateRoot, "usage", "records"] as const,
   sessions: [...privateRoot, "sessions"] as const,
   adminAudit: [...privateRoot, "admin", "audit"] as const,
+  adminAnalytics: (days: number) => [...privateRoot, "admin", "analytics", days] as const,
+  adminOperations: (days: number, issueLimit: number) =>
+    [...privateRoot, "admin", "operations", days, issueLimit] as const,
 };

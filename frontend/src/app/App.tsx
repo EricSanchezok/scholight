@@ -3,7 +3,7 @@ import { lazy } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 
 import { AuthProvider } from "../auth/AuthProvider";
-import { AnonymousOnlyRoute, ProtectedRoute, QuotaAdminRoute } from "../auth/routes";
+import { AdminRoute, AnonymousOnlyRoute, ProtectedRoute } from "../auth/routes";
 import { SiteHeader } from "../components/SiteHeader";
 import {
   CheckEmailPage,
@@ -27,7 +27,9 @@ const UsagePage = lazy(privateRouteLoaders[routes.usage.path]);
 const AccessKeysPage = lazy(privateRouteLoaders[routes.accessKeys.path]);
 const HistoryPage = lazy(privateRouteLoaders[routes.history.path]);
 const AccountPage = lazy(privateRouteLoaders[routes.account.path]);
+const AdminOverviewPage = lazy(privateRouteLoaders[routes.adminOverview.path]);
 const QuotaAdminPage = lazy(privateRouteLoaders[routes.quotaAdmin.path]);
+const AdminOperationsPage = lazy(privateRouteLoaders[routes.adminOperations.path]);
 
 function SiteLayout() {
   return (
@@ -54,8 +56,17 @@ export function App() {
                   <Route path={routes.usage.segment} element={<UsagePage />} />
                   <Route path={routes.accessKeys.segment} element={<AccessKeysPage />} />
                   <Route path={routes.account.segment} element={<AccountPage />} />
-                  <Route element={<QuotaAdminRoute />}>
+                  <Route element={<AdminRoute capability="can_view_analytics" />}>
+                    <Route path={routes.adminOverview.segment} element={<AdminOverviewPage />} />
+                  </Route>
+                  <Route element={<AdminRoute capability="can_manage_quotas" />}>
                     <Route path={routes.quotaAdmin.segment} element={<QuotaAdminPage />} />
+                  </Route>
+                  <Route element={<AdminRoute capability="can_view_operations" />}>
+                    <Route
+                      path={routes.adminOperations.segment}
+                      element={<AdminOperationsPage />}
+                    />
                   </Route>
                 </Route>
                 <Route path={routes.notFound.segment} element={<NotFoundPage />} />

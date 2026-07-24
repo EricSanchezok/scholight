@@ -3,6 +3,7 @@ import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { LoadingScreen } from "../components/LoadingScreen";
 import { RouteSkeleton } from "../components/EditorialSkeleton";
 import { routes, withQuery } from "../app/routes";
+import type { AdminCapabilities } from "../api/types";
 import { useAuth } from "./context";
 
 export function ProtectedRoute() {
@@ -22,7 +23,7 @@ export function AnonymousOnlyRoute() {
   return status === "authenticated" ? <Navigate to={routes.home.path} replace /> : <Outlet />;
 }
 
-export function QuotaAdminRoute() {
-  const { canManageQuotas } = useAuth();
-  return canManageQuotas ? <Outlet /> : <Navigate to={routes.account.path} replace />;
+export function AdminRoute({ capability }: { capability: keyof AdminCapabilities }) {
+  const { adminCapabilities } = useAuth();
+  return adminCapabilities[capability] ? <Outlet /> : <Navigate to={routes.account.path} replace />;
 }

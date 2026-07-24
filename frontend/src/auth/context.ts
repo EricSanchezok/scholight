@@ -1,13 +1,13 @@
 import { createContext, useContext } from "react";
 
-import type { LoginRequest, UserProfile } from "../api/types";
+import type { AdminCapabilities, LoginRequest, UserProfile } from "../api/types";
 
 export type AuthStatus = "checking" | "anonymous" | "authenticated";
 
 export interface AuthContextValue {
   status: AuthStatus;
   user: UserProfile | null;
-  canManageQuotas: boolean;
+  adminCapabilities: AdminCapabilities;
   login: (credentials: LoginRequest) => Promise<void>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<UserProfile>;

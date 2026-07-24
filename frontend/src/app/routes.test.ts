@@ -16,13 +16,20 @@ describe("route registry", () => {
       "accessKeys",
       "history",
       "account",
+      "adminOverview",
       "quotaAdmin",
+      "adminOperations",
     ]);
   });
 
-  it("only exposes quota administration to capable users", () => {
-    expect(visibleAccountRoutes(false).map((route) => route.id)).not.toContain("quotaAdmin");
-    expect(visibleAccountRoutes(true).map((route) => route.id)).toContain("quotaAdmin");
+  it("only exposes each administration destination with its capability", () => {
+    expect(
+      visibleAccountRoutes({
+        can_manage_quotas: false,
+        can_view_analytics: true,
+        can_view_operations: false,
+      }).map((route) => route.id),
+    ).toEqual(["usage", "accessKeys", "history", "account", "adminOverview"]);
   });
 
   it("resolves an account route from a pathname", () => {

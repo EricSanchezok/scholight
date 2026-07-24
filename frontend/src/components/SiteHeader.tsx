@@ -13,7 +13,7 @@ import { CloseIcon, MenuIcon } from "./icons";
 
 export function SiteHeader() {
   const { messages } = useI18n();
-  const { status, canManageQuotas, logout } = useAuth();
+  const { status, adminCapabilities, logout } = useAuth();
   const [open, setOpen] = useState(false);
   const location = useLocation();
 
@@ -78,7 +78,7 @@ export function SiteHeader() {
             {nav}
             {status === "authenticated" ? (
               <>
-                {visibleAccountRoutes(canManageQuotas).map((route) => (
+                {visibleAccountRoutes(adminCapabilities).map((route) => (
                   <Link to={route.path} onClick={() => setOpen(false)} key={route.id}>
                     {messages.navigation[route.id]}
                   </Link>

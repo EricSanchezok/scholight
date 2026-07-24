@@ -1,11 +1,17 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { ComponentType } from "react";
 
+import type { AdminCapabilities } from "../api/types";
 import { accountApi, accessKeyApi, adminApi, historyApi, usageApi } from "../api/domain";
 import { productConfig } from "../config/product";
 import { queryKeys } from "./queryKeys";
 import { PRIVATE_STALE_TIME } from "./queryClient";
-import { routes, visibleAccountRoutes, type AccountDestination } from "./routes";
+import {
+  emptyAdminCapabilities,
+  routes,
+  visibleAccountRoutes,
+  type AccountDestination,
+} from "./routes";
 
 type RouteModule = { default: ComponentType };
 
@@ -18,12 +24,22 @@ export const privateRouteLoaders: Record<AccountDestination, () => Promise<Route
     import("../pages/HistoryPage").then((module) => ({ default: module.HistoryPage })),
   [routes.account.path]: () =>
     import("../pages/AccountPage").then((module) => ({ default: module.AccountPage })),
+  [routes.adminOverview.path]: () =>
+    import("../pages/AdminOverviewPage").then((module) => ({
+      default: module.AdminOverviewPage,
+    })),
   [routes.quotaAdmin.path]: () =>
     import("../pages/QuotaAdminPage").then((module) => ({ default: module.QuotaAdminPage })),
+  [routes.adminOperations.path]: () =>
+    import("../pages/AdminOperationsPage").then((module) => ({
+      default: module.AdminOperationsPage,
+    })),
 };
 
-export function preloadPrivateRoutes(canManageQuotas = false): void {
-  visibleAccountRoutes(canManageQuotas).forEach((route) => {
+export function preloadPrivateRoutes(
+  capabilities: AdminCapabilities = emptyAdminCapabilities,
+): void {
+  visibleAccountRoutes(capabilities).forEach((route) => {
     const loader = privateRouteLoaders[route.path];
     void loader().catch(() => undefined);
   });
@@ -83,6 +99,22 @@ export async function prefetchPrivateDestination(
       ...common,
       queryKey: queryKeys.adminAudit,
       queryFn: () => adminApi.auditEvents(20),
+    });
+    return;
+  }
+  if (destination === routes.adminOverview.path) {
+    await queryClient.prefetchQuery({
+      ...common,
+      queryKey: queryKeys.adminAnalytics(30),
+      queryFn: () => adminApi.analyticsOverview(30),
+    });
+    return;
+  }
+  if (destination === routes.adminOperations.path) {
+    await queryClient.prefetchQuery({
+      ...common,
+      queryKey: queryKeys.adminOperations(7, 20),
+      queryFn: () => adminApi.operationsOverview(7, 20),
     });
     return;
   }

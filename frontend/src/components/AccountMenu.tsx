@@ -22,7 +22,7 @@ import { ChevronDownIcon } from "./icons";
 
 export function AccountMenu() {
   const { messages } = useI18n();
-  const { user, canManageQuotas, logout } = useAuth();
+  const { user, adminCapabilities, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
@@ -35,7 +35,15 @@ export function AccountMenu() {
     [routes.accessKeys.path]: { label: messages.navigation.accessKeys, icon: accessKeysIcon },
     [routes.history.path]: { label: messages.navigation.history, icon: historyIcon },
     [routes.account.path]: { label: messages.navigation.account, icon: accountIcon },
+    [routes.adminOverview.path]: {
+      label: messages.navigation.adminOverview,
+      icon: usageIcon,
+    },
     [routes.quotaAdmin.path]: { label: messages.navigation.quotaAdmin, icon: usageIcon },
+    [routes.adminOperations.path]: {
+      label: messages.navigation.adminOperations,
+      icon: usageIcon,
+    },
   };
   const clearIntent = () => window.clearTimeout(intentTimer.current);
   const warmDestination = (destination: AccountDestination, immediate = false) => {
@@ -51,7 +59,7 @@ export function AccountMenu() {
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
-        if (next) preloadPrivateRoutes(canManageQuotas);
+        if (next) preloadPrivateRoutes(adminCapabilities);
         else clearIntent();
       }}
     >
@@ -75,7 +83,7 @@ export function AccountMenu() {
                   <span>{user.email}</span>
                 </div>
                 <DropdownMenu.Separator className={styles.menuSeparator} />
-                {visibleAccountRoutes(canManageQuotas).map((destination) => {
+                {visibleAccountRoutes(adminCapabilities).map((destination) => {
                   const details = destinationDetails[destination.path];
                   return (
                     <DropdownMenu.Item asChild className={styles.menuItem} key={destination.path}>
