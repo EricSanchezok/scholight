@@ -108,6 +108,7 @@ def test_authenticated_usage_event_fields(
     with patch("scholight.api.search_execution.schedule_usage_event") as schedule:
         _schedule_usage(
             actor,
+            transport="mcp",
             request_id="request-1",
             strength="thorough",
             outcome=outcome,  # type: ignore[arg-type]
@@ -119,7 +120,11 @@ def test_authenticated_usage_event_fields(
         )
 
     event = schedule.call_args.args[0]
-    assert (event.actor_type, event.access_key_id) == ("access_key", key_id)
+    assert (event.actor_type, event.access_key_id, event.transport) == (
+        "access_key",
+        key_id,
+        "mcp",
+    )
     assert (event.outcome, event.quota_units, event.result_count) == (
         outcome,
         quota_units,
@@ -132,6 +137,7 @@ def test_anonymous_or_rejected_request_schedules_no_usage_event() -> None:
     with patch("scholight.api.search_execution.schedule_usage_event") as schedule:
         _schedule_usage(
             None,
+            transport="rest",
             request_id="request-1",
             strength="standard",
             outcome="failed",

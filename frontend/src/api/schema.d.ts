@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+  "/admin/analytics/overview": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Analytics Overview */
+    get: operations["analytics_overview_admin_analytics_overview_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/admin/audit-events": {
     parameters: {
       query?: never;
@@ -30,6 +47,23 @@ export interface paths {
     };
     /** Capabilities */
     get: operations["capabilities_admin_capabilities_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/admin/operations/overview": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Operations Overview */
+    get: operations["operations_overview_admin_operations_overview_get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -579,6 +613,39 @@ export interface components {
        */
       token_type: string;
     };
+    /** AdminAccessKeyMetrics */
+    AdminAccessKeyMetrics: {
+      /** Active */
+      active: number;
+      /** Total */
+      total: number;
+      /** Used In Period */
+      used_in_period: number;
+    };
+    /** AdminAnalyticsResponse */
+    AdminAnalyticsResponse: {
+      access_keys: components["schemas"]["AdminAccessKeyMetrics"];
+      /** Daily */
+      daily: components["schemas"]["AdminDailyAnalyticsPoint"][];
+      /**
+       * From
+       * Format: date-time
+       */
+      from: string;
+      profiles: components["schemas"]["AdminProfileMetrics"];
+      searches: components["schemas"]["AdminSearchMetrics"];
+      /**
+       * Timezone
+       * @default UTC
+       * @constant
+       */
+      timezone: "UTC";
+      /**
+       * To
+       * Format: date-time
+       */
+      to: string;
+    };
     /** AdminAuditEventResponse */
     AdminAuditEventResponse: {
       /** Action */
@@ -617,6 +684,127 @@ export interface components {
     AdminCapabilitiesResponse: {
       /** Can Manage Quotas */
       can_manage_quotas: boolean;
+      /** Can View Analytics */
+      can_view_analytics: boolean;
+      /** Can View Operations */
+      can_view_operations: boolean;
+    };
+    /** AdminDailyAnalyticsPoint */
+    AdminDailyAnalyticsPoint: {
+      /** Anonymous */
+      anonymous: number;
+      /** Authenticated */
+      authenticated: number;
+      /** Authenticated Mcp */
+      authenticated_mcp: number;
+      /** Authenticated Rest */
+      authenticated_rest: number;
+      /**
+       * Day
+       * Format: date
+       */
+      day: string;
+      /** Standard */
+      standard: number;
+      /** Thorough */
+      thorough: number;
+      /** Total */
+      total: number;
+    };
+    /** AdminIngestionIssue */
+    AdminIngestionIssue: {
+      /** Arxiv Id */
+      arxiv_id: string;
+      /** Attempt Count */
+      attempt_count: number;
+      /** Last Error Code */
+      last_error_code: string | null;
+      /** Last Error Message */
+      last_error_message: string | null;
+      /** Max Attempts */
+      max_attempts: number;
+      /**
+       * Next Attempt At
+       * Format: date-time
+       */
+      next_attempt_at: string;
+      /**
+       * Source
+       * @enum {string}
+       */
+      source: "new" | "revision" | "reconciliation" | "backfill" | "manual";
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: "retry" | "dead";
+      /** Target Version */
+      target_version: number;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+    };
+    /** AdminIntakePoint */
+    AdminIntakePoint: {
+      /**
+       * Day
+       * Format: date
+       */
+      day: string;
+      /** Discovered */
+      discovered: number;
+      /** Full Text Completed */
+      full_text_completed: number;
+    };
+    /** AdminOperationsResponse */
+    AdminOperationsResponse: {
+      /**
+       * Generated At
+       * Format: date-time
+       */
+      generated_at: string;
+      /** Intake */
+      intake: components["schemas"]["AdminIntakePoint"][];
+      queue: components["schemas"]["AdminQueueState"];
+      /** Recent Issues */
+      recent_issues: components["schemas"]["AdminIngestionIssue"][];
+      sync: components["schemas"]["AdminSyncState"] | null;
+      /**
+       * Timezone
+       * @default UTC
+       * @constant
+       */
+      timezone: "UTC";
+    };
+    /** AdminProfileMetrics */
+    AdminProfileMetrics: {
+      /** Active */
+      active: number;
+      /** Admins */
+      admins: number;
+      /** Blocked */
+      blocked: number;
+      /** Created In Period */
+      created_in_period: number;
+      /** Total */
+      total: number;
+    };
+    /** AdminQueueState */
+    AdminQueueState: {
+      /** Dead */
+      dead: number;
+      /** Oldest Waiting At */
+      oldest_waiting_at: string | null;
+      /** Pending */
+      pending: number;
+      /** Retry */
+      retry: number;
+      /** Running */
+      running: number;
+      /** Succeeded */
+      succeeded: number;
     };
     /** AdminQuotaResponse */
     AdminQuotaResponse: {
@@ -635,6 +823,46 @@ export interface components {
     AdminQuotasResponse: {
       standard: components["schemas"]["AdminQuotaResponse"];
       thorough: components["schemas"]["AdminQuotaResponse"];
+    };
+    /** AdminSearchMetrics */
+    AdminSearchMetrics: {
+      /** Anonymous */
+      anonymous: number;
+      /** Authenticated */
+      authenticated: number;
+      /** Authenticated Degraded */
+      authenticated_degraded: number;
+      /** Authenticated Failed */
+      authenticated_failed: number;
+      /** Authenticated Mcp */
+      authenticated_mcp: number;
+      /** Authenticated P50 Response Ms */
+      authenticated_p50_response_ms: number | null;
+      /** Authenticated P95 Response Ms */
+      authenticated_p95_response_ms: number | null;
+      /** Authenticated Rest */
+      authenticated_rest: number;
+      /** Authenticated Success */
+      authenticated_success: number;
+      /** Standard */
+      standard: number;
+      /** Thorough */
+      thorough: number;
+      /** Total */
+      total: number;
+    };
+    /** AdminSyncState */
+    AdminSyncState: {
+      /** Last Error Code */
+      last_error_code: string | null;
+      /** Last Error Message */
+      last_error_message: string | null;
+      /** Last Started At */
+      last_started_at: string | null;
+      /** Last Succeeded At */
+      last_succeeded_at: string | null;
+      /** Last Successful Date */
+      last_successful_date: string | null;
     };
     /** AdminUserLookupResponse */
     AdminUserLookupResponse: {
@@ -1200,6 +1428,37 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+  analytics_overview_admin_analytics_overview_get: {
+    parameters: {
+      query?: {
+        days?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AdminAnalyticsResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
   audit_events_admin_audit_events_get: {
     parameters: {
       query?: {
@@ -1247,6 +1506,38 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["AdminCapabilitiesResponse"];
+        };
+      };
+    };
+  };
+  operations_overview_admin_operations_overview_get: {
+    parameters: {
+      query?: {
+        days?: number;
+        issue_limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AdminOperationsResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
         };
       };
     };

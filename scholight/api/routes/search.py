@@ -51,6 +51,7 @@ async def search(
                 actor=actor,
                 client_ip=request.client.host if request.client is not None else None,
                 request_id=request_id,
+                transport="rest",
             ),
         )
     except PublicSearchError as exc:

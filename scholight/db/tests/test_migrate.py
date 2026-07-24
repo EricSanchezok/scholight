@@ -210,3 +210,11 @@ def test_baseline_only_creates_product_tables_in_scholight_schema() -> None:
     assert "ip_address" not in usage_table.lower()
     assert "CREATE TABLE public." not in normalized
     assert "ALTER TABLE auth." not in normalized
+
+
+def test_admin_metrics_migration_is_product_scoped_and_expand_only() -> None:
+    migration = Path(__file__).parents[3] / "migrations/003_admin_metrics.sql"
+
+    sql = " ".join(migration.read_text(encoding="utf-8").split()).lower()
+
+    assert "scholight." in sql and "auth." not in sql and "drop " not in sql

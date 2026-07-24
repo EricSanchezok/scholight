@@ -10,7 +10,7 @@ from cloud_auth.models.user import UserRecord
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, EmailStr, Field
 
-from scholight.api.deps import get_current_user, get_quota_admin
+from scholight.api.deps import get_current_user, get_scholight_admin
 from scholight.config import settings
 from scholight.db.client import DBError
 from scholight.db.queries_admin import (
@@ -20,7 +20,7 @@ from scholight.db.queries_admin import (
     TargetUserInactiveError,
     find_admin_target_by_email,
     get_user_quota_overrides,
-    is_quota_admin,
+    is_scholight_admin,
     list_admin_audit_events,
     update_user_quota_overrides,
 )
@@ -31,6 +31,8 @@ router = APIRouter()
 
 class AdminCapabilitiesResponse(BaseModel):
     can_manage_quotas: bool
+    can_view_operations: bool
+    can_view_analytics: bool
 
 
 class AdminUserResponse(BaseModel):
@@ -129,7 +131,7 @@ async def capabilities(
     current_user: UserRecord = Depends(get_current_user),
 ) -> AdminCapabilitiesResponse:
     try:
-        permitted = await is_quota_admin(current_user.id)
+        permitted = await is_scholight_admin(current_user.id)
     except DBError as exc:
         raise _error(
             503,
@@ -137,13 +139,17 @@ async def capabilities(
             "Administration service is temporarily unavailable.",
             retryable=True,
         ) from exc
-    return AdminCapabilitiesResponse(can_manage_quotas=permitted)
+    return AdminCapabilitiesResponse(
+        can_manage_quotas=permitted,
+        can_view_operations=permitted,
+        can_view_analytics=permitted,
+    )
 
 
 @router.get("/users/lookup", response_model=AdminUserLookupResponse)
 async def lookup_user(
     email: Annotated[EmailStr, Query()],
-    _admin: UserRecord = Depends(get_quota_admin),
+    _admin: UserRecord = Depends(get_scholight_admin),
 ) -> AdminUserLookupResponse:
     try:
         target = await find_admin_target_by_email(str(email))
@@ -168,7 +174,7 @@ async def lookup_user(
 async def update_quota_overrides(
     user_id: int,
     body: QuotaOverrideRequest,
-    admin: UserRecord = Depends(get_quota_admin),
+    admin: UserRecord = Depends(get_scholight_admin),
 ) -> QuotaOverrideUpdateResponse:
     try:
         changed = await update_user_quota_overrides(
@@ -196,7 +202,7 @@ async def update_quota_overrides(
 @router.get("/audit-events", response_model=list[AdminAuditEventResponse])
 async def audit_events(
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
-    _admin: UserRecord = Depends(get_quota_admin),
+    _admin: UserRecord = Depends(get_scholight_admin),
 ) -> list[AdminAuditEventResponse]:
     try:
         events = await list_admin_audit_events(limit)

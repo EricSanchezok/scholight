@@ -51,7 +51,12 @@ async def test_execute_public_search_uses_invocation_client_ip() -> None:
     ):
         response = await execute_public_search(
             PublicSearchRequest(query="retrieval"),
-            SearchInvocation(actor=None, client_ip="192.0.2.20", request_id="request-1"),
+            SearchInvocation(
+                actor=None,
+                client_ip="192.0.2.20",
+                request_id="request-1",
+                transport="rest",
+            ),
         )
 
     assert response.result_count == 0

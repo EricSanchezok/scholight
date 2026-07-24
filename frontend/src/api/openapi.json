@@ -102,6 +102,67 @@
         "title": "AccessTokenResponse",
         "type": "object"
       },
+      "AdminAccessKeyMetrics": {
+        "properties": {
+          "active": {
+            "minimum": 0.0,
+            "title": "Active",
+            "type": "integer"
+          },
+          "total": {
+            "minimum": 0.0,
+            "title": "Total",
+            "type": "integer"
+          },
+          "used_in_period": {
+            "minimum": 0.0,
+            "title": "Used In Period",
+            "type": "integer"
+          }
+        },
+        "required": ["total", "active", "used_in_period"],
+        "title": "AdminAccessKeyMetrics",
+        "type": "object"
+      },
+      "AdminAnalyticsResponse": {
+        "properties": {
+          "access_keys": {
+            "$ref": "#/components/schemas/AdminAccessKeyMetrics"
+          },
+          "daily": {
+            "items": {
+              "$ref": "#/components/schemas/AdminDailyAnalyticsPoint"
+            },
+            "title": "Daily",
+            "type": "array"
+          },
+          "from": {
+            "format": "date-time",
+            "title": "From",
+            "type": "string"
+          },
+          "profiles": {
+            "$ref": "#/components/schemas/AdminProfileMetrics"
+          },
+          "searches": {
+            "$ref": "#/components/schemas/AdminSearchMetrics"
+          },
+          "timezone": {
+            "const": "UTC",
+            "default": "UTC",
+            "title": "Timezone",
+            "type": "string"
+          },
+          "to": {
+            "format": "date-time",
+            "title": "To",
+            "type": "string"
+          }
+        },
+        "required": ["from", "to", "profiles", "searches", "access_keys", "daily"],
+        "title": "AdminAnalyticsResponse",
+        "type": "object"
+      },
       "AdminAuditEventResponse": {
         "properties": {
           "action": {
@@ -172,10 +233,296 @@
           "can_manage_quotas": {
             "title": "Can Manage Quotas",
             "type": "boolean"
+          },
+          "can_view_analytics": {
+            "title": "Can View Analytics",
+            "type": "boolean"
+          },
+          "can_view_operations": {
+            "title": "Can View Operations",
+            "type": "boolean"
           }
         },
-        "required": ["can_manage_quotas"],
+        "required": ["can_manage_quotas", "can_view_operations", "can_view_analytics"],
         "title": "AdminCapabilitiesResponse",
+        "type": "object"
+      },
+      "AdminDailyAnalyticsPoint": {
+        "properties": {
+          "anonymous": {
+            "minimum": 0.0,
+            "title": "Anonymous",
+            "type": "integer"
+          },
+          "authenticated": {
+            "minimum": 0.0,
+            "title": "Authenticated",
+            "type": "integer"
+          },
+          "authenticated_mcp": {
+            "minimum": 0.0,
+            "title": "Authenticated Mcp",
+            "type": "integer"
+          },
+          "authenticated_rest": {
+            "minimum": 0.0,
+            "title": "Authenticated Rest",
+            "type": "integer"
+          },
+          "day": {
+            "format": "date",
+            "title": "Day",
+            "type": "string"
+          },
+          "standard": {
+            "minimum": 0.0,
+            "title": "Standard",
+            "type": "integer"
+          },
+          "thorough": {
+            "minimum": 0.0,
+            "title": "Thorough",
+            "type": "integer"
+          },
+          "total": {
+            "minimum": 0.0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "day",
+          "total",
+          "authenticated",
+          "anonymous",
+          "standard",
+          "thorough",
+          "authenticated_rest",
+          "authenticated_mcp"
+        ],
+        "title": "AdminDailyAnalyticsPoint",
+        "type": "object"
+      },
+      "AdminIngestionIssue": {
+        "properties": {
+          "arxiv_id": {
+            "title": "Arxiv Id",
+            "type": "string"
+          },
+          "attempt_count": {
+            "minimum": 0.0,
+            "title": "Attempt Count",
+            "type": "integer"
+          },
+          "last_error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error Code"
+          },
+          "last_error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error Message"
+          },
+          "max_attempts": {
+            "minimum": 1.0,
+            "title": "Max Attempts",
+            "type": "integer"
+          },
+          "next_attempt_at": {
+            "format": "date-time",
+            "title": "Next Attempt At",
+            "type": "string"
+          },
+          "source": {
+            "enum": ["new", "revision", "reconciliation", "backfill", "manual"],
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "enum": ["retry", "dead"],
+            "title": "Status",
+            "type": "string"
+          },
+          "target_version": {
+            "minimum": 1.0,
+            "title": "Target Version",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "arxiv_id",
+          "target_version",
+          "source",
+          "status",
+          "attempt_count",
+          "max_attempts",
+          "next_attempt_at",
+          "last_error_code",
+          "last_error_message",
+          "updated_at"
+        ],
+        "title": "AdminIngestionIssue",
+        "type": "object"
+      },
+      "AdminIntakePoint": {
+        "properties": {
+          "day": {
+            "format": "date",
+            "title": "Day",
+            "type": "string"
+          },
+          "discovered": {
+            "minimum": 0.0,
+            "title": "Discovered",
+            "type": "integer"
+          },
+          "full_text_completed": {
+            "minimum": 0.0,
+            "title": "Full Text Completed",
+            "type": "integer"
+          }
+        },
+        "required": ["day", "discovered", "full_text_completed"],
+        "title": "AdminIntakePoint",
+        "type": "object"
+      },
+      "AdminOperationsResponse": {
+        "properties": {
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "intake": {
+            "items": {
+              "$ref": "#/components/schemas/AdminIntakePoint"
+            },
+            "title": "Intake",
+            "type": "array"
+          },
+          "queue": {
+            "$ref": "#/components/schemas/AdminQueueState"
+          },
+          "recent_issues": {
+            "items": {
+              "$ref": "#/components/schemas/AdminIngestionIssue"
+            },
+            "title": "Recent Issues",
+            "type": "array"
+          },
+          "sync": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AdminSyncState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "timezone": {
+            "const": "UTC",
+            "default": "UTC",
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": ["generated_at", "sync", "queue", "intake", "recent_issues"],
+        "title": "AdminOperationsResponse",
+        "type": "object"
+      },
+      "AdminProfileMetrics": {
+        "properties": {
+          "active": {
+            "minimum": 0.0,
+            "title": "Active",
+            "type": "integer"
+          },
+          "admins": {
+            "minimum": 0.0,
+            "title": "Admins",
+            "type": "integer"
+          },
+          "blocked": {
+            "minimum": 0.0,
+            "title": "Blocked",
+            "type": "integer"
+          },
+          "created_in_period": {
+            "minimum": 0.0,
+            "title": "Created In Period",
+            "type": "integer"
+          },
+          "total": {
+            "minimum": 0.0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": ["total", "active", "blocked", "admins", "created_in_period"],
+        "title": "AdminProfileMetrics",
+        "type": "object"
+      },
+      "AdminQueueState": {
+        "properties": {
+          "dead": {
+            "minimum": 0.0,
+            "title": "Dead",
+            "type": "integer"
+          },
+          "oldest_waiting_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oldest Waiting At"
+          },
+          "pending": {
+            "minimum": 0.0,
+            "title": "Pending",
+            "type": "integer"
+          },
+          "retry": {
+            "minimum": 0.0,
+            "title": "Retry",
+            "type": "integer"
+          },
+          "running": {
+            "minimum": 0.0,
+            "title": "Running",
+            "type": "integer"
+          },
+          "succeeded": {
+            "minimum": 0.0,
+            "title": "Succeeded",
+            "type": "integer"
+          }
+        },
+        "required": ["pending", "running", "retry", "succeeded", "dead", "oldest_waiting_at"],
+        "title": "AdminQueueState",
         "type": "object"
       },
       "AdminQuotaResponse": {
@@ -229,6 +576,171 @@
         },
         "required": ["standard", "thorough"],
         "title": "AdminQuotasResponse",
+        "type": "object"
+      },
+      "AdminSearchMetrics": {
+        "properties": {
+          "anonymous": {
+            "minimum": 0.0,
+            "title": "Anonymous",
+            "type": "integer"
+          },
+          "authenticated": {
+            "minimum": 0.0,
+            "title": "Authenticated",
+            "type": "integer"
+          },
+          "authenticated_degraded": {
+            "minimum": 0.0,
+            "title": "Authenticated Degraded",
+            "type": "integer"
+          },
+          "authenticated_failed": {
+            "minimum": 0.0,
+            "title": "Authenticated Failed",
+            "type": "integer"
+          },
+          "authenticated_mcp": {
+            "minimum": 0.0,
+            "title": "Authenticated Mcp",
+            "type": "integer"
+          },
+          "authenticated_p50_response_ms": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authenticated P50 Response Ms"
+          },
+          "authenticated_p95_response_ms": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authenticated P95 Response Ms"
+          },
+          "authenticated_rest": {
+            "minimum": 0.0,
+            "title": "Authenticated Rest",
+            "type": "integer"
+          },
+          "authenticated_success": {
+            "minimum": 0.0,
+            "title": "Authenticated Success",
+            "type": "integer"
+          },
+          "standard": {
+            "minimum": 0.0,
+            "title": "Standard",
+            "type": "integer"
+          },
+          "thorough": {
+            "minimum": 0.0,
+            "title": "Thorough",
+            "type": "integer"
+          },
+          "total": {
+            "minimum": 0.0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "authenticated",
+          "anonymous",
+          "standard",
+          "thorough",
+          "authenticated_rest",
+          "authenticated_mcp",
+          "authenticated_success",
+          "authenticated_degraded",
+          "authenticated_failed",
+          "authenticated_p50_response_ms",
+          "authenticated_p95_response_ms"
+        ],
+        "title": "AdminSearchMetrics",
+        "type": "object"
+      },
+      "AdminSyncState": {
+        "properties": {
+          "last_error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error Code"
+          },
+          "last_error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error Message"
+          },
+          "last_started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Started At"
+          },
+          "last_succeeded_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Succeeded At"
+          },
+          "last_successful_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Successful Date"
+          }
+        },
+        "required": [
+          "last_successful_date",
+          "last_started_at",
+          "last_succeeded_at",
+          "last_error_code",
+          "last_error_message"
+        ],
+        "title": "AdminSyncState",
         "type": "object"
       },
       "AdminUserLookupResponse": {
@@ -1552,6 +2064,54 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/admin/analytics/overview": {
+      "get": {
+        "operationId": "analytics_overview_admin_analytics_overview_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 90,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAnalyticsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Analytics Overview",
+        "tags": ["admin-analytics"]
+      }
+    },
     "/admin/audit-events": {
       "get": {
         "operationId": "audit_events_admin_audit_events_get",
@@ -1626,6 +2186,66 @@
         ],
         "summary": "Capabilities",
         "tags": ["admin"]
+      }
+    },
+    "/admin/operations/overview": {
+      "get": {
+        "operationId": "operations_overview_admin_operations_overview_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 7,
+              "maximum": 90,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "issue_limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Issue Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOperationsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Operations Overview",
+        "tags": ["admin-operations"]
       }
     },
     "/admin/users/lookup": {

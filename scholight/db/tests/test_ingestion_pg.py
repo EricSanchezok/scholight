@@ -15,6 +15,8 @@ import pytest
 import pytest_asyncio
 
 from scholight.db.client import DBError
+from scholight.db.queries_admin_analytics import query_admin_analytics
+from scholight.db.queries_admin_operations import query_admin_operations
 from scholight.db.queries_ingestion import (
     claim_ingestion_job,
     complete_ingestion_job,
@@ -57,7 +59,69 @@ async def test_migrations_apply_once_and_replay_without_schema_changes(
     assert [(row["version"], row["name"]) for row in versions] == [
         (1, "scholight_baseline"),
         (2, "ingestion_queue"),
+        (3, "admin_metrics"),
     ]
+
+
+@pytest.mark.asyncio
+async def test_admin_metrics_migration_adds_transport_and_bounded_query_indexes(
+    ingestion_pool: asyncpg.Pool,
+) -> None:
+    transport = await ingestion_pool.fetchrow(
+        """
+        SELECT is_nullable, column_default
+        FROM information_schema.columns
+        WHERE table_schema = 'scholight'
+          AND table_name = 'usage_events'
+          AND column_name = 'transport'
+        """
+    )
+    indexes = await ingestion_pool.fetch(
+        """
+        SELECT indexname
+        FROM pg_indexes
+        WHERE schemaname = 'scholight'
+          AND indexname IN (
+              'usage_events_created_idx',
+              'ingestion_jobs_succeeded_idx',
+              'user_profiles_created_idx',
+              'access_keys_created_idx'
+          )
+        ORDER BY indexname
+        """
+    )
+
+    assert transport is not None and len(indexes) == 4
+
+
+@pytest.mark.asyncio
+async def test_operations_metrics_execute_against_postgresql(
+    ingestion_pool: asyncpg.Pool,
+) -> None:
+    with patch(
+        "scholight.db.queries_admin_operations.get_pool",
+        return_value=ingestion_pool,
+    ):
+        metrics = await query_admin_operations(days=7, issue_limit=20)
+
+    assert len(metrics["intake"]) == 7
+
+
+@pytest.mark.asyncio
+async def test_analytics_metrics_execute_against_postgresql(
+    ingestion_pool: asyncpg.Pool,
+) -> None:
+    end = dt.datetime(2026, 8, 1, tzinfo=dt.UTC)
+    with patch(
+        "scholight.db.queries_admin_analytics.get_pool",
+        return_value=ingestion_pool,
+    ):
+        metrics = await query_admin_analytics(
+            start=end - dt.timedelta(days=30),
+            end=end,
+        )
+
+    assert metrics["searches"]["total"] == 0
 
 
 @pytest.mark.asyncio

@@ -24,6 +24,7 @@ class UsageEvent(BaseModel):
     user_id: int
     strength: Literal["standard", "thorough"]
     actor_type: Literal["web", "access_key", "delegated"]
+    transport: Literal["rest", "mcp"]
     access_key_id: UUID | None
     outcome: Literal["success", "degraded", "failed"]
     quota_units: int = Field(ge=0)
@@ -39,8 +40,8 @@ async def insert_usage_event(event: UsageEvent) -> bool:
         result = await get_pool().execute(
             "INSERT INTO scholight.usage_events "
             "(request_id, user_id, strength, actor_type, access_key_id, outcome, "
-            "quota_units, result_count, search_duration_ms, status_code, error_code) "
-            "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) "
+            "quota_units, result_count, search_duration_ms, status_code, error_code, transport) "
+            "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) "
             "ON CONFLICT (request_id) DO NOTHING",
             event.request_id,
             event.user_id,
@@ -53,6 +54,7 @@ async def insert_usage_event(event: UsageEvent) -> bool:
             event.search_duration_ms,
             event.status_code,
             event.error_code,
+            event.transport,
         )
     except asyncpg.PostgresError as exc:
         logger.error("usage_event_insert_failed", error_type=type(exc).__name__)

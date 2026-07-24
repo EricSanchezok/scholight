@@ -148,7 +148,12 @@ class _MCPRequestBoundary:
         client_ip = client[0] if client is not None else None
         request_id = str(get_contextvars().get("request_id") or uuid4())
         context = _current_invocation.set(
-            SearchInvocation(actor=actor, client_ip=client_ip, request_id=request_id)
+            SearchInvocation(
+                actor=actor,
+                client_ip=client_ip,
+                request_id=request_id,
+                transport="mcp",
+            )
         )
         try:
             await self._app(scope, receive, send)

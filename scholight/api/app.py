@@ -157,6 +157,8 @@ def create_app() -> FastAPI:
     from scholight.api.deps import get_current_user, wire_dependencies
     from scholight.api.routes.access_keys import router as access_key_router
     from scholight.api.routes.admin import router as admin_router
+    from scholight.api.routes.admin_analytics import router as admin_analytics_router
+    from scholight.api.routes.admin_operations import router as admin_operations_router
     from scholight.api.routes.search import router as search_router
     from scholight.api.routes.sessions import router as session_router
     from scholight.api.routes.usage import router as usage_router
@@ -215,6 +217,16 @@ def create_app() -> FastAPI:
     app.include_router(usage_router, prefix="/user/usage", tags=["usage"])
     app.include_router(session_router, prefix="/auth/sessions", tags=["sessions"])
     app.include_router(admin_router, prefix="/admin", tags=["admin"])
+    app.include_router(
+        admin_operations_router,
+        prefix="/admin/operations",
+        tags=["admin-operations"],
+    )
+    app.include_router(
+        admin_analytics_router,
+        prefix="/admin/analytics",
+        tags=["admin-analytics"],
+    )
 
     @app.get("/livez")
     async def livez() -> dict[str, str]:

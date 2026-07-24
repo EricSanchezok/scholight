@@ -278,7 +278,7 @@ async def test_access_key_is_resolved_as_search_actor(
     resolve.assert_awaited_once_with("sk_live_0123456789abcdef_secret")
     execute_call = execute.await_args
     assert execute_call is not None
-    assert execute_call.args[1].actor is actor
+    assert (execute_call.args[1].actor, execute_call.args[1].transport) == (actor, "mcp")
 
 
 async def test_delegation_jwt_is_resolved_as_current_user(
@@ -331,7 +331,9 @@ async def test_delegation_jwt_is_resolved_as_current_user(
 
     assert called.status_code == 200
     resolve.assert_awaited_once_with(token)
-    assert execute.await_args.args[1].actor is actor
+    execute_call = execute.await_args
+    assert execute_call is not None
+    assert execute_call.args[1].actor is actor
 
 
 async def test_delegation_rejects_wrong_audience() -> None:

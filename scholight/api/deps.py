@@ -19,7 +19,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from scholight.api.access_keys import AccessKeyError, resolve_access_key
 from scholight.db.client import DBError
-from scholight.db.queries_admin import is_quota_admin
+from scholight.db.queries_admin import is_scholight_admin
 from scholight.db.queries_profile import ProductAccessBlockedError, ensure_product_access
 
 security = HTTPBearer(scheme_name="BearerAuth")
@@ -121,12 +121,12 @@ async def get_current_user(
     return await _resolve_current_user(credentials)
 
 
-async def get_quota_admin(
+async def get_scholight_admin(
     current_user: UserRecord = Depends(get_current_user),
 ) -> UserRecord:
-    """Require current, database-backed Scholight quota administration."""
+    """Require current, database-backed Scholight product administration."""
     try:
-        permitted = await is_quota_admin(current_user.id)
+        permitted = await is_scholight_admin(current_user.id)
     except DBError as exc:
         raise HTTPException(
             status_code=503,
@@ -142,7 +142,7 @@ async def get_quota_admin(
             status_code=403,
             detail={
                 "code": "admin_required",
-                "message": "Quota administrator permission is required.",
+                "message": "Scholight administrator permission is required.",
                 "retryable": False,
             },
         )

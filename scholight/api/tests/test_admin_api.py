@@ -11,7 +11,7 @@ import pytest
 from cloud_auth.models.user import UserRecord
 from fastapi import FastAPI
 
-from scholight.api.deps import get_current_user, get_quota_admin
+from scholight.api.deps import get_current_user, get_scholight_admin
 from scholight.db.queries_admin import AdminAuditEvent, AdminTarget
 from scholight.models.quota import QuotaStatus
 
@@ -29,19 +29,23 @@ def _admin() -> UserRecord:
 @pytest.mark.asyncio
 async def test_capabilities_are_available_to_non_admin_jwt_user(api_app: FastAPI) -> None:
     api_app.dependency_overrides[get_current_user] = _admin
-    with patch("scholight.api.routes.admin.is_quota_admin", AsyncMock(return_value=False)):
+    with patch("scholight.api.routes.admin.is_scholight_admin", AsyncMock(return_value=False)):
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=api_app), base_url="http://test"
         ) as client:
             response = await client.get("/admin/capabilities")
 
     assert response.status_code == 200
-    assert response.json() == {"can_manage_quotas": False}
+    assert response.json() == {
+        "can_manage_quotas": False,
+        "can_view_operations": False,
+        "can_view_analytics": False,
+    }
 
 
 @pytest.mark.asyncio
 async def test_lookup_returns_defaults_overrides_effective_and_usage(api_app: FastAPI) -> None:
-    api_app.dependency_overrides[get_quota_admin] = _admin
+    api_app.dependency_overrides[get_scholight_admin] = _admin
     target = AdminTarget(
         id=7,
         email="reader@example.com",
@@ -85,7 +89,7 @@ async def test_lookup_returns_defaults_overrides_effective_and_usage(api_app: Fa
 
 @pytest.mark.asyncio
 async def test_lookup_requires_complete_email(api_app: FastAPI) -> None:
-    api_app.dependency_overrides[get_quota_admin] = _admin
+    api_app.dependency_overrides[get_scholight_admin] = _admin
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=api_app), base_url="http://test"
     ) as client:
@@ -96,7 +100,7 @@ async def test_lookup_requires_complete_email(api_app: FastAPI) -> None:
 
 @pytest.mark.asyncio
 async def test_update_requires_both_fields_and_enforces_upper_bound(api_app: FastAPI) -> None:
-    api_app.dependency_overrides[get_quota_admin] = _admin
+    api_app.dependency_overrides[get_scholight_admin] = _admin
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=api_app), base_url="http://test"
     ) as client:
@@ -115,7 +119,7 @@ async def test_update_requires_both_fields_and_enforces_upper_bound(api_app: Fas
 
 @pytest.mark.asyncio
 async def test_audit_endpoint_returns_latest_events(api_app: FastAPI) -> None:
-    api_app.dependency_overrides[get_quota_admin] = _admin
+    api_app.dependency_overrides[get_scholight_admin] = _admin
     event = AdminAuditEvent(
         event_id=UUID("00000000-0000-0000-0000-000000000001"),
         actor_type="user",

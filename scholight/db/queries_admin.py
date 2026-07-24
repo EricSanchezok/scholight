@@ -75,8 +75,8 @@ def _json_state(value: Any) -> dict[str, Any]:
     return decoded
 
 
-async def is_quota_admin(user_id: int) -> bool:
-    """Check current product administration state on every request."""
+async def is_scholight_admin(user_id: int) -> bool:
+    """Check current Scholight administration state on every request."""
     try:
         value = await get_pool().fetchval(
             "SELECT EXISTS ("
@@ -86,8 +86,8 @@ async def is_quota_admin(user_id: int) -> bool:
             user_id,
         )
     except asyncpg.PostgresError as exc:
-        logger.error("quota_admin_check_failed", error_type=type(exc).__name__)
-        raise DBError("Failed to verify quota administrator permission") from exc
+        logger.error("scholight_admin_check_failed", error_type=type(exc).__name__)
+        raise DBError("Failed to verify Scholight administrator permission") from exc
     return value is True
 
 
@@ -388,7 +388,7 @@ __all__ = [
     "find_admin_target_by_email",
     "get_user_quota_overrides",
     "grant_quota_admin",
-    "is_quota_admin",
+    "is_scholight_admin",
     "list_admin_audit_events",
     "revoke_quota_admin",
     "update_user_quota_overrides",

@@ -52,6 +52,7 @@ class SearchInvocation:
     actor: _SearchActor | None
     client_ip: str | None
     request_id: str
+    transport: Literal["rest", "mcp"]
 
 
 class PublicSearchError(Exception):
@@ -94,6 +95,7 @@ class PublicSearchError(Exception):
 def _schedule_usage(
     actor: _SearchActor | None,
     *,
+    transport: Literal["rest", "mcp"],
     request_id: str,
     strength: Literal["standard", "thorough"],
     outcome: Literal["success", "degraded", "failed"],
@@ -111,6 +113,7 @@ def _schedule_usage(
             user_id=actor.user.id,
             strength=strength,
             actor_type=actor.actor_type,
+            transport=transport,
             access_key_id=actor.access_key_id,
             outcome=outcome,
             quota_units=quota_units,
@@ -210,6 +213,7 @@ async def execute_public_search(
         elapsed_ms = (time.perf_counter() - t_start) * 1000
         _schedule_usage(
             invocation.actor,
+            transport=invocation.transport,
             request_id=invocation.request_id,
             strength=body.strength.value,
             outcome="failed",
@@ -232,6 +236,7 @@ async def execute_public_search(
         elapsed_ms = (time.perf_counter() - t_start) * 1000
         _schedule_usage(
             invocation.actor,
+            transport=invocation.transport,
             request_id=invocation.request_id,
             strength=body.strength.value,
             outcome="failed",
@@ -259,6 +264,7 @@ async def execute_public_search(
         elapsed_ms = (time.perf_counter() - t_start) * 1000
         _schedule_usage(
             invocation.actor,
+            transport=invocation.transport,
             request_id=invocation.request_id,
             strength=body.strength.value,
             outcome="failed",
@@ -286,6 +292,7 @@ async def execute_public_search(
         elapsed_ms = (time.perf_counter() - t_start) * 1000
         _schedule_usage(
             invocation.actor,
+            transport=invocation.transport,
             request_id=invocation.request_id,
             strength=body.strength.value,
             outcome="failed",
@@ -319,6 +326,7 @@ async def execute_public_search(
         elapsed_ms = (time.perf_counter() - t_start) * 1000
         _schedule_usage(
             invocation.actor,
+            transport=invocation.transport,
             request_id=invocation.request_id,
             strength=body.strength.value,
             outcome="failed",
@@ -359,6 +367,7 @@ async def execute_public_search(
         )
         _schedule_usage(
             invocation.actor,
+            transport=invocation.transport,
             request_id=invocation.request_id,
             strength=body.strength.value,
             outcome="degraded" if degraded else "success",

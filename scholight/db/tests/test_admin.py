@@ -17,7 +17,7 @@ from scholight.db.queries_admin import (
     TargetUserInactiveError,
     find_admin_target_by_email,
     grant_quota_admin,
-    is_quota_admin,
+    is_scholight_admin,
     list_admin_audit_events,
     revoke_quota_admin,
     update_user_quota_overrides,
@@ -53,7 +53,7 @@ async def test_admin_check_requires_active_product_profile() -> None:
     pool.fetchval = AsyncMock(return_value=True)
 
     with patch("scholight.db.queries_admin.get_pool", return_value=pool):
-        result = await is_quota_admin(42)
+        result = await is_scholight_admin(42)
 
     sql = pool.fetchval.await_args.args[0]
     assert "status = 'active'" in sql
@@ -70,7 +70,7 @@ async def test_admin_check_fails_closed_on_database_error() -> None:
         patch("scholight.db.queries_admin.get_pool", return_value=pool),
         pytest.raises(DBError, match="administrator permission") as exc_info,
     ):
-        await is_quota_admin(42)
+        await is_scholight_admin(42)
 
     assert "private SQL detail" not in str(exc_info.value)
 

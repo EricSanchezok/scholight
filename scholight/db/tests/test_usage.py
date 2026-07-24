@@ -37,6 +37,7 @@ async def test_usage_insert_is_request_id_idempotent() -> None:
         user_id=42,
         strength="standard",
         actor_type="web",
+        transport="rest",
         access_key_id=None,
         outcome="success",
         quota_units=1,
