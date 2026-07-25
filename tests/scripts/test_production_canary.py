@@ -21,6 +21,7 @@ build_rate_plan = _MODULE.build_rate_plan
 evaluate_stage = _MODULE.evaluate_stage
 percentile = _MODULE.percentile
 validate_target = _MODULE.validate_target
+validate_load_limits = _MODULE.validate_load_limits
 write_report = _MODULE.write_report
 
 
@@ -39,6 +40,46 @@ def test_remote_target_requires_explicit_confirmation() -> None:
 
 def test_loopback_target_does_not_require_remote_confirmation() -> None:
     assert validate_target("http://127.0.0.1:8000", allow_remote=False) == ("http://127.0.0.1:8000")
+
+
+def test_elevated_standard_load_requires_explicit_confirmation() -> None:
+    with pytest.raises(ValueError, match="--allow-elevated-load"):
+        validate_load_limits(
+            maximum_standard_rps=40.0,
+            maximum_thorough_rps=None,
+            allow_elevated_load=False,
+        )
+
+
+def test_elevated_load_allows_tenfold_profile() -> None:
+    validate_load_limits(
+        maximum_standard_rps=40.0,
+        maximum_thorough_rps=4.0,
+        allow_elevated_load=True,
+    )
+
+
+def test_elevated_load_rejects_hundredfold_profile() -> None:
+    with pytest.raises(ValueError, match="cannot exceed 40"):
+        validate_load_limits(
+            maximum_standard_rps=400.0,
+            maximum_thorough_rps=None,
+            allow_elevated_load=True,
+        )
+
+
+def test_tenfold_rate_plan_has_progressive_stages() -> None:
+    assert build_rate_plan(40.0, candidates=_MODULE._STANDARD_RATE_CANDIDATES) == (
+        0.5,
+        1.0,
+        2.0,
+        4.0,
+        8.0,
+        12.0,
+        20.0,
+        30.0,
+        40.0,
+    )
 
 
 def test_percentile_uses_nearest_rank() -> None:

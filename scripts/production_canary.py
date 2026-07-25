@@ -24,12 +24,14 @@ import httpx
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-_STANDARD_RATE_CANDIDATES = (0.5, 1.0, 2.0, 4.0)
-_THOROUGH_RATE_CANDIDATES = (0.1, 0.2, 0.4)
-_MAX_STANDARD_RPS = 10.0
-_MAX_THOROUGH_RPS = 1.0
+_STANDARD_RATE_CANDIDATES = (0.5, 1.0, 2.0, 4.0, 8.0, 12.0, 20.0, 30.0, 40.0)
+_THOROUGH_RATE_CANDIDATES = (0.1, 0.2, 0.4, 0.8, 1.0, 2.0, 3.0, 4.0)
+_DEFAULT_MAX_STANDARD_RPS = 10.0
+_DEFAULT_MAX_THOROUGH_RPS = 1.0
+_ELEVATED_MAX_STANDARD_RPS = 40.0
+_ELEVATED_MAX_THOROUGH_RPS = 4.0
 _MAX_STAGE_SECONDS = 120
-_MAX_IN_FLIGHT = 32
+_MAX_IN_FLIGHT = 64
 _API_KEY_ENV = "SCHOLIGHT_LOAD_TEST_API_KEY"
 _QUERIES = (
     "retrieval augmented generation evaluation",
@@ -141,6 +143,27 @@ def validate_target(base_url: str, *, allow_remote: bool) -> str:
         msg = "remote targets require --allow-remote"
         raise ValueError(msg)
     return base_url.rstrip("/")
+
+
+def validate_load_limits(
+    *,
+    maximum_standard_rps: float,
+    maximum_thorough_rps: float | None,
+    allow_elevated_load: bool,
+) -> None:
+    """Require an explicit acknowledgement for the bounded tenfold profile."""
+    if maximum_standard_rps > _ELEVATED_MAX_STANDARD_RPS:
+        msg = f"--max-standard-rps cannot exceed {_ELEVATED_MAX_STANDARD_RPS:g}"
+        raise ValueError(msg)
+    if maximum_thorough_rps is not None and maximum_thorough_rps > _ELEVATED_MAX_THOROUGH_RPS:
+        msg = f"--max-thorough-rps cannot exceed {_ELEVATED_MAX_THOROUGH_RPS:g}"
+        raise ValueError(msg)
+    elevated = maximum_standard_rps > _DEFAULT_MAX_STANDARD_RPS or (
+        maximum_thorough_rps is not None and maximum_thorough_rps > _DEFAULT_MAX_THOROUGH_RPS
+    )
+    if elevated and not allow_elevated_load:
+        msg = "loads above the default safety limits require --allow-elevated-load"
+        raise ValueError(msg)
 
 
 def evaluate_stage(summary: StageSummary, *, p95_limit_seconds: float) -> str | None:
@@ -668,12 +691,25 @@ def _parse_args() -> argparse.Namespace:
         "--max-standard-rps",
         type=_positive_float,
         default=4.0,
-        help=f"maximum Standard arrival rate, hard limit {_MAX_STANDARD_RPS:g}",
+        help=(
+            "maximum Standard arrival rate; default safety limit "
+            f"{_DEFAULT_MAX_STANDARD_RPS:g}, elevated hard limit "
+            f"{_ELEVATED_MAX_STANDARD_RPS:g}"
+        ),
     )
     parser.add_argument(
         "--max-thorough-rps",
         type=_positive_float,
-        help=f"include Thorough stages up to this rate, hard limit {_MAX_THOROUGH_RPS:g}",
+        help=(
+            "include Thorough stages up to this rate; default safety limit "
+            f"{_DEFAULT_MAX_THOROUGH_RPS:g}, elevated hard limit "
+            f"{_ELEVATED_MAX_THOROUGH_RPS:g}"
+        ),
+    )
+    parser.add_argument(
+        "--allow-elevated-load",
+        action="store_true",
+        help="acknowledge the bounded production profile above the default rate limits",
     )
     parser.add_argument(
         "--report-root",
@@ -692,11 +728,14 @@ def main(env: Mapping[str, str] = os.environ) -> int:
     except ValueError as exc:
         print(f"configuration error: {exc}")
         return 2
-    if args.max_standard_rps > _MAX_STANDARD_RPS:
-        print(f"configuration error: --max-standard-rps cannot exceed {_MAX_STANDARD_RPS:g}")
-        return 2
-    if args.max_thorough_rps is not None and args.max_thorough_rps > _MAX_THOROUGH_RPS:
-        print(f"configuration error: --max-thorough-rps cannot exceed {_MAX_THOROUGH_RPS:g}")
+    try:
+        validate_load_limits(
+            maximum_standard_rps=args.max_standard_rps,
+            maximum_thorough_rps=args.max_thorough_rps,
+            allow_elevated_load=args.allow_elevated_load,
+        )
+    except ValueError as exc:
+        print(f"configuration error: {exc}")
         return 2
     api_key = env.get(_API_KEY_ENV, "")
     if not api_key.startswith("sk_live_"):
