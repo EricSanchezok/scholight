@@ -18,6 +18,7 @@ _SPEC.loader.exec_module(_MODULE)
 RequestResult = _MODULE.RequestResult
 StageSummary = _MODULE.StageSummary
 build_rate_plan = _MODULE.build_rate_plan
+build_stage_specs = _MODULE.build_stage_specs
 evaluate_stage = _MODULE.evaluate_stage
 percentile = _MODULE.percentile
 validate_target = _MODULE.validate_target
@@ -80,6 +81,27 @@ def test_tenfold_rate_plan_has_progressive_stages() -> None:
         30.0,
         40.0,
     )
+
+
+def test_thorough_only_stage_plan_excludes_standard() -> None:
+    assert build_stage_specs(
+        selected_strength="thorough",
+        maximum_standard_rps=4.0,
+        maximum_thorough_rps=0.4,
+    ) == [
+        ("thorough", 0.1, 45.0),
+        ("thorough", 0.2, 45.0),
+        ("thorough", 0.4, 45.0),
+    ]
+
+
+def test_thorough_only_stage_plan_requires_a_maximum() -> None:
+    with pytest.raises(ValueError, match="--max-thorough-rps"):
+        build_stage_specs(
+            selected_strength="thorough",
+            maximum_standard_rps=4.0,
+            maximum_thorough_rps=None,
+        )
 
 
 def test_percentile_uses_nearest_rank() -> None:

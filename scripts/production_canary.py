@@ -180,6 +180,38 @@ def evaluate_stage(summary: StageSummary, *, p95_limit_seconds: float) -> str | 
     return None
 
 
+def build_stage_specs(
+    *,
+    selected_strength: str,
+    maximum_standard_rps: float,
+    maximum_thorough_rps: float | None,
+) -> list[tuple[str, float, float]]:
+    """Build independent Standard and Thorough stage families."""
+    specs: list[tuple[str, float, float]] = []
+    if selected_strength in {"standard", "both"}:
+        specs.extend(
+            ("standard", rate, 10.0)
+            for rate in build_rate_plan(
+                maximum_standard_rps,
+                candidates=_STANDARD_RATE_CANDIDATES,
+            )
+        )
+    if selected_strength in {"thorough", "both"}:
+        if maximum_thorough_rps is None:
+            if selected_strength == "thorough":
+                msg = "--strength thorough requires --max-thorough-rps"
+                raise ValueError(msg)
+        else:
+            specs.extend(
+                ("thorough", rate, 45.0)
+                for rate in build_rate_plan(
+                    maximum_thorough_rps,
+                    candidates=_THOROUGH_RATE_CANDIDATES,
+                )
+            )
+    return specs
+
+
 def _stage_label(summary: StageSummary) -> str:
     strength = "Standard" if summary.strength == "standard" else "Thorough"
     return f"{strength} {summary.target_rps:g} RPS"
@@ -619,6 +651,7 @@ async def run_canary(
     *,
     base_url: str,
     api_key: str,
+    selected_strength: str,
     stage_seconds: int,
     maximum_standard_rps: float,
     maximum_thorough_rps: float | None,
@@ -630,21 +663,11 @@ async def run_canary(
     timeout = httpx.Timeout(90.0, connect=10.0)
     limits = httpx.Limits(max_connections=_MAX_IN_FLIGHT, max_keepalive_connections=16)
     async with httpx.AsyncClient(timeout=timeout, limits=limits) as client:
-        stage_specs = [
-            ("standard", rate, 10.0)
-            for rate in build_rate_plan(
-                maximum_standard_rps,
-                candidates=_STANDARD_RATE_CANDIDATES,
-            )
-        ]
-        if maximum_thorough_rps is not None:
-            stage_specs.extend(
-                ("thorough", rate, 45.0)
-                for rate in build_rate_plan(
-                    maximum_thorough_rps,
-                    candidates=_THOROUGH_RATE_CANDIDATES,
-                )
-            )
+        stage_specs = build_stage_specs(
+            selected_strength=selected_strength,
+            maximum_standard_rps=maximum_standard_rps,
+            maximum_thorough_rps=maximum_thorough_rps,
+        )
 
         for strength, rate, p95_limit in stage_specs:
             summary = await run_stage(
@@ -712,6 +735,12 @@ def _parse_args() -> argparse.Namespace:
         help="acknowledge the bounded production profile above the default rate limits",
     )
     parser.add_argument(
+        "--strength",
+        choices=("standard", "thorough", "both"),
+        default="both",
+        help="run Standard stages, Thorough stages, or both",
+    )
+    parser.add_argument(
         "--report-root",
         type=Path,
         default=Path("data/load-tests"),
@@ -741,15 +770,20 @@ def main(env: Mapping[str, str] = os.environ) -> int:
     if not api_key.startswith("sk_live_"):
         print(f"configuration error: {_API_KEY_ENV} must contain an Access Key")
         return 2
-    exit_code, started_at, finished_at, stages = asyncio.run(
-        run_canary(
-            base_url=base_url,
-            api_key=api_key,
-            stage_seconds=args.stage_seconds,
-            maximum_standard_rps=args.max_standard_rps,
-            maximum_thorough_rps=args.max_thorough_rps,
+    try:
+        exit_code, started_at, finished_at, stages = asyncio.run(
+            run_canary(
+                base_url=base_url,
+                api_key=api_key,
+                selected_strength=args.strength,
+                stage_seconds=args.stage_seconds,
+                maximum_standard_rps=args.max_standard_rps,
+                maximum_thorough_rps=args.max_thorough_rps,
+            )
         )
-    )
+    except ValueError as exc:
+        print(f"configuration error: {exc}")
+        return 2
     report_dir = args.report_root / started_at.strftime("%Y%m%dT%H%M%SZ")
     write_report(
         report_dir,
