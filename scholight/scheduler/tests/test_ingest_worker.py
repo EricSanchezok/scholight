@@ -9,7 +9,7 @@ from unittest.mock import patch
 import pytest
 
 from scholight.db.queries_ingestion import IngestionJob
-from scholight.pipeline.latex_md import LatexMdError
+from scholight.pipeline.latex_md import LatexMdError, LatexResourceLimitError
 from scholight.scheduler.ingest_worker import InvalidIngestionJobError, process_job
 from scholight.scheduler.resources import DownloadedResource
 
@@ -104,6 +104,52 @@ async def test_latex_parse_failure_falls_back_to_exact_pdf(tmp_path: Path) -> No
         "has_latex": False,
         "has_markdown": True,
     }
+
+
+@pytest.mark.asyncio
+async def test_latex_resource_limit_falls_back_without_job_retry(tmp_path: Path) -> None:
+    latex_dir = tmp_path / "latex"
+    pdf_path = tmp_path / "paper.pdf"
+    chunks = [SimpleNamespace(content="usable content", chunk_index=0)]
+
+    class FakeEmbedder:
+        async def __aenter__(self) -> FakeEmbedder:
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+        async def embed_many(self, values: list[str]) -> list[list[float]]:
+            return [[0.1, 0.2] for _ in values]
+
+    with (
+        patch(
+            "scholight.scheduler.ingest_worker.get_paper",
+            return_value={"arxiv_id": "2401.00001", "version": 1},
+        ),
+        patch(
+            "scholight.scheduler.ingest_worker.fetch_paper_resource",
+            return_value=DownloadedResource("latex", latex_dir),
+        ),
+        patch(
+            "scholight.scheduler.ingest_worker.latex_to_markdown",
+            side_effect=LatexResourceLimitError("pandoc resource limit"),
+        ),
+        patch(
+            "scholight.scheduler.ingest_worker.fetch_pdf_resource",
+            return_value=DownloadedResource("pdf", pdf_path),
+        ),
+        patch(
+            "scholight.scheduler.ingest_worker.pdf_to_markdown",
+            return_value="# Recovered from PDF\n\nBody",
+        ),
+        patch("scholight.scheduler.ingest_worker.chunk_markdown", return_value=chunks),
+        patch("scholight.scheduler.ingest_worker.Embedder", FakeEmbedder),
+        patch("scholight.scheduler.ingest_worker.install_paper_chunks"),
+    ):
+        outcome = await process_job(_job(), scratch_root=tmp_path)
+
+    assert outcome == "installed"
 
 
 @pytest.mark.asyncio

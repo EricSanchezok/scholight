@@ -14,7 +14,13 @@
 		respond @internal_health 404
 
 		handle_path /api/* {
-			reverse_proxy api:8000
+			reverse_proxy api:8000 {
+				transport http {
+					dial_timeout 3s
+					response_header_timeout 65s
+					keepalive 30s
+				}
+			}
 		}
 
 		handle {

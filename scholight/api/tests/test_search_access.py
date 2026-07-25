@@ -110,3 +110,30 @@ def test_api_runtime_requires_delegation_secret(monkeypatch: pytest.MonkeyPatch)
 
     with pytest.raises(ValueError, match="MCP_DELEGATION_JWT_SECRET"):
         validate_api_runtime_settings()
+
+
+@pytest.mark.parametrize(
+    ("field", "message"),
+    [
+        ("zilliz_uri", "ZILLIZ_URI"),
+        ("zilliz_token", "ZILLIZ_TOKEN"),
+        ("embedding_base_url", "EMBEDDING_BASE_URL"),
+    ],
+)
+def test_api_runtime_requires_search_dependencies(
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+    message: str,
+) -> None:
+    monkeypatch.setattr(settings, "jwt_secret", "j" * 32)
+    monkeypatch.setattr(settings, "anonymous_quota_hmac_secret", "h" * 32)
+    monkeypatch.setattr(settings, "access_key_hmac_secret", "k" * 32)
+    monkeypatch.setattr(settings, "mcp_delegation_jwt_secret", "d" * 32)
+    monkeypatch.setattr(settings, "zilliz_uri", "https://zilliz.example.invalid")
+    monkeypatch.setattr(settings, "zilliz_token", "fixture-token")
+    monkeypatch.setattr(settings, "embedding_base_url", "https://embedding.example.invalid/v1")
+    monkeypatch.setattr(settings, "cors_allow_origins", ["http://localhost:3000"])
+    monkeypatch.setattr(settings, field, "")
+
+    with pytest.raises(ValueError, match=message):
+        validate_api_runtime_settings()

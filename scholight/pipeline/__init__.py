@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from scholight.pipeline.embedder import Embedder as Embedder
     from scholight.pipeline.latex_md import (
         LatexMdError as LatexMdError,
+        LatexResourceLimitError as LatexResourceLimitError,
         latex_to_markdown as latex_to_markdown,
     )
     from scholight.pipeline.parser import (
@@ -38,6 +39,7 @@ def __getattr__(name: str) -> object:
     _MODULES = {
         "Embedder": "scholight.pipeline.embedder",
         "LatexMdError": "scholight.pipeline.latex_md",
+        "LatexResourceLimitError": "scholight.pipeline.latex_md",
         "latex_to_markdown": "scholight.pipeline.latex_md",
         "MdChunk": "scholight.pipeline.chunkers",
         "chunk_markdown": "scholight.pipeline.chunkers",
@@ -58,6 +60,7 @@ def __getattr__(name: str) -> object:
 __all__ = [
     "Embedder",
     "LatexMdError",
+    "LatexResourceLimitError",
     "MdChunk",
     "MinerUParseError",
     "MinerUTimeoutError",

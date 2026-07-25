@@ -79,8 +79,7 @@ def connect() -> PyMilvusClient:
 
         uri = _resolve_uri()
         token = _resolve_token()
-        masked = f"{token[:8]}…{token[-4:]}" if len(token) > 12 else "[not set]"
-        logger.info("connecting to zilliz", uri=uri, token=masked, timeout=CONNECT_TIMEOUT)
+        logger.info("connecting to zilliz", timeout=CONNECT_TIMEOUT)
 
         _client = PyMilvusClient(uri=uri, token=token, timeout=CONNECT_TIMEOUT)
 
@@ -88,7 +87,7 @@ def connect() -> PyMilvusClient:
             atexit.register(_auto_close)
             _close_registered = True
 
-        logger.info("zilliz client connected", uri=uri)
+        logger.info("zilliz client connected")
         return _client
 
 

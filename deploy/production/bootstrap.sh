@@ -11,6 +11,7 @@ readonly AWS_REGION=ap-southeast-1
 readonly ECR_REGISTRY=683390797772.dkr.ecr.ap-southeast-1.amazonaws.com
 readonly BACKEND_IMAGE_REGEX='^683390797772\.dkr\.ecr\.ap-southeast-1\.amazonaws\.com/scholight/backend@sha256:[0-9a-f]{64}$'
 readonly FRONTEND_IMAGE_REGEX='^683390797772\.dkr\.ecr\.ap-southeast-1\.amazonaws\.com/scholight/frontend@sha256:[0-9a-f]{64}$'
+readonly SWAP_BYTES=2147483648
 
 ROOT_PREFIX=${SCHOLIGHT_BOOTSTRAP_ROOT:-}
 if [[ -n ${ROOT_PREFIX} ]]; then
@@ -33,6 +34,9 @@ readonly COMPOSE_PLUGIN="${ROOT_PREFIX}/usr/local/lib/docker/cli-plugins/docker-
 readonly OS_RELEASE="${ROOT_PREFIX}/etc/os-release"
 readonly SOURCE_PACKAGE_DIR=${SCHOLIGHT_SOURCE_PACKAGE_DIR:-/opt/scholight-package}
 readonly LOCK_FILE="${STATE_DIR}/bootstrap.lock"
+readonly SWAP_FILE="${ROOT_PREFIX}/swapfile"
+readonly FSTAB="${ROOT_PREFIX}/etc/fstab"
+readonly SWAPPINESS_CONFIG="${ROOT_PREFIX}/etc/sysctl.d/99-scholight.conf"
 readonly PACKAGE_FILES=(
   compose.yaml
   Caddyfile
@@ -136,6 +140,10 @@ file_owner_uid() {
   stat -c '%u' "$1" 2>/dev/null || stat -f '%u' "$1"
 }
 
+file_size() {
+  stat -c '%s' "$1" 2>/dev/null || stat -f '%z' "$1"
+}
+
 expected_owner_uid() {
   if [[ -n ${ROOT_PREFIX} ]]; then
     id -u
@@ -219,6 +227,42 @@ ensure_directories() {
   if [[ -z ${ROOT_PREFIX} ]]; then
     chown root:root "${HOST_PACKAGE_DIR}" "${CONFIG_DIR}" "${STATE_DIR}"
   fi
+}
+
+ensure_emergency_swap() {
+  require_command swapon
+  local active_swap
+  active_swap=$(swapon --show=NAME --noheadings 2>/dev/null || true)
+
+  if [[ ! -f ${SWAP_FILE} || -L ${SWAP_FILE} ]] || \
+    [[ $(file_size "${SWAP_FILE}" 2>/dev/null || printf '0') != "${SWAP_BYTES}" ]]; then
+    ! grep -Fxq "${SWAP_FILE}" <<<"${active_swap}" || \
+      fail "active Scholight swap has an unexpected size"
+    require_command fallocate
+    require_command mkswap
+    rm -f -- "${SWAP_FILE}"
+    fallocate -l 2G "${SWAP_FILE}"
+    chmod 0600 "${SWAP_FILE}"
+    mkswap "${SWAP_FILE}" >/dev/null
+  fi
+  [[ -f ${SWAP_FILE} && ! -L ${SWAP_FILE} ]] || fail "swap must be a regular file"
+  [[ $(file_mode "${SWAP_FILE}") == 600 ]] || fail "swap must have mode 0600"
+
+  install -d -m 0755 "$(dirname "${FSTAB}")" "$(dirname "${SWAPPINESS_CONFIG}")"
+  touch "${FSTAB}"
+  local swap_entry="${SWAP_FILE} none swap sw 0 0"
+  if ! grep -Fxq "${swap_entry}" "${FSTAB}"; then
+    printf '%s\n' "${swap_entry}" >>"${FSTAB}"
+  fi
+  printf 'vm.swappiness=10\n' >"${SWAPPINESS_CONFIG}.new"
+  chmod 0644 "${SWAPPINESS_CONFIG}.new"
+  mv -f "${SWAPPINESS_CONFIG}.new" "${SWAPPINESS_CONFIG}"
+
+  if ! grep -Fxq "${SWAP_FILE}" <<<"${active_swap}"; then
+    swapon "${SWAP_FILE}"
+  fi
+  require_command sysctl
+  sysctl -w vm.swappiness=10 >/dev/null
 }
 
 validate_runtime_contents() {
@@ -413,6 +457,7 @@ deploy() {
   ensure_docker
   ensure_compose
   ensure_directories
+  ensure_emergency_swap
 
   local source_digest
   source_digest=$(package_sha "${SOURCE_PACKAGE_DIR}")

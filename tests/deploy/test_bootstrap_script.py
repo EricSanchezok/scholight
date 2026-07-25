@@ -107,6 +107,28 @@ def bootstrap_environment(tmp_path: Path, runtime: str | None) -> tuple[dict[str
     make_executable(bin_dir / "uname", "#!/usr/bin/env bash\nprintf 'x86_64\\n'\n")
     make_executable(bin_dir / "flock", "#!/usr/bin/env bash\nexit 0\n")
     make_executable(
+        bin_dir / "swapon",
+        "#!/usr/bin/env bash\n"
+        'printf \'swapon %s\\n\' "$*" >>"${FAKE_COMMAND_LOG}"\n'
+        'if [[ "$*" == \'--show=NAME --noheadings\' && -f "${FAKE_SWAP_ACTIVE}" ]]; then\n'
+        "  printf '%s\\n' \"${FAKE_SWAP_FILE}\"\n"
+        "fi\n",
+    )
+    make_executable(
+        bin_dir / "fallocate",
+        "#!/usr/bin/env bash\n"
+        'printf \'fallocate %s\\n\' "$*" >>"${FAKE_COMMAND_LOG}"\n'
+        'truncate -s 2147483648 "${@: -1}"\n',
+    )
+    make_executable(
+        bin_dir / "mkswap",
+        '#!/usr/bin/env bash\nprintf \'mkswap %s\\n\' "$*" >>"${FAKE_COMMAND_LOG}"\n',
+    )
+    make_executable(
+        bin_dir / "sysctl",
+        '#!/usr/bin/env bash\nprintf \'sysctl %s\\n\' "$*" >>"${FAKE_COMMAND_LOG}"\n',
+    )
+    make_executable(
         bin_dir / "aws",
         "#!/usr/bin/env bash\n"
         'printf \'aws %s\\n\' "$*" >>"${FAKE_COMMAND_LOG}"\n'
@@ -126,6 +148,8 @@ def bootstrap_environment(tmp_path: Path, runtime: str | None) -> tuple[dict[str
         "SCHOLIGHT_SOURCE_PACKAGE_DIR": str(source),
         "FAKE_COMMAND_LOG": str(log),
         "FAKE_PARAMETER_VALUE": runtime_contents(),
+        "FAKE_SWAP_FILE": str(fake_root / "swapfile"),
+        "FAKE_SWAP_ACTIVE": str(tmp_path / "swap-active"),
     }
     return env, source, log
 
@@ -288,7 +312,9 @@ def test_missing_docker_is_installed_before_release(tmp_path: Path) -> None:
         "sed",
         "sha256sum",
         "stat",
+        "touch",
         "tr",
+        "truncate",
         "wc",
     ):
         executable = shutil.which(command)
@@ -370,3 +396,23 @@ def test_second_bootstrap_skips_package_install_and_keeps_runtime(tmp_path: Path
     assert first.returncode == second.returncode == 0
     assert installed_release.stat().st_mtime_ns == first_mtime
     assert commands.count("release deploy ") == 2
+
+
+def test_bootstrap_creates_bounded_emergency_swap_once(tmp_path: Path) -> None:
+    env, source, log = bootstrap_environment(tmp_path, runtime_contents())
+
+    first = run_bootstrap(env, source)
+    Path(env["FAKE_SWAP_ACTIVE"]).touch()
+    second = run_bootstrap(env, source)
+
+    fake_root = Path(env["SCHOLIGHT_BOOTSTRAP_ROOT"])
+    swapfile = fake_root / "swapfile"
+    fstab = (fake_root / "etc" / "fstab").read_text(encoding="utf-8")
+    sysctl = (fake_root / "etc" / "sysctl.d" / "99-scholight.conf").read_text(encoding="utf-8")
+    commands = log.read_text(encoding="utf-8")
+    assert first.returncode == second.returncode == 0
+    assert swapfile.stat().st_size == 2 * 1024 * 1024 * 1024
+    assert swapfile.stat().st_mode & 0o777 == 0o600
+    assert fstab.count(f"{swapfile} none swap sw 0 0") == 1
+    assert sysctl == "vm.swappiness=10\n"
+    assert commands.count("fallocate -l 2G") == 1

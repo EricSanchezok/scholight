@@ -130,7 +130,60 @@ def test_caddy_blocks_internal_health_and_routes_api_directly() -> None:
     assert "reverse_proxy api:8000" in caddyfile
     assert "reverse_proxy frontend:8080" in caddyfile
     assert "format json" in caddyfile
+    assert "dial_timeout 3s" in caddyfile
+    assert "response_header_timeout 65s" in caddyfile
+    assert "keepalive 30s" in caddyfile
+    assert "lb_try_duration" not in caddyfile
     assert caddyfile.index("respond @internal_health 404") < caddyfile.index("handle_path /api/*")
+
+
+def test_production_services_have_hard_resource_boundaries() -> None:
+    compose = yaml.safe_load((PRODUCTION / "compose.yaml").read_text(encoding="utf-8"))
+    expected = {
+        "api": ("1024m", "1.5", 256),
+        "paper-ingest": ("1280m", "0.5", 128),
+        "metadata-sync": ("384m", "0.2", 128),
+        "caddy": ("192m", "0.25", 128),
+        "frontend": ("128m", "0.1", 64),
+    }
+
+    for service_name, (memory, cpus, pids) in expected.items():
+        service = compose["services"][service_name]
+        assert service["mem_limit"] == memory
+        assert service["memswap_limit"] == memory
+        assert str(service["cpus"]) == cpus
+        assert service["pids_limit"] == pids
+
+
+def test_production_database_pools_are_scoped_per_service() -> None:
+    compose = yaml.safe_load((PRODUCTION / "compose.yaml").read_text(encoding="utf-8"))
+
+    assert compose["services"]["api"]["environment"]["SCHOLIGHT_PG_POOL_MIN_SIZE"] == 2
+    assert compose["services"]["api"]["environment"]["SCHOLIGHT_PG_POOL_MAX_SIZE"] == 12
+    for name in ("metadata-sync", "paper-ingest"):
+        assert compose["services"][name]["environment"]["SCHOLIGHT_PG_POOL_MIN_SIZE"] == 1
+        assert compose["services"][name]["environment"]["SCHOLIGHT_PG_POOL_MAX_SIZE"] == 4
+
+
+def test_uvicorn_has_explicit_connection_backpressure() -> None:
+    entrypoint = (ROOT / "docker" / "scholight-api" / "start.py").read_text(encoding="utf-8")
+
+    assert "timeout_keep_alive=settings.server_keep_alive_seconds" in entrypoint
+    assert "limit_concurrency=settings.server_limit_concurrency" in entrypoint
+    assert "backlog=settings.server_backlog" in entrypoint
+
+
+def test_source_contains_no_production_dependency_defaults_or_secret_fragments() -> None:
+    config = (ROOT / "scholight" / "config.py").read_text(encoding="utf-8")
+    store_client = (ROOT / "scholight" / "store" / "client.py").read_text(encoding="utf-8")
+    search_engine = (ROOT / "scholight" / "search" / "engine.py").read_text(encoding="utf-8")
+
+    assert "serverless.ali-cn-hangzhou.cloud.zilliz.com.cn" not in config
+    assert "openapi-qb-nat.sii.edu.cn" not in config
+    assert "cf0m0gegaz1c.ap-east-1.rds.amazonaws.com" not in config
+    assert "token=masked" not in store_client
+    assert "query=request.query[:80]" not in search_engine
+    assert "query_length=len(request.query)" in search_engine
 
 
 def test_frontend_agent_document_templates_use_canonical_url_placeholder() -> None:

@@ -44,5 +44,8 @@ if __name__ == "__main__":
         port=settings.server_port,
         proxy_headers=settings.proxy_headers,
         forwarded_allow_ips=settings.forwarded_allow_ips,
+        timeout_keep_alive=settings.server_keep_alive_seconds,
+        limit_concurrency=settings.server_limit_concurrency,
+        backlog=settings.server_backlog,
         access_log=False,
     )

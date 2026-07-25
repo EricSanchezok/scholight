@@ -20,14 +20,14 @@ class Settings(BaseSettings):
     }
 
     # ── Storage ──
-    data_root: str = "/inspire/qb-ilm/project/multi-agent/niexiaohang-25130061/academic-data"
+    data_root: str = "/data"
 
     # ── Zilliz Cloud ──
-    zilliz_uri: str = "https://in05-d432d46d6c77308.serverless.ali-cn-hangzhou.cloud.zilliz.com.cn"
+    zilliz_uri: str = ""
     zilliz_token: str = ""
 
     # ── Embedding (faro-hosted Qwen3-Embedding-0.6B) ──
-    embedding_base_url: str = "https://faro-embedding.openapi-qb-nat.sii.edu.cn/v1"
+    embedding_base_url: str = ""
     embedding_api_key: str = ""
     embedding_model: str = "qwen3-embedding-0.6b"
     embedding_dim: int = 1024
@@ -87,10 +87,10 @@ class Settings(BaseSettings):
     log_json: bool | None = None
 
     # ── PostgreSQL ──
-    pg_host: str = "sii-pg.cf0m0gegaz1c.ap-east-1.rds.amazonaws.com"
+    pg_host: str = "localhost"
     pg_port: int = 5432
-    pg_database: str = "sanchezcloud"
-    pg_user: str = "postgres"
+    pg_database: str = "scholight"
+    pg_user: str = "scholight"
     pg_password: str = ""
     pg_ssl_root_cert: str = "global-bundle.pem"
     pg_pool_min_size: int = 5
@@ -145,6 +145,9 @@ class Settings(BaseSettings):
     server_port: int = 8000
     proxy_headers: bool = False
     forwarded_allow_ips: str = "127.0.0.1"
+    server_keep_alive_seconds: int = Field(default=65, ge=1, le=300)
+    server_limit_concurrency: int = Field(default=96, ge=1, le=4096)
+    server_backlog: int = Field(default=128, ge=1, le=4096)
 
 
 settings = Settings()
@@ -168,3 +171,9 @@ def validate_api_runtime_settings() -> None:
         )
     if "*" in settings.cors_allow_origins:
         raise ValueError("SCHOLIGHT_CORS_ALLOW_ORIGINS must list explicit origins for the API")
+    if not settings.zilliz_uri.strip():
+        raise ValueError("SCHOLIGHT_ZILLIZ_URI is required by the search API")
+    if not settings.zilliz_token.strip():
+        raise ValueError("SCHOLIGHT_ZILLIZ_TOKEN is required by the search API")
+    if not settings.embedding_base_url.strip():
+        raise ValueError("SCHOLIGHT_EMBEDDING_BASE_URL is required by the search API")

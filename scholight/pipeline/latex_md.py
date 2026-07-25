@@ -16,7 +16,9 @@ Formula preservation:
 from __future__ import annotations
 
 import re
-import subprocess
+import signal
+# Security: Pandoc uses fixed argv, no shell, and bounded local files.
+import subprocess  # nosec B404
 import tempfile
 import time
 from pathlib import Path
@@ -28,6 +30,23 @@ logger = structlog.get_logger(__name__)
 
 class LatexMdError(Exception):
     """LaTeX → Markdown conversion failed at one of the pipeline stages."""
+
+
+class LatexResourceLimitError(LatexMdError):
+    """Pandoc exceeded a bounded time, memory, input, or output limit."""
+
+
+_PANDOC_TIMEOUT_SECONDS = 60
+_PANDOC_MAX_INPUT_BYTES = 16 * 1024 * 1024
+_PANDOC_MAX_OUTPUT_BYTES = 64 * 1024 * 1024
+_PANDOC_HEAP_LIMIT = "512M"
+_PANDOC_RESOURCE_MESSAGES = (
+    b"heap exhausted",
+    b"heap overflow",
+    b"out of memory",
+    b"memory exhausted",
+    b"allocation limit",
+)
 
 
 # ── Public API ───────────────────────────────────────────────────────────────
@@ -375,22 +394,25 @@ def _resolve_bibliography(content: str, tex_dir: Path) -> str:
 def _run_pandoc(content: str) -> str:
     """Run pandoc to convert LaTeX → Markdown.
 
-    On non-zero exit: returns partial stdout (better than nothing) unless
-    stdout is also empty, in which case raises LatexMdError.
+    The subprocess receives bounded input, writes output to disk, and is
+    constrained by Pandoc's Haskell heap limit. On a non-resource non-zero
+    exit, a bounded partial output remains usable when Pandoc produced one.
     """
-    tmp_path = ""
-    try:
-        with tempfile.NamedTemporaryFile(
-            suffix=".tex", mode="w", encoding="utf-8", delete=False
-        ) as tf:
-            tf.write(content)
-            tmp_path = tf.name
-    except OSError as exc:
-        raise LatexMdError(f"failed to write temp file: {exc}") from exc
+    encoded = content.encode("utf-8")
+    if len(encoded) > _PANDOC_MAX_INPUT_BYTES:
+        raise LatexResourceLimitError("pandoc input exceeds 16 MiB")
 
     try:
-        result = subprocess.run(
-            [
+        with tempfile.TemporaryDirectory(
+            prefix="scholight-pandoc-", dir=tempfile.gettempdir()
+        ) as temporary_directory:
+            work_dir = Path(temporary_directory)
+            input_path = work_dir / "input.tex"
+            output_path = work_dir / "output.md"
+            stderr_path = work_dir / "stderr.log"
+            input_path.write_bytes(encoded)
+
+            command = [
                 "pandoc",
                 "-f",
                 "latex+raw_tex",
@@ -398,36 +420,63 @@ def _run_pandoc(content: str) -> str:
                 "markdown",
                 "--standalone",
                 "--wrap=none",
-                tmp_path,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-    except subprocess.TimeoutExpired as exc:
-        Path(tmp_path).unlink(missing_ok=True)
-        raise LatexMdError("pandoc timed out after 60s") from exc
-    finally:
-        if tmp_path:
-            Path(tmp_path).unlink(missing_ok=True)
+                "--sandbox",
+                str(input_path),
+                "-o",
+                str(output_path),
+                "+RTS",
+                f"-M{_PANDOC_HEAP_LIMIT}",
+                "-RTS",
+            ]
+            try:
+                with stderr_path.open("wb") as stderr_stream:
+                    # The executable and every option are fixed; no user input becomes argv.
+                    result = subprocess.run(  # nosec B603
+                        command,
+                        stdout=subprocess.DEVNULL,
+                        stderr=stderr_stream,
+                        timeout=_PANDOC_TIMEOUT_SECONDS,
+                        check=False,
+                    )
+            except subprocess.TimeoutExpired as exc:
+                raise LatexResourceLimitError(
+                    f"pandoc timed out after {_PANDOC_TIMEOUT_SECONDS}s"
+                ) from exc
 
-    if result.returncode != 0:
-        partial = result.stdout.strip()
-        if partial:
-            logger.warning(
-                "pandoc_partial_output",
-                chars=len(partial),
-                exit_code=result.returncode,
-                stderr_last_line=(result.stderr or "").split("\n")[-1][:200],
+            stderr = stderr_path.read_bytes()[:4096] if stderr_path.exists() else b""
+            stderr_lower = stderr.lower()
+            resource_exit = result.returncode == -signal.SIGKILL or any(
+                message in stderr_lower for message in _PANDOC_RESOURCE_MESSAGES
             )
-            return partial
-        raise LatexMdError(
-            f"pandoc exited {result.returncode}: {(result.stderr or '(no stderr)')[:500]}"
-        )
+            if resource_exit:
+                raise LatexResourceLimitError("pandoc exceeded a resource limit")
 
-    if result.stderr:
-        logger.debug(
-            "pandoc_stderr",
-            first_line=(result.stderr or "").split("\n")[0][:200],
-        )
-    return result.stdout
+            output_size = output_path.stat().st_size if output_path.exists() else 0
+            if output_size > _PANDOC_MAX_OUTPUT_BYTES:
+                raise LatexResourceLimitError("pandoc output exceeds 64 MiB")
+
+            output = (
+                output_path.read_text(encoding="utf-8", errors="replace")
+                if output_path.exists()
+                else ""
+            )
+            if result.returncode != 0:
+                partial = output.strip()
+                if partial:
+                    logger.warning(
+                        "pandoc_partial_output",
+                        chars=len(partial),
+                        exit_code=result.returncode,
+                    )
+                    return partial
+                first_line = stderr.decode("utf-8", errors="replace").splitlines()
+                detail = first_line[0][:200] if first_line else "(no stderr)"
+                raise LatexMdError(f"pandoc exited {result.returncode}: {detail}")
+
+            if stderr:
+                logger.debug("pandoc_stderr", bytes=len(stderr))
+            return output
+    except LatexMdError:
+        raise
+    except OSError as exc:
+        raise LatexMdError(f"pandoc temporary I/O failed: {type(exc).__name__}") from exc

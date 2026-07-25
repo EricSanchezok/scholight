@@ -166,7 +166,7 @@ class SearchEngine:
 
         logger.info(
             "search completed",
-            query=request.query[:80],
+            query_length=len(request.query),
             level=request.level,
             mode="hybrid" if use_hybrid else "dense",
             hits=len(hits),
