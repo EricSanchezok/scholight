@@ -41,6 +41,12 @@ def runtime_contents() -> str:
             "SCHOLIGHT_ACME_EMAIL=operator@example.invalid",
             "SCHOLIGHT_AWS_REGION=ap-southeast-1",
             "SCHOLIGHT_ECR_REGISTRY=683390797772.dkr.ecr.ap-southeast-1.amazonaws.com",
+            "SCHOLIGHT_DOCKER_SUBNET=172.31.0.0/24",
+            "SCHOLIGHT_CADDY_IP=172.31.0.2",
+            "SCHOLIGHT_FRONTEND_IP=172.31.0.10",
+            "SCHOLIGHT_API_IP=172.31.0.20",
+            "SCHOLIGHT_METADATA_SYNC_IP=172.31.0.30",
+            "SCHOLIGHT_PAPER_INGEST_IP=172.31.0.40",
             "SCHOLIGHT_PG_HOST=postgres.example.invalid",
             "SCHOLIGHT_PG_DATABASE=sanchezcloud",
             "SCHOLIGHT_APP_PG_USER=scholight_app",
@@ -236,6 +242,20 @@ def test_missing_runtime_env_fetches_only_the_fixed_secure_parameter(tmp_path: P
         "--with-decryption --query Parameter.Value --output text "
         "--region ap-southeast-1"
     ) in commands
+
+
+def test_missing_static_network_address_is_rejected_before_install(tmp_path: Path) -> None:
+    env, source, _ = bootstrap_environment(tmp_path, None)
+    env["FAKE_PARAMETER_VALUE"] = runtime_contents().replace(
+        "SCHOLIGHT_PAPER_INGEST_IP=172.31.0.40\n", ""
+    )
+
+    result = run_bootstrap(env, source)
+
+    runtime = Path(env["SCHOLIGHT_BOOTSTRAP_ROOT"]) / "etc" / "scholight" / "runtime.env"
+    assert result.returncode != 0
+    assert "SCHOLIGHT_PAPER_INGEST_IP is required" in result.stderr
+    assert not runtime.exists()
 
 
 def test_invalid_downloaded_runtime_is_not_installed_or_printed(tmp_path: Path) -> None:

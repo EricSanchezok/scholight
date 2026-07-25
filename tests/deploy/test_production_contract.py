@@ -523,18 +523,18 @@ def test_production_proxy_trust_is_exact_caddy_ip() -> None:
     compose = yaml.safe_load((PRODUCTION / "compose.yaml").read_text(encoding="utf-8"))
     trusted = compose["services"]["api"]["environment"]["SCHOLIGHT_FORWARDED_ALLOW_IPS"]
 
-    assert trusted == "${SCHOLIGHT_CADDY_IP:-172.31.0.2}"
+    assert trusted == "${SCHOLIGHT_CADDY_IP:?SCHOLIGHT_CADDY_IP is required}"
     assert trusted != "*"
 
 
 def test_long_lived_production_services_have_unique_static_ips() -> None:
     compose = yaml.safe_load((PRODUCTION / "compose.yaml").read_text(encoding="utf-8"))
     expected = {
-        "caddy": "${SCHOLIGHT_CADDY_IP:-172.31.0.2}",
-        "frontend": "${SCHOLIGHT_FRONTEND_IP:-172.31.0.10}",
-        "api": "${SCHOLIGHT_API_IP:-172.31.0.20}",
-        "metadata-sync": "${SCHOLIGHT_METADATA_SYNC_IP:-172.31.0.30}",
-        "paper-ingest": "${SCHOLIGHT_PAPER_INGEST_IP:-172.31.0.40}",
+        "caddy": "${SCHOLIGHT_CADDY_IP:?SCHOLIGHT_CADDY_IP is required}",
+        "frontend": "${SCHOLIGHT_FRONTEND_IP:?SCHOLIGHT_FRONTEND_IP is required}",
+        "api": "${SCHOLIGHT_API_IP:?SCHOLIGHT_API_IP is required}",
+        "metadata-sync": ("${SCHOLIGHT_METADATA_SYNC_IP:?SCHOLIGHT_METADATA_SYNC_IP is required}"),
+        "paper-ingest": ("${SCHOLIGHT_PAPER_INGEST_IP:?SCHOLIGHT_PAPER_INGEST_IP is required}"),
     }
 
     configured = {
@@ -546,6 +546,10 @@ def test_long_lived_production_services_have_unique_static_ips() -> None:
 
     runtime = (PRODUCTION / "runtime.env.example").read_text(encoding="utf-8")
     for setting in (
+        "SCHOLIGHT_DOCKER_SUBNET=172.31.0.0/24",
+        "SCHOLIGHT_CADDY_IP=172.31.0.2",
+        "SCHOLIGHT_FRONTEND_IP=172.31.0.10",
+        "SCHOLIGHT_API_IP=172.31.0.20",
         "SCHOLIGHT_METADATA_SYNC_IP=172.31.0.30",
         "SCHOLIGHT_PAPER_INGEST_IP=172.31.0.40",
     ):

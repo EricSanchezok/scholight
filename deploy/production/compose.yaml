@@ -39,7 +39,7 @@ services:
         condition: service_healthy
     networks:
       scholight:
-        ipv4_address: ${SCHOLIGHT_CADDY_IP:-172.31.0.2}
+        ipv4_address: ${SCHOLIGHT_CADDY_IP:?SCHOLIGHT_CADDY_IP is required}
     restart: unless-stopped
     mem_limit: 192m
     memswap_limit: 192m
@@ -61,7 +61,7 @@ services:
       start_period: 5s
     networks:
       scholight:
-        ipv4_address: ${SCHOLIGHT_FRONTEND_IP:-172.31.0.10}
+        ipv4_address: ${SCHOLIGHT_FRONTEND_IP:?SCHOLIGHT_FRONTEND_IP is required}
     restart: unless-stopped
     mem_limit: 128m
     memswap_limit: 128m
@@ -82,7 +82,7 @@ services:
       SCHOLIGHT_SERVER_HOST: 0.0.0.0
       SCHOLIGHT_SERVER_PORT: "8000"
       SCHOLIGHT_PROXY_HEADERS: "true"
-      SCHOLIGHT_FORWARDED_ALLOW_IPS: ${SCHOLIGHT_CADDY_IP:-172.31.0.2}
+      SCHOLIGHT_FORWARDED_ALLOW_IPS: ${SCHOLIGHT_CADDY_IP:?SCHOLIGHT_CADDY_IP is required}
       SCHOLIGHT_ZILLIZ_URI: ${SCHOLIGHT_ZILLIZ_URI:?SCHOLIGHT_ZILLIZ_URI is required}
       SCHOLIGHT_ZILLIZ_TOKEN: ${SCHOLIGHT_ZILLIZ_TOKEN:?SCHOLIGHT_ZILLIZ_TOKEN is required}
       SCHOLIGHT_EMBEDDING_BASE_URL: ${SCHOLIGHT_EMBEDDING_BASE_URL:?SCHOLIGHT_EMBEDDING_BASE_URL is required}
@@ -126,7 +126,7 @@ services:
       - "8000"
     networks:
       scholight:
-        ipv4_address: ${SCHOLIGHT_API_IP:-172.31.0.20}
+        ipv4_address: ${SCHOLIGHT_API_IP:?SCHOLIGHT_API_IP is required}
     restart: unless-stopped
     mem_limit: 1024m
     memswap_limit: 1024m
@@ -155,7 +155,7 @@ services:
       SCHOLIGHT_INGEST_LEASE_SECONDS: ${SCHOLIGHT_INGEST_LEASE_SECONDS:-7200}
     networks:
       scholight:
-        ipv4_address: ${SCHOLIGHT_METADATA_SYNC_IP:-172.31.0.30}
+        ipv4_address: ${SCHOLIGHT_METADATA_SYNC_IP:?SCHOLIGHT_METADATA_SYNC_IP is required}
     restart: unless-stopped
     mem_limit: 384m
     memswap_limit: 384m
@@ -187,7 +187,7 @@ services:
       - scholight-data:/data
     networks:
       scholight:
-        ipv4_address: ${SCHOLIGHT_PAPER_INGEST_IP:-172.31.0.40}
+        ipv4_address: ${SCHOLIGHT_PAPER_INGEST_IP:?SCHOLIGHT_PAPER_INGEST_IP is required}
     restart: unless-stopped
     mem_limit: 1280m
     memswap_limit: 1280m
@@ -223,4 +223,4 @@ networks:
   scholight:
     ipam:
       config:
-        - subnet: ${SCHOLIGHT_DOCKER_SUBNET:-172.31.0.0/24}
+        - subnet: ${SCHOLIGHT_DOCKER_SUBNET:?SCHOLIGHT_DOCKER_SUBNET is required}
