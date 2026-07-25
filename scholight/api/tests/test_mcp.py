@@ -411,7 +411,11 @@ async def test_mcp_origin_is_optional_but_exact_when_present(
 
 @pytest.mark.parametrize(
     ("status_code", "code"),
-    [(429, "anonymous_rate_limit_exceeded"), (503, "search_unavailable")],
+    [
+        (429, "anonymous_rate_limit_exceeded"),
+        (503, "search_capacity_exceeded"),
+        (503, "search_unavailable"),
+    ],
 )
 async def test_search_failures_become_mcp_tool_errors(
     mcp_client: httpx.AsyncClient,

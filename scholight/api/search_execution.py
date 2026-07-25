@@ -18,15 +18,19 @@ from scholight.api.models.search import PublicSearchRequest, PublicSearchRespons
 from scholight.api.search_access import (
     SearchAccessError,
     compensate_search_quota,
+    enforce_search_pre_admission,
     reserve_search_quota,
 )
+from scholight.api.search_capacity import SearchCapacityError, get_search_capacity_gate
 from scholight.api.search_mapper import map_search_response
 from scholight.api.usage_tasks import schedule_usage_event
 from scholight.config import settings
 from scholight.db.queries_usage import UsageEvent
+from scholight.logging.emf import MetricUnit, emit_emf
 from scholight.models.quota import QuotaErrorDetails
 from scholight.models.search import SearchResult
 from scholight.search.errors import SearchUnavailable, ThoroughSearchUnavailable
+from scholight.search.executor import run_search_blocking
 from scholight.store.ingest import StoreError
 from scholight.store.query import batch_get_arxiv_papers
 
@@ -130,7 +134,7 @@ async def _enrich_public_abstracts(result: SearchResult) -> tuple[dict[str, str 
         return {}, False
     arxiv_ids = [hit.arxiv_id for hit in result.hits]
     try:
-        papers = await asyncio.to_thread(
+        papers = await run_search_blocking(
             batch_get_arxiv_papers,
             arxiv_ids,
             output_fields=_PUBLIC_ENRICHMENT_FIELDS,
@@ -179,7 +183,59 @@ def _execution_error(
     )
 
 
-async def execute_public_search(
+def _emit_search_metrics(
+    body: PublicSearchRequest,
+    invocation: SearchInvocation,
+    *,
+    outcome: str,
+    elapsed_ms: float,
+    capacity_rejected: bool = False,
+    unexpected_5xx: bool = False,
+    admitted: bool = False,
+    in_flight: int | None = None,
+) -> None:
+    metrics: dict[str, tuple[float | int, Literal["Count", "Milliseconds"]]] = {
+        "RequestCount": (1, "Count")
+    }
+    if capacity_rejected:
+        metrics["CapacityRejected"] = (1, "Count")
+    if unexpected_5xx:
+        metrics["Unexpected5xx"] = (1, "Count")
+    if admitted:
+        metrics["Admitted"] = (1, "Count")
+    if in_flight is not None:
+        metrics["InFlight"] = (in_flight, "Count")
+    try:
+        emit_emf(
+            service="api",
+            strength=body.strength.value,
+            transport=invocation.transport,
+            outcome=outcome,
+            metrics=metrics,
+        )
+        aggregate_metrics: dict[str, tuple[float | int, MetricUnit]] = {
+            "RequestCount": (1, "Count")
+        }
+        if capacity_rejected:
+            aggregate_metrics["CapacityRejected"] = (1, "Count")
+        if unexpected_5xx:
+            aggregate_metrics["Unexpected5xx"] = (1, "Count")
+        emit_emf(service="api", metrics=aggregate_metrics)
+        emit_emf(
+            service="api",
+            strength=body.strength.value,
+            metrics={
+                ("SuccessLatency" if outcome in {"success", "degraded"} else "ErrorLatency"): (
+                    elapsed_ms,
+                    "Milliseconds",
+                )
+            },
+        )
+    except Exception:
+        logger.warning("search_metric_emit_failed", strength=body.strength.value)
+
+
+async def _execute_admitted_search(
     body: PublicSearchRequest,
     invocation: SearchInvocation,
 ) -> PublicSearchResponse:
@@ -206,8 +262,16 @@ async def execute_public_search(
 
     t_start = time.perf_counter()
     engine = SearchEngine()
+    timeout_seconds = (
+        settings.search_standard_timeout_seconds
+        if body.strength.value == "standard"
+        else settings.search_level2_timeout_seconds
+    )
     try:
-        result = await engine.search(internal_request)
+        result = await asyncio.wait_for(
+            engine.search(internal_request),
+            timeout=timeout_seconds,
+        )
     except asyncio.CancelledError as exc:
         await compensate_search_quota(reservation)
         elapsed_ms = (time.perf_counter() - t_start) * 1000
@@ -230,6 +294,38 @@ async def execute_public_search(
             message="Search service error",
             retryable=False,
             structured_http_detail=False,
+        ) from exc
+    except TimeoutError as exc:
+        await compensate_search_quota(reservation)
+        elapsed_ms = (time.perf_counter() - t_start) * 1000
+        error_code = (
+            "thorough_search_unavailable"
+            if body.strength.value == "thorough"
+            else "search_unavailable"
+        )
+        _schedule_usage(
+            invocation.actor,
+            transport=invocation.transport,
+            request_id=invocation.request_id,
+            strength=body.strength.value,
+            outcome="failed",
+            quota_units=0,
+            result_count=None,
+            duration_ms=elapsed_ms,
+            status_code=503,
+            error_code=error_code,
+        )
+        logger.warning("search_timeout", strength=body.strength, timeout_seconds=timeout_seconds)
+        raise _execution_error(
+            status_code=503,
+            code=error_code,
+            message=(
+                "Thorough search is temporarily unavailable."
+                if body.strength.value == "thorough"
+                else "Search is temporarily unavailable."
+            ),
+            retryable=True,
+            retry_after=5,
         ) from exc
     except ThoroughSearchUnavailable as exc:
         await compensate_search_quota(reservation)
@@ -379,6 +475,80 @@ async def execute_public_search(
         )
 
     return response
+
+
+async def execute_public_search(
+    body: PublicSearchRequest,
+    invocation: SearchInvocation,
+) -> PublicSearchResponse:
+    """Validate attempt limits, admit bounded work, then execute one search."""
+    started = time.perf_counter()
+    current_user = invocation.actor.user if invocation.actor is not None else None
+    try:
+        await enforce_search_pre_admission(
+            invocation.client_ip,
+            current_user,
+            strength=body.strength.value,
+        )
+    except SearchAccessError as exc:
+        error = _execution_error(
+            status_code=exc.status_code,
+            code=exc.code,
+            message=exc.message,
+            retryable=True,
+            retry_after=exc.retry_after,
+            quota=exc.quota,
+        )
+        _emit_search_metrics(
+            body,
+            invocation,
+            outcome="rejected",
+            elapsed_ms=(time.perf_counter() - started) * 1000,
+        )
+        raise error from exc
+
+    gate = get_search_capacity_gate()
+    try:
+        async with gate.admit(body.strength.value):
+            snapshot = gate.snapshot()
+            try:
+                response = await _execute_admitted_search(body, invocation)
+            except PublicSearchError as exc:
+                _emit_search_metrics(
+                    body,
+                    invocation,
+                    outcome="failed",
+                    elapsed_ms=(time.perf_counter() - started) * 1000,
+                    unexpected_5xx=exc.status_code >= 500,
+                    admitted=True,
+                    in_flight=snapshot.total_in_flight,
+                )
+                raise
+            _emit_search_metrics(
+                body,
+                invocation,
+                outcome="degraded" if response.degraded else "success",
+                elapsed_ms=(time.perf_counter() - started) * 1000,
+                admitted=True,
+                in_flight=snapshot.total_in_flight,
+            )
+            return response
+    except SearchCapacityError as exc:
+        error = _execution_error(
+            status_code=503,
+            code="search_capacity_exceeded",
+            message="Search capacity is temporarily full.",
+            retryable=True,
+            retry_after=1,
+        )
+        _emit_search_metrics(
+            body,
+            invocation,
+            outcome="capacity_rejected",
+            elapsed_ms=(time.perf_counter() - started) * 1000,
+            capacity_rejected=True,
+        )
+        raise error from exc
 
 
 __all__ = ["PublicSearchError", "SearchInvocation", "execute_public_search"]

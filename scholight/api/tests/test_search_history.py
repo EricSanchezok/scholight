@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import importlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -362,6 +363,30 @@ async def test_history_write_failure_is_consumed_and_structured() -> None:
     assert kwargs["retryable"] is True
     assert kwargs["duration_ms"] >= 0
     assert "query" not in kwargs
+
+
+@pytest.mark.asyncio
+async def test_history_queue_full_drops_secondary_write_without_blocking() -> None:
+    history_tasks = importlib.import_module("scholight.api.history_tasks")
+    queue: asyncio.Queue[object] = asyncio.Queue(maxsize=1)
+    queue.put_nowait(object())
+
+    with (
+        patch.object(history_tasks, "_ensure_history_worker", return_value=queue),
+        patch.object(history_tasks, "emit_emf") as emit,
+    ):
+        scheduled = history_tasks.schedule_search_history_write(
+            request_id="request-123",
+            user_id=42,
+            query_text="private query",
+            strength="standard",
+            filters=None,
+            result_count=3,
+            elapsed_ms=12.5,
+        )
+
+    assert scheduled is False
+    assert emit.call_args.kwargs["metrics"]["HistoryQueueDropped"] == (1, "Count")
 
 
 @pytest.mark.asyncio

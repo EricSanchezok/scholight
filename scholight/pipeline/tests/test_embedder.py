@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from scholight.pipeline import embedder as embedder_module
 from scholight.pipeline.embedder import Embedder
 
 
@@ -56,3 +57,28 @@ async def test_embed_single_keeps_document_text_unmodified() -> None:
 
     assert result == vector
     embed_batch.assert_awaited_once_with([document])
+
+
+@pytest.mark.asyncio
+async def test_api_embedder_reuses_lifecycle_client_without_closing_it() -> None:
+    shared = AsyncMock()
+    embedder_module._api_client = shared
+    try:
+        async with Embedder() as embedder:
+            assert embedder._client is shared
+    finally:
+        embedder_module._api_client = None
+
+    shared.aclose.assert_not_awaited()
+
+
+def test_embedding_client_has_bounded_pool_and_phase_timeouts() -> None:
+    with patch("scholight.pipeline.embedder.httpx.AsyncClient") as client:
+        embedder_module.create_embedding_client()
+
+    kwargs = client.call_args.kwargs
+    timeout = kwargs["timeout"]
+    limits = kwargs["limits"]
+    assert (timeout.connect, timeout.read, timeout.write, timeout.pool) == (3.0, 10.0, 10.0, 1.0)
+    assert limits.max_connections == 24
+    assert limits.max_keepalive_connections == 12

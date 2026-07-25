@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import importlib
 from datetime import UTC, date, datetime
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
@@ -22,6 +24,7 @@ from scholight.api.usage import (
     fill_volume_days,
     resolve_usage_range,
 )
+from scholight.db.queries_usage import UsageEvent
 from scholight.models.quota import QuotaStatus
 
 
@@ -149,6 +152,36 @@ def test_anonymous_or_rejected_request_schedules_no_usage_event() -> None:
         )
 
     schedule.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_usage_queue_full_drops_secondary_write_without_blocking() -> None:
+    usage_tasks = importlib.import_module("scholight.api.usage_tasks")
+    queue: asyncio.Queue[object] = asyncio.Queue(maxsize=1)
+    queue.put_nowait(object())
+    event = UsageEvent(
+        request_id="request-1",
+        user_id=42,
+        strength="standard",
+        actor_type="web",
+        transport="rest",
+        access_key_id=None,
+        outcome="success",
+        quota_units=1,
+        result_count=3,
+        search_duration_ms=12.5,
+        status_code=200,
+        error_code=None,
+    )
+
+    with (
+        patch.object(usage_tasks, "_ensure_usage_worker", return_value=queue),
+        patch.object(usage_tasks, "emit_emf") as emit,
+    ):
+        scheduled = usage_tasks.schedule_usage_event(event)
+
+    assert scheduled is False
+    assert emit.call_args.kwargs["metrics"]["UsageQueueDropped"] == (1, "Count")
 
 
 @pytest.mark.asyncio

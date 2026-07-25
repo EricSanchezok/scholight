@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
 import structlog
@@ -11,6 +10,7 @@ from scholight.config import settings
 from scholight.pipeline.embedder import Embedder
 from scholight.search.base import Phase, PipelineContext
 from scholight.search.common.fusion import rerank_candidates as fuse_scores
+from scholight.search.executor import run_search_blocking
 from scholight.store.fields import PAPER_SEARCH_WITH_EMBEDDING
 from scholight.store.query import hybrid_search_arxiv_papers, search_arxiv_papers
 
@@ -30,6 +30,7 @@ def _do_paper_search(
     date_from: str | None,
     date_to: str | None,
     arxiv_ids: list[str] | None,
+    timeout: float,
 ) -> list[dict[str, Any]]:
     """Dispatch between dense and hybrid paper search."""
     if not use_hybrid:
@@ -42,6 +43,7 @@ def _do_paper_search(
             date_to=date_to,
             arxiv_ids=arxiv_ids,
             output_fields=_PAPER_OUTPUT_FIELDS,
+            timeout=timeout,
         )
     return hybrid_search_arxiv_papers(
         query_vector=query_vector,
@@ -52,6 +54,7 @@ def _do_paper_search(
         date_from=date_from,
         date_to=date_to,
         output_fields=_PAPER_OUTPUT_FIELDS,
+        timeout=timeout,
     )
 
 
@@ -98,7 +101,7 @@ class AnnSearchPhase(Phase):
         if ctx.query_vector is None:
             raise ValueError("query_vector not set — EmbedPhase must run first")
 
-        ctx.raw_hits = await asyncio.to_thread(
+        ctx.raw_hits = await run_search_blocking(
             _do_paper_search,
             query_vector=ctx.query_vector,
             query_text=request.query,
@@ -109,6 +112,7 @@ class AnnSearchPhase(Phase):
             date_from=request.date_from,
             date_to=request.date_to,
             arxiv_ids=request.arxiv_ids,
+            timeout=settings.search_level1_rpc_timeout_seconds,
         )
 
         ctx.metadata["mode"] = "hybrid" if use_hybrid else "dense"

@@ -15,7 +15,6 @@ the full collection and suffered from 0.3~27s latency fluctuation
 
 from __future__ import annotations
 
-import asyncio
 import threading
 from collections import defaultdict
 from typing import Any
@@ -25,6 +24,7 @@ from pymilvus.exceptions import MilvusException
 
 from scholight.config import settings
 from scholight.search.base import Phase, PipelineContext
+from scholight.search.executor import run_search_blocking
 from scholight.store.client import get_client
 from scholight.store.fields import CHUNK_SEARCH_FIELDS
 from scholight.store.query import (
@@ -87,11 +87,11 @@ class ChunkSearchPhase(Phase):
         if not ctx.request.query:
             raise ValueError("query text required for BM25 coarse search")
 
-        await asyncio.to_thread(_ensure_chunks_loaded)
+        await run_search_blocking(_ensure_chunks_loaded)
         query_text = ctx.request.query
 
         # ── Stage 1: BM25 coarse recall ──────────────────────────
-        bm25_hits = await asyncio.to_thread(
+        bm25_hits = await run_search_blocking(
             bm25_search_all_chunks,
             query_text=query_text,
             top_k=settings.bm25_coarse_top_k,
@@ -110,7 +110,7 @@ class ChunkSearchPhase(Phase):
 
         request = ctx.request
         if any((request.categories, request.authors, request.date_from, request.date_to)):
-            eligible_papers = await asyncio.to_thread(
+            eligible_papers = await run_search_blocking(
                 batch_get_arxiv_papers,
                 candidate_ids,
                 categories=request.categories,
@@ -129,7 +129,7 @@ class ChunkSearchPhase(Phase):
             ctx.metadata["chunk_candidates"] = 0
             return
 
-        chunks = await asyncio.to_thread(
+        chunks = await run_search_blocking(
             search_arxiv_chunks,
             query_vector=ctx.query_vector,
             arxiv_ids=candidate_ids,
@@ -278,7 +278,7 @@ class RRFFusionPhase(Phase):
         # Collect arxiv_ids that need metadata backfill
         missing_ids = [aid for aid in chunk_rank if aid not in existing]
         paper_map = (
-            await asyncio.to_thread(
+            await run_search_blocking(
                 batch_get_arxiv_papers,
                 missing_ids,
                 timeout=settings.search_level2_rpc_timeout_seconds,

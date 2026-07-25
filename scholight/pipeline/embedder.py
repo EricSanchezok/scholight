@@ -20,6 +20,45 @@ logger = structlog.get_logger(__name__)
 _ACADEMIC_QUERY_INSTRUCTION = (
     "Given a research topic or paper title, retrieve relevant academic papers and their abstracts"
 )
+_api_client: httpx.AsyncClient | None = None
+
+
+def _auth_headers() -> dict[str, str]:
+    if settings.embedding_api_key:
+        return {"Authorization": f"Bearer {settings.embedding_api_key}"}
+    return {}
+
+
+def create_embedding_client() -> httpx.AsyncClient:
+    """Create one bounded client suitable for API-lifecycle reuse."""
+    return httpx.AsyncClient(
+        timeout=httpx.Timeout(
+            connect=settings.embedding_connect_timeout_seconds,
+            read=settings.embedding_read_timeout_seconds,
+            write=settings.embedding_write_timeout_seconds,
+            pool=settings.embedding_pool_timeout_seconds,
+        ),
+        limits=httpx.Limits(
+            max_connections=settings.embedding_max_connections,
+            max_keepalive_connections=settings.embedding_max_keepalive_connections,
+        ),
+        headers=_auth_headers(),
+    )
+
+
+async def start_api_embedding_client() -> None:
+    """Create the shared API embedding client once."""
+    global _api_client
+    if _api_client is None:
+        _api_client = create_embedding_client()
+
+
+async def stop_api_embedding_client() -> None:
+    """Close and clear the shared API embedding client."""
+    global _api_client
+    client, _api_client = _api_client, None
+    if client is not None:
+        await client.aclose()
 
 
 def _instruct_query(query: str) -> str:
@@ -41,26 +80,23 @@ class Embedder:
             batches = await e.embed_batch(["text1", "text2"])
     """
 
-    def __init__(self) -> None:
-        self._client: httpx.AsyncClient | None = None
+    def __init__(self, client: httpx.AsyncClient | None = None) -> None:
+        self._client = client
+        self._owns_client = False
 
     async def __aenter__(self) -> Embedder:
-        self._client = httpx.AsyncClient(
-            timeout=httpx.Timeout(30.0),
-            headers=self._auth_headers,
-        )
+        if self._client is None and _api_client is not None:
+            self._client = _api_client
+        if self._client is None:
+            self._client = create_embedding_client()
+            self._owns_client = True
         return self
 
     async def __aexit__(self, *_args: object) -> None:
-        if self._client is not None:
+        if self._client is not None and self._owns_client:
             await self._client.aclose()
-            self._client = None
-
-    @property
-    def _auth_headers(self) -> dict[str, str]:
-        if settings.embedding_api_key:
-            return {"Authorization": f"Bearer {settings.embedding_api_key}"}
-        return {}
+        self._client = None
+        self._owns_client = False
 
     @property
     def _url(self) -> str:

@@ -22,9 +22,10 @@ from scholight.db.queries_ingestion import (
     complete_ingestion_job,
     fail_ingestion_job,
 )
+from scholight.logging.emf import emit_emf
 from scholight.pipeline.chunkers.md_chunker import chunk_markdown
 from scholight.pipeline.embedder import Embedder
-from scholight.pipeline.latex_md import LatexMdError, latex_to_markdown
+from scholight.pipeline.latex_md import LatexMdError, LatexResourceLimitError, latex_to_markdown
 from scholight.pipeline.pdf_md import PDFMdError, pdf_to_markdown
 from scholight.scheduler.resources import (
     DownloadedResource,
@@ -88,6 +89,12 @@ async def _parse_resource(
         if not markdown.strip():
             raise LatexMdError("LaTeX parser produced empty markdown")
     except LatexMdError as exc:
+        if isinstance(exc, LatexResourceLimitError):
+            emit_emf(
+                service="paper-ingest",
+                outcome="fallback",
+                metrics={"PandocResourceFallback": (1, "Count")},
+            )
         logger.info(
             "latex parse failed; falling back to exact PDF",
             arxiv_id=job.arxiv_id,
@@ -207,6 +214,11 @@ async def run_worker_once(worker_id: str, *, scratch_root: Path = _SCRATCH_ROOT)
             target_version=job.target_version,
             outcome=outcome,
         )
+        emit_emf(
+            service="paper-ingest",
+            outcome="succeeded",
+            metrics={"IngestionSucceeded": (1, "Count")},
+        )
     except (InvalidIngestionJobError, IngestionSafetyError) as exc:
         await fail_ingestion_job(
             job.arxiv_id,
@@ -214,6 +226,11 @@ async def run_worker_once(worker_id: str, *, scratch_root: Path = _SCRATCH_ROOT)
             code="invalid_job",
             message=_safe_error(exc),
             retry_at=None,
+        )
+        emit_emf(
+            service="paper-ingest",
+            outcome="dead",
+            metrics={"IngestionDead": (1, "Count")},
         )
     except (ResourceUnavailableError, ResourceCorruptError, LatexMdError, PDFMdError) as exc:
         retry_at = (
@@ -228,6 +245,11 @@ async def run_worker_once(worker_id: str, *, scratch_root: Path = _SCRATCH_ROOT)
             message=_safe_error(exc),
             retry_at=retry_at,
         )
+        emit_emf(
+            service="paper-ingest",
+            outcome="retry" if retry_at is not None else "dead",
+            metrics={("IngestionRetry" if retry_at is not None else "IngestionDead"): (1, "Count")},
+        )
     except Exception as exc:
         retry_at = (
             dt.datetime.now(dt.UTC) + _retry_delay(job.attempt_count)
@@ -240,6 +262,11 @@ async def run_worker_once(worker_id: str, *, scratch_root: Path = _SCRATCH_ROOT)
             code="temporary_failure",
             message=_safe_error(exc),
             retry_at=retry_at,
+        )
+        emit_emf(
+            service="paper-ingest",
+            outcome="retry" if retry_at is not None else "dead",
+            metrics={("IngestionRetry" if retry_at is not None else "IngestionDead"): (1, "Count")},
         )
     return True
 

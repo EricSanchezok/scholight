@@ -175,6 +175,30 @@ class SearchQuotaReservation:
     compensated: bool = False
 
 
+async def enforce_search_pre_admission(
+    client_ip: str | None,
+    current_user: UserRecord | None,
+    *,
+    strength: str,
+) -> None:
+    """Apply attempt-level controls that must run before capacity admission."""
+    if strength not in {"standard", "thorough"}:
+        raise ValueError("strength must be standard or thorough")
+    if current_user is not None:
+        return
+    if client_ip is None:
+        raise _access_error(
+            status_code=503,
+            code="quota_service_unavailable",
+            message="Search quota service is temporarily unavailable.",
+            retry_after=5,
+        )
+    check_anonymous_minute_limit(
+        client_ip,
+        strength=cast("SearchStrengthValue", strength),
+    )
+
+
 async def reserve_search_quota(
     client_ip: str | None,
     current_user: UserRecord | None,
@@ -235,7 +259,6 @@ async def reserve_search_quota(
             message="Search quota service is temporarily unavailable.",
             retry_after=5,
         )
-    check_anonymous_minute_limit(client_ip, strength=normalized_strength)
     digest = anonymous_ip_digest(client_ip, settings.anonymous_quota_hmac_secret)
     limit = (
         settings.anonymous_standard_daily_limit
@@ -303,6 +326,7 @@ __all__ = [
     "anonymous_ip_digest",
     "check_anonymous_minute_limit",
     "compensate_search_quota",
+    "enforce_search_pre_admission",
     "reserve_search_quota",
     "reset_anonymous_minute_limits",
 ]

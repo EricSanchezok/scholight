@@ -210,7 +210,10 @@ def health(
                 )
                 click.confirm("Continue with deep scan?", abort=True)
         except Exception:
-            pass  # if stats fails, proceed anyway
+            click.echo(
+                "Could not estimate collection size; continuing with the requested deep scan.",
+                err=True,
+            )
 
     click.echo("Running health check…", err=True)
     report = run_health_check(deep=deep, dims=dim_list, fix=fix)

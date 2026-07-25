@@ -83,20 +83,31 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Startup / shutdown lifecycle for database connections."""
     from scholight.api.history_tasks import drain_search_history_tasks
     from scholight.api.search_access import reset_anonymous_minute_limits
+    from scholight.api.search_capacity import reset_search_capacity_gate
     from scholight.api.usage_tasks import drain_usage_tasks
     from scholight.db.client import close_pool, create_pool
+    from scholight.pipeline.embedder import (
+        start_api_embedding_client,
+        stop_api_embedding_client,
+    )
+    from scholight.search.executor import start_search_executor, stop_search_executor
     from scholight.store.client import get_client
 
     _reset_dependency_probe_cache()
     reset_anonymous_minute_limits()
+    reset_search_capacity_gate()
     async with app.state.mcp_server.session_manager.run():
         await create_pool()
+        start_search_executor()
+        await start_api_embedding_client()
         with suppress(Exception):
             get_client()
         try:
             yield
         finally:
             await asyncio.gather(drain_search_history_tasks(), drain_usage_tasks())
+            await stop_api_embedding_client()
+            stop_search_executor()
             await close_pool()
 
 
