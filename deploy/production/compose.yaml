@@ -154,7 +154,8 @@ services:
       SCHOLIGHT_INGEST_MAX_ATTEMPTS: ${SCHOLIGHT_INGEST_MAX_ATTEMPTS:-8}
       SCHOLIGHT_INGEST_LEASE_SECONDS: ${SCHOLIGHT_INGEST_LEASE_SECONDS:-7200}
     networks:
-      - scholight
+      scholight:
+        ipv4_address: ${SCHOLIGHT_METADATA_SYNC_IP:-172.31.0.30}
     restart: unless-stopped
     mem_limit: 384m
     memswap_limit: 384m
@@ -185,7 +186,8 @@ services:
     volumes:
       - scholight-data:/data
     networks:
-      - scholight
+      scholight:
+        ipv4_address: ${SCHOLIGHT_PAPER_INGEST_IP:-172.31.0.40}
     restart: unless-stopped
     mem_limit: 1280m
     memswap_limit: 1280m
