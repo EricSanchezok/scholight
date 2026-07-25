@@ -38,4 +38,4 @@ for _ in {1..30}; do
   sleep 0.2
 done
 
-uv run python tests/deploy/keepalive_probe.py "http://127.0.0.1:${PORT}/search"
+python3 tests/deploy/keepalive_probe.py "http://127.0.0.1:${PORT}/search"
