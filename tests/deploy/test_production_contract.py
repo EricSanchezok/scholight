@@ -556,6 +556,20 @@ def test_long_lived_production_services_have_unique_static_ips() -> None:
         assert setting in runtime
 
 
+def test_ci_compose_validation_sets_the_complete_network_contract() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+    for setting in (
+        "SCHOLIGHT_DOCKER_SUBNET: 172.31.0.0/24",
+        "SCHOLIGHT_CADDY_IP: 172.31.0.2",
+        "SCHOLIGHT_FRONTEND_IP: 172.31.0.10",
+        "SCHOLIGHT_API_IP: 172.31.0.20",
+        "SCHOLIGHT_METADATA_SYNC_IP: 172.31.0.30",
+        "SCHOLIGHT_PAPER_INGEST_IP: 172.31.0.40",
+    ):
+        assert setting in workflow
+
+
 def test_ci_runs_built_backend_migrations_against_postgres() -> None:
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 

@@ -199,6 +199,12 @@ jobs:
           SCHOLIGHT_FRONTEND_IMAGE: registry.example/scholight/frontend@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
           SCHOLIGHT_DOMAIN: scholight.example.invalid
           SCHOLIGHT_ACME_EMAIL: operator@example.invalid
+          SCHOLIGHT_DOCKER_SUBNET: 172.31.0.0/24
+          SCHOLIGHT_CADDY_IP: 172.31.0.2
+          SCHOLIGHT_FRONTEND_IP: 172.31.0.10
+          SCHOLIGHT_API_IP: 172.31.0.20
+          SCHOLIGHT_METADATA_SYNC_IP: 172.31.0.30
+          SCHOLIGHT_PAPER_INGEST_IP: 172.31.0.40
           SCHOLIGHT_PG_HOST: postgres.example.invalid
           SCHOLIGHT_PG_DATABASE: sanchezcloud
           SCHOLIGHT_APP_PG_USER: scholight_app
