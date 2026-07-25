@@ -1,4 +1,4 @@
-"""Run a bounded, progressively increasing search canary against Scholight."""
+"""Run a bounded open-arrival-rate canary against a Scholight deployment."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import contextlib
 import csv
 import html
 import ipaddress
+import itertools
 import json
 import math
 import os
@@ -16,7 +17,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 from urllib.parse import urlparse
 
 import httpx
@@ -24,15 +25,20 @@ import httpx
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-_STANDARD_RATE_CANDIDATES = (0.5, 1.0, 2.0, 4.0, 8.0, 12.0, 20.0, 30.0, 40.0)
-_THOROUGH_RATE_CANDIDATES = (0.1, 0.2, 0.4, 0.8, 1.0, 2.0, 3.0, 4.0)
-_DEFAULT_MAX_STANDARD_RPS = 10.0
+_STANDARD_RATE_CANDIDATES = (1.0, 2.0, 4.0, 8.0, 12.0, 16.0, 20.0)
+_THOROUGH_RATE_CANDIDATES = (0.5, 1.0, 2.0, 3.0, 4.0)
+_DEFAULT_MAX_STANDARD_RPS = 4.0
 _DEFAULT_MAX_THOROUGH_RPS = 1.0
-_ELEVATED_MAX_STANDARD_RPS = 40.0
-_ELEVATED_MAX_THOROUGH_RPS = 4.0
+_MAX_STANDARD_RPS = 20.0
+_MAX_THOROUGH_RPS = 4.0
 _MAX_STAGE_SECONDS = 120
-_MAX_IN_FLIGHT = 64
+_MAX_IN_FLIGHT = 512
+_WARMUP_REQUESTS = 5
+_COOLDOWN_SECONDS = 15
 _API_KEY_ENV = "SCHOLIGHT_LOAD_TEST_API_KEY"
+_SLO_SECONDS = {"standard": 5.0, "thorough": 30.0}
+_REQUEST_TIMEOUT_SECONDS = {"standard": 25.0, "thorough": 65.0}
+_CRITICAL_CATEGORIES = frozenset({"connect_error", "reset_error", "unexpected_5xx"})
 _QUERIES = (
     "retrieval augmented generation evaluation",
     "vision language model reasoning",
@@ -55,61 +61,115 @@ _QUERIES = (
     "foundation models for scientific reasoning",
     "robust evaluation of generative models",
 )
+SaturationConclusion = Literal[
+    "not established",
+    "generator limited",
+    "overload protected",
+    "saturation likely",
+]
 
 
 @dataclass(frozen=True, slots=True)
 class RequestResult:
-    """One bounded request outcome without retaining response content."""
+    """One request outcome without retaining response content or credentials."""
 
     status: int | str
     duration_seconds: float
     degraded: bool
+    category: str = "success"
     started_offset_seconds: float = 0.0
+    error_sample: str | None = None
+
+    @property
+    def successful(self) -> bool:
+        return self.category == "success"
 
 
 @dataclass(slots=True)
 class StageSummary:
-    """Aggregate inputs and results for one constant-arrival-rate stage."""
+    """Aggregate offered load and completed outcomes for one stage."""
 
     strength: str
     target_rps: float
     duration_seconds: int
+    offered: int = 0
+    scheduled: int = 0
+    generator_dropped: int = 0
     results: list[RequestResult] = field(default_factory=list)
-    dropped: int = 0
     wall_seconds: float = 0.0
+    max_consecutive_critical: int = 0
+
+    @property
+    def dropped(self) -> int:
+        """Compatibility alias for reports made by the earlier canary."""
+        return self.generator_dropped
 
     @property
     def status_counts(self) -> Counter[str]:
         return Counter(str(result.status) for result in self.results)
 
     @property
+    def outcome_counts(self) -> Counter[str]:
+        counts = Counter(result.category for result in self.results)
+        counts["generator_limited"] += self.generator_dropped
+        return counts
+
+    @property
+    def completed(self) -> int:
+        return len(self.results)
+
+    @property
+    def successful(self) -> int:
+        return sum(result.successful for result in self.results)
+
+    @property
     def error_count(self) -> int:
-        return sum(
-            not isinstance(result.status, int) or result.status < 200 or result.status >= 400
-            for result in self.results
+        return self.completed - self.successful
+
+    @property
+    def error_rate(self) -> float:
+        return self.error_count / self.completed if self.completed else 0.0
+
+    @property
+    def completed_rps(self) -> float:
+        return self.completed / self.wall_seconds if self.wall_seconds else 0.0
+
+    @property
+    def goodput_rps(self) -> float:
+        return self.successful / self.wall_seconds if self.wall_seconds else 0.0
+
+    def successful_percentile(self, quantile: float) -> float:
+        return percentile(
+            [result.duration_seconds for result in self.results if result.successful],
+            quantile,
         )
 
     @property
     def p50_seconds(self) -> float:
-        return percentile(
-            [result.duration_seconds for result in self.results],
-            0.50,
-        )
+        return self.successful_percentile(0.50)
+
+    @property
+    def p90_seconds(self) -> float:
+        return self.successful_percentile(0.90)
 
     @property
     def p95_seconds(self) -> float:
-        return percentile(
-            [result.duration_seconds for result in self.results],
-            0.95,
-        )
+        return self.successful_percentile(0.95)
+
+    @property
+    def p99_seconds(self) -> float:
+        return self.successful_percentile(0.99)
 
     @property
     def max_seconds(self) -> float:
-        return max((result.duration_seconds for result in self.results), default=0.0)
+        return max(
+            (result.duration_seconds for result in self.results if result.successful),
+            default=0.0,
+        )
 
 
 def percentile(values: Sequence[float], quantile: float) -> float:
-    """Return the nearest-rank percentile for a non-empty or empty sequence."""
+    """Return a nearest-rank percentile, or zero for no values."""
     if not values:
         return 0.0
     ordered = sorted(values)
@@ -126,22 +186,18 @@ def build_rate_plan(maximum: float, *, candidates: Sequence[float]) -> tuple[flo
 
 
 def validate_target(base_url: str, *, allow_remote: bool) -> str:
-    """Validate the target and require explicit confirmation for non-loopback hosts."""
+    """Require explicit acknowledgement for a non-loopback target."""
     parsed = urlparse(base_url)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-        msg = "--base-url must be an absolute HTTP(S) origin"
-        raise ValueError(msg)
+        raise ValueError("--base-url must be an absolute HTTP(S) origin")
     if parsed.path not in {"", "/"} or parsed.params or parsed.query or parsed.fragment:
-        msg = "--base-url must not contain a path, query, or fragment"
-        raise ValueError(msg)
+        raise ValueError("--base-url must not contain a path, query, or fragment")
 
-    hostname = parsed.hostname
-    is_loopback = hostname == "localhost"
+    is_loopback = parsed.hostname == "localhost"
     with contextlib.suppress(ValueError):
-        is_loopback = is_loopback or ipaddress.ip_address(hostname).is_loopback
+        is_loopback = is_loopback or ipaddress.ip_address(parsed.hostname).is_loopback
     if not is_loopback and not allow_remote:
-        msg = "remote targets require --allow-remote"
-        raise ValueError(msg)
+        raise ValueError("remote targets require --allow-remote")
     return base_url.rstrip("/")
 
 
@@ -151,32 +207,29 @@ def validate_load_limits(
     maximum_thorough_rps: float | None,
     allow_elevated_load: bool,
 ) -> None:
-    """Require an explicit acknowledgement for the bounded tenfold profile."""
-    if maximum_standard_rps > _ELEVATED_MAX_STANDARD_RPS:
-        msg = f"--max-standard-rps cannot exceed {_ELEVATED_MAX_STANDARD_RPS:g}"
-        raise ValueError(msg)
-    if maximum_thorough_rps is not None and maximum_thorough_rps > _ELEVATED_MAX_THOROUGH_RPS:
-        msg = f"--max-thorough-rps cannot exceed {_ELEVATED_MAX_THOROUGH_RPS:g}"
-        raise ValueError(msg)
+    """Bound production load and require explicit acknowledgement above safe defaults."""
+    if maximum_standard_rps > _MAX_STANDARD_RPS:
+        raise ValueError(f"--max-standard-rps cannot exceed {_MAX_STANDARD_RPS:g}")
+    if maximum_thorough_rps is not None and maximum_thorough_rps > _MAX_THOROUGH_RPS:
+        raise ValueError(f"--max-thorough-rps cannot exceed {_MAX_THOROUGH_RPS:g}")
     elevated = maximum_standard_rps > _DEFAULT_MAX_STANDARD_RPS or (
         maximum_thorough_rps is not None and maximum_thorough_rps > _DEFAULT_MAX_THOROUGH_RPS
     )
     if elevated and not allow_elevated_load:
-        msg = "loads above the default safety limits require --allow-elevated-load"
-        raise ValueError(msg)
+        raise ValueError("loads above the default safety limits require --allow-elevated-load")
 
 
-def evaluate_stage(summary: StageSummary, *, p95_limit_seconds: float) -> str | None:
-    """Return a stop reason when a stage breaches a conservative safety boundary."""
-    if any(isinstance(result.status, int) and result.status >= 500 for result in summary.results):
-        return "server error observed"
-    if summary.dropped:
-        return "local in-flight limit reached"
-    total = len(summary.results)
-    if total and summary.error_count / total > 0.01:
-        return "error rate exceeded 1%"
-    if summary.p95_seconds > p95_limit_seconds:
-        return f"p95 latency exceeded {p95_limit_seconds:.2f}s"
+def evaluate_stage(summary: StageSummary, *, p95_limit_seconds: float | None = None) -> str | None:
+    """Return only plan-approved safety stop reasons.
+
+    A single HTTP failure, a generator drop, or an SLO breach is evidence to
+    report, not a reason to truncate the experiment.
+    """
+    del p95_limit_seconds
+    if summary.max_consecutive_critical >= 5:
+        return "five consecutive connection/reset/unexpected-5xx failures"
+    if summary.completed >= 50 and summary.error_rate >= 0.20:
+        return "completed error rate reached 20%"
     return None
 
 
@@ -185,12 +238,14 @@ def build_stage_specs(
     selected_strength: str,
     maximum_standard_rps: float,
     maximum_thorough_rps: float | None,
-) -> list[tuple[str, float, float]]:
+    standard_stage_seconds: int = 60,
+    thorough_stage_seconds: int = 90,
+) -> list[tuple[str, float, int]]:
     """Build independent Standard and Thorough stage families."""
-    specs: list[tuple[str, float, float]] = []
+    specs: list[tuple[str, float, int]] = []
     if selected_strength in {"standard", "both"}:
         specs.extend(
-            ("standard", rate, 10.0)
+            ("standard", rate, standard_stage_seconds)
             for rate in build_rate_plan(
                 maximum_standard_rps,
                 candidates=_STANDARD_RATE_CANDIDATES,
@@ -199,11 +254,10 @@ def build_stage_specs(
     if selected_strength in {"thorough", "both"}:
         if maximum_thorough_rps is None:
             if selected_strength == "thorough":
-                msg = "--strength thorough requires --max-thorough-rps"
-                raise ValueError(msg)
+                raise ValueError("--strength thorough requires --max-thorough-rps")
         else:
             specs.extend(
-                ("thorough", rate, 45.0)
+                ("thorough", rate, thorough_stage_seconds)
                 for rate in build_rate_plan(
                     maximum_thorough_rps,
                     candidates=_THOROUGH_RATE_CANDIDATES,
@@ -212,25 +266,55 @@ def build_stage_specs(
     return specs
 
 
+def classify_saturation(
+    stages: Sequence[StageSummary],
+    *,
+    strength: str,
+) -> SaturationConclusion:
+    """Classify evidence without equating isolated failures with saturation."""
+    selected = [stage for stage in stages if stage.strength == strength]
+    if not selected:
+        return "not established"
+
+    baseline = next((stage.p95_seconds for stage in selected if stage.successful), 0.0)
+    consecutive_plateaus = 0
+    for previous, current in itertools.pairwise(selected):
+        goodput_plateau = current.goodput_rps <= previous.goodput_rps * 1.05
+        service_signal = (
+            baseline > 0 and max(current.p95_seconds, current.p99_seconds) > baseline * 2
+        ) or current.error_rate >= 0.01
+        if goodput_plateau and service_signal:
+            consecutive_plateaus += 1
+            if consecutive_plateaus >= 2:
+                return "saturation likely"
+        else:
+            consecutive_plateaus = 0
+
+    if any(stage.outcome_counts["capacity_rejected"] for stage in selected):
+        return "overload protected"
+    if any(stage.generator_dropped for stage in selected):
+        return "generator limited"
+    return "not established"
+
+
 def _stage_label(summary: StageSummary) -> str:
-    strength = "Standard" if summary.strength == "standard" else "Thorough"
-    return f"{strength} {summary.target_rps:g} RPS"
+    return f"{summary.strength.title()} {summary.target_rps:g} RPS"
 
 
 def _svg_shell(title: str, description: str, body: str) -> str:
     return (
-        '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="480" '
-        'viewBox="0 0 1200 480" role="img">\n'
+        '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="500" '
+        'viewBox="0 0 1200 500" role="img">\n'
         f"<title>{html.escape(title)}</title>\n"
         f"<desc>{html.escape(description)}</desc>\n"
         "<style>"
         "text{font-family:Inter,Arial,sans-serif;fill:#25241f}"
         ".title{font-family:Georgia,serif;font-size:26px;font-weight:600}"
-        ".axis{font-size:13px;fill:#6f6c63}"
-        ".value{font-size:12px;fill:#3f3d37}"
+        ".axis{font-size:12px;fill:#6f6c63}"
+        ".value{font-size:11px;fill:#3f3d37}"
         ".grid{stroke:#dedbd2;stroke-width:1}"
         "</style>\n"
-        '<rect width="1200" height="480" fill="#fbfaf6"/>\n'
+        '<rect width="1200" height="500" fill="#fbfaf6"/>\n'
         f'<text class="title" x="72" y="42">{html.escape(title)}</text>\n'
         f"{body}\n"
         "</svg>\n"
@@ -238,178 +322,185 @@ def _svg_shell(title: str, description: str, body: str) -> str:
 
 
 def _empty_chart(title: str, description: str) -> str:
-    body = '<text class="axis" x="600" y="245" text-anchor="middle">No stage data</text>'
-    return _svg_shell(title, description, body)
+    return _svg_shell(
+        title,
+        description,
+        '<text class="axis" x="600" y="250" text-anchor="middle">No stage data</text>',
+    )
 
 
-def _axis_ticks(maximum: float, *, chart_height: float, top: float, left: float) -> list[str]:
-    ticks: list[str] = []
+def _axis_ticks(maximum: float) -> list[str]:
+    body: list[str] = []
     for index in range(5):
         fraction = index / 4
-        y = top + chart_height - fraction * chart_height
-        value = fraction * maximum
-        ticks.append(f'<line class="grid" x1="{left}" y1="{y:.1f}" x2="1160" y2="{y:.1f}"/>')
-        ticks.append(
-            f'<text class="axis" x="{left - 12}" y="{y + 4:.1f}" '
-            f'text-anchor="end">{value:.1f}</text>'
+        y = 400 - fraction * 300
+        body.append(f'<line class="grid" x1="72" y1="{y}" x2="1160" y2="{y}"/>')
+        body.append(
+            f'<text class="axis" x="60" y="{y + 4}" text-anchor="end">'
+            f"{fraction * maximum:.1f}</text>"
         )
-    return ticks
+    return body
+
+
+def _x_label(body: list[str], stage: StageSummary, center: float) -> None:
+    body.append(
+        f'<text class="axis" x="{center:.1f}" y="432" text-anchor="middle">'
+        f"{html.escape(_stage_label(stage))}</text>"
+    )
+
+
+def _throughput_chart(stages: Sequence[StageSummary]) -> str:
+    title = "Offered load, completed throughput, and successful goodput"
+    description = "Requests per second by load stage; generator drops are not server failures."
+    if not stages:
+        return _empty_chart(title, description)
+    maximum = max(1.0, max(stage.target_rps for stage in stages) * 1.15)
+    width = 1088 / len(stages)
+    series = (
+        ("offered", "#3154c9", lambda stage: stage.target_rps),
+        ("completed", "#8b887f", lambda stage: stage.completed_rps),
+        ("goodput", "#2f6b4f", lambda stage: stage.goodput_rps),
+    )
+    body = _axis_ticks(maximum)
+    for index, stage in enumerate(stages):
+        center = 72 + (index + 0.5) * width
+        points = []
+        for series_index, (_, color, value_for) in enumerate(series):
+            value = value_for(stage)
+            x = center + (series_index - 1) * 18
+            y = 400 - value / maximum * 300
+            body.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="5" fill="{color}"/>')
+            points.append((x, y))
+        _x_label(body, stage, center)
+        del points
+    for series_index, (label, color, _) in enumerate(series):
+        x = 800 + series_index * 120
+        body.append(f'<circle cx="{x}" cy="38" r="5" fill="{color}"/>')
+        body.append(f'<text class="axis" x="{x + 10}" y="42">{label}</text>')
+    body.append('<text class="axis" x="18" y="250" transform="rotate(-90 18 250)">RPS</text>')
+    return _svg_shell(title, description, "\n".join(body))
 
 
 def _latency_chart(stages: Sequence[StageSummary]) -> str:
-    title = "Latency by stage"
-    description = "P50, P95, and maximum response time in seconds for each load stage."
+    title = "Successful request latency percentiles"
+    description = "P50, P90, P95, P99, and maximum latency with initial SLO lines."
     if not stages:
         return _empty_chart(title, description)
-
-    left, top, chart_width, chart_height = 72.0, 80.0, 1088.0, 310.0
-    maximum = max(1.0, max(stage.max_seconds for stage in stages) * 1.15)
-    group_width = chart_width / len(stages)
-    bar_width = min(34.0, group_width / 5)
+    maximum = max(
+        1.0,
+        max(max(stage.max_seconds, _SLO_SECONDS[stage.strength]) for stage in stages) * 1.15,
+    )
+    width = 1088 / len(stages)
     series = (
         ("p50", "#3154c9", lambda stage: stage.p50_seconds),
+        ("p90", "#6f83cf", lambda stage: stage.p90_seconds),
         ("p95", "#8b887f", lambda stage: stage.p95_seconds),
-        ("max", "#c46b3d", lambda stage: stage.max_seconds),
+        ("p99", "#c09352", lambda stage: stage.p99_seconds),
+        ("max", "#ba4434", lambda stage: stage.max_seconds),
     )
-    body = _axis_ticks(maximum, chart_height=chart_height, top=top, left=left)
-    for stage_index, stage in enumerate(stages):
-        center = left + (stage_index + 0.5) * group_width
+    body = _axis_ticks(maximum)
+    for index, stage in enumerate(stages):
+        center = 72 + (index + 0.5) * width
+        points: list[str] = []
         for series_index, (_, color, value_for) in enumerate(series):
             value = value_for(stage)
-            height = value / maximum * chart_height
-            x = center + (series_index - 1) * (bar_width + 5) - bar_width / 2
-            y = top + chart_height - height
-            body.append(
-                f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_width:.1f}" '
-                f'height="{height:.1f}" fill="{color}"/>'
-            )
-            body.append(
-                f'<text class="value" x="{x + bar_width / 2:.1f}" y="{max(68, y - 6):.1f}" '
-                f'text-anchor="middle">{value:.2f}s</text>'
-            )
+            x = center + (series_index - 2) * 10
+            y = 400 - value / maximum * 300
+            body.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4" fill="{color}"/>')
+            points.append(f"{x:.1f},{y:.1f}")
         body.append(
-            f'<text class="axis" x="{center:.1f}" y="420" text-anchor="middle">'
-            f"{html.escape(_stage_label(stage))}</text>"
+            f'<polyline points="{" ".join(points)}" fill="none" stroke="#c8c5bc" stroke-width="1"/>'
         )
-    for index, (label, color, _) in enumerate(series):
-        x = 865 + index * 95
-        body.append(f'<rect x="{x}" y="30" width="12" height="12" fill="{color}"/>')
-        body.append(f'<text class="axis" x="{x + 18}" y="41">{label}</text>')
-    body.append('<text class="axis" x="18" y="235" transform="rotate(-90 18 235)">seconds</text>')
+        _x_label(body, stage, center)
+    for strength, color in (("standard", "#3154c9"), ("thorough", "#ba4434")):
+        y = 400 - _SLO_SECONDS[strength] / maximum * 300
+        body.append(
+            f'<line x1="72" y1="{y:.1f}" x2="1160" y2="{y:.1f}" '
+            f'stroke="{color}" stroke-dasharray="5 5" opacity=".55"/>'
+        )
+    for series_index, (label, color, _) in enumerate(series):
+        x = 690 + series_index * 92
+        body.append(f'<circle cx="{x}" cy="38" r="4" fill="{color}"/>')
+        body.append(f'<text class="axis" x="{x + 9}" y="42">{label}</text>')
+    body.append('<text class="axis" x="18" y="250" transform="rotate(-90 18 250)">seconds</text>')
     return _svg_shell(title, description, "\n".join(body))
 
 
-def _outcomes_chart(stages: Sequence[StageSummary]) -> str:
-    title = "Request outcomes"
-    description = "Successful, client-error, server-error, and network-error counts by stage."
+def _errors_chart(stages: Sequence[StageSummary]) -> str:
+    title = "HTTP, network, capacity, and generator outcomes"
+    description = "Exact non-success outcomes grouped separately from generator limitation."
     if not stages:
         return _empty_chart(title, description)
-
-    left, top, chart_width, chart_height = 72.0, 80.0, 1088.0, 310.0
-    maximum = max(1, max(len(stage.results) + stage.dropped for stage in stages))
-    group_width = chart_width / len(stages)
-    bar_width = min(72.0, group_width * 0.55)
-    colors = {
-        "success": "#3154c9",
-        "client": "#b8a46a",
-        "server": "#ba4434",
-        "network": "#5e5b55",
-        "dropped": "#d3d0c7",
-    }
-    body = _axis_ticks(float(maximum), chart_height=chart_height, top=top, left=left)
-    for stage_index, stage in enumerate(stages):
-        counts = Counter(
-            "success"
-            if isinstance(result.status, int) and 200 <= result.status < 400
-            else "client"
-            if isinstance(result.status, int) and 400 <= result.status < 500
-            else "server"
-            if isinstance(result.status, int)
-            else "network"
-            for result in stage.results
-        )
-        counts["dropped"] = stage.dropped
-        center = left + (stage_index + 0.5) * group_width
-        current_y = top + chart_height
-        for category in ("success", "client", "server", "network", "dropped"):
-            count = counts[category]
+    categories = (
+        "rate_limited",
+        "capacity_rejected",
+        "unexpected_5xx",
+        "connect_error",
+        "reset_error",
+        "read_timeout",
+        "write_timeout",
+        "pool_timeout",
+        "other_error",
+        "generator_limited",
+    )
+    colors = (
+        "#b8a46a",
+        "#3154c9",
+        "#ba4434",
+        "#5e5b55",
+        "#7d5d5d",
+        "#99714d",
+        "#a58470",
+        "#75669a",
+        "#a7a39a",
+        "#d3d0c7",
+    )
+    maximum = max(
+        1, max(sum(stage.outcome_counts[name] for name in categories) for stage in stages)
+    )
+    width = 1088 / len(stages)
+    body = _axis_ticks(float(maximum))
+    for index, stage in enumerate(stages):
+        center = 72 + (index + 0.5) * width
+        current_y = 400.0
+        for category, color in zip(categories, colors, strict=True):
+            count = stage.outcome_counts[category]
             if not count:
                 continue
-            height = count / maximum * chart_height
+            height = count / maximum * 300
             current_y -= height
             body.append(
-                f'<rect x="{center - bar_width / 2:.1f}" y="{current_y:.1f}" '
-                f'width="{bar_width:.1f}" height="{height:.1f}" fill="{colors[category]}"/>'
+                f'<rect x="{center - min(60, width * 0.3):.1f}" y="{current_y:.1f}" '
+                f'width="{min(120, width * 0.6):.1f}" height="{height:.1f}" fill="{color}"/>'
             )
-        body.append(
-            f'<text class="value" x="{center:.1f}" y="{current_y - 7:.1f}" '
-            f'text-anchor="middle">{len(stage.results)}/{len(stage.results) + stage.dropped}</text>'
-        )
-        body.append(
-            f'<text class="axis" x="{center:.1f}" y="420" text-anchor="middle">'
-            f"{html.escape(_stage_label(stage))}</text>"
-        )
-    body.append('<text class="axis" x="18" y="235" transform="rotate(-90 18 235)">requests</text>')
-    return _svg_shell(title, description, "\n".join(body))
-
-
-def _timeline_chart(stages: Sequence[StageSummary]) -> str:
-    title = "Request latency timeline"
-    description = "Individual response times plotted by request start time."
-    requests = [(stage.strength, result) for stage in stages for result in stage.results]
-    if not requests:
-        return _empty_chart(title, description)
-
-    left, top, chart_width, chart_height = 72.0, 80.0, 1088.0, 310.0
-    maximum_x = max(1.0, max(result.started_offset_seconds for _, result in requests))
-    maximum_y = max(1.0, max(result.duration_seconds for _, result in requests) * 1.15)
-    body = _axis_ticks(maximum_y, chart_height=chart_height, top=top, left=left)
-    for strength, result in requests:
-        x = left + result.started_offset_seconds / maximum_x * chart_width
-        y = top + chart_height - result.duration_seconds / maximum_y * chart_height
-        failed = not isinstance(result.status, int) or result.status >= 400
-        color = "#ba4434" if failed else "#3154c9" if strength == "standard" else "#8b887f"
-        shape = (
-            f'<rect x="{x - 3:.1f}" y="{y - 3:.1f}" width="6" height="6" fill="{color}"/>'
-            if strength == "thorough"
-            else f'<circle cx="{x:.1f}" cy="{y:.1f}" r="3" fill="{color}"/>'
-        )
-        body.append(shape)
-    for index in range(5):
-        fraction = index / 4
-        x = left + fraction * chart_width
-        body.append(
-            f'<text class="axis" x="{x:.1f}" y="420" text-anchor="middle">'
-            f"{fraction * maximum_x:.0f}s</text>"
-        )
-    body.append('<text class="axis" x="18" y="235" transform="rotate(-90 18 235)">seconds</text>')
-    body.append('<circle cx="945" cy="36" r="4" fill="#3154c9"/>')
-    body.append('<text class="axis" x="956" y="41">Standard</text>')
-    body.append('<rect x="1040" y="32" width="8" height="8" fill="#8b887f"/>')
-    body.append('<text class="axis" x="1054" y="41">Thorough</text>')
+        _x_label(body, stage, center)
+    body.append('<text class="axis" x="18" y="250" transform="rotate(-90 18 250)">count</text>')
     return _svg_shell(title, description, "\n".join(body))
 
 
 def _stage_payload(stage: StageSummary) -> dict[str, object]:
+    samples = [result.error_sample for result in stage.results if result.error_sample][:5]
     return {
         "strength": stage.strength,
         "target_rps": stage.target_rps,
         "duration_seconds": stage.duration_seconds,
         "wall_seconds": round(stage.wall_seconds, 6),
-        "dropped": stage.dropped,
+        "offered": stage.offered,
+        "scheduled": stage.scheduled,
+        "completed": stage.completed,
+        "successful": stage.successful,
+        "goodput_rps": round(stage.goodput_rps, 6),
+        "completed_rps": round(stage.completed_rps, 6),
+        "generator_dropped": stage.generator_dropped,
+        "error_rate": round(stage.error_rate, 6),
         "p50_seconds": round(stage.p50_seconds, 6),
+        "p90_seconds": round(stage.p90_seconds, 6),
         "p95_seconds": round(stage.p95_seconds, 6),
+        "p99_seconds": round(stage.p99_seconds, 6),
         "max_seconds": round(stage.max_seconds, 6),
         "status_counts": dict(stage.status_counts),
-        "requests": [
-            {
-                "status": result.status,
-                "duration_seconds": round(result.duration_seconds, 6),
-                "degraded": result.degraded,
-                "started_offset_seconds": round(result.started_offset_seconds, 6),
-            }
-            for result in stage.results
-        ],
+        "outcome_counts": dict(stage.outcome_counts),
+        "error_samples": samples,
     }
 
 
@@ -420,53 +511,59 @@ def _report_html(
     finished_at: datetime,
     stages: Sequence[StageSummary],
 ) -> str:
+    conclusions = {
+        strength: classify_saturation(stages, strength=strength)
+        for strength in ("standard", "thorough")
+        if any(stage.strength == strength for stage in stages)
+    }
     rows = "\n".join(
         "<tr>"
         f"<td>{html.escape(_stage_label(stage))}</td>"
-        f"<td>{len(stage.results)}</td>"
-        f"<td>{stage.p50_seconds:.2f}s</td>"
-        f"<td>{stage.p95_seconds:.2f}s</td>"
+        f"<td>{stage.offered}</td><td>{stage.scheduled}</td><td>{stage.completed}</td>"
+        f"<td>{stage.successful}</td><td>{stage.goodput_rps:.2f}</td>"
+        f"<td>{stage.p50_seconds:.2f}s</td><td>{stage.p90_seconds:.2f}s</td>"
+        f"<td>{stage.p95_seconds:.2f}s</td><td>{stage.p99_seconds:.2f}s</td>"
         f"<td>{stage.max_seconds:.2f}s</td>"
-        f"<td>{html.escape(str(dict(stage.status_counts)))}</td>"
+        f"<td>{html.escape(str(dict(stage.outcome_counts)))}</td>"
         "</tr>"
         for stage in stages
+    )
+    conclusion_html = "".join(
+        f"<p><strong>{html.escape(strength.title())}:</strong> {html.escape(conclusion)}</p>"
+        for strength, conclusion in conclusions.items()
     )
     return f"""<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Scholight production canary report</title>
+<title>Scholight bounded canary report</title>
 <style>
 body{{margin:0;background:#f4f2ec;color:#25241f;font-family:Inter,Arial,sans-serif}}
 main{{max-width:1240px;margin:0 auto;padding:48px 28px 72px}}
 h1,h2{{font-family:Georgia,serif}} h1{{font-size:42px;margin:0 0 8px}}
 .meta{{color:#6f6c63;margin-bottom:40px}} section{{margin:36px 0}}
+.conclusion{{border-block:1px solid #dedbd2;padding:18px 0}}
 img{{display:block;width:100%;height:auto;border:1px solid #dedbd2;background:#fbfaf6}}
-table{{width:100%;border-collapse:collapse;background:#fbfaf6}}
-th,td{{padding:12px;text-align:left;border-bottom:1px solid #dedbd2}}
-th{{color:#6f6c63;font-size:13px;text-transform:uppercase;letter-spacing:.04em}}
+table{{width:100%;border-collapse:collapse;background:#fbfaf6;font-size:13px}}
+th,td{{padding:10px;text-align:left;border-bottom:1px solid #dedbd2}}
+th{{color:#6f6c63;font-size:11px;text-transform:uppercase;letter-spacing:.04em}}
 code{{font-family:ui-monospace,monospace}}
 </style>
 </head>
-<body>
-<main>
-<h1>Scholight production canary</h1>
+<body><main>
+<h1>Scholight bounded production canary</h1>
 <p class="meta"><code>{html.escape(base_url)}</code><br>
 {html.escape(started_at.isoformat())} to {html.escape(finished_at.isoformat())}</p>
-<section><img src="latency-by-stage.svg" alt="Latency by stage chart"></section>
-<section><img src="request-timeline.svg" alt="Request latency timeline chart"></section>
-<section><img src="outcomes-by-stage.svg" alt="Request outcomes by stage chart"></section>
-<section>
-<h2>Stage summary</h2>
-<table>
-<thead><tr><th>Stage</th><th>Requests</th><th>P50</th><th>P95</th><th>Max</th><th>Status</th></tr></thead>
-<tbody>{rows}</tbody>
-</table>
-</section>
-</main>
-</body>
-</html>
+<section class="conclusion"><h2>Saturation evidence</h2>{conclusion_html}</section>
+<section><img src="throughput-and-goodput.svg" alt="Offered, completed, and goodput chart"></section>
+<section><img src="latency-percentiles.svg" alt="Latency percentile chart"></section>
+<section><img src="outcome-breakdown.svg" alt="Outcome breakdown chart"></section>
+<section><h2>Exact stage counts</h2>
+<table><thead><tr><th>Stage</th><th>Offered</th><th>Scheduled</th><th>Completed</th>
+<th>Successful</th><th>Goodput</th><th>P50</th><th>P90</th><th>P95</th><th>P99</th>
+<th>Max</th><th>Outcomes</th></tr></thead><tbody>{rows}</tbody></table></section>
+</main></body></html>
 """
 
 
@@ -478,12 +575,17 @@ def write_report(
     finished_at: datetime,
     stages: Sequence[StageSummary],
 ) -> tuple[Path, ...]:
-    """Write machine-readable results and three dependency-free SVG charts."""
+    """Write machine-readable results and dependency-free professional charts."""
     output_dir.mkdir(parents=True, exist_ok=True)
     payload = {
         "base_url": base_url,
         "started_at": started_at.isoformat(),
         "finished_at": finished_at.isoformat(),
+        "conclusions": {
+            strength: classify_saturation(stages, strength=strength)
+            for strength in ("standard", "thorough")
+            if any(stage.strength == strength for stage in stages)
+        },
         "stages": [_stage_payload(stage) for stage in stages],
     }
     results_path = output_dir / "results.json"
@@ -498,6 +600,7 @@ def write_report(
                 "strength",
                 "target_rps",
                 "status",
+                "category",
                 "duration_seconds",
                 "degraded",
                 "started_offset_seconds",
@@ -512,18 +615,19 @@ def write_report(
                         "strength": stage.strength,
                         "target_rps": stage.target_rps,
                         "status": result.status,
+                        "category": result.category,
                         "duration_seconds": f"{result.duration_seconds:.6f}",
                         "degraded": result.degraded,
                         "started_offset_seconds": f"{result.started_offset_seconds:.6f}",
                     }
                 )
 
-    latency_path = output_dir / "latency-by-stage.svg"
+    throughput_path = output_dir / "throughput-and-goodput.svg"
+    throughput_path.write_text(_throughput_chart(stages), encoding="utf-8")
+    latency_path = output_dir / "latency-percentiles.svg"
     latency_path.write_text(_latency_chart(stages), encoding="utf-8")
-    outcomes_path = output_dir / "outcomes-by-stage.svg"
-    outcomes_path.write_text(_outcomes_chart(stages), encoding="utf-8")
-    timeline_path = output_dir / "request-timeline.svg"
-    timeline_path.write_text(_timeline_chart(stages), encoding="utf-8")
+    errors_path = output_dir / "outcome-breakdown.svg"
+    errors_path.write_text(_errors_chart(stages), encoding="utf-8")
     report_path = output_dir / "report.html"
     report_path.write_text(
         _report_html(
@@ -534,14 +638,45 @@ def write_report(
         ),
         encoding="utf-8",
     )
-    return (
-        report_path,
-        results_path,
-        csv_path,
-        latency_path,
-        timeline_path,
-        outcomes_path,
-    )
+    return report_path, results_path, csv_path, throughput_path, latency_path, errors_path
+
+
+def _response_category(response: httpx.Response) -> tuple[str, str | None]:
+    error_code: str | None = None
+    if response.headers.get("content-type", "").startswith("application/json"):
+        with contextlib.suppress(ValueError):
+            payload = response.json()
+            if isinstance(payload, dict):
+                candidate = payload.get("code")
+                if not isinstance(candidate, str):
+                    detail = payload.get("detail")
+                    if isinstance(detail, dict):
+                        candidate = detail.get("code")
+                if isinstance(candidate, str):
+                    error_code = candidate[:80]
+    if 200 <= response.status_code < 400:
+        return "success", None
+    if response.status_code == 429:
+        return "rate_limited", error_code or "http_429"
+    if response.status_code == 503 and error_code == "search_capacity_exceeded":
+        return "capacity_rejected", error_code
+    if response.status_code >= 500:
+        return "unexpected_5xx", error_code or f"http_{response.status_code}"
+    return "other_error", error_code or f"http_{response.status_code}"
+
+
+def _exception_category(exc: httpx.HTTPError) -> str:
+    if isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout)):
+        return "connect_error"
+    if isinstance(exc, (httpx.ReadError, httpx.RemoteProtocolError)):
+        return "reset_error"
+    if isinstance(exc, httpx.ReadTimeout):
+        return "read_timeout"
+    if isinstance(exc, httpx.WriteTimeout):
+        return "write_timeout"
+    if isinstance(exc, httpx.PoolTimeout):
+        return "pool_timeout"
+    return "other_error"
 
 
 async def _request(
@@ -552,8 +687,9 @@ async def _request(
     query: str,
     strength: str,
     started_offset_seconds: float,
-    abort_event: asyncio.Event,
+    abort_event: asyncio.Event | None = None,
 ) -> RequestResult:
+    del abort_event
     started = time.perf_counter()
     try:
         response = await client.post(
@@ -561,26 +697,31 @@ async def _request(
             headers={"Authorization": f"Bearer {api_key}"},
             json={"query": query, "strength": strength, "limit": 5},
         )
+        category, sample = _response_category(response)
         degraded = False
-        if response.headers.get("content-type", "").startswith("application/json"):
-            payload = response.json()
-            if isinstance(payload, dict):
-                degraded = payload.get("degraded") is True
-        if response.status_code >= 500:
-            abort_event.set()
+        if category == "success" and response.headers.get("content-type", "").startswith(
+            "application/json"
+        ):
+            with contextlib.suppress(ValueError):
+                payload = response.json()
+                degraded = isinstance(payload, dict) and payload.get("degraded") is True
         return RequestResult(
             status=response.status_code,
             duration_seconds=time.perf_counter() - started,
             degraded=degraded,
+            category=category,
             started_offset_seconds=started_offset_seconds,
+            error_sample=sample,
         )
     except httpx.HTTPError as exc:
-        abort_event.set()
+        category = _exception_category(exc)
         return RequestResult(
             status=type(exc).__name__,
             duration_seconds=time.perf_counter() - started,
             degraded=False,
+            category=category,
             started_offset_seconds=started_offset_seconds,
+            error_sample=type(exc).__name__,
         )
 
 
@@ -594,28 +735,46 @@ async def run_stage(
     duration_seconds: int,
     run_started: float,
 ) -> StageSummary:
-    """Run one bounded constant-arrival-rate stage."""
+    """Run one open-arrival stage with a dynamic, bounded generator pool."""
     summary = StageSummary(
         strength=strength,
         target_rps=target_rps,
         duration_seconds=duration_seconds,
     )
-    abort_event = asyncio.Event()
+    request_timeout = _REQUEST_TIMEOUT_SECONDS[strength]
+    max_in_flight = min(
+        _MAX_IN_FLIGHT,
+        max(1, math.ceil(target_rps * request_timeout * 1.25)),
+    )
     pending: set[asyncio.Task[RequestResult]] = set()
     request_count = max(1, round(target_rps * duration_seconds))
+    summary.offered = request_count
     started = time.perf_counter()
+    consecutive_critical = 0
 
+    async def collect(task: asyncio.Task[RequestResult]) -> None:
+        nonlocal consecutive_critical
+        result = await task
+        summary.results.append(result)
+        if result.category in _CRITICAL_CATEGORIES:
+            consecutive_critical += 1
+            summary.max_consecutive_critical = max(
+                summary.max_consecutive_critical,
+                consecutive_critical,
+            )
+        else:
+            consecutive_critical = 0
+
+    collectors: set[asyncio.Task[None]] = set()
     for index in range(request_count):
         due_at = started + index / target_rps
         await asyncio.sleep(max(0.0, due_at - time.perf_counter()))
-        if abort_event.is_set():
-            break
         pending = {task for task in pending if not task.done()}
-        if len(pending) >= _MAX_IN_FLIGHT:
-            summary.dropped += 1
-            abort_event.set()
-            break
-        task = asyncio.create_task(
+        collectors = {task for task in collectors if not task.done()}
+        if len(pending) >= max_in_flight:
+            summary.generator_dropped += 1
+            continue
+        request_task = asyncio.create_task(
             _request(
                 client,
                 url=url,
@@ -623,27 +782,48 @@ async def run_stage(
                 query=_QUERIES[index % len(_QUERIES)],
                 strength=strength,
                 started_offset_seconds=time.perf_counter() - run_started,
-                abort_event=abort_event,
             )
         )
-        pending.add(task)
-        task.add_done_callback(lambda completed: summary.results.append(completed.result()))
+        pending.add(request_task)
+        collectors.add(asyncio.create_task(collect(request_task)))
+        summary.scheduled += 1
 
-    if pending:
-        await asyncio.gather(*pending)
+    if collectors:
+        await asyncio.gather(*collectors)
     summary.wall_seconds = time.perf_counter() - started
     return summary
 
 
+async def _warm_up(
+    client: httpx.AsyncClient,
+    *,
+    url: str,
+    api_key: str,
+    strength: str,
+    run_started: float,
+) -> None:
+    for index in range(_WARMUP_REQUESTS):
+        result = await _request(
+            client,
+            url=url,
+            api_key=api_key,
+            query=_QUERIES[index],
+            strength=strength,
+            started_offset_seconds=time.perf_counter() - run_started,
+        )
+        if not result.successful:
+            print(f"warm-up {strength}: {result.category} ({result.status})")
+
+
 def _print_summary(summary: StageSummary) -> None:
-    degraded = sum(result.degraded for result in summary.results)
-    achieved = len(summary.results) / summary.wall_seconds if summary.wall_seconds else 0.0
     print(
         f"{summary.strength} target={summary.target_rps:g}rps "
-        f"requests={len(summary.results)} status={dict(summary.status_counts)} "
-        f"achieved={achieved:.2f}rps p50={summary.p50_seconds:.2f}s "
-        f"p95={summary.p95_seconds:.2f}s max={summary.max_seconds:.2f}s "
-        f"degraded={degraded} dropped={summary.dropped}"
+        f"offered={summary.offered} scheduled={summary.scheduled} "
+        f"completed={summary.completed} successful={summary.successful} "
+        f"goodput={summary.goodput_rps:.2f}rps "
+        f"p50/p90/p95/p99={summary.p50_seconds:.2f}/{summary.p90_seconds:.2f}/"
+        f"{summary.p95_seconds:.2f}/{summary.p99_seconds:.2f}s "
+        f"outcomes={dict(summary.outcome_counts)}"
     )
 
 
@@ -652,46 +832,75 @@ async def run_canary(
     base_url: str,
     api_key: str,
     selected_strength: str,
-    stage_seconds: int,
+    stage_seconds: int | None,
     maximum_standard_rps: float,
     maximum_thorough_rps: float | None,
+    cooldown_seconds: int = _COOLDOWN_SECONDS,
 ) -> tuple[int, datetime, datetime, list[StageSummary]]:
-    """Run all requested stages and stop at the first breached boundary."""
+    """Run all requested stages, stopping only on approved safety evidence."""
     started_at = datetime.now(UTC)
     run_started = time.perf_counter()
     summaries: list[StageSummary] = []
-    timeout = httpx.Timeout(90.0, connect=10.0)
-    limits = httpx.Limits(max_connections=_MAX_IN_FLIGHT, max_keepalive_connections=16)
+    max_connections = min(
+        _MAX_IN_FLIGHT,
+        max(
+            24,
+            math.ceil(
+                max(
+                    maximum_standard_rps * _REQUEST_TIMEOUT_SECONDS["standard"],
+                    (maximum_thorough_rps or 0) * _REQUEST_TIMEOUT_SECONDS["thorough"],
+                )
+                * 1.25
+            ),
+        ),
+    )
+    timeout = httpx.Timeout(65.0, connect=5.0, read=65.0, write=10.0, pool=1.0)
+    limits = httpx.Limits(
+        max_connections=max_connections,
+        max_keepalive_connections=min(max_connections, 64),
+    )
     async with httpx.AsyncClient(timeout=timeout, limits=limits) as client:
-        stage_specs = build_stage_specs(
+        specs = build_stage_specs(
             selected_strength=selected_strength,
             maximum_standard_rps=maximum_standard_rps,
             maximum_thorough_rps=maximum_thorough_rps,
+            standard_stage_seconds=stage_seconds or 60,
+            thorough_stage_seconds=stage_seconds or 90,
         )
-
-        for strength, rate, p95_limit in stage_specs:
+        previous_strength: str | None = None
+        for index, (strength, rate, duration) in enumerate(specs):
+            if strength != previous_strength:
+                await _warm_up(
+                    client,
+                    url=f"{base_url}/api/search",
+                    api_key=api_key,
+                    strength=strength,
+                    run_started=run_started,
+                )
+                previous_strength = strength
             summary = await run_stage(
                 client,
                 url=f"{base_url}/api/search",
                 api_key=api_key,
                 strength=strength,
                 target_rps=rate,
-                duration_seconds=stage_seconds,
+                duration_seconds=duration,
                 run_started=run_started,
             )
             summaries.append(summary)
             _print_summary(summary)
-            if reason := evaluate_stage(summary, p95_limit_seconds=p95_limit):
+            if reason := evaluate_stage(summary):
                 print(f"STOP: {reason}")
                 return 1, started_at, datetime.now(UTC), summaries
+            if index < len(specs) - 1 and cooldown_seconds:
+                await asyncio.sleep(cooldown_seconds)
     return 0, started_at, datetime.now(UTC), summaries
 
 
 def _positive_float(value: str) -> float:
     parsed = float(value)
     if parsed <= 0:
-        msg = "value must be greater than zero"
-        raise argparse.ArgumentTypeError(msg)
+        raise argparse.ArgumentTypeError("value must be greater than zero")
     return parsed
 
 
@@ -701,50 +910,40 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--allow-remote",
         action="store_true",
-        help="Acknowledge that the target is not loopback",
+        help="acknowledge that the target is not loopback",
     )
     parser.add_argument(
         "--stage-seconds",
         type=int,
-        default=20,
         choices=range(5, _MAX_STAGE_SECONDS + 1),
         metavar="5..120",
+        help="test-only override; production defaults are Standard 60s and Thorough 90s",
     )
     parser.add_argument(
         "--max-standard-rps",
         type=_positive_float,
         default=4.0,
-        help=(
-            "maximum Standard arrival rate; default safety limit "
-            f"{_DEFAULT_MAX_STANDARD_RPS:g}, elevated hard limit "
-            f"{_ELEVATED_MAX_STANDARD_RPS:g}"
-        ),
+        help=f"maximum Standard rate; hard limit {_MAX_STANDARD_RPS:g}",
     )
     parser.add_argument(
         "--max-thorough-rps",
         type=_positive_float,
-        help=(
-            "include Thorough stages up to this rate; default safety limit "
-            f"{_DEFAULT_MAX_THOROUGH_RPS:g}, elevated hard limit "
-            f"{_ELEVATED_MAX_THOROUGH_RPS:g}"
-        ),
+        help=f"include Thorough stages up to this rate; hard limit {_MAX_THOROUGH_RPS:g}",
     )
     parser.add_argument(
         "--allow-elevated-load",
         action="store_true",
-        help="acknowledge the bounded production profile above the default rate limits",
+        help="acknowledge rates above the conservative defaults",
     )
     parser.add_argument(
         "--strength",
         choices=("standard", "thorough", "both"),
         default="both",
-        help="run Standard stages, Thorough stages, or both",
     )
     parser.add_argument(
         "--report-root",
         type=Path,
         default=Path("data/load-tests"),
-        help="directory under which a timestamped report is written",
     )
     return parser.parse_args()
 
@@ -754,10 +953,6 @@ def main(env: Mapping[str, str] = os.environ) -> int:
     args = _parse_args()
     try:
         base_url = validate_target(args.base_url, allow_remote=args.allow_remote)
-    except ValueError as exc:
-        print(f"configuration error: {exc}")
-        return 2
-    try:
         validate_load_limits(
             maximum_standard_rps=args.max_standard_rps,
             maximum_thorough_rps=args.max_thorough_rps,
@@ -781,6 +976,9 @@ def main(env: Mapping[str, str] = os.environ) -> int:
                 maximum_thorough_rps=args.max_thorough_rps,
             )
         )
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        print("interrupted by user")
+        return 130
     except ValueError as exc:
         print(f"configuration error: {exc}")
         return 2

@@ -20,6 +20,7 @@ StageSummary = _MODULE.StageSummary
 build_rate_plan = _MODULE.build_rate_plan
 build_stage_specs = _MODULE.build_stage_specs
 evaluate_stage = _MODULE.evaluate_stage
+classify_saturation = _MODULE.classify_saturation
 percentile = _MODULE.percentile
 validate_target = _MODULE.validate_target
 validate_load_limits = _MODULE.validate_load_limits
@@ -46,40 +47,38 @@ def test_loopback_target_does_not_require_remote_confirmation() -> None:
 def test_elevated_standard_load_requires_explicit_confirmation() -> None:
     with pytest.raises(ValueError, match="--allow-elevated-load"):
         validate_load_limits(
-            maximum_standard_rps=40.0,
+            maximum_standard_rps=20.0,
             maximum_thorough_rps=None,
             allow_elevated_load=False,
         )
 
 
-def test_elevated_load_allows_tenfold_profile() -> None:
+def test_elevated_load_allows_full_bounded_profile() -> None:
     validate_load_limits(
-        maximum_standard_rps=40.0,
+        maximum_standard_rps=20.0,
         maximum_thorough_rps=4.0,
         allow_elevated_load=True,
     )
 
 
-def test_elevated_load_rejects_hundredfold_profile() -> None:
-    with pytest.raises(ValueError, match="cannot exceed 40"):
+def test_elevated_load_rejects_above_bounded_profile() -> None:
+    with pytest.raises(ValueError, match="cannot exceed 20"):
         validate_load_limits(
-            maximum_standard_rps=400.0,
+            maximum_standard_rps=40.0,
             maximum_thorough_rps=None,
             allow_elevated_load=True,
         )
 
 
-def test_tenfold_rate_plan_has_progressive_stages() -> None:
-    assert build_rate_plan(40.0, candidates=_MODULE._STANDARD_RATE_CANDIDATES) == (
-        0.5,
+def test_full_rate_plan_has_progressive_stages() -> None:
+    assert build_rate_plan(20.0, candidates=_MODULE._STANDARD_RATE_CANDIDATES) == (
         1.0,
         2.0,
         4.0,
         8.0,
         12.0,
+        16.0,
         20.0,
-        30.0,
-        40.0,
     )
 
 
@@ -87,11 +86,11 @@ def test_thorough_only_stage_plan_excludes_standard() -> None:
     assert build_stage_specs(
         selected_strength="thorough",
         maximum_standard_rps=4.0,
-        maximum_thorough_rps=0.4,
+        maximum_thorough_rps=2.0,
     ) == [
-        ("thorough", 0.1, 45.0),
-        ("thorough", 0.2, 45.0),
-        ("thorough", 0.4, 45.0),
+        ("thorough", 0.5, 90),
+        ("thorough", 1.0, 90),
+        ("thorough", 2.0, 90),
     ]
 
 
@@ -108,18 +107,25 @@ def test_percentile_uses_nearest_rank() -> None:
     assert percentile([0.1, 0.2, 0.3, 0.4], 0.95) == 0.4
 
 
-def test_stage_stops_on_server_error() -> None:
+def test_single_server_error_does_not_stop_stage_family() -> None:
     summary = StageSummary(
         strength="standard",
         target_rps=1.0,
         duration_seconds=10,
-        results=[RequestResult(status=503, duration_seconds=0.2, degraded=False)],
+        results=[
+            RequestResult(
+                status=502,
+                duration_seconds=0.2,
+                degraded=False,
+                category="unexpected_5xx",
+            )
+        ],
     )
 
-    assert evaluate_stage(summary, p95_limit_seconds=10.0) == "server error observed"
+    assert evaluate_stage(summary, p95_limit_seconds=10.0) is None
 
 
-def test_stage_stops_when_p95_exceeds_limit() -> None:
+def test_stage_does_not_stop_only_because_p95_exceeds_slo() -> None:
     summary = StageSummary(
         strength="standard",
         target_rps=1.0,
@@ -127,7 +133,80 @@ def test_stage_stops_when_p95_exceeds_limit() -> None:
         results=[RequestResult(status=200, duration_seconds=11.0, degraded=False)],
     )
 
-    assert evaluate_stage(summary, p95_limit_seconds=10.0) == "p95 latency exceeded 10.00s"
+    assert evaluate_stage(summary, p95_limit_seconds=10.0) is None
+
+
+def test_stage_stops_after_five_consecutive_critical_failures() -> None:
+    summary = StageSummary(
+        strength="standard",
+        target_rps=8.0,
+        duration_seconds=60,
+        max_consecutive_critical=5,
+    )
+
+    assert "five consecutive" in (evaluate_stage(summary) or "")
+
+
+def test_generator_drop_is_not_service_saturation() -> None:
+    summary = StageSummary(
+        strength="standard",
+        target_rps=8.0,
+        duration_seconds=60,
+        generator_dropped=2,
+        wall_seconds=60,
+    )
+
+    assert classify_saturation([summary], strength="standard") == "generator limited"
+
+
+def test_capacity_rejection_is_classified_as_overload_protection() -> None:
+    summary = StageSummary(
+        strength="standard",
+        target_rps=8.0,
+        duration_seconds=60,
+        results=[
+            RequestResult(
+                status=503,
+                duration_seconds=0.05,
+                degraded=False,
+                category="capacity_rejected",
+            )
+        ],
+        wall_seconds=60,
+    )
+
+    assert classify_saturation([summary], strength="standard") == "overload protected"
+
+
+def test_saturation_requires_two_consecutive_goodput_plateaus_with_service_signal() -> None:
+    def stage(rate: float, successes: int, latency: float, errors: int = 0) -> StageSummary:
+        return StageSummary(
+            strength="standard",
+            target_rps=rate,
+            duration_seconds=60,
+            results=[
+                RequestResult(status=200, duration_seconds=latency, degraded=False)
+                for _ in range(successes)
+            ]
+            + [
+                RequestResult(
+                    status=500,
+                    duration_seconds=latency,
+                    degraded=False,
+                    category="unexpected_5xx",
+                )
+                for _ in range(errors)
+            ],
+            wall_seconds=60,
+        )
+
+    stages = [
+        stage(4, 240, 1.0),
+        stage(8, 245, 2.5, 3),
+        stage(12, 245, 3.0, 3),
+    ]
+
+    assert classify_saturation(stages, strength="standard") == "saturation likely"
 
 
 def test_report_writes_machine_readable_and_visual_artifacts(tmp_path: Path) -> None:
@@ -155,12 +234,12 @@ def test_report_writes_machine_readable_and_visual_artifacts(tmp_path: Path) -> 
     )
 
     assert {path.name for path in artifacts} == {
-        "latency-by-stage.svg",
-        "outcomes-by-stage.svg",
+        "latency-percentiles.svg",
+        "outcome-breakdown.svg",
         "report.html",
-        "request-timeline.svg",
         "requests.csv",
         "results.json",
+        "throughput-and-goodput.svg",
     }
 
 
@@ -175,7 +254,13 @@ def test_report_json_excludes_credentials(tmp_path: Path) -> None:
 
     payload = json.loads((tmp_path / "results.json").read_text(encoding="utf-8"))
 
-    assert set(payload) == {"base_url", "finished_at", "stages", "started_at"}
+    assert set(payload) == {
+        "base_url",
+        "conclusions",
+        "finished_at",
+        "stages",
+        "started_at",
+    }
 
 
 def test_report_html_contains_all_three_charts(tmp_path: Path) -> None:
