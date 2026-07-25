@@ -54,6 +54,7 @@ COPY deploy/production/smoke.sh /opt/scholight-package/smoke.sh
 COPY deploy/production/wait-ssm.sh /opt/scholight-package/wait-ssm.sh
 COPY deploy/production/compose.yaml /opt/scholight-package/compose.yaml
 COPY deploy/production/Caddyfile /opt/scholight-package/Caddyfile
+COPY deploy/production/cloudwatch-agent.json /opt/scholight-package/cloudwatch-agent.json
 COPY deploy/production/bootstrap-db.sql /opt/scholight-package/bootstrap-db.sql
 RUN chmod 0755 \
       /opt/scholight-package/bootstrap.sh \
@@ -63,7 +64,8 @@ RUN chmod 0755 \
     && chmod 0600 /opt/scholight-package/bootstrap-db.sql \
     && chmod 0644 \
       /opt/scholight-package/compose.yaml \
-      /opt/scholight-package/Caddyfile
+      /opt/scholight-package/Caddyfile \
+      /opt/scholight-package/cloudwatch-agent.json
 
 USER scholight
 EXPOSE 8000

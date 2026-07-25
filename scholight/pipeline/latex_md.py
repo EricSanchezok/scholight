@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import re
 import signal
+
 # Security: Pandoc uses fixed argv, no shell, and bounded local files.
 import subprocess  # nosec B404
 import tempfile

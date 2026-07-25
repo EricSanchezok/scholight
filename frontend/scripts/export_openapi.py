@@ -15,6 +15,9 @@ os.environ.setdefault(
     "SCHOLIGHT_MCP_DELEGATION_JWT_SECRET", "openapi-export-delegation-secret-value-32b"
 )
 os.environ.setdefault("SCHOLIGHT_CORS_ALLOW_ORIGINS", '["http://localhost:5173"]')
+os.environ.setdefault("SCHOLIGHT_ZILLIZ_URI", "https://zilliz.example.invalid")
+os.environ.setdefault("SCHOLIGHT_ZILLIZ_TOKEN", "openapi-export-fixture-token")
+os.environ.setdefault("SCHOLIGHT_EMBEDDING_BASE_URL", "https://embedding.example.invalid/v1")
 
 from scholight.api.app import create_app
 
