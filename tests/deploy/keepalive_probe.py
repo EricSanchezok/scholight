@@ -4,18 +4,33 @@ from __future__ import annotations
 
 import sys
 import time
-
-import httpx
+from http.client import HTTPConnection
+from urllib.parse import urlsplit
 
 
 def main() -> int:
-    url = sys.argv[1]
-    with httpx.Client(timeout=5) as client:
-        first = client.post(url)
-        first.raise_for_status()
+    target = urlsplit(sys.argv[1])
+    if target.scheme != "http" or target.hostname is None:
+        raise ValueError("probe requires an http URL")
+
+    connection = HTTPConnection(target.hostname, target.port or 80, timeout=5)
+    path = target.path or "/"
+    if target.query:
+        path = f"{path}?{target.query}"
+    try:
+        connection.request("POST", path, body=b"")
+        first = connection.getresponse()
+        first.read()
+        if not 200 <= first.status < 300:
+            raise RuntimeError(f"first request returned HTTP {first.status}")
         time.sleep(2)
-        second = client.post(url)
-        second.raise_for_status()
+        connection.request("POST", path, body=b"")
+        second = connection.getresponse()
+        second.read()
+        if not 200 <= second.status < 300:
+            raise RuntimeError(f"second request returned HTTP {second.status}")
+    finally:
+        connection.close()
     return 0
 
 
