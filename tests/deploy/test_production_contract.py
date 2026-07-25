@@ -440,6 +440,31 @@ def test_production_proxy_trust_is_exact_caddy_ip() -> None:
     assert trusted != "*"
 
 
+def test_long_lived_production_services_have_unique_static_ips() -> None:
+    compose = yaml.safe_load((PRODUCTION / "compose.yaml").read_text(encoding="utf-8"))
+    expected = {
+        "caddy": "${SCHOLIGHT_CADDY_IP:-172.31.0.2}",
+        "frontend": "${SCHOLIGHT_FRONTEND_IP:-172.31.0.10}",
+        "api": "${SCHOLIGHT_API_IP:-172.31.0.20}",
+        "metadata-sync": "${SCHOLIGHT_METADATA_SYNC_IP:-172.31.0.30}",
+        "paper-ingest": "${SCHOLIGHT_PAPER_INGEST_IP:-172.31.0.40}",
+    }
+
+    configured = {
+        name: compose["services"][name]["networks"]["scholight"]["ipv4_address"]
+        for name in expected
+    }
+    assert configured == expected
+    assert len(set(configured.values())) == len(configured)
+
+    runtime = (PRODUCTION / "runtime.env.example").read_text(encoding="utf-8")
+    for setting in (
+        "SCHOLIGHT_METADATA_SYNC_IP=172.31.0.30",
+        "SCHOLIGHT_PAPER_INGEST_IP=172.31.0.40",
+    ):
+        assert setting in runtime
+
+
 def test_ci_runs_built_backend_migrations_against_postgres() -> None:
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 
