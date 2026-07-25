@@ -191,7 +191,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends shellcheck
           bash -n deploy/production/bootstrap.sh deploy/production/release.sh deploy/production/smoke.sh deploy/production/wait-ssm.sh
           sh -n frontend/runtime/render-docs.sh
-          shellcheck deploy/production/bootstrap.sh deploy/production/release.sh deploy/production/smoke.sh deploy/production/wait-ssm.sh
+          shellcheck deploy/production/bootstrap.sh deploy/production/release.sh deploy/production/smoke.sh deploy/production/wait-ssm.sh tests/deploy/test_keepalive_integration.sh
           shellcheck -s sh frontend/runtime/render-docs.sh
       - name: Validate production Compose
         env:
@@ -246,12 +246,15 @@ jobs:
         if: github.event_name != 'pull_request'
         run: |
           docker run --rm --user 0 --entrypoint /bin/sh scholight-api:ci -ec '
-            for name in bootstrap.sh release.sh smoke.sh wait-ssm.sh compose.yaml Caddyfile bootstrap-db.sql; do
+            for name in bootstrap.sh release.sh smoke.sh wait-ssm.sh compose.yaml Caddyfile cloudwatch-agent.json bootstrap-db.sql; do
               test -f "/opt/scholight-package/${name}"
             done
             test -x /opt/scholight-package/bootstrap.sh
             test -x /opt/scholight-package/release.sh
           '
+      - name: Verify Caddy and Uvicorn idle keep-alive integration
+        if: github.event_name != 'pull_request'
+        run: tests/deploy/test_keepalive_integration.sh
       - name: Smoke-test built backend migrations with least-privilege roles
         if: github.event_name != 'pull_request'
         env:

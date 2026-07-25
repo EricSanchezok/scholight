@@ -13,6 +13,7 @@ BOOTSTRAP = ROOT / "deploy" / "production" / "bootstrap.sh"
 PACKAGE_NAMES = (
     "compose.yaml",
     "Caddyfile",
+    "cloudwatch-agent.json",
     "bootstrap-db.sql",
     "bootstrap.sh",
     "release.sh",

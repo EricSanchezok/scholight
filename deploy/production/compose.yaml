@@ -11,6 +11,14 @@ x-database-environment: &database-environment
   SCHOLIGHT_PG_POOL_MIN_SIZE: ${SCHOLIGHT_PG_POOL_MIN_SIZE:-5}
   SCHOLIGHT_PG_POOL_MAX_SIZE: ${SCHOLIGHT_PG_POOL_MAX_SIZE:-20}
 
+x-aws-logging: &aws-logging
+  driver: awslogs
+  options:
+    awslogs-region: ${SCHOLIGHT_AWS_REGION:-ap-southeast-1}
+    awslogs-group: /scholight/production/services
+    mode: non-blocking
+    max-buffer-size: 4m
+
 services:
   caddy:
     image: docker.io/library/caddy@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
@@ -37,11 +45,7 @@ services:
     memswap_limit: 192m
     cpus: 0.25
     pids_limit: 128
-    logging:
-      driver: json-file
-      options:
-        max-size: 10m
-        max-file: "5"
+    logging: *aws-logging
 
   frontend:
     image: ${SCHOLIGHT_FRONTEND_IMAGE:?SCHOLIGHT_FRONTEND_IMAGE must be a digest-qualified reference}
@@ -63,11 +67,7 @@ services:
     memswap_limit: 128m
     cpus: 0.1
     pids_limit: 64
-    logging:
-      driver: json-file
-      options:
-        max-size: 10m
-        max-file: "5"
+    logging: *aws-logging
 
   api:
     <<: *api-image
@@ -90,8 +90,21 @@ services:
       SCHOLIGHT_EMBEDDING_MODEL: ${SCHOLIGHT_EMBEDDING_MODEL:?SCHOLIGHT_EMBEDDING_MODEL is required}
       SCHOLIGHT_SEARCH_PAPER_CANDIDATE_TOP_K: ${SCHOLIGHT_SEARCH_PAPER_CANDIDATE_TOP_K:-200}
       SCHOLIGHT_SEARCH_ENRICHMENT_RPC_TIMEOUT_SECONDS: ${SCHOLIGHT_SEARCH_ENRICHMENT_RPC_TIMEOUT_SECONDS:-1.5}
+      SCHOLIGHT_SEARCH_LEVEL1_RPC_TIMEOUT_SECONDS: ${SCHOLIGHT_SEARCH_LEVEL1_RPC_TIMEOUT_SECONDS:-15.0}
+      SCHOLIGHT_SEARCH_STANDARD_TIMEOUT_SECONDS: ${SCHOLIGHT_SEARCH_STANDARD_TIMEOUT_SECONDS:-20.0}
       SCHOLIGHT_SEARCH_LEVEL2_RPC_TIMEOUT_SECONDS: ${SCHOLIGHT_SEARCH_LEVEL2_RPC_TIMEOUT_SECONDS:-45.0}
       SCHOLIGHT_SEARCH_LEVEL2_TIMEOUT_SECONDS: ${SCHOLIGHT_SEARCH_LEVEL2_TIMEOUT_SECONDS:-60.0}
+      SCHOLIGHT_SEARCH_MAX_IN_FLIGHT: ${SCHOLIGHT_SEARCH_MAX_IN_FLIGHT:-24}
+      SCHOLIGHT_SEARCH_THOROUGH_MAX_IN_FLIGHT: ${SCHOLIGHT_SEARCH_THOROUGH_MAX_IN_FLIGHT:-6}
+      SCHOLIGHT_SEARCH_CAPACITY_WAIT_MS: ${SCHOLIGHT_SEARCH_CAPACITY_WAIT_MS:-50}
+      SCHOLIGHT_SEARCH_EXECUTOR_WORKERS: ${SCHOLIGHT_SEARCH_EXECUTOR_WORKERS:-12}
+      SCHOLIGHT_BACKGROUND_QUEUE_MAX_SIZE: ${SCHOLIGHT_BACKGROUND_QUEUE_MAX_SIZE:-512}
+      SCHOLIGHT_EMBEDDING_CONNECT_TIMEOUT_SECONDS: ${SCHOLIGHT_EMBEDDING_CONNECT_TIMEOUT_SECONDS:-3.0}
+      SCHOLIGHT_EMBEDDING_READ_TIMEOUT_SECONDS: ${SCHOLIGHT_EMBEDDING_READ_TIMEOUT_SECONDS:-10.0}
+      SCHOLIGHT_EMBEDDING_WRITE_TIMEOUT_SECONDS: ${SCHOLIGHT_EMBEDDING_WRITE_TIMEOUT_SECONDS:-10.0}
+      SCHOLIGHT_EMBEDDING_POOL_TIMEOUT_SECONDS: ${SCHOLIGHT_EMBEDDING_POOL_TIMEOUT_SECONDS:-1.0}
+      SCHOLIGHT_EMBEDDING_MAX_CONNECTIONS: ${SCHOLIGHT_EMBEDDING_MAX_CONNECTIONS:-24}
+      SCHOLIGHT_EMBEDDING_MAX_KEEPALIVE_CONNECTIONS: ${SCHOLIGHT_EMBEDDING_MAX_KEEPALIVE_CONNECTIONS:-12}
       SCHOLIGHT_AUTH_JWT_SECRET: ${SCHOLIGHT_AUTH_JWT_SECRET:?SCHOLIGHT_AUTH_JWT_SECRET is required}
       SCHOLIGHT_AUTH_REFRESH_COOKIE_SECURE: "true"
       SCHOLIGHT_PUBLIC_WEB_URL: ${SCHOLIGHT_PUBLIC_WEB_URL:?SCHOLIGHT_PUBLIC_WEB_URL is required}
@@ -119,11 +132,7 @@ services:
     memswap_limit: 1024m
     cpus: 1.5
     pids_limit: 256
-    logging:
-      driver: json-file
-      options:
-        max-size: 20m
-        max-file: "5"
+    logging: *aws-logging
 
   metadata-sync:
     <<: *api-image
@@ -153,11 +162,7 @@ services:
     pids_limit: 128
     healthcheck:
       disable: true
-    logging:
-      driver: json-file
-      options:
-        max-size: 20m
-        max-file: "5"
+    logging: *aws-logging
 
   paper-ingest:
     <<: *api-image
@@ -188,11 +193,7 @@ services:
     pids_limit: 128
     healthcheck:
       disable: true
-    logging:
-      driver: json-file
-      options:
-        max-size: 20m
-        max-file: "5"
+    logging: *aws-logging
 
   migrate:
     <<: *api-image
@@ -209,6 +210,7 @@ services:
     restart: "no"
     healthcheck:
       disable: true
+    logging: *aws-logging
 
 volumes:
   caddy-data:

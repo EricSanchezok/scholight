@@ -15,6 +15,30 @@ FRONTEND_RUNTIME = ROOT / "frontend" / "runtime"
 DIGEST_REFERENCE = re.compile(r"^[^\s:@]+(?:/[^\s:@]+)+@sha256:[0-9a-f]{64}$")
 
 
+class _CloudFormationLoader(yaml.SafeLoader):
+    """Load CloudFormation structure while preserving intrinsic function values."""
+
+
+def _cloudformation_scalar(
+    loader: _CloudFormationLoader,
+    node: yaml.ScalarNode,
+) -> dict[str, str]:
+    return {node.tag.removeprefix("!"): loader.construct_scalar(node)}
+
+
+for _tag in ("!Ref", "!Sub"):
+    _CloudFormationLoader.add_constructor(_tag, _cloudformation_scalar)
+
+
+def _load_observability_template() -> dict[str, object]:
+    loaded = yaml.load(
+        (PRODUCTION / "observability.yaml").read_text(encoding="utf-8"),
+        Loader=_CloudFormationLoader,
+    )
+    assert isinstance(loaded, dict)
+    return loaded
+
+
 def test_production_compose_uses_digest_images_and_only_caddy_ports() -> None:
     compose = yaml.safe_load((PRODUCTION / "compose.yaml").read_text(encoding="utf-8"))
     services = compose["services"]
@@ -153,6 +177,17 @@ def test_production_services_have_hard_resource_boundaries() -> None:
         assert service["memswap_limit"] == memory
         assert str(service["cpus"]) == cpus
         assert service["pids_limit"] == pids
+
+
+def test_production_services_use_bounded_nonblocking_aws_logs() -> None:
+    compose = yaml.safe_load((PRODUCTION / "compose.yaml").read_text(encoding="utf-8"))
+
+    for service in compose["services"].values():
+        logging = service["logging"]
+        assert logging["driver"] == "awslogs"
+        assert logging["options"]["awslogs-group"] == "/scholight/production/services"
+        assert logging["options"]["mode"] == "non-blocking"
+        assert logging["options"]["max-buffer-size"] == "4m"
 
 
 def test_production_database_pools_are_scoped_per_service() -> None:
@@ -376,6 +411,7 @@ def test_backend_image_carries_the_complete_host_deployment_package() -> None:
         "wait-ssm.sh",
         "compose.yaml",
         "Caddyfile",
+        "cloudwatch-agent.json",
         "bootstrap-db.sql",
     ):
         assert f"deploy/production/{name}" in dockerfile
@@ -387,6 +423,56 @@ def test_bootstrap_is_part_of_the_release_package_digest() -> None:
     release_script = (PRODUCTION / "release.sh").read_text(encoding="utf-8")
 
     assert '"${SCRIPT_DIR}/bootstrap.sh"' in release_script
+    assert '"${SCRIPT_DIR}/cloudwatch-agent.json"' in release_script
+
+
+def test_observability_template_has_bounded_retention_and_required_alarms() -> None:
+    template = _load_observability_template()
+    resources = template["Resources"]
+    assert isinstance(resources, dict)
+
+    assert resources["ServiceLogGroup"]["Properties"]["RetentionInDays"] == 14
+    assert resources["HostLogGroup"]["Properties"]["RetentionInDays"] == 14
+    assert resources["Dashboard"]["Properties"]["DashboardName"] == "Scholight-Production"
+    expected = {
+        "StatusCheckAlarm",
+        "MemoryAlarm",
+        "DiskAlarm",
+        "SwapAlarm",
+        "CpuAlarm",
+        "OomAlarm",
+        "Unexpected5xxAlarm",
+        "CapacityAlarm",
+        "StandardLatencyAlarm",
+        "ThoroughLatencyAlarm",
+        "DeadIngestionAlarm",
+    }
+    assert expected.issubset(resources)
+
+
+def test_observability_instance_policy_cannot_read_secrets_or_change_data() -> None:
+    template = _load_observability_template()
+    statements = template["Resources"]["InstanceObservabilityPolicy"]["Properties"][
+        "PolicyDocument"
+    ]["Statement"]
+    actions = {
+        action
+        for statement in statements
+        for action in (
+            statement["Action"] if isinstance(statement["Action"], list) else [statement["Action"]]
+        )
+    }
+
+    assert actions == {
+        "cloudwatch:PutMetricData",
+        "logs:CreateLogStream",
+        "logs:DescribeLogStreams",
+        "logs:PutLogEvents",
+    }
+    serialized = (PRODUCTION / "observability.yaml").read_text(encoding="utf-8")
+    assert "ssm:GetParameter" not in serialized
+    assert "zilliz" not in serialized.lower()
+    assert "rds:" not in serialized.lower()
 
 
 def test_ci_validates_bootstrap_with_shellcheck() -> None:
@@ -398,6 +484,7 @@ def test_ci_validates_bootstrap_with_shellcheck() -> None:
     assert "shellcheck -s sh frontend/runtime/render-docs.sh" in workflow
     assert "Verify backend host package" in workflow
     assert "/opt/scholight-package/${name}" in workflow
+    assert "tests/deploy/test_keepalive_integration.sh" in workflow
 
 
 def test_host_smoke_uses_local_tls_ingress_instead_of_public_ip_hairpin() -> None:

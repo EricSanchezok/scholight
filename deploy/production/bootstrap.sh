@@ -40,6 +40,7 @@ readonly SWAPPINESS_CONFIG="${ROOT_PREFIX}/etc/sysctl.d/99-scholight.conf"
 readonly PACKAGE_FILES=(
   compose.yaml
   Caddyfile
+  cloudwatch-agent.json
   bootstrap-db.sql
   bootstrap.sh
   release.sh
@@ -227,6 +228,23 @@ ensure_directories() {
   if [[ -z ${ROOT_PREFIX} ]]; then
     chown root:root "${HOST_PACKAGE_DIR}" "${CONFIG_DIR}" "${STATE_DIR}"
   fi
+}
+
+ensure_observability() {
+  if [[ -n ${ROOT_PREFIX} ]]; then
+    return
+  fi
+  if ! command -v rsyslogd >/dev/null 2>&1 || \
+    [[ ! -x /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl ]]; then
+    require_command dnf
+    dnf install -y rsyslog amazon-cloudwatch-agent
+  fi
+  systemctl enable --now rsyslog
+  /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+    -a fetch-config \
+    -m ec2 \
+    -s \
+    -c "file:${HOST_PACKAGE_DIR}/cloudwatch-agent.json"
 }
 
 ensure_emergency_swap() {
@@ -464,6 +482,7 @@ deploy() {
   [[ ${source_digest} == "${expected_package_sha}" ]] || \
     fail "source production package does not match package SHA"
   install_package "${source_digest}"
+  ensure_observability
   ensure_runtime_env \
     "${HOST_PACKAGE_DIR}" "${source_digest}" "${release_sha}" \
     "${backend_image}" "${frontend_image}"

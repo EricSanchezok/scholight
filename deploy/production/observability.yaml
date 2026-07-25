@@ -1,0 +1,347 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Minimal host and application observability for the single Scholight EC2 instance.
+
+Parameters:
+  InstanceId:
+    Type: AWS::EC2::Instance::Id
+  AlertEmail:
+    Type: String
+    AllowedPattern: '^[^@\s]+@[^@\s]+\.[^@\s]+$'
+  InstanceRoleName:
+    Type: String
+    Default: scholight-ec2
+    AllowedPattern: '^[A-Za-z0-9+=,.@_-]{1,64}$'
+
+Resources:
+  ServiceLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /scholight/production/services
+      RetentionInDays: 14
+
+  HostLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /scholight/production/host
+      RetentionInDays: 14
+
+  InstanceObservabilityPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: Write only Scholight metrics and the two production log groups.
+      Roles: [!Ref InstanceRoleName]
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: cloudwatch:PutMetricData
+            Resource: "*"
+            Condition:
+              StringEquals:
+                cloudwatch:namespace:
+                  - Scholight/Host
+                  - Scholight/Production
+          - Effect: Allow
+            Action:
+              - logs:CreateLogStream
+              - logs:DescribeLogStreams
+              - logs:PutLogEvents
+            Resource:
+              - !Sub '${ServiceLogGroup.Arn}:*'
+              - !Sub '${HostLogGroup.Arn}:*'
+
+  HostOomMetric:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref HostLogGroup
+      FilterPattern: '?\"Out of memory\" ?\"Killed process\" ?\"oom-kill\"'
+      MetricTransformations:
+        - MetricNamespace: Scholight/Production
+          MetricName: HostOOM
+          MetricValue: "1"
+          DefaultValue: 0
+
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: scholight-production-alerts
+
+  AlertSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref AlertTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  StatusCheckAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: Scholight-EC2-StatusCheck
+      Namespace: AWS/EC2
+      MetricName: StatusCheckFailed
+      Dimensions:
+        - Name: InstanceId
+          Value: !Ref InstanceId
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref AlertTopic]
+
+  MemoryAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: Scholight-Host-Memory-High
+      Namespace: Scholight/Host
+      MetricName: mem_used_percent
+      Dimensions:
+        - Name: InstanceId
+          Value: !Ref InstanceId
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 5
+      DatapointsToAlarm: 5
+      Threshold: 85
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref AlertTopic]
+
+  DiskAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: Scholight-Host-Disk-High
+      Namespace: Scholight/Host
+      MetricName: disk_used_percent
+      Dimensions:
+        - Name: InstanceId
+          Value: !Ref InstanceId
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 5
+      DatapointsToAlarm: 5
+      Threshold: 80
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref AlertTopic]
+
+  SwapAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: Scholight-Host-Swap-High
+      Namespace: Scholight/Host
+      MetricName: swap_used_percent
+      Dimensions:
+        - Name: InstanceId
+          Value: !Ref InstanceId
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 5
+      DatapointsToAlarm: 5
+      Threshold: 10
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+  CpuAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: Scholight-Host-CPU-High
+      Namespace: Scholight/Host
+      MetricName: cpu_usage_active
+      Dimensions:
+        - Name: InstanceId
+          Value: !Ref InstanceId
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 10
+      DatapointsToAlarm: 10
+      Threshold: 85
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+  OomAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: Scholight-Host-OOM
+      Namespace: Scholight/Production
+      MetricName: HostOOM
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+  Unexpected5xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: Scholight-API-Unexpected-5xx
+      Namespace: Scholight/Production
+      MetricName: Unexpected5xx
+      Dimensions:
+        - Name: service
+          Value: api
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+  CapacityAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: Scholight-API-Capacity-Rejection
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      Metrics:
+        - Id: requests
+          MetricStat:
+            Metric:
+              Namespace: Scholight/Production
+              MetricName: RequestCount
+              Dimensions:
+                - Name: service
+                  Value: api
+            Period: 300
+            Stat: Sum
+          ReturnData: false
+        - Id: rejected
+          MetricStat:
+            Metric:
+              Namespace: Scholight/Production
+              MetricName: CapacityRejected
+              Dimensions:
+                - Name: service
+                  Value: api
+            Period: 300
+            Stat: Sum
+          ReturnData: false
+        - Id: rejectionpercent
+          Expression: IF(rejected>=10,100*rejected/requests,0)
+          Label: Capacity rejection percent
+          ReturnData: true
+      AlarmActions: [!Ref AlertTopic]
+
+  StandardLatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: Scholight-Standard-p95-High
+      Namespace: Scholight/Production
+      MetricName: SuccessLatency
+      Dimensions:
+        - Name: service
+          Value: api
+        - Name: strength
+          Value: standard
+      ExtendedStatistic: p95
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 5000
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+  ThoroughLatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: Scholight-Thorough-p95-High
+      Namespace: Scholight/Production
+      MetricName: SuccessLatency
+      Dimensions:
+        - Name: service
+          Value: api
+        - Name: strength
+          Value: thorough
+      ExtendedStatistic: p95
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 30000
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+  DeadIngestionAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: Scholight-Ingestion-New-Dead-Job
+      Namespace: Scholight/Production
+      MetricName: IngestionDead
+      Dimensions:
+        - Name: service
+          Value: paper-ingest
+        - Name: outcome
+          Value: dead
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+  Dashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: Scholight-Production
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0, "y": 0, "width": 12, "height": 6,
+              "properties": {
+                "region": "${AWS::Region}",
+                "title": "Host saturation",
+                "metrics": [
+                  ["Scholight/Host", "cpu_usage_active", "InstanceId", "${InstanceId}"],
+                  [".", "mem_used_percent", ".", "."],
+                  [".", "swap_used_percent", ".", "."]
+                ],
+                "period": 60,
+                "stat": "Average"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12, "y": 0, "width": 12, "height": 6,
+              "properties": {
+                "region": "${AWS::Region}",
+                "title": "Search latency p95",
+                "metrics": [
+                  ["Scholight/Production", "SuccessLatency", "service", "api", "strength", "standard", {"stat": "p95"}],
+                  ["Scholight/Production", "SuccessLatency", "service", "api", "strength", "thorough", {"stat": "p95"}]
+                ],
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0, "y": 6, "width": 24, "height": 6,
+              "properties": {
+                "region": "${AWS::Region}",
+                "title": "Traffic, overload protection, and errors",
+                "metrics": [
+                  ["Scholight/Production", "RequestCount", "service", "api", {"stat": "Sum"}],
+                  [".", "CapacityRejected", ".", ".", {"stat": "Sum"}],
+                  [".", "Unexpected5xx", ".", ".", {"stat": "Sum"}]
+                ],
+                "period": 300
+              }
+            }
+          ]
+        }
+
+Outputs:
+  AlertTopicArn:
+    Value: !Ref AlertTopic
+  DashboardName:
+    Value: !Ref Dashboard

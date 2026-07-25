@@ -128,10 +128,34 @@ Remove any remaining permission to send `AWS-RunShellScript`. No new IAM role,
 S3 bucket, Secrets Manager secret, or custom KMS key is required.
 
 Each release carries a SHA-256 digest of `compose.yaml`, `Caddyfile`,
-`bootstrap-db.sql`, `bootstrap.sh`, `release.sh`, `smoke.sh`, and
+`cloudwatch-agent.json`, `bootstrap-db.sql`, `bootstrap.sh`, `release.sh`, `smoke.sh`, and
 `wait-ssm.sh`. The backend image contains those exact files under
 `/opt/scholight-package`; bootstrap verifies their digest before changing the
 host package. GitHub Actions never sends or mutates host runtime secrets.
+
+## One-time observability stack
+
+After the P0 runtime release has completed its observation window, deploy the
+reviewed CloudFormation template. It creates only the two 14-day log groups,
+minimal write-only instance policy, dashboard, SNS email subscription, metric
+filters, and alarms described in the template:
+
+```bash
+aws cloudformation deploy \
+  --region ap-southeast-1 \
+  --stack-name scholight-production-observability \
+  --template-file deploy/production/observability.yaml \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --parameter-overrides \
+    InstanceId=REPLACE_WITH_PRODUCTION_INSTANCE_ID \
+    AlertEmail=REPLACE_WITH_OPERATIONS_EMAIL \
+    InstanceRoleName=scholight-ec2
+```
+
+Confirm the SNS subscription from the operations mailbox before relying on
+notifications. Bootstrap installs and starts rsyslog and the CloudWatch Agent
+idempotently from the package configuration. The policy cannot read Parameter
+Store, access RDS or Zilliz, or modify application data.
 
 ## Runtime and release state
 
