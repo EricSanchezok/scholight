@@ -51,14 +51,14 @@ def test_generic_settings_allow_missing_api_hmac_secret() -> None:
     assert loaded.anonymous_quota_hmac_secret == ""
 
 
-def test_server_concurrency_limit_is_disabled_by_default(
+def test_server_concurrency_limit_defaults_to_last_resort_guard(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("SCHOLIGHT_SERVER_LIMIT_CONCURRENCY", raising=False)
 
     loaded = Settings(_env_file=None)  # type: ignore[call-arg]
 
-    assert loaded.server_limit_concurrency is None
+    assert loaded.server_limit_concurrency == 96
 
 
 def test_server_concurrency_limit_can_be_enabled_explicitly(
