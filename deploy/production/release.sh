@@ -213,6 +213,11 @@ capture_diagnostics() {
 
 activate() {
   local release_env=$1
+  # Compose's parallel in-place recreation can race while renaming temporary
+  # containers to their canonical names. A coordinated single-host release has
+  # an accepted short maintenance window, so remove the existing project first.
+  # Named volumes are preserved because `-v` is intentionally not used.
+  compose "${release_env}" down --remove-orphans --timeout 30
   compose "${release_env}" up -d --no-build --remove-orphans
   SCHOLIGHT_RELEASE_ENV="${release_env}" "${SMOKE_SCRIPT}"
 }

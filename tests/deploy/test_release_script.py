@@ -249,6 +249,17 @@ def test_successful_deploy_promotes_candidate_after_migration(tmp_path: Path) ->
     assert result.returncode == 0 and "SCHOLIGHT_RELEASE_SHA=" + "a" * 40 in current.read_text()
 
 
+def test_activation_stops_existing_project_before_recreating_services(tmp_path: Path) -> None:
+    env = deployment_environment(tmp_path)
+
+    result = run_release(*deploy_arguments(), env=env)
+
+    commands = Path(env["FAKE_COMMAND_LOG"]).read_text(encoding="utf-8")
+    stop_position = commands.index(" down --remove-orphans --timeout 30")
+    start_position = commands.index(" up -d --no-build --remove-orphans")
+    assert result.returncode == 0 and stop_position < start_position and " down -v " not in commands
+
+
 def test_candidate_smoke_failure_restores_current_without_changing_previous(tmp_path: Path) -> None:
     env = deployment_environment(tmp_path)
     state = Path(env["SCHOLIGHT_STATE_DIR"])
