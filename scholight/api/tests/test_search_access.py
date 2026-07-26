@@ -51,6 +51,26 @@ def test_generic_settings_allow_missing_api_hmac_secret() -> None:
     assert loaded.anonymous_quota_hmac_secret == ""
 
 
+def test_server_concurrency_limit_is_disabled_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("SCHOLIGHT_SERVER_LIMIT_CONCURRENCY", raising=False)
+
+    loaded = Settings(_env_file=None)  # type: ignore[call-arg]
+
+    assert loaded.server_limit_concurrency is None
+
+
+def test_server_concurrency_limit_can_be_enabled_explicitly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SCHOLIGHT_SERVER_LIMIT_CONCURRENCY", "256")
+
+    loaded = Settings(_env_file=None)  # type: ignore[call-arg]
+
+    assert loaded.server_limit_concurrency == 256
+
+
 def test_api_runtime_requires_hmac_secret(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "jwt_secret", "j" * 32)
     monkeypatch.setattr(settings, "anonymous_quota_hmac_secret", "short")

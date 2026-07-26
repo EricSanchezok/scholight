@@ -200,7 +200,7 @@ def test_production_database_pools_are_scoped_per_service() -> None:
         assert compose["services"][name]["environment"]["SCHOLIGHT_PG_POOL_MAX_SIZE"] == 4
 
 
-def test_uvicorn_has_explicit_connection_backpressure() -> None:
+def test_uvicorn_has_explicit_tunable_connection_boundaries() -> None:
     entrypoint = (ROOT / "docker" / "scholight-api" / "start.py").read_text(encoding="utf-8")
 
     assert "timeout_keep_alive=settings.server_keep_alive_seconds" in entrypoint
