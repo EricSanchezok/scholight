@@ -58,7 +58,7 @@ def test_server_concurrency_limit_defaults_to_last_resort_guard(
 
     loaded = Settings(_env_file=None)  # type: ignore[call-arg]
 
-    assert loaded.server_limit_concurrency == 128
+    assert loaded.server_limit_concurrency == 96
 
 
 def test_server_concurrency_limit_can_be_enabled_explicitly(

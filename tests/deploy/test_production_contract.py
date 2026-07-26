@@ -164,7 +164,7 @@ def test_caddy_blocks_internal_health_and_routes_api_directly() -> None:
 def test_production_services_have_hard_resource_boundaries() -> None:
     compose = yaml.safe_load((PRODUCTION / "compose.yaml").read_text(encoding="utf-8"))
     expected = {
-        "api": ("1280m", "1.5", 256),
+        "api": ("1024m", "1.5", 256),
         "paper-ingest": ("1280m", "0.5", 128),
         "metadata-sync": ("384m", "0.2", 128),
         "caddy": ("192m", "0.25", 128),

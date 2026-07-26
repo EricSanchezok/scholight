@@ -151,7 +151,7 @@ class Settings(BaseSettings):
     forwarded_allow_ips: str = "127.0.0.1"
     server_keep_alive_seconds: int = Field(default=65, ge=1, le=300)
     # Last-resort host guard. This is a coarse ASGI-task ceiling, not search capacity.
-    server_limit_concurrency: int | None = Field(default=128, ge=1, le=4096)
+    server_limit_concurrency: int | None = Field(default=96, ge=1, le=4096)
     server_backlog: int = Field(default=128, ge=1, le=4096)
 
 

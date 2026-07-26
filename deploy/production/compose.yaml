@@ -117,8 +117,8 @@ services:
       scholight:
         ipv4_address: ${SCHOLIGHT_API_IP:?SCHOLIGHT_API_IP is required}
     restart: unless-stopped
-    mem_limit: 1280m
-    memswap_limit: 1280m
+    mem_limit: 1024m
+    memswap_limit: 1024m
     cpus: 1.5
     pids_limit: 256
     logging: *aws-logging
