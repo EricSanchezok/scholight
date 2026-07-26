@@ -30,7 +30,6 @@ def _do_paper_search(
     date_from: str | None,
     date_to: str | None,
     arxiv_ids: list[str] | None,
-    timeout: float,
 ) -> list[dict[str, Any]]:
     """Dispatch between dense and hybrid paper search."""
     if not use_hybrid:
@@ -43,7 +42,6 @@ def _do_paper_search(
             date_to=date_to,
             arxiv_ids=arxiv_ids,
             output_fields=_PAPER_OUTPUT_FIELDS,
-            timeout=timeout,
         )
     return hybrid_search_arxiv_papers(
         query_vector=query_vector,
@@ -54,7 +52,6 @@ def _do_paper_search(
         date_from=date_from,
         date_to=date_to,
         output_fields=_PAPER_OUTPUT_FIELDS,
-        timeout=timeout,
     )
 
 
@@ -112,7 +109,6 @@ class AnnSearchPhase(Phase):
             date_from=request.date_from,
             date_to=request.date_to,
             arxiv_ids=request.arxiv_ids,
-            timeout=settings.search_level1_rpc_timeout_seconds,
         )
 
         ctx.metadata["mode"] = "hybrid" if use_hybrid else "dense"

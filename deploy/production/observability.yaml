@@ -61,6 +61,50 @@ Resources:
           MetricValue: "1"
           DefaultValue: 0
 
+  Proxy502Metric:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref ServiceLogGroup
+      FilterPattern: '{ $.status = 502 }'
+      MetricTransformations:
+        - MetricNamespace: Scholight/Production
+          MetricName: Proxy502
+          MetricValue: "1"
+          DefaultValue: 0
+
+  Proxy504Metric:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref ServiceLogGroup
+      FilterPattern: '{ $.status = 504 }'
+      MetricTransformations:
+        - MetricNamespace: Scholight/Production
+          MetricName: Proxy504
+          MetricValue: "1"
+          DefaultValue: 0
+
+  ProxyConnectionResetMetric:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref ServiceLogGroup
+      FilterPattern: '"connection reset by peer"'
+      MetricTransformations:
+        - MetricNamespace: Scholight/Production
+          MetricName: ProxyConnectionReset
+          MetricValue: "1"
+          DefaultValue: 0
+
+  ProxyConnectErrorMetric:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref ServiceLogGroup
+      FilterPattern: '"connection refused"'
+      MetricTransformations:
+        - MetricNamespace: Scholight/Production
+          MetricName: ProxyConnectError
+          MetricValue: "1"
+          DefaultValue: 0
+
   AlertTopic:
     Type: AWS::SNS::Topic
     Properties:
@@ -194,43 +238,6 @@ Resources:
       TreatMissingData: notBreaching
       AlarmActions: [!Ref AlertTopic]
 
-  CapacityAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: Scholight-API-Capacity-Rejection
-      EvaluationPeriods: 1
-      Threshold: 5
-      ComparisonOperator: GreaterThanOrEqualToThreshold
-      TreatMissingData: notBreaching
-      Metrics:
-        - Id: requests
-          MetricStat:
-            Metric:
-              Namespace: Scholight/Production
-              MetricName: RequestCount
-              Dimensions:
-                - Name: service
-                  Value: api
-            Period: 300
-            Stat: Sum
-          ReturnData: false
-        - Id: rejected
-          MetricStat:
-            Metric:
-              Namespace: Scholight/Production
-              MetricName: CapacityRejected
-              Dimensions:
-                - Name: service
-                  Value: api
-            Period: 300
-            Stat: Sum
-          ReturnData: false
-        - Id: rejectionpercent
-          Expression: IF(rejected>=10,100*rejected/requests,0)
-          Label: Capacity rejection percent
-          ReturnData: true
-      AlarmActions: [!Ref AlertTopic]
-
   StandardLatencyAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -304,7 +311,8 @@ Resources:
                 "metrics": [
                   ["Scholight/Host", "cpu_usage_active", "InstanceId", "${InstanceId}"],
                   [".", "mem_used_percent", ".", "."],
-                  [".", "swap_used_percent", ".", "."]
+                  [".", "swap_used_percent", ".", "."],
+                  [".", "disk_used_percent", ".", "."]
                 ],
                 "period": 60,
                 "stat": "Average"
@@ -313,6 +321,19 @@ Resources:
             {
               "type": "metric",
               "x": 12, "y": 0, "width": 12, "height": 6,
+              "properties": {
+                "region": "${AWS::Region}",
+                "title": "Search in-flight and throughput",
+                "metrics": [
+                  ["Scholight/Production", "InFlight", "service", "api", {"stat": "Maximum"}],
+                  [".", "RequestCount", ".", ".", {"stat": "Sum", "yAxis": "right"}]
+                ],
+                "period": 60
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0, "y": 6, "width": 12, "height": 6,
               "properties": {
                 "region": "${AWS::Region}",
                 "title": "Search latency p95",
@@ -325,16 +346,69 @@ Resources:
             },
             {
               "type": "metric",
-              "x": 0, "y": 6, "width": 24, "height": 6,
+              "x": 12, "y": 6, "width": 12, "height": 6,
               "properties": {
                 "region": "${AWS::Region}",
-                "title": "Traffic, overload protection, and errors",
+                "title": "Search stage latency p95",
                 "metrics": [
-                  ["Scholight/Production", "RequestCount", "service", "api", {"stat": "Sum"}],
-                  [".", "CapacityRejected", ".", ".", {"stat": "Sum"}],
-                  [".", "Unexpected5xx", ".", ".", {"stat": "Sum"}]
+                  ["Scholight/Production", "StageEmbedQueryLatency", "service", "api", "strength", "standard", {"stat": "p95"}],
+                  [".", "StagePaperSearchLatency", ".", ".", ".", ".", {"stat": "p95"}],
+                  [".", "StageEmbedQueryLatency", ".", ".", "strength", "thorough", {"stat": "p95"}],
+                  [".", "StagePaperSearchLatency", ".", ".", ".", ".", {"stat": "p95"}],
+                  [".", "StageChunkSearchLatency", ".", ".", ".", ".", {"stat": "p95"}],
+                  [".", "StageChunkAggregationLatency", ".", ".", ".", ".", {"stat": "p95"}],
+                  [".", "StageRrfFusionLatency", ".", ".", ".", ".", {"stat": "p95"}],
+                  [".", "StageEnrichmentLatency", ".", ".", ".", ".", {"stat": "p95"}]
                 ],
                 "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0, "y": 12, "width": 12, "height": 6,
+              "properties": {
+                "region": "${AWS::Region}",
+                "title": "HTTPX and thread-pool wait p95",
+                "metrics": [
+                  ["Scholight/Production", "HttpxDispatchWait", "service", "api", {"stat": "p95"}],
+                  [".", "ThreadPoolWait", ".", ".", {"stat": "p95"}]
+                ],
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12, "y": 12, "width": 12, "height": 6,
+              "properties": {
+                "region": "${AWS::Region}",
+                "title": "Proxy and application errors",
+                "metrics": [
+                  ["Scholight/Production", "Proxy502", {"stat": "Sum"}],
+                  [".", "Proxy504", {"stat": "Sum"}],
+                  [".", "ProxyConnectionReset", {"stat": "Sum"}],
+                  [".", "ProxyConnectError", {"stat": "Sum"}],
+                  [".", "SearchTimeout", "service", "api", "strength", "standard", {"stat": "Sum"}],
+                  [".", "SearchTimeout", ".", ".", "strength", "thorough", {"stat": "Sum"}],
+                  [".", "SearchConnectionReset", ".", ".", ".", ".", {"stat": "Sum"}],
+                  [".", "SearchConnectError", ".", ".", ".", ".", {"stat": "Sum"}],
+                  [".", "Unexpected5xx", "service", "api", {"stat": "Sum"}]
+                ],
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0, "y": 18, "width": 24, "height": 6,
+              "properties": {
+                "region": "${AWS::Region}",
+                "title": "Background analytics queues",
+                "metrics": [
+                  ["Scholight/Production", "HistoryQueueDepth", "service", "api", "outcome", "queued", {"stat": "Maximum"}],
+                  [".", "UsageQueueDepth", ".", ".", ".", ".", {"stat": "Maximum"}],
+                  [".", "HistoryQueueDropped", ".", ".", "outcome", "dropped", {"stat": "Sum"}],
+                  [".", "UsageQueueDropped", ".", ".", ".", ".", {"stat": "Sum"}]
+                ],
+                "period": 60
               }
             }
           ]

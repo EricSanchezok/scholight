@@ -3,22 +3,21 @@
 from __future__ import annotations
 
 import ast
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from scholight.api.models.search import PublicSearchRequest
 from scholight.api.search_access import SearchQuotaReservation
-from scholight.api.search_capacity import SearchCapacityError
 from scholight.api.search_execution import (
-    PublicSearchError,
     SearchInvocation,
+    _emit_phase_metrics,
+    _failure_metric_name,
+    _is_unexpected_5xx,
     execute_public_search,
 )
-from scholight.models.search import SearchResult
+from scholight.models.search import PhaseTiming, SearchResult, SearchStats
 
 
 def test_search_execution_has_no_transport_imports() -> None:
@@ -37,6 +36,62 @@ def test_search_execution_has_no_transport_imports() -> None:
     )
 
     assert imported.isdisjoint({"click", "fastapi", "mcp"})
+
+
+def test_phase_metrics_use_fixed_metric_names() -> None:
+    result = SearchResult(
+        query="retrieval",
+        level=2,
+        total_ms=125.0,
+        hits=[],
+        stats=SearchStats(
+            level=2,
+            embedding_model="test",
+            embedding_dim=2,
+            paper_candidates=5,
+            phases=[
+                PhaseTiming(phase="embed_query", duration_ms=25.0),
+                PhaseTiming(phase="paper_search", duration_ms=75.0),
+                PhaseTiming(phase="rrf_fusion", duration_ms=5.0),
+                PhaseTiming(phase="unknown_future_phase", duration_ms=20.0),
+            ],
+        ),
+    )
+
+    with patch("scholight.api.search_execution.emit_emf") as emit:
+        _emit_phase_metrics(result, strength="thorough")
+
+    emit.assert_called_once_with(
+        service="api",
+        strength="thorough",
+        metrics={
+            "StageEmbedQueryLatency": (25.0, "Milliseconds"),
+            "StagePaperSearchLatency": (75.0, "Milliseconds"),
+            "StageRrfFusionLatency": (5.0, "Milliseconds"),
+        },
+    )
+
+
+@pytest.mark.parametrize(
+    ("error", "metric"),
+    [
+        (TimeoutError(), "SearchTimeout"),
+        (ConnectionResetError(), "SearchConnectionReset"),
+        (ConnectionRefusedError(), "SearchConnectError"),
+        (RuntimeError(), "SearchDependencyFailure"),
+    ],
+)
+def test_failure_metric_classification_is_low_cardinality(
+    error: BaseException,
+    metric: str,
+) -> None:
+    assert _failure_metric_name(error) == metric
+
+
+def test_expected_dependency_503_is_not_counted_as_unexpected() -> None:
+    assert _is_unexpected_5xx(503, "search_unavailable") is False
+    assert _is_unexpected_5xx(503, "thorough_search_unavailable") is False
+    assert _is_unexpected_5xx(500, "search_cancelled") is True
 
 
 @pytest.mark.asyncio
@@ -68,43 +123,3 @@ async def test_execute_public_search_uses_invocation_client_ip() -> None:
 
     assert response.result_count == 0
     reserve.assert_awaited_once_with("192.0.2.20", None, strength="standard")
-
-
-@pytest.mark.asyncio
-async def test_capacity_rejection_happens_before_daily_quota_reservation() -> None:
-    gate = MagicMock()
-
-    @asynccontextmanager
-    async def reject(_strength: str) -> AsyncIterator[None]:
-        raise SearchCapacityError
-        yield
-
-    gate.admit = reject
-    with (
-        patch(
-            "scholight.api.search_execution.enforce_search_pre_admission",
-            new_callable=AsyncMock,
-        ) as pre_admission,
-        patch("scholight.api.search_execution.get_search_capacity_gate", return_value=gate),
-        patch(
-            "scholight.api.search_execution.reserve_search_quota",
-            new_callable=AsyncMock,
-        ) as reserve,
-    ):
-        with pytest.raises(PublicSearchError) as exc_info:
-            await execute_public_search(
-                PublicSearchRequest(query="retrieval"),
-                SearchInvocation(
-                    actor=None,
-                    client_ip="192.0.2.20",
-                    request_id="request-capacity",
-                    transport="rest",
-                ),
-            )
-
-    error = exc_info.value
-    assert error.code == "search_capacity_exceeded"
-    assert error.status_code == 503
-    assert error.retry_after == 1
-    pre_admission.assert_awaited_once()
-    reserve.assert_not_awaited()

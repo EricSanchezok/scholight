@@ -72,13 +72,32 @@ async def test_api_embedder_reuses_lifecycle_client_without_closing_it() -> None
     shared.aclose.assert_not_awaited()
 
 
-def test_embedding_client_has_bounded_pool_and_phase_timeouts() -> None:
+def test_embedding_client_observes_without_adding_a_connection_cap() -> None:
     with patch("scholight.pipeline.embedder.httpx.AsyncClient") as client:
         embedder_module.create_embedding_client()
 
     kwargs = client.call_args.kwargs
     timeout = kwargs["timeout"]
     limits = kwargs["limits"]
-    assert (timeout.connect, timeout.read, timeout.write, timeout.pool) == (3.0, 10.0, 10.0, 1.0)
-    assert limits.max_connections == 24
-    assert limits.max_keepalive_connections == 12
+    assert (timeout.connect, timeout.read, timeout.write, timeout.pool) == (30.0, 30.0, 30.0, None)
+    assert limits.max_connections is None
+    assert limits.max_keepalive_connections == 20
+
+
+@pytest.mark.asyncio
+async def test_embedding_trace_emits_dispatch_wait_once() -> None:
+    with (
+        patch(
+            "scholight.pipeline.embedder.time.perf_counter",
+            side_effect=[10.0, 10.025],
+        ),
+        patch("scholight.pipeline.embedder.emit_emf") as emit,
+    ):
+        observer = embedder_module._HttpDispatchObserver(service="api")
+        await observer("http11.send_request_headers.started", {})
+        await observer("http11.send_request_body.started", {})
+
+    emit.assert_called_once_with(
+        service="api",
+        metrics={"HttpxDispatchWait": (25.0, "Milliseconds")},
+    )

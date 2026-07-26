@@ -70,4 +70,4 @@ async def test_ann_search_applies_candidate_pool_floor(
         await AnnSearchPhase().execute(context)
 
     assert paper_search.call_args.kwargs["top_k"] == expected_candidates
-    assert paper_search.call_args.kwargs["timeout"] == 15.0
+    assert "timeout" not in paper_search.call_args.kwargs

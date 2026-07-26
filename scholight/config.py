@@ -67,25 +67,14 @@ class Settings(BaseSettings):
     dense_refine_top_k: int = 256
     # Public-result enrichment stays short because it degrades without failing the search.
     search_enrichment_rpc_timeout_seconds: float = 1.5
-    search_level1_rpc_timeout_seconds: float = 15.0
-    search_standard_timeout_seconds: float = 20.0
     # Strict Level 2 must cover a cold 172M-row chunk index while remaining bounded.
     # Each blocking Zilliz RPC is shorter than the end-to-end Level 2 deadline.
     search_level2_rpc_timeout_seconds: float = 45.0
     search_level2_timeout_seconds: float = 60.0
-    search_max_in_flight: int = Field(default=24, ge=1, le=512)
-    search_thorough_max_in_flight: int = Field(default=6, ge=1, le=128)
-    search_capacity_wait_ms: int = Field(default=50, ge=0, le=5000)
-    search_executor_workers: int = Field(default=12, ge=1, le=128)
     background_queue_max_size: int = Field(default=512, ge=1, le=10000)
 
-    # A single lifecycle client is shared by API query embedding calls.
-    embedding_connect_timeout_seconds: float = 3.0
-    embedding_read_timeout_seconds: float = 10.0
-    embedding_write_timeout_seconds: float = 10.0
-    embedding_pool_timeout_seconds: float = 1.0
-    embedding_max_connections: int = Field(default=24, ge=1, le=512)
-    embedding_max_keepalive_connections: int = Field(default=12, ge=0, le=512)
+    # Reuse connections without introducing a new request-admission boundary.
+    embedding_max_keepalive_connections: int = Field(default=20, ge=0, le=512)
 
     # ── Search — Level 2 RRF fusion (C2) ──
     search_rrf_k: int = 60
@@ -127,10 +116,6 @@ class Settings(BaseSettings):
         # Always sync jwt_secret ← auth_jwt_secret so downstream code reads
         # the correct key regardless of which field it uses.
         self.jwt_secret = self.auth_jwt_secret
-        if self.search_thorough_max_in_flight > self.search_max_in_flight:
-            raise ValueError("thorough search capacity cannot exceed total search capacity")
-        if self.embedding_max_keepalive_connections > self.embedding_max_connections:
-            raise ValueError("embedding keep-alive connections cannot exceed the connection limit")
         return self
 
     # ── Auth ──

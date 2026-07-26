@@ -442,12 +442,30 @@ def test_observability_template_has_bounded_retention_and_required_alarms() -> N
         "CpuAlarm",
         "OomAlarm",
         "Unexpected5xxAlarm",
-        "CapacityAlarm",
         "StandardLatencyAlarm",
         "ThoroughLatencyAlarm",
         "DeadIngestionAlarm",
+        "Proxy502Metric",
+        "Proxy504Metric",
+        "ProxyConnectionResetMetric",
+        "ProxyConnectErrorMetric",
     }
     assert expected.issubset(resources)
+    assert "CapacityAlarm" not in resources
+
+    dashboard = resources["Dashboard"]["Properties"]["DashboardBody"]["Sub"]
+    assert "Search in-flight and throughput" in dashboard
+    assert "Search stage latency p95" in dashboard
+    assert "HTTPX and thread-pool wait p95" in dashboard
+    assert "Proxy and application errors" in dashboard
+    assert "Background analytics queues" in dashboard
+
+
+def test_production_has_no_unreviewed_capacity_enforcement_settings() -> None:
+    compose = yaml.safe_load((PRODUCTION / "compose.yaml").read_text(encoding="utf-8"))
+    environment = compose["services"]["api"]["environment"]
+
+    assert not any("CAPACITY" in name or "MAX_IN_FLIGHT" in name for name in environment)
 
 
 def test_observability_instance_policy_cannot_read_secrets_or_change_data() -> None:

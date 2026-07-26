@@ -186,7 +186,6 @@ def search_arxiv_papers(
     date_to: str | None = None,
     arxiv_ids: list[str] | None = None,
     output_fields: list[str] | None = None,
-    timeout: float | None = None,
 ) -> list[dict[str, Any]]:
     """Phase 1: Dense vector search on arxiv_papers with scalar filters.
 
@@ -228,7 +227,6 @@ def search_arxiv_papers(
             filter_exprs=filter_exprs,
             output_fields=fields,
             level=settings.search_level,
-            timeout=timeout,
         )
 
     filter_expr = _build_filter(
@@ -247,7 +245,6 @@ def search_arxiv_papers(
         filter_expr=filter_expr,
         output_fields=fields,
         level=settings.search_level,
-        timeout=timeout,
     )
 
 
@@ -262,7 +259,6 @@ def hybrid_search_arxiv_papers(
     date_to: str | None = None,
     arxiv_ids: list[str] | None = None,  # noqa: ARG001 — reserved for future wiring
     output_fields: list[str] | None = None,
-    timeout: float | None = None,
 ) -> list[dict[str, Any]]:
     """Phase 1 hybrid: Dense + BM25 two-way combined search on arxiv_papers.
 
@@ -320,7 +316,6 @@ def hybrid_search_arxiv_papers(
         filter=filter_expr,
         output_fields=fields,
         consistency_level=SEARCH_CONSISTENCY,
-        timeout=timeout,
     )
     hits = [_to_hit(h) for h in results[0]]
     elapsed_ms = round((time.perf_counter() - t0) * 1000, 1)

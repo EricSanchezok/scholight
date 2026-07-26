@@ -416,7 +416,6 @@ async def test_mcp_origin_is_optional_but_exact_when_present(
     ("status_code", "code"),
     [
         (429, "anonymous_rate_limit_exceeded"),
-        (503, "search_capacity_exceeded"),
         (503, "search_unavailable"),
     ],
 )

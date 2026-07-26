@@ -7,12 +7,15 @@ and chunk-pipeline embedding with configurable concurrency.
 from __future__ import annotations
 
 import asyncio
+import time
+from typing import Any
 
 import httpx
 import structlog
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 from scholight.config import settings
+from scholight.logging.emf import emit_emf
 from scholight.utils.http import is_transient
 
 logger = structlog.get_logger(__name__)
@@ -23,6 +26,25 @@ _ACADEMIC_QUERY_INSTRUCTION = (
 _api_client: httpx.AsyncClient | None = None
 
 
+class _HttpDispatchObserver:
+    """Measure time until httpcore begins work after a request is submitted."""
+
+    def __init__(self, *, service: str) -> None:
+        self._started_at = time.perf_counter()
+        self._recorded = False
+        self._service = service
+
+    async def __call__(self, event_name: str, _info: dict[str, Any]) -> None:
+        if self._recorded or not event_name.endswith(".started"):
+            return
+        self._recorded = True
+        wait_ms = max(0.0, (time.perf_counter() - self._started_at) * 1000)
+        emit_emf(
+            service=self._service,
+            metrics={"HttpxDispatchWait": (round(wait_ms, 3), "Milliseconds")},
+        )
+
+
 def _auth_headers() -> dict[str, str]:
     if settings.embedding_api_key:
         return {"Authorization": f"Bearer {settings.embedding_api_key}"}
@@ -30,16 +52,11 @@ def _auth_headers() -> dict[str, str]:
 
 
 def create_embedding_client() -> httpx.AsyncClient:
-    """Create one bounded client suitable for API-lifecycle reuse."""
+    """Create one reusable client without adding a search-admission limit."""
     return httpx.AsyncClient(
-        timeout=httpx.Timeout(
-            connect=settings.embedding_connect_timeout_seconds,
-            read=settings.embedding_read_timeout_seconds,
-            write=settings.embedding_write_timeout_seconds,
-            pool=settings.embedding_pool_timeout_seconds,
-        ),
+        timeout=httpx.Timeout(30.0, pool=None),
         limits=httpx.Limits(
-            max_connections=settings.embedding_max_connections,
+            max_connections=None,
             max_keepalive_connections=settings.embedding_max_keepalive_connections,
         ),
         headers=_auth_headers(),
@@ -83,10 +100,12 @@ class Embedder:
     def __init__(self, client: httpx.AsyncClient | None = None) -> None:
         self._client = client
         self._owns_client = False
+        self._metric_service: str | None = None
 
     async def __aenter__(self) -> Embedder:
         if self._client is None and _api_client is not None:
             self._client = _api_client
+            self._metric_service = "api"
         if self._client is None:
             self._client = create_embedding_client()
             self._owns_client = True
@@ -97,6 +116,7 @@ class Embedder:
             await self._client.aclose()
         self._client = None
         self._owns_client = False
+        self._metric_service = None
 
     @property
     def _url(self) -> str:
@@ -116,7 +136,10 @@ class Embedder:
 
         body = {"input": texts, "model": settings.embedding_model}
         logger.debug("embedding request", batch_size=len(texts))
-        resp = await self._client.post(self._url, json=body)
+        extensions: dict[str, object] | None = None
+        if self._metric_service is not None:
+            extensions = {"trace": _HttpDispatchObserver(service=self._metric_service)}
+        resp = await self._client.post(self._url, json=body, extensions=extensions)
         resp.raise_for_status()
         data = resp.json()
         embeddings = [item["embedding"] for item in data["data"]]
