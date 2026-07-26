@@ -99,6 +99,27 @@ async def test_lookup_requires_complete_email(api_app: FastAPI) -> None:
 
 
 @pytest.mark.asyncio
+async def test_lookup_missing_user_explains_exact_email_requirement(api_app: FastAPI) -> None:
+    api_app.dependency_overrides[get_scholight_admin] = _admin
+    with patch(
+        "scholight.api.routes.admin.find_admin_target_by_email",
+        AsyncMock(return_value=None),
+    ):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=api_app),
+            base_url="http://test",
+        ) as client:
+            response = await client.get("/admin/users/lookup?email=missing@example.com")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == {
+        "code": "user_not_found",
+        "message": "No Scholight user exists with that exact email address.",
+        "retryable": False,
+    }
+
+
+@pytest.mark.asyncio
 async def test_update_requires_both_fields_and_enforces_upper_bound(api_app: FastAPI) -> None:
     api_app.dependency_overrides[get_scholight_admin] = _admin
     async with httpx.AsyncClient(

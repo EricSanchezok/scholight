@@ -71,6 +71,11 @@ async def test_present_invalid_authorization_never_downgrades_to_anonymous(
 
     assert response.status_code == 401
     assert response.headers["www-authenticate"] == "Bearer"
+    assert response.json()["detail"] == {
+        "code": "invalid_access_token",
+        "message": "Use a valid Bearer access token.",
+        "retryable": False,
+    }
     resolver.assert_not_awaited()
 
 
@@ -107,3 +112,29 @@ async def test_cloud_auth_status_error_is_preserved(
 
     assert response.status_code == 403
     assert response.json() == {"detail": "Account disabled"}
+
+
+@pytest.mark.asyncio
+async def test_revoked_session_requires_sign_in_with_structured_error(
+    auth_app: tuple[FastAPI, AsyncMock],
+    active_user: UserRecord,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app, resolver = auth_app
+    resolver.return_value = active_user
+    manager = deps._user_manager
+    assert manager is not None
+    monkeypatch.setattr(manager, "touch_session", AsyncMock(return_value=False))
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        response = await client.get("/", headers={"Authorization": "Bearer access-token"})
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == {
+        "code": "authentication_required",
+        "message": "Your session has expired or been revoked. Sign in again.",
+        "retryable": False,
+    }

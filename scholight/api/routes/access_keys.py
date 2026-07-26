@@ -5,10 +5,11 @@ from __future__ import annotations
 from uuid import UUID
 
 from cloud_auth.models.user import UserRecord
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, Response, status
 
 from scholight.api.access_keys import issue_access_key
 from scholight.api.deps import get_current_user
+from scholight.api.http_errors import http_error
 from scholight.api.models.access_key import (
     AccessKeyResponse,
     CreateAccessKeyRequest,
@@ -26,13 +27,6 @@ from scholight.db.queries_access_keys import (
 router = APIRouter()
 
 
-def _error(status_code: int, code: str, message: str) -> HTTPException:
-    return HTTPException(
-        status_code=status_code,
-        detail={"code": code, "message": message, "retryable": False},
-    )
-
-
 @router.post("", response_model=CreatedAccessKeyResponse, status_code=status.HTTP_201_CREATED)
 async def create_key(
     body: CreateAccessKeyRequest,
@@ -45,10 +39,23 @@ async def create_key(
             expires_at=body.expires_at,
         )
     except AccessKeyLimitReachedError as exc:
-        raise _error(409, "access_key_limit_reached", "Active access key limit reached.") from exc
+        raise http_error(
+            409,
+            code="access_key_limit_reached",
+            message=(
+                "You already have the maximum number of active access keys. "
+                "Revoke one before creating another."
+            ),
+            retryable=False,
+            retry_after=None,
+        ) from exc
     except DBError as exc:
-        raise _error(
-            503, "access_key_service_unavailable", "Access key service unavailable."
+        raise http_error(
+            503,
+            code="access_key_service_unavailable",
+            message="Access key management is temporarily unavailable.",
+            retryable=True,
+            retry_after=5,
         ) from exc
     public = AccessKeyResponse.from_record(record)
     return CreatedAccessKeyResponse(**public.model_dump(), key=plaintext)
@@ -61,8 +68,12 @@ async def get_keys(
     try:
         records = await list_access_keys(current_user.id)
     except DBError as exc:
-        raise _error(
-            503, "access_key_service_unavailable", "Access key service unavailable."
+        raise http_error(
+            503,
+            code="access_key_service_unavailable",
+            message="Access key management is temporarily unavailable.",
+            retryable=True,
+            retry_after=5,
         ) from exc
     return [AccessKeyResponse.from_record(record) for record in records]
 
@@ -76,12 +87,22 @@ async def patch_key(
     try:
         keys = await list_access_keys(current_user.id)
     except DBError as exc:
-        raise _error(
-            503, "access_key_service_unavailable", "Access key service unavailable."
+        raise http_error(
+            503,
+            code="access_key_service_unavailable",
+            message="Access key management is temporarily unavailable.",
+            retryable=True,
+            retry_after=5,
         ) from exc
     existing = next((key for key in keys if key.id == key_id), None)
     if existing is None or existing.revoked_at is not None:
-        raise _error(404, "access_key_not_found", "Access key not found.")
+        raise http_error(
+            404,
+            code="access_key_not_found",
+            message="This access key does not exist or has already been revoked.",
+            retryable=False,
+            retry_after=None,
+        )
     name = body.name
     if "name" not in body.model_fields_set or name is None:
         name = existing.name
@@ -94,11 +115,21 @@ async def patch_key(
             expires_at=expires_at,
         )
     except DBError as exc:
-        raise _error(
-            503, "access_key_service_unavailable", "Access key service unavailable."
+        raise http_error(
+            503,
+            code="access_key_service_unavailable",
+            message="Access key management is temporarily unavailable.",
+            retryable=True,
+            retry_after=5,
         ) from exc
     if updated is None:
-        raise _error(404, "access_key_not_found", "Access key not found.")
+        raise http_error(
+            404,
+            code="access_key_not_found",
+            message="This access key does not exist or has already been revoked.",
+            retryable=False,
+            retry_after=None,
+        )
     return AccessKeyResponse.from_record(updated)
 
 
@@ -110,11 +141,21 @@ async def delete_key(
     try:
         revoked = await revoke_access_key(key_id, current_user.id)
     except DBError as exc:
-        raise _error(
-            503, "access_key_service_unavailable", "Access key service unavailable."
+        raise http_error(
+            503,
+            code="access_key_service_unavailable",
+            message="Access key management is temporarily unavailable.",
+            retryable=True,
+            retry_after=5,
         ) from exc
     if not revoked:
-        raise _error(404, "access_key_not_found", "Access key not found.")
+        raise http_error(
+            404,
+            code="access_key_not_found",
+            message="This access key does not exist or has already been revoked.",
+            retryable=False,
+            retry_after=None,
+        )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

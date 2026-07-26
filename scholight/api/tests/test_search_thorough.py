@@ -181,7 +181,15 @@ async def test_pre_commit_program_or_cancel_failure_returns_500_and_compensates_
 
     assert (response.status_code, response.json()) == (
         500,
-        {"detail": "Search service error"},
+        {
+            "detail": {
+                "code": "search_failed",
+                "message": (
+                    "The search could not be completed because of an unexpected service error."
+                ),
+                "retryable": False,
+            }
+        },
     )
     compensate.assert_awaited_once_with(reservation)
     schedule_history.assert_not_called()

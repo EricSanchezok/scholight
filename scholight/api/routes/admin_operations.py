@@ -6,9 +6,10 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 from cloud_auth.models.user import UserRecord
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 
 from scholight.api.deps import get_scholight_admin
+from scholight.api.http_errors import http_error
 from scholight.api.models.admin_metrics import AdminOperationsResponse
 from scholight.db.client import DBError
 from scholight.db.queries_admin_operations import query_admin_operations
@@ -25,14 +26,12 @@ async def operations_overview(
     try:
         metrics = await query_admin_operations(days=days, issue_limit=issue_limit)
     except DBError as exc:
-        raise HTTPException(
+        raise http_error(
             status_code=503,
-            detail={
-                "code": "admin_operations_unavailable",
-                "message": "Operations metrics are temporarily unavailable.",
-                "retryable": True,
-            },
-            headers={"Retry-After": "5"},
+            code="admin_operations_unavailable",
+            message="Operations metrics are temporarily unavailable.",
+            retryable=True,
+            retry_after=5,
         ) from exc
     return AdminOperationsResponse(
         generated_at=datetime.now(UTC),

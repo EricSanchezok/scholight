@@ -49,7 +49,7 @@ export async function toApiError(response: Response, body?: unknown): Promise<Ap
     response.status === 429
       ? "You have reached the current search limit. Please try again later."
       : response.status === 503
-        ? "Search is temporarily unavailable. Please try again."
+        ? "Scholight is temporarily unavailable. Please try again shortly."
         : "Something went wrong. Please try again.";
 
   return new ApiError(

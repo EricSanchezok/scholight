@@ -84,7 +84,6 @@ class PublicSearchError(Exception):
         message: str,
         retryable: bool,
         retry_after: int | None = None,
-        structured_http_detail: bool = True,
         quota: QuotaErrorDetails | dict[str, object] | None = None,
     ) -> None:
         super().__init__(message)
@@ -93,13 +92,10 @@ class PublicSearchError(Exception):
         self.message = message
         self.retryable = retryable
         self.retry_after = retry_after
-        self.structured_http_detail = structured_http_detail
         self.quota = QuotaErrorDetails.model_validate(quota) if quota is not None else None
 
     @property
-    def http_detail(self) -> str | dict[str, object]:
-        if not self.structured_http_detail:
-            return self.message
+    def http_detail(self) -> dict[str, object]:
         detail: dict[str, object] = {
             "code": self.code,
             "message": self.message,
@@ -183,7 +179,6 @@ def _execution_error(
     message: str,
     retryable: bool,
     retry_after: int | None = None,
-    structured_http_detail: bool = True,
     quota: QuotaErrorDetails | None = None,
 ) -> PublicSearchError:
     return PublicSearchError(
@@ -192,7 +187,6 @@ def _execution_error(
         message=message,
         retryable=retryable,
         retry_after=retry_after,
-        structured_http_detail=structured_http_detail,
         quota=quota,
     )
 
@@ -356,10 +350,9 @@ async def _execute_search(
         logger.error("search_cancelled", strength=body.strength)
         raise _execution_error(
             status_code=500,
-            code="search_cancelled",
-            message="Search service error",
+            code="search_failed",
+            message="The search could not be completed because of an unexpected service error.",
             retryable=False,
-            structured_http_detail=False,
         ) from exc
     except TimeoutError as exc:
         _emit_failure_metric(exc, strength=body.strength.value)
@@ -472,9 +465,8 @@ async def _execute_search(
         raise _execution_error(
             status_code=500,
             code="search_failed",
-            message="Search service error",
+            message="The search could not be completed because of an unexpected service error.",
             retryable=False,
-            structured_http_detail=False,
         ) from exc
 
     try:
@@ -516,10 +508,9 @@ async def _execute_search(
         logger.exception("search_post_commit_failed", strength=body.strength)
         raise _execution_error(
             status_code=500,
-            code="search_post_commit_failed",
-            message="Search service error",
+            code="search_failed",
+            message="The search could not be completed because of an unexpected service error.",
             retryable=False,
-            structured_http_detail=False,
         ) from exc
 
     filters: dict[str, object] = {}

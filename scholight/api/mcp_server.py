@@ -15,7 +15,7 @@ from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 from structlog.contextvars import get_contextvars
 
-from scholight.api.access_keys import AccessKeyError
+from scholight.api.access_keys import AccessKeyError, access_key_error_message
 from scholight.api.deps import (
     DelegationError,
     resolve_access_key_search_actor,
@@ -103,7 +103,7 @@ class _MCPRequestBoundary:
                 response = _error_response(
                     401,
                     code="invalid_access_key",
-                    message="Access key is invalid or unavailable.",
+                    message="Access key is invalid.",
                     retryable=False,
                 )
                 await response(scope, receive, send)
@@ -115,10 +115,11 @@ class _MCPRequestBoundary:
                     else await resolve_delegated_search_actor(token)
                 )
             except AccessKeyError as exc:
+                status_code = 403 if exc.code == "product_access_blocked" else 401
                 response = _error_response(
-                    401,
+                    status_code,
                     code=exc.code,
-                    message="Access key is invalid or unavailable.",
+                    message=access_key_error_message(exc.code),
                     retryable=False,
                 )
                 await response(scope, receive, send)

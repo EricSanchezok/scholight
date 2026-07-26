@@ -372,11 +372,28 @@ async def test_mcp_rejects_non_access_key_credentials(
     assert response.json()["detail"]["code"] == "invalid_access_key"
 
 
-async def test_mcp_rejects_revoked_access_key(mcp_client: httpx.AsyncClient) -> None:
+@pytest.mark.parametrize(
+    ("error_code", "status_code", "message"),
+    [
+        ("access_key_revoked", 401, "Access key has been revoked."),
+        ("access_key_expired", 401, "Access key has expired."),
+        (
+            "product_access_blocked",
+            403,
+            "Scholight access for this account is blocked.",
+        ),
+    ],
+)
+async def test_mcp_reports_access_key_state(
+    mcp_client: httpx.AsyncClient,
+    error_code: str,
+    status_code: int,
+    message: str,
+) -> None:
     with patch(
         "scholight.api.mcp_server.resolve_access_key_search_actor",
         new_callable=AsyncMock,
-        side_effect=AccessKeyError("access_key_revoked"),
+        side_effect=AccessKeyError(error_code),
     ):
         response = await mcp_client.post(
             "/mcp",
@@ -387,8 +404,9 @@ async def test_mcp_rejects_revoked_access_key(mcp_client: httpx.AsyncClient) -> 
             json=_request("tools/list", request_id=6, params={}),
         )
 
-    assert response.status_code == 401
-    assert response.json()["detail"]["code"] == "access_key_revoked"
+    assert response.status_code == status_code
+    assert response.json()["detail"]["code"] == error_code
+    assert response.json()["detail"]["message"] == message
 
 
 async def test_mcp_origin_is_optional_but_exact_when_present(

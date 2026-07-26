@@ -12,6 +12,7 @@ from structlog.contextvars import get_contextvars
 
 from scholight.api.deps import SearchActor, get_current_user, get_optional_search_actor
 from scholight.api.history_mapper import map_search_history_page
+from scholight.api.http_errors import http_error
 from scholight.api.models.history import (
     BulkDeleteSearchHistoryRequest,
     BulkDeleteSearchHistoryResponse,
@@ -108,17 +109,21 @@ async def delete_history_entry(
     except DBError as exc:
         raise _history_unavailable() from exc
     if not ok:
-        raise HTTPException(status_code=404, detail="Entry not found")
+        raise http_error(
+            404,
+            code="history_entry_not_found",
+            message="This search history entry no longer exists.",
+            retryable=False,
+            retry_after=None,
+        )
     return MessageResponse(message="Deleted")
 
 
 def _history_unavailable() -> HTTPException:
-    return HTTPException(
-        status_code=503,
-        detail={
-            "code": "history_unavailable",
-            "message": "Search history is temporarily unavailable.",
-            "retryable": True,
-        },
-        headers={"Retry-After": "5"},
+    return http_error(
+        503,
+        code="history_unavailable",
+        message="Search history is temporarily unavailable.",
+        retryable=True,
+        retry_after=5,
     )

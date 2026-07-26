@@ -6,20 +6,14 @@ from cloud_auth.exceptions import AuthError, DBError
 from cloud_auth.manager import UserManager
 from cloud_auth.models.auth import MessageResponse
 from cloud_auth.models.user import UserRecord
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from fastapi.security import HTTPAuthorizationCredentials
 
 from scholight.api.deps import get_current_user, get_user_manager, security
+from scholight.api.http_errors import http_error
 from scholight.api.sessions import SessionResponse, list_user_sessions
 
 router = APIRouter()
-
-
-def _error(status_code: int, code: str, message: str) -> HTTPException:
-    return HTTPException(
-        status_code=status_code,
-        detail={"code": code, "message": message, "retryable": False},
-    )
 
 
 def _session_id(
@@ -29,10 +23,12 @@ def _session_id(
     try:
         return manager.session_id_from_access_token(credentials.credentials)
     except AuthError as exc:
-        raise _error(
+        raise http_error(
             401,
-            "session_context_unavailable",
-            "Sign in again before managing sessions.",
+            code="session_context_unavailable",
+            message="Sign in again before managing sessions.",
+            retryable=False,
+            retry_after=None,
         ) from exc
 
 
@@ -49,7 +45,13 @@ async def get_sessions(
             current_session_id=_session_id(credentials, manager),
         )
     except DBError as exc:
-        raise _error(503, "session_service_unavailable", "Session service unavailable.") from exc
+        raise http_error(
+            503,
+            code="session_service_unavailable",
+            message="Session management is temporarily unavailable.",
+            retryable=True,
+            retry_after=5,
+        ) from exc
 
 
 @router.delete("/{session_id}", response_model=MessageResponse)
@@ -61,9 +63,21 @@ async def delete_session(
     try:
         revoked = await manager.revoke_session(current_user.id, session_id)
     except DBError as exc:
-        raise _error(503, "session_service_unavailable", "Session service unavailable.") from exc
+        raise http_error(
+            503,
+            code="session_service_unavailable",
+            message="Session management is temporarily unavailable.",
+            retryable=True,
+            retry_after=5,
+        ) from exc
     if not revoked:
-        raise _error(404, "session_not_found", "Session not found.")
+        raise http_error(
+            404,
+            code="session_not_found",
+            message="This session no longer exists or has already been revoked.",
+            retryable=False,
+            retry_after=None,
+        )
     return MessageResponse(message="Session revoked")
 
 
@@ -77,7 +91,13 @@ async def revoke_others(
     try:
         await manager.revoke_other_sessions(current_user.id, current_session_id)
     except DBError as exc:
-        raise _error(503, "session_service_unavailable", "Session service unavailable.") from exc
+        raise http_error(
+            503,
+            code="session_service_unavailable",
+            message="Session management is temporarily unavailable.",
+            retryable=True,
+            retry_after=5,
+        ) from exc
     return MessageResponse(message="Other sessions revoked")
 
 

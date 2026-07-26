@@ -17,7 +17,12 @@ from cloud_auth.models.user import UserRecord
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from scholight.api.access_keys import AccessKeyError, resolve_access_key
+from scholight.api.access_keys import (
+    AccessKeyError,
+    access_key_error_message,
+    resolve_access_key,
+)
+from scholight.api.http_errors import http_error
 from scholight.db.client import DBError
 from scholight.db.queries_admin import is_scholight_admin
 from scholight.db.queries_profile import ProductAccessBlockedError, ensure_product_access
@@ -74,6 +79,18 @@ def get_user_manager() -> UserManager:
     return _user_manager
 
 
+def _bearer_error(*, code: str, message: str) -> HTTPException:
+    error = http_error(
+        401,
+        code=code,
+        message=message,
+        retryable=False,
+        retry_after=None,
+    )
+    error.headers = {"WWW-Authenticate": "Bearer"}
+    return error
+
+
 async def _resolve_current_user(
     credentials: HTTPAuthorizationCredentials,
 ) -> UserRecord:
@@ -85,34 +102,49 @@ async def _resolve_current_user(
             raise RuntimeError("Dependencies not wired — call wire_dependencies() in create_app()")
         session_id = _user_manager.session_id_from_access_token(credentials.credentials)
         if not await _user_manager.touch_session(user.id, session_id):
-            raise HTTPException(
-                status_code=401,
-                detail="Session revoked or expired",
-                headers={"WWW-Authenticate": "Bearer"},
+            raise _bearer_error(
+                code="authentication_required",
+                message="Your session has expired or been revoked. Sign in again.",
             )
         try:
             await ensure_product_access(user.id)
         except ProductAccessBlockedError as exc:
-            raise HTTPException(status_code=403, detail="Scholight access is blocked") from exc
+            raise http_error(
+                403,
+                code="product_access_blocked",
+                message="Scholight access for this account is blocked.",
+                retryable=False,
+                retry_after=None,
+            ) from exc
         return user
     except (AuthDBError, DBError) as exc:
-        raise HTTPException(
-            status_code=503,
-            detail="Authentication service unavailable",
-            headers={"Retry-After": "5"},
+        raise http_error(
+            503,
+            code="authentication_service_unavailable",
+            message="Authentication is temporarily unavailable.",
+            retryable=True,
+            retry_after=5,
         ) from exc
     except (AuthError, HTTPException) as exc:
         if isinstance(exc, AuthError):
-            raise HTTPException(
-                status_code=401,
-                detail=str(exc),
-                headers={"WWW-Authenticate": "Bearer"},
+            raise _bearer_error(
+                code="authentication_required",
+                message="Your session is invalid or has expired. Sign in again.",
             ) from exc
         if exc.status_code != 401:
             raise
-        headers = dict(exc.headers or {})
-        headers.setdefault("WWW-Authenticate", "Bearer")
-        raise HTTPException(status_code=401, detail=exc.detail, headers=headers) from exc
+        if isinstance(exc.detail, dict):
+            headers = dict(exc.headers or {})
+            headers.setdefault("WWW-Authenticate", "Bearer")
+            raise HTTPException(
+                status_code=401,
+                detail=exc.detail,
+                headers=headers,
+            ) from exc
+        raise _bearer_error(
+            code="authentication_required",
+            message="Your session is invalid or has expired. Sign in again.",
+        ) from exc
 
 
 async def get_current_user(
@@ -128,23 +160,20 @@ async def get_scholight_admin(
     try:
         permitted = await is_scholight_admin(current_user.id)
     except DBError as exc:
-        raise HTTPException(
-            status_code=503,
-            detail={
-                "code": "admin_service_unavailable",
-                "message": "Administration service is temporarily unavailable.",
-                "retryable": True,
-            },
-            headers={"Retry-After": "5"},
+        raise http_error(
+            503,
+            code="admin_service_unavailable",
+            message="Administration service is temporarily unavailable.",
+            retryable=True,
+            retry_after=5,
         ) from exc
     if not permitted:
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "code": "admin_required",
-                "message": "Scholight administrator permission is required.",
-                "retryable": False,
-            },
+        raise http_error(
+            403,
+            code="admin_required",
+            message="Scholight administrator permission is required.",
+            retryable=False,
+            retry_after=None,
         )
     return current_user
 
@@ -157,10 +186,9 @@ async def get_optional_current_user(
     if "authorization" not in request.headers:
         return None
     if credentials is None or credentials.scheme.lower() != "bearer" or not credentials.credentials:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid access token",
-            headers={"WWW-Authenticate": "Bearer"},
+        raise _bearer_error(
+            code="invalid_access_token",
+            message="Use a valid Bearer access token.",
         )
     return await _resolve_current_user(credentials)
 
@@ -173,34 +201,33 @@ async def get_optional_search_actor(
     if "authorization" not in request.headers:
         return None
     if credentials is None or credentials.scheme.lower() != "bearer" or not credentials.credentials:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid access token",
-            headers={"WWW-Authenticate": "Bearer"},
+        raise _bearer_error(
+            code="invalid_access_token",
+            message="Use a valid Bearer access token.",
         )
     token = credentials.credentials
     if token.startswith("sk_live_"):
         try:
             return await resolve_access_key_search_actor(token)
         except AccessKeyError as exc:
-            raise HTTPException(
-                status_code=401,
-                detail={
-                    "code": exc.code,
-                    "message": "Access key is invalid or unavailable.",
-                    "retryable": False,
-                },
-                headers={"WWW-Authenticate": "Bearer"},
-            ) from exc
+            status_code = 403 if exc.code == "product_access_blocked" else 401
+            error = http_error(
+                status_code,
+                code=exc.code,
+                message=access_key_error_message(exc.code),
+                retryable=False,
+                retry_after=None,
+            )
+            if status_code == 401:
+                error.headers = {"WWW-Authenticate": "Bearer"}
+            raise error from exc
         except DBError as exc:
-            raise HTTPException(
-                status_code=503,
-                detail={
-                    "code": "access_key_service_unavailable",
-                    "message": "Access key service is temporarily unavailable.",
-                    "retryable": True,
-                },
-                headers={"Retry-After": "5"},
+            raise http_error(
+                503,
+                code="access_key_service_unavailable",
+                message="Access key authentication is temporarily unavailable.",
+                retryable=True,
+                retry_after=5,
             ) from exc
     user = await _resolve_current_user(credentials)
     return SearchActor(user=user, actor_type="web")

@@ -8,11 +8,12 @@ from datetime import UTC, date, datetime
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
+import httpx
 import pytest
 from cloud_auth.models.user import UserRecord
 from fastapi import FastAPI
 
-from scholight.api.deps import SearchActor
+from scholight.api.deps import SearchActor, get_current_user
 from scholight.api.routes.usage import usage_summary
 from scholight.api.search_execution import _schedule_usage
 from scholight.api.usage import (
@@ -214,3 +215,57 @@ async def test_summary_uses_daily_quota_and_monthly_event_statistics(
     assert summary.searches_this_month == 184
     assert summary.typical_response_ms == 840.0
     assert summary.success_rate == 125 / 128
+
+
+@pytest.mark.asyncio
+async def test_usage_database_failure_is_explicitly_retryable(
+    api_app: FastAPI,
+    active_user: UserRecord,
+) -> None:
+    api_app.dependency_overrides[get_current_user] = lambda: active_user
+    with patch(
+        "scholight.api.routes.usage.get_user_quota_status",
+        AsyncMock(side_effect=RuntimeError("private dependency detail")),
+    ):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=api_app),
+            base_url="http://test",
+        ) as client:
+            response = await client.get("/user/usage/summary")
+
+    assert response.status_code == 503
+    assert response.headers["retry-after"] == "5"
+    assert response.json()["detail"] == {
+        "code": "usage_service_unavailable",
+        "message": "Usage data is temporarily unavailable.",
+        "retryable": True,
+    }
+
+
+@pytest.mark.asyncio
+async def test_usage_export_limit_explains_how_to_reduce_the_result(
+    api_app: FastAPI,
+    active_user: UserRecord,
+) -> None:
+    api_app.dependency_overrides[get_current_user] = lambda: active_user
+    rows: list[dict[str, object]] = [{}] * 10_001
+    with patch(
+        "scholight.api.routes.usage._records",
+        AsyncMock(
+            return_value=(
+                rows,
+                datetime(2026, 7, 1, tzinfo=UTC),
+                datetime(2026, 7, 2, tzinfo=UTC),
+            )
+        ),
+    ):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=api_app),
+            base_url="http://test",
+        ) as client:
+            response = await client.get("/user/usage/export.csv")
+
+    assert response.status_code == 413
+    assert response.json()["detail"]["message"] == (
+        "Usage export exceeds 10,000 rows. Shorten the date range or add filters before exporting."
+    )

@@ -36,6 +36,15 @@ class AccessKeyError(Exception):
         self.code = code
 
 
+def access_key_error_message(code: str) -> str:
+    """Return a safe, actionable message for one stable access-key error code."""
+    return {
+        "access_key_expired": "Access key has expired.",
+        "access_key_revoked": "Access key has been revoked.",
+        "product_access_blocked": "Scholight access for this account is blocked.",
+    }.get(code, "Access key is invalid.")
+
+
 class AccessKeyRecord(BaseModel):
     """Stored access-key metadata; never contains the plaintext secret."""
 
@@ -161,6 +170,7 @@ __all__ = [
     "AccessKeyError",
     "AccessKeyRecord",
     "GeneratedAccessKey",
+    "access_key_error_message",
     "access_key_lookup_prefix",
     "create_access_key_secret",
     "digest_access_key",

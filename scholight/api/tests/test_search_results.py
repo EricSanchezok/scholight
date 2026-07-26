@@ -268,7 +268,15 @@ async def test_post_commit_enrichment_program_error_returns_500_with_compensatio
 
     assert (response.status_code, response.json()) == (
         500,
-        {"detail": "Search service error"},
+        {
+            "detail": {
+                "code": "search_failed",
+                "message": (
+                    "The search could not be completed because of an unexpected service error."
+                ),
+                "retryable": False,
+            }
+        },
     )
     compensate.assert_awaited_once()
     schedule_history.assert_not_called()
@@ -306,6 +314,14 @@ async def test_post_commit_mapper_error_returns_500_with_compensation(
 
     assert (response.status_code, response.json()) == (
         500,
-        {"detail": "Search service error"},
+        {
+            "detail": {
+                "code": "search_failed",
+                "message": (
+                    "The search could not be completed because of an unexpected service error."
+                ),
+                "retryable": False,
+            }
+        },
     )
     compensate.assert_awaited_once()

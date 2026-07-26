@@ -141,5 +141,7 @@ def retry_cmd(arxiv_id: str) -> None:
         )
 
     if not asyncio.run(_with_pool(_run)):
-        raise click.ClickException("paper_not_found_or_job_running")
+        raise click.ClickException(
+            "The paper was not found, or its ingestion job is already running."
+        )
     click.echo("queued")

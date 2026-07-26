@@ -9,10 +9,11 @@ from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from cloud_auth.models.user import UserRecord
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
 
 from scholight.api.deps import get_current_user
+from scholight.api.http_errors import http_error
 from scholight.api.models.usage import (
     DailyQuotaUsage,
     LatencyResponse,
@@ -48,13 +49,6 @@ router = APIRouter()
 _EXPORT_LIMIT = 10_000
 
 
-def _error(status_code: int, code: str, message: str) -> HTTPException:
-    return HTTPException(
-        status_code=status_code,
-        detail={"code": code, "message": message, "retryable": False},
-    )
-
-
 def _range(from_: str | None, to: str | None) -> tuple[datetime, datetime]:
     try:
         return resolve_usage_range(parse_range_value(from_), parse_range_value(to))
@@ -64,7 +58,13 @@ def _range(from_: str | None, to: str | None) -> tuple[datetime, datetime]:
             if exc.code == "usage_range_too_large"
             else "Invalid usage range."
         )
-        raise _error(400, exc.code, message) from exc
+        raise http_error(
+            400,
+            code=exc.code,
+            message=message,
+            retryable=False,
+            retry_after=None,
+        ) from exc
 
 
 def _quota(value: QuotaStatus | None) -> DailyQuotaUsage:
@@ -89,7 +89,13 @@ async def usage_summary(
         )
         stats = await query_usage_summary(current_user.id)
     except Exception as exc:
-        raise _error(503, "usage_service_unavailable", "Usage service unavailable.") from exc
+        raise http_error(
+            503,
+            code="usage_service_unavailable",
+            message="Usage data is temporarily unavailable.",
+            retryable=True,
+            retry_after=5,
+        ) from exc
     by_strength = {quota.strength: quota for quota in quotas}
     standard = _quota(by_strength.get("standard"))
     thorough = _quota(by_strength.get("thorough"))
@@ -131,7 +137,13 @@ async def usage_volume(
             current_user.id, start=start, end=end, access_key_id=access_key_id
         )
     except DBError as exc:
-        raise _error(503, "usage_service_unavailable", "Usage service unavailable.") from exc
+        raise http_error(
+            503,
+            code="usage_service_unavailable",
+            message="Usage data is temporarily unavailable.",
+            retryable=True,
+            retry_after=5,
+        ) from exc
     return VolumeResponse.model_validate(
         {"from": start, "to": end, "bucket": bucket, "points": fill_volume_days(start, end, rows)}
     )
@@ -151,7 +163,13 @@ async def usage_latency(
             current_user.id, start=start, end=end, access_key_id=access_key_id
         )
     except DBError as exc:
-        raise _error(503, "usage_service_unavailable", "Usage service unavailable.") from exc
+        raise http_error(
+            503,
+            code="usage_service_unavailable",
+            message="Usage data is temporarily unavailable.",
+            retryable=True,
+            retry_after=5,
+        ) from exc
     return LatencyResponse.model_validate(
         {
             "from": start,
@@ -212,9 +230,21 @@ async def _records(
             cursor=decoded,
         )
     except UsageRangeError as exc:
-        raise _error(400, exc.code, "Invalid usage cursor.") from exc
+        raise http_error(
+            400,
+            code=exc.code,
+            message="Invalid usage cursor.",
+            retryable=False,
+            retry_after=None,
+        ) from exc
     except DBError as exc:
-        raise _error(503, "usage_service_unavailable", "Usage service unavailable.") from exc
+        raise http_error(
+            503,
+            code="usage_service_unavailable",
+            message="Usage data is temporarily unavailable.",
+            retryable=True,
+            retry_after=5,
+        ) from exc
     return rows, start, end
 
 
@@ -280,7 +310,16 @@ async def usage_export(
         cursor=None,
     )
     if len(rows) > _EXPORT_LIMIT:
-        raise _error(413, "usage_export_too_large", "Usage export exceeds 10000 rows.")
+        raise http_error(
+            413,
+            code="usage_export_too_large",
+            message=(
+                "Usage export exceeds 10,000 rows. Shorten the date range or add filters "
+                "before exporting."
+            ),
+            retryable=False,
+            retry_after=None,
+        )
     output = io.StringIO(newline="")
     writer = csv.writer(output)
     writer.writerow(

@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, EmailStr, Field
 
 from scholight.api.deps import get_current_user, get_scholight_admin
+from scholight.api.http_errors import http_error
 from scholight.config import settings
 from scholight.db.client import DBError
 from scholight.db.queries_admin import (
@@ -81,15 +82,6 @@ class AdminAuditEventResponse(BaseModel):
     created_at: datetime
 
 
-def _error(status_code: int, code: str, message: str, *, retryable: bool = False) -> HTTPException:
-    headers = {"Retry-After": "5"} if retryable else None
-    return HTTPException(
-        status_code=status_code,
-        detail={"code": code, "message": message, "retryable": retryable},
-        headers=headers,
-    )
-
-
 async def _lookup(target: AdminTarget) -> AdminUserLookupResponse:
     overrides = await get_user_quota_overrides(target.id)
     statuses = await get_user_quota_status(
@@ -133,11 +125,12 @@ async def capabilities(
     try:
         permitted = await is_scholight_admin(current_user.id)
     except DBError as exc:
-        raise _error(
+        raise http_error(
             503,
-            "admin_service_unavailable",
-            "Administration service is temporarily unavailable.",
+            code="admin_service_unavailable",
+            message="Administration service is temporarily unavailable.",
             retryable=True,
+            retry_after=5,
         ) from exc
     return AdminCapabilitiesResponse(
         can_manage_quotas=permitted,
@@ -154,16 +147,23 @@ async def lookup_user(
     try:
         target = await find_admin_target_by_email(str(email))
         if target is None:
-            raise _error(404, "user_not_found", "User not found.")
+            raise http_error(
+                404,
+                code="user_not_found",
+                message="No Scholight user exists with that exact email address.",
+                retryable=False,
+                retry_after=None,
+            )
         return await _lookup(target)
     except HTTPException:
         raise
     except DBError as exc:
-        raise _error(
+        raise http_error(
             503,
-            "admin_service_unavailable",
-            "Administration service is temporarily unavailable.",
+            code="admin_service_unavailable",
+            message="Administration service is temporarily unavailable.",
             retryable=True,
+            retry_after=5,
         ) from exc
 
 
@@ -186,15 +186,28 @@ async def update_quota_overrides(
             event_id=uuid4(),
         )
     except AdminTargetNotFoundError as exc:
-        raise _error(404, "user_not_found", "User not found.") from exc
+        raise http_error(
+            404,
+            code="user_not_found",
+            message="The Scholight user no longer exists.",
+            retryable=False,
+            retry_after=None,
+        ) from exc
     except TargetUserInactiveError as exc:
-        raise _error(409, "user_not_active", "User is not active.") from exc
+        raise http_error(
+            409,
+            code="user_not_active",
+            message="Quota overrides can only be changed for an active Scholight user.",
+            retryable=False,
+            retry_after=None,
+        ) from exc
     except DBError as exc:
-        raise _error(
+        raise http_error(
             503,
-            "admin_service_unavailable",
-            "Administration service is temporarily unavailable.",
+            code="admin_service_unavailable",
+            message="Administration service is temporarily unavailable.",
             retryable=True,
+            retry_after=5,
         ) from exc
     return QuotaOverrideUpdateResponse(changed=changed)
 
@@ -207,11 +220,12 @@ async def audit_events(
     try:
         events = await list_admin_audit_events(limit)
     except DBError as exc:
-        raise _error(
+        raise http_error(
             503,
-            "admin_service_unavailable",
-            "Administration service is temporarily unavailable.",
+            code="admin_service_unavailable",
+            message="Administration service is temporarily unavailable.",
             retryable=True,
+            retry_after=5,
         ) from exc
     return [_audit_response(event) for event in events]
 

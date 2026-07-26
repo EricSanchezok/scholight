@@ -19,7 +19,9 @@ from scholight.api.access_keys import (
     issue_access_key,
     verify_access_key_secret,
 )
-from scholight.api.deps import SearchActor, get_optional_search_actor
+from scholight.api.deps import SearchActor, get_current_user, get_optional_search_actor
+from scholight.api.models.access_key import CreateAccessKeyRequest
+from scholight.db.client import DBError
 
 
 def _record(*, digest: bytes, expires_at: datetime | None = None) -> AccessKeyRecord:
@@ -98,14 +100,40 @@ async def test_access_key_search_actor_is_attributed_to_owner(active_user: UserR
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("error", "code"),
+    ("error", "status_code", "code", "message"),
     [
-        (AccessKeyError("invalid_access_key"), "invalid_access_key"),
-        (AccessKeyError("access_key_revoked"), "access_key_revoked"),
-        (AccessKeyError("access_key_expired"), "access_key_expired"),
+        (
+            AccessKeyError("invalid_access_key"),
+            401,
+            "invalid_access_key",
+            "Access key is invalid.",
+        ),
+        (
+            AccessKeyError("access_key_revoked"),
+            401,
+            "access_key_revoked",
+            "Access key has been revoked.",
+        ),
+        (
+            AccessKeyError("access_key_expired"),
+            401,
+            "access_key_expired",
+            "Access key has expired.",
+        ),
+        (
+            AccessKeyError("product_access_blocked"),
+            403,
+            "product_access_blocked",
+            "Scholight access for this account is blocked.",
+        ),
     ],
 )
-async def test_invalid_access_key_never_falls_back_to_jwt(error: AccessKeyError, code: str) -> None:
+async def test_invalid_access_key_never_falls_back_to_jwt(
+    error: AccessKeyError,
+    status_code: int,
+    code: str,
+    message: str,
+) -> None:
     app = FastAPI()
 
     @app.get("/")
@@ -121,8 +149,9 @@ async def test_invalid_access_key_never_falls_back_to_jwt(error: AccessKeyError,
         ) as client:
             response = await client.get("/", headers={"Authorization": "Bearer sk_live_value"})
 
-    assert response.status_code == 401
+    assert response.status_code == status_code
     assert response.json()["detail"]["code"] == code
+    assert response.json()["detail"]["message"] == message
     jwt_resolver.assert_not_awaited()
 
 
@@ -170,3 +199,33 @@ def test_access_key_list_schema_never_contains_secret_or_digest(api_app: FastAPI
 
     assert "key" not in model["properties"]
     assert "key_digest" not in model["properties"]
+
+
+@pytest.mark.asyncio
+async def test_access_key_database_failure_is_explicitly_retryable(
+    api_app: FastAPI,
+    active_user: UserRecord,
+) -> None:
+    api_app.dependency_overrides[get_current_user] = lambda: active_user
+    with patch(
+        "scholight.api.routes.access_keys.issue_access_key",
+        AsyncMock(side_effect=DBError("private SQL detail")),
+    ):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=api_app),
+            base_url="http://test",
+        ) as client:
+            response = await client.post(
+                "/user/access-keys",
+                json=CreateAccessKeyRequest(name="automation").model_dump(mode="json"),
+            )
+
+    assert response.status_code == 503
+    assert response.headers["retry-after"] == "5"
+    assert response.json() == {
+        "detail": {
+            "code": "access_key_service_unavailable",
+            "message": "Access key management is temporarily unavailable.",
+            "retryable": True,
+        }
+    }

@@ -232,7 +232,16 @@ async def test_single_delete_success_and_404(
         missing = await api_client.delete("/search/history/8")
 
     assert (deleted.status_code, deleted.json()) == (200, {"message": "Deleted"})
-    assert (missing.status_code, missing.json()) == (404, {"detail": "Entry not found"})
+    assert (missing.status_code, missing.json()) == (
+        404,
+        {
+            "detail": {
+                "code": "history_entry_not_found",
+                "message": "This search history entry no longer exists.",
+                "retryable": False,
+            }
+        },
+    )
 
 
 @pytest.mark.asyncio
