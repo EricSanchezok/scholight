@@ -54,7 +54,7 @@ Resources:
     Type: AWS::Logs::MetricFilter
     Properties:
       LogGroupName: !Ref HostLogGroup
-      FilterPattern: '?\"Out of memory\" ?\"Killed process\" ?\"oom-kill\"'
+      FilterPattern: '?"Out of memory" ?"Killed process" ?"oom-kill"'
       MetricTransformations:
         - MetricNamespace: Scholight/Production
           MetricName: HostOOM

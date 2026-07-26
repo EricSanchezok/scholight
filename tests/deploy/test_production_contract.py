@@ -459,6 +459,10 @@ def test_observability_template_has_bounded_retention_and_required_alarms() -> N
     assert "HTTPX and thread-pool wait p95" in dashboard
     assert "Proxy and application errors" in dashboard
     assert "Background analytics queues" in dashboard
+    assert (
+        resources["HostOomMetric"]["Properties"]["FilterPattern"]
+        == '?"Out of memory" ?"Killed process" ?"oom-kill"'
+    )
 
 
 def test_production_has_no_unreviewed_capacity_enforcement_settings() -> None:
