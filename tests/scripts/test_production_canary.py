@@ -61,12 +61,41 @@ def test_elevated_load_allows_full_bounded_profile() -> None:
     )
 
 
-def test_elevated_load_rejects_above_bounded_profile() -> None:
-    with pytest.raises(ValueError, match="cannot exceed 20"):
+def test_extreme_load_requires_separate_confirmation() -> None:
+    with pytest.raises(ValueError, match="--allow-extreme-load"):
         validate_load_limits(
-            maximum_standard_rps=40.0,
-            maximum_thorough_rps=None,
+            maximum_standard_rps=200.0,
+            maximum_thorough_rps=40.0,
             allow_elevated_load=True,
+        )
+
+
+def test_extreme_load_still_requires_elevated_confirmation() -> None:
+    with pytest.raises(ValueError, match="--allow-elevated-load"):
+        validate_load_limits(
+            maximum_standard_rps=200.0,
+            maximum_thorough_rps=40.0,
+            allow_elevated_load=False,
+            allow_extreme_load=True,
+        )
+
+
+def test_extreme_load_allows_explicitly_confirmed_profile() -> None:
+    validate_load_limits(
+        maximum_standard_rps=200.0,
+        maximum_thorough_rps=40.0,
+        allow_elevated_load=True,
+        allow_extreme_load=True,
+    )
+
+
+def test_extreme_load_rejects_above_hard_limit() -> None:
+    with pytest.raises(ValueError, match="cannot exceed 200"):
+        validate_load_limits(
+            maximum_standard_rps=201.0,
+            maximum_thorough_rps=40.0,
+            allow_elevated_load=True,
+            allow_extreme_load=True,
         )
 
 
@@ -79,6 +108,38 @@ def test_full_rate_plan_has_progressive_stages() -> None:
         12.0,
         16.0,
         20.0,
+    )
+
+
+def test_extreme_rate_plan_reaches_200_rps_progressively() -> None:
+    assert build_rate_plan(200.0, candidates=_MODULE._STANDARD_RATE_CANDIDATES) == (
+        1.0,
+        2.0,
+        4.0,
+        8.0,
+        12.0,
+        16.0,
+        20.0,
+        40.0,
+        80.0,
+        120.0,
+        160.0,
+        200.0,
+    )
+
+
+def test_extreme_thorough_rate_plan_reaches_40_rps_progressively() -> None:
+    assert build_rate_plan(40.0, candidates=_MODULE._THOROUGH_RATE_CANDIDATES) == (
+        0.5,
+        1.0,
+        2.0,
+        3.0,
+        4.0,
+        8.0,
+        16.0,
+        24.0,
+        32.0,
+        40.0,
     )
 
 

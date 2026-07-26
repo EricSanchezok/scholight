@@ -25,12 +25,27 @@ import httpx
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-_STANDARD_RATE_CANDIDATES = (1.0, 2.0, 4.0, 8.0, 12.0, 16.0, 20.0)
-_THOROUGH_RATE_CANDIDATES = (0.5, 1.0, 2.0, 3.0, 4.0)
+_STANDARD_RATE_CANDIDATES = (
+    1.0,
+    2.0,
+    4.0,
+    8.0,
+    12.0,
+    16.0,
+    20.0,
+    40.0,
+    80.0,
+    120.0,
+    160.0,
+    200.0,
+)
+_THOROUGH_RATE_CANDIDATES = (0.5, 1.0, 2.0, 3.0, 4.0, 8.0, 16.0, 24.0, 32.0, 40.0)
 _DEFAULT_MAX_STANDARD_RPS = 4.0
 _DEFAULT_MAX_THOROUGH_RPS = 1.0
-_MAX_STANDARD_RPS = 20.0
-_MAX_THOROUGH_RPS = 4.0
+_ELEVATED_MAX_STANDARD_RPS = 20.0
+_ELEVATED_MAX_THOROUGH_RPS = 4.0
+_MAX_STANDARD_RPS = 200.0
+_MAX_THOROUGH_RPS = 40.0
 _MAX_STAGE_SECONDS = 120
 _MAX_IN_FLIGHT = 512
 _WARMUP_REQUESTS = 5
@@ -206,12 +221,20 @@ def validate_load_limits(
     maximum_standard_rps: float,
     maximum_thorough_rps: float | None,
     allow_elevated_load: bool,
+    allow_extreme_load: bool = False,
 ) -> None:
-    """Bound production load and require explicit acknowledgement above safe defaults."""
+    """Bound production load and require explicit acknowledgement for risky profiles."""
     if maximum_standard_rps > _MAX_STANDARD_RPS:
         raise ValueError(f"--max-standard-rps cannot exceed {_MAX_STANDARD_RPS:g}")
     if maximum_thorough_rps is not None and maximum_thorough_rps > _MAX_THOROUGH_RPS:
         raise ValueError(f"--max-thorough-rps cannot exceed {_MAX_THOROUGH_RPS:g}")
+    extreme = maximum_standard_rps > _ELEVATED_MAX_STANDARD_RPS or (
+        maximum_thorough_rps is not None and maximum_thorough_rps > _ELEVATED_MAX_THOROUGH_RPS
+    )
+    if extreme and not allow_extreme_load:
+        raise ValueError(
+            "loads above 20 Standard RPS or 4 Thorough RPS require --allow-extreme-load"
+        )
     elevated = maximum_standard_rps > _DEFAULT_MAX_STANDARD_RPS or (
         maximum_thorough_rps is not None and maximum_thorough_rps > _DEFAULT_MAX_THOROUGH_RPS
     )
@@ -936,6 +959,11 @@ def _parse_args() -> argparse.Namespace:
         help="acknowledge rates above the conservative defaults",
     )
     parser.add_argument(
+        "--allow-extreme-load",
+        action="store_true",
+        help="additionally acknowledge rates above 20 Standard or 4 Thorough RPS",
+    )
+    parser.add_argument(
         "--strength",
         choices=("standard", "thorough", "both"),
         default="both",
@@ -957,6 +985,7 @@ def main(env: Mapping[str, str] = os.environ) -> int:
             maximum_standard_rps=args.max_standard_rps,
             maximum_thorough_rps=args.max_thorough_rps,
             allow_elevated_load=args.allow_elevated_load,
+            allow_extreme_load=args.allow_extreme_load,
         )
     except ValueError as exc:
         print(f"configuration error: {exc}")
