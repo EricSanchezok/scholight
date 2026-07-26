@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Mapping
 from typing import Literal
 
@@ -43,13 +44,14 @@ def emit_emf(
             **dimensions,
             **{name: value for name, (value, _) in metrics.items()},
             _aws={
+                "Timestamp": time.time_ns() // 1_000_000,
                 "CloudWatchMetrics": [
                     {
                         "Namespace": "Scholight/Production",
                         "Dimensions": [list(dimensions)],
                         "Metrics": definitions,
                     }
-                ]
+                ],
             },
         )
     except Exception:

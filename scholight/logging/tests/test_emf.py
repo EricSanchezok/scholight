@@ -25,6 +25,16 @@ def test_emf_uses_only_low_cardinality_dimensions() -> None:
     assert "query" not in payload
 
 
+def test_emf_includes_cloudwatch_epoch_millisecond_timestamp() -> None:
+    with (
+        patch("scholight.logging.emf.time.time_ns", return_value=1_785_051_843_123_456_789),
+        patch("scholight.logging.emf.logger.info") as info,
+    ):
+        emit_emf(service="api", metrics={"RequestCount": (1, "Count")})
+
+    assert info.call_args.kwargs["_aws"]["Timestamp"] == 1_785_051_843_123
+
+
 def test_emf_logging_failure_never_breaks_application_work() -> None:
     with patch("scholight.logging.emf.logger.info", side_effect=RuntimeError("logging down")):
         emit_emf(service="api", metrics={"RequestCount": (1, "Count")})
