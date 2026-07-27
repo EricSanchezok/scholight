@@ -5,7 +5,7 @@ from typing import Any
 import httpx
 import pytest
 
-from scripts.backfill_authors import backfill_ids, collect_missing_author_ids
+from scripts.backfill_authors import _write_failure_log, backfill_ids, collect_missing_author_ids
 
 
 class _Iterator:
@@ -131,3 +131,12 @@ async def test_transient_fetch_failure_records_batch_and_continues() -> None:
     assert stats.updated == 1
     assert stats.unresolved_ids == ["2601.00001"]
     assert stats.fetch_failed_ids == {"2601.00001"}
+
+
+def test_empty_failure_log_replaces_stale_results(tmp_path: Any) -> None:
+    failure_log = tmp_path / "author_failures.jsonl"
+    failure_log.write_text('{"arxiv_id":"stale"}\n', encoding="utf-8")
+
+    _write_failure_log(failure_log, [], fetch_failed_ids=set())
+
+    assert failure_log.read_text(encoding="utf-8") == ""

@@ -169,8 +169,6 @@ async def backfill_ids(
 
 
 def _write_failure_log(path: Path, ids: list[str], *, fetch_failed_ids: set[str]) -> None:
-    if not ids:
-        return
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:
         for arxiv_id in ids:
