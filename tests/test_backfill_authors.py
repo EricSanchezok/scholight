@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import httpx
 import pytest
 
 from scripts.backfill_authors import backfill_ids, collect_missing_author_ids
@@ -97,3 +98,36 @@ async def test_apply_partially_updates_only_resolved_authors() -> None:
         }
     ]
     assert stats.updated == 1
+
+
+@pytest.mark.asyncio
+async def test_transient_fetch_failure_records_batch_and_continues() -> None:
+    writes: list[dict[str, object]] = []
+    calls = 0
+
+    async def fetcher(ids: list[str]) -> list[dict[str, object]]:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise httpx.ReadTimeout("arXiv metadata timed out")
+        return [{"arxiv_id": ids[0], "authors": ["Grace Hopper"]}]
+
+    stats = await backfill_ids(
+        ["2601.00001", "2601.00002"],
+        apply=True,
+        batch_size=1,
+        delay=0,
+        fetcher=fetcher,
+        writer=writes.extend,
+    )
+
+    assert writes == [
+        {
+            "arxiv_id": "2601.00002",
+            "authors": ["Grace Hopper"],
+            "_metadata_fields": {"authors"},
+        }
+    ]
+    assert stats.updated == 1
+    assert stats.unresolved_ids == ["2601.00001"]
+    assert stats.fetch_failed_ids == {"2601.00001"}

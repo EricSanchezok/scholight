@@ -22,10 +22,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import httpx
 import structlog
 
 from scholight.logging import configure_logging
-from scholight.sources.arxiv import API_DELAY_SECONDS, fetch_papers_by_ids
+from scholight.sources.arxiv import API_DELAY_SECONDS, OAIHarvestError, fetch_papers_by_ids
 from scholight.store.client import QUERY_CONSISTENCY, escape_sql, get_client
 from scholight.store.ingestion import write_metadata_papers
 
@@ -48,6 +49,7 @@ class BackfillStats:
     updated: int = 0
     batches: int = 0
     unresolved_ids: list[str] = field(default_factory=list)
+    fetch_failed_ids: set[str] = field(default_factory=set)
 
 
 def collect_missing_author_ids(
@@ -106,7 +108,20 @@ async def backfill_ids(
     stats = BackfillStats(scanned=len(arxiv_ids))
     for offset in range(0, len(arxiv_ids), batch_size):
         batch = arxiv_ids[offset : offset + batch_size]
-        papers = await fetcher(batch)
+        try:
+            papers = await fetcher(batch)
+        except (httpx.HTTPError, OAIHarvestError) as exc:
+            stats.batches += 1
+            stats.unresolved_ids.extend(batch)
+            stats.fetch_failed_ids.update(batch)
+            logger.warning(
+                "author metadata batch unavailable",
+                batch_size=len(batch),
+                error_type=type(exc).__name__,
+            )
+            if offset + len(batch) < len(arxiv_ids) and delay:
+                await sleeper(delay)
+            continue
         authors_by_id = {
             str(paper["arxiv_id"]): list(paper.get("authors") or [])
             for paper in papers
@@ -145,13 +160,16 @@ async def backfill_ids(
     return stats
 
 
-def _write_failure_log(path: Path, ids: list[str]) -> None:
+def _write_failure_log(path: Path, ids: list[str], *, fetch_failed_ids: set[str]) -> None:
     if not ids:
         return
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:
         for arxiv_id in ids:
-            handle.write(json.dumps({"arxiv_id": arxiv_id, "reason": "authors unavailable"}))
+            reason = (
+                "metadata request failed" if arxiv_id in fetch_failed_ids else "authors unavailable"
+            )
+            handle.write(json.dumps({"arxiv_id": arxiv_id, "reason": reason}))
             handle.write("\n")
 
 
@@ -224,7 +242,11 @@ def main() -> None:
             delay=args.delay,
         )
     )
-    _write_failure_log(args.failure_log, stats.unresolved_ids)
+    _write_failure_log(
+        args.failure_log,
+        stats.unresolved_ids,
+        fetch_failed_ids=stats.fetch_failed_ids,
+    )
     logger.info(
         "author backfill complete",
         mode=mode,
