@@ -358,7 +358,11 @@ async def fetch_papers_api(date: dt.date) -> list[dict[str, Any]]:
     retry=retry_if_exception_type((httpx.HTTPError, OAIHarvestError)),
     reraise=True,
 )
-async def fetch_papers_by_ids(arxiv_ids: list[str]) -> list[dict[str, Any]]:
+async def fetch_papers_by_ids(
+    arxiv_ids: list[str],
+    *,
+    timeout_seconds: float = 30,
+) -> list[dict[str, Any]]:
     """Fetch metadata for a bounded list of canonical arXiv IDs."""
     ids = list(dict.fromkeys(arxiv_ids))
     if not ids:
@@ -368,7 +372,7 @@ async def fetch_papers_by_ids(arxiv_ids: list[str]) -> list[dict[str, Any]]:
     if any(canonicalize_arxiv_id(arxiv_id) != arxiv_id for arxiv_id in ids):
         raise ValueError("arxiv_ids must contain canonical IDs")
 
-    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+    async with httpx.AsyncClient(timeout=timeout_seconds, follow_redirects=True) as client:
         response = await client.get(
             API_BASE,
             params={"id_list": ",".join(ids), "max_results": len(ids)},

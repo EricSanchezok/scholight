@@ -102,6 +102,7 @@ async def test_api_fallback_uses_spaces_in_submitted_date_query() -> None:
 @pytest.mark.asyncio
 async def test_api_batch_fetches_metadata_by_arxiv_id() -> None:
     captured: dict[str, Any] = {}
+    client_options: dict[str, Any] = {}
 
     class Response:
         status_code = 200
@@ -132,8 +133,13 @@ async def test_api_batch_fetches_metadata_by_arxiv_id() -> None:
             captured.update(params)
             return Response()
 
-    with patch("scholight.sources.arxiv.httpx.AsyncClient", return_value=Client()):
-        papers = await fetch_papers_by_ids(["2604.02334"])
+    def client_factory(**kwargs: Any) -> Client:
+        client_options.update(kwargs)
+        return Client()
 
+    with patch("scholight.sources.arxiv.httpx.AsyncClient", side_effect=client_factory):
+        papers = await fetch_papers_by_ids(["2604.02334"], timeout_seconds=90)
+
+    assert client_options["timeout"] == 90
     assert captured == {"id_list": "2604.02334", "max_results": 1}
     assert papers[0]["authors"] == ["Xiaohang Nie", "Zihan Guo"]

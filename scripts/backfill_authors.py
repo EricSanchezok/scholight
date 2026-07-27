@@ -35,11 +35,19 @@ logger = structlog.get_logger("author_backfill")
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 _DEFAULT_FAILURE_LOG = _PROJECT_ROOT / "data" / "author_backfill_failures.jsonl"
 _SCAN_BATCH_SIZE = 1000
+_BACKFILL_API_TIMEOUT_SECONDS = 90
 
 Paper = dict[str, Any]
 Fetcher = Callable[[list[str]], Awaitable[list[Paper]]]
 Writer = Callable[[list[Paper]], object]
 Sleeper = Callable[[float], Awaitable[None]]
+
+
+async def _fetch_author_papers(arxiv_ids: list[str]) -> list[Paper]:
+    return await fetch_papers_by_ids(
+        arxiv_ids,
+        timeout_seconds=_BACKFILL_API_TIMEOUT_SECONDS,
+    )
 
 
 @dataclass(slots=True)
@@ -95,7 +103,7 @@ async def backfill_ids(
     apply: bool,
     batch_size: int,
     delay: float,
-    fetcher: Fetcher = fetch_papers_by_ids,
+    fetcher: Fetcher = _fetch_author_papers,
     writer: Writer = write_metadata_papers,
     sleeper: Sleeper = asyncio.sleep,
 ) -> BackfillStats:
