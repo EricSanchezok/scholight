@@ -17,6 +17,7 @@ API_BASE = "https://export.arxiv.org/api/query"
 API_DELAY_SECONDS = 3.0
 API_PAGE_SIZE = 2000
 API_TOTAL_LIMIT = 30_000
+API_ID_BATCH_LIMIT = 500
 
 _RESUMPTION_RE = re.compile(r"<resumptionToken[^>]*>(.*?)</resumptionToken>", re.DOTALL)
 _RECORD_RE = re.compile(r"<record>.*?</record>", re.DOTALL)
@@ -349,3 +350,32 @@ async def fetch_papers_api(date: dt.date) -> list[dict[str, Any]]:
             start += API_PAGE_SIZE
             await asyncio.sleep(API_DELAY_SECONDS)
     return papers
+
+
+@retry(
+    stop=stop_after_attempt(5),
+    wait=wait_exponential(multiplier=1, min=5, max=120),
+    retry=retry_if_exception_type((httpx.HTTPError, OAIHarvestError)),
+    reraise=True,
+)
+async def fetch_papers_by_ids(arxiv_ids: list[str]) -> list[dict[str, Any]]:
+    """Fetch metadata for a bounded list of canonical arXiv IDs."""
+    ids = list(dict.fromkeys(arxiv_ids))
+    if not ids:
+        return []
+    if len(ids) > API_ID_BATCH_LIMIT:
+        raise ValueError(f"At most {API_ID_BATCH_LIMIT} arXiv IDs may be fetched at once")
+    if any(canonicalize_arxiv_id(arxiv_id) != arxiv_id for arxiv_id in ids):
+        raise ValueError("arxiv_ids must contain canonical IDs")
+
+    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+        response = await client.get(
+            API_BASE,
+            params={"id_list": ",".join(ids), "max_results": len(ids)},
+        )
+        if response.status_code in {429, 503}:
+            raise OAIHarvestError(f"arXiv API returned {response.status_code}")
+        response.raise_for_status()
+
+    entries = re.findall(r"<entry>(.*?)</entry>", response.text, re.DOTALL)
+    return [paper for entry in entries if (paper := _parse_api_entry(entry)) is not None]

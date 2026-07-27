@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
-from scholight.sources.arxiv import _parse_record, fetch_papers_api
+from scholight.sources.arxiv import _parse_record, fetch_papers_api, fetch_papers_by_ids
 
 
 def test_oai_version_dates_define_created_and_updated() -> None:
@@ -97,3 +97,43 @@ async def test_api_fallback_uses_spaces_in_submitted_date_query() -> None:
 
     assert papers == []
     assert captured["search_query"] == "submittedDate:[202607180000 TO 202607182359]"
+
+
+@pytest.mark.asyncio
+async def test_api_batch_fetches_metadata_by_arxiv_id() -> None:
+    captured: dict[str, Any] = {}
+
+    class Response:
+        status_code = 200
+        text = """
+        <feed>
+          <entry>
+            <id>http://arxiv.org/abs/2604.02334v1</id>
+            <title>Holos</title>
+            <published>2026-01-18T13:09:25Z</published>
+            <updated>2026-01-18T13:09:25Z</updated>
+            <author><name>Xiaohang Nie</name></author>
+            <author><name>Zihan Guo</name></author>
+          </entry>
+        </feed>
+        """
+
+        def raise_for_status(self) -> None:
+            return None
+
+    class Client:
+        async def __aenter__(self) -> Client:
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+        async def get(self, _url: str, *, params: dict[str, Any]) -> Response:
+            captured.update(params)
+            return Response()
+
+    with patch("scholight.sources.arxiv.httpx.AsyncClient", return_value=Client()):
+        papers = await fetch_papers_by_ids(["2604.02334"])
+
+    assert captured == {"id_list": "2604.02334", "max_results": 1}
+    assert papers[0]["authors"] == ["Xiaohang Nie", "Zihan Guo"]
