@@ -341,6 +341,35 @@ async def test_missing_optional_candidate_metadata_is_normalized() -> None:
 
 
 @pytest.mark.asyncio
+async def test_sequence_metadata_from_milvus_is_preserved() -> None:
+    request = SearchRequest(query="test", level=1, top_k=10)
+    context = _level1_context(request)
+    context.raw_hits[0].update(
+        authors=("Ada Lovelace", "Charles Babbage"),
+        categories=("cs.AI", "cs.IR"),
+        updated_history=("2024-01-01", "2024-02-01"),
+    )
+    engine = SearchEngine()
+
+    with (
+        patch.object(engine, "_resolve_l1_pipeline", return_value=StubLevel1Pipeline(context)),
+        patch(
+            "scholight.search.engine._collection_row_counts",
+            new_callable=AsyncMock,
+            return_value=(None, None),
+        ),
+    ):
+        result = await engine.search(request)
+
+    hit = result.hits[0]
+    assert (hit.authors, hit.categories, hit.updated_history) == (
+        ["Ada Lovelace", "Charles Babbage"],
+        ["cs.AI", "cs.IR"],
+        ["2024-01-01", "2024-02-01"],
+    )
+
+
+@pytest.mark.asyncio
 async def test_all_invalid_rank_candidates_return_empty_result() -> None:
     request = SearchRequest(query="test", level=1, top_k=10)
     context = _level1_context(request)

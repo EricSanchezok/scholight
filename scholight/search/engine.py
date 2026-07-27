@@ -10,6 +10,7 @@ import copy
 import math
 import time
 from collections import Counter
+from collections.abc import Sequence
 from datetime import date
 from typing import Any
 
@@ -318,7 +319,7 @@ def _build_hits(
 
 
 def _coerce_list(value: object) -> list[str]:
-    if isinstance(value, list):
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
         return [str(v) for v in value]
     if value and isinstance(value, str):
         s = value.strip()

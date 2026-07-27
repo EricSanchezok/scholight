@@ -289,12 +289,14 @@ def hybrid_search_arxiv_papers(
         anns_field="abstract_embedding",
         param={"metric_type": "COSINE", "params": {"level": settings.search_level}},
         limit=top_k,
+        filter=filter_expr or None,
     )
     bm25_req = AnnSearchRequest(
         data=[query_text],
         anns_field="abstract_bm25",
         param={"metric_type": "BM25"},
         limit=top_k,
+        filter=filter_expr or None,
     )
 
     ranker = WeightedRanker(
@@ -313,7 +315,6 @@ def hybrid_search_arxiv_papers(
         reqs=[dense_req, bm25_req],
         ranker=ranker,
         limit=top_k,
-        filter=filter_expr,
         output_fields=fields,
         consistency_level=SEARCH_CONSISTENCY,
     )
@@ -412,12 +413,14 @@ def hybrid_search_arxiv_chunks(
             anns_field="content_embedding",
             param={"metric_type": "COSINE", "params": {"level": settings.chunk_search_level}},
             limit=top_k,
+            filter=filter_expr,
         )
         bm25_req = AnnSearchRequest(
             data=[query_text],
             anns_field="content_bm25",
             param={"metric_type": "BM25"},
             limit=top_k,
+            filter=filter_expr,
         )
         t0 = time.perf_counter()
         results = client.hybrid_search(
@@ -428,7 +431,6 @@ def hybrid_search_arxiv_chunks(
                 settings.search_hybrid_bm25_weight,
             ),
             limit=top_k,
-            filter=filter_expr,
             output_fields=fields,
             consistency_level=SEARCH_CONSISTENCY,
         )

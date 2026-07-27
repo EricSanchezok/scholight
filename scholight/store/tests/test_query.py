@@ -3,7 +3,13 @@
 from unittest.mock import MagicMock, patch
 
 from scholight.store.client import QUERY_CONSISTENCY
-from scholight.store.query import _build_filter, batch_get_arxiv_papers, bm25_search_all_chunks
+from scholight.store.query import (
+    _build_filter,
+    batch_get_arxiv_papers,
+    bm25_search_all_chunks,
+    hybrid_search_arxiv_chunks,
+    hybrid_search_arxiv_papers,
+)
 
 
 def test_bm25_search_all_chunks_keeps_legacy_timeout() -> None:
@@ -71,3 +77,39 @@ def test_batch_get_arxiv_papers_combines_candidate_ids_with_public_filters() -> 
         'created >= "2024-01-01" and created <= "2024-12-31" and '
         '(arxiv_id in ["A", "B"])'
     )
+
+
+def test_hybrid_paper_search_applies_filters_to_each_ann_request() -> None:
+    client = MagicMock()
+    client.hybrid_search.return_value = [[]]
+
+    with patch("scholight.store.query.get_client", return_value=client):
+        hybrid_search_arxiv_papers(
+            [0.25, 0.5],
+            "analytical engines",
+            authors=["Ada Lovelace"],
+        )
+
+    requests = client.hybrid_search.call_args.kwargs["reqs"]
+    assert [request.expr for request in requests] == [
+        '(array_contains(authors, "Ada Lovelace"))',
+        '(array_contains(authors, "Ada Lovelace"))',
+    ]
+
+
+def test_hybrid_chunk_search_applies_id_filter_to_each_ann_request() -> None:
+    client = MagicMock()
+    client.hybrid_search.return_value = [[]]
+
+    with patch("scholight.store.query.get_client", return_value=client):
+        hybrid_search_arxiv_chunks(
+            [0.25, 0.5],
+            ["2401.00001"],
+            "retrieval",
+        )
+
+    requests = client.hybrid_search.call_args.kwargs["reqs"]
+    assert [request.expr for request in requests] == [
+        '(arxiv_id in ["2401.00001"])',
+        '(arxiv_id in ["2401.00001"])',
+    ]
