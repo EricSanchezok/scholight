@@ -101,6 +101,45 @@ async def test_apply_partially_updates_only_resolved_authors() -> None:
 
 
 @pytest.mark.asyncio
+async def test_apply_fits_long_author_values_to_the_zilliz_schema() -> None:
+    writes: list[dict[str, object]] = []
+
+    async def fetcher(_ids: list[str]) -> list[dict[str, object]]:
+        return [{"arxiv_id": "2601.00001", "authors": ["A" * 300]}]
+
+    stats = await backfill_ids(
+        ["2601.00001"],
+        apply=True,
+        batch_size=100,
+        delay=0,
+        fetcher=fetcher,
+        writer=writes.extend,
+    )
+
+    assert writes[0]["authors"] == ["A" * 256]
+    assert stats.truncated_author_values == 1
+
+
+@pytest.mark.asyncio
+async def test_apply_does_not_split_multibyte_author_characters() -> None:
+    writes: list[dict[str, object]] = []
+
+    async def fetcher(_ids: list[str]) -> list[dict[str, object]]:
+        return [{"arxiv_id": "2601.00001", "authors": ["é" * 200]}]
+
+    await backfill_ids(
+        ["2601.00001"],
+        apply=True,
+        batch_size=100,
+        delay=0,
+        fetcher=fetcher,
+        writer=writes.extend,
+    )
+
+    assert writes[0]["authors"] == ["é" * 128]
+
+
+@pytest.mark.asyncio
 async def test_transient_fetch_failure_records_batch_and_continues() -> None:
     writes: list[dict[str, object]] = []
     calls = 0

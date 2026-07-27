@@ -29,6 +29,7 @@ from scholight.logging import configure_logging
 from scholight.sources.arxiv import API_DELAY_SECONDS, OAIHarvestError, fetch_papers_by_ids
 from scholight.store.client import QUERY_CONSISTENCY, escape_sql, get_client
 from scholight.store.ingestion import write_metadata_papers
+from scholight.utils.text import truncate_utf8
 
 logger = structlog.get_logger("author_backfill")
 
@@ -36,6 +37,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 _DEFAULT_FAILURE_LOG = _PROJECT_ROOT / "data" / "author_backfill_failures.jsonl"
 _SCAN_BATCH_SIZE = 1000
 _BACKFILL_API_TIMEOUT_SECONDS = 90
+_AUTHOR_VALUE_MAX_BYTES = 256
 
 Paper = dict[str, Any]
 Fetcher = Callable[[list[str]], Awaitable[list[Paper]]]
@@ -58,6 +60,7 @@ class BackfillStats:
     batches: int = 0
     unresolved_ids: list[str] = field(default_factory=list)
     fetch_failed_ids: set[str] = field(default_factory=set)
+    truncated_author_values: int = 0
 
 
 def collect_missing_author_ids(
@@ -130,11 +133,20 @@ async def backfill_ids(
             if offset + len(batch) < len(arxiv_ids) and delay:
                 await sleeper(delay)
             continue
-        authors_by_id = {
-            str(paper["arxiv_id"]): list(paper.get("authors") or [])
-            for paper in papers
-            if paper.get("arxiv_id") and paper.get("authors")
-        }
+        authors_by_id: dict[str, list[str]] = {}
+        for paper in papers:
+            if not paper.get("arxiv_id"):
+                continue
+            raw_authors = [str(author) for author in paper.get("authors") or [] if author]
+            fitted_authors = [
+                truncate_utf8(author, _AUTHOR_VALUE_MAX_BYTES) for author in raw_authors
+            ]
+            stats.truncated_author_values += sum(
+                original != fitted
+                for original, fitted in zip(raw_authors, fitted_authors, strict=True)
+            )
+            if fitted_authors:
+                authors_by_id[str(paper["arxiv_id"])] = fitted_authors
         updates = [
             {
                 "arxiv_id": arxiv_id,
@@ -162,6 +174,7 @@ async def backfill_ids(
                 recoverable=stats.recoverable,
                 updated=stats.updated,
                 unresolved=len(stats.unresolved_ids),
+                truncated_author_values=stats.truncated_author_values,
             )
         if offset + len(batch) < len(arxiv_ids) and delay:
             await sleeper(delay)
@@ -260,6 +273,7 @@ def main() -> None:
         recoverable=stats.recoverable,
         updated=stats.updated,
         unresolved=len(stats.unresolved_ids),
+        truncated_author_values=stats.truncated_author_values,
         failure_log=str(args.failure_log) if stats.unresolved_ids else None,
     )
     if not args.apply and stats.recoverable:

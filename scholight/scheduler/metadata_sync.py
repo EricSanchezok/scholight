@@ -32,17 +32,11 @@ from scholight.store.ingestion import (
     paper_exists_on_date,
     write_metadata_papers,
 )
+from scholight.utils.text import truncate_utf8
 
 logger = structlog.get_logger(__name__)
 _SOURCE = "arxiv"
 _ZERO_GUARD_DAYS = 5
-
-
-def _truncate_bytes(value: str, max_bytes: int) -> str:
-    encoded = value.encode()
-    if len(encoded) <= max_bytes:
-        return value
-    return encoded[:max_bytes].decode(errors="ignore")
 
 
 async def _normalize_and_embed(papers: list[dict[str, Any]]) -> None:
@@ -93,10 +87,10 @@ async def _normalize_and_embed(papers: list[dict[str, Any]]) -> None:
             ("journal_ref", 2048),
             ("acm_class", 256),
         ):
-            paper[key] = _truncate_bytes(str(paper.get(key) or ""), size)
-        paper["authors"] = [_truncate_bytes(str(author), 256) for author in paper["authors"]]
+            paper[key] = truncate_utf8(str(paper.get(key) or ""), size)
+        paper["authors"] = [truncate_utf8(str(author), 256) for author in paper["authors"]]
         paper["updated_history"] = [
-            _truncate_bytes(str(value), 16) for value in paper["updated_history"] if value
+            truncate_utf8(str(value), 16) for value in paper["updated_history"] if value
         ]
 
 
