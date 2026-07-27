@@ -90,6 +90,8 @@ def test_public_search_filters_trim_deduplicate_and_preserve_order() -> None:
         ("categories", [f"cs.{('A' * 30)}"]),
         ("authors", ["  "]),
         ("authors", ["A" * 201]),
+        ("authors", ["Ada\nLovelace"]),
+        ("authors", ["Alan\0Turing"]),
     ],
 )
 def test_public_search_filters_reject_invalid_values(field: str, value: list[str]) -> None:

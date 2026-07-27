@@ -65,6 +65,8 @@ class PublicSearchFilters(BaseModel):
             item = value.strip()
             if not 1 <= len(item) <= 200:
                 raise ValueError("authors must contain non-empty names of at most 200 characters")
+            if any(unicodedata.category(char) == "Cc" for char in item):
+                raise ValueError("authors must not contain control characters")
             if item not in seen:
                 seen.add(item)
                 normalized.append(item)
