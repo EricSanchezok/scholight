@@ -545,7 +545,7 @@ async def test_invalid_tool_input_does_not_execute_search(mcp_client: httpx.Asyn
             json=_request(
                 "tools/call",
                 request_id=11,
-                params={"name": "search_papers", "arguments": {"query": " ", "limit": 21}},
+                params={"name": "search_papers", "arguments": {"query": " ", "limit": 51}},
             ),
         )
 

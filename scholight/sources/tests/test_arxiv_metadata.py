@@ -51,6 +51,25 @@ def test_oai_datestamp_is_fallback_when_version_dates_are_absent() -> None:
     assert (paper["created"], paper["updated"]) == ("2026-07-24", "2026-07-24")
 
 
+def test_oai_authors_are_split_from_the_current_comma_separated_format() -> None:
+    paper = _parse_record(
+        """
+        <record>
+          <header>
+            <identifier>oai:arXiv.org:2604.02334</identifier>
+            <datestamp>2026-04-06</datestamp>
+          </header>
+          <metadata>
+            <authors>Xiaohang Nie, Zihan Guo, and Weinan Zhang</authors>
+          </metadata>
+        </record>
+        """
+    )
+
+    assert paper is not None
+    assert paper["authors"] == ["Xiaohang Nie", "Zihan Guo", "Weinan Zhang"]
+
+
 @pytest.mark.asyncio
 async def test_api_fallback_uses_spaces_in_submitted_date_query() -> None:
     captured: dict[str, Any] = {}

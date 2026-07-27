@@ -16,6 +16,7 @@ import { SearchForm } from "../components/SearchForm";
 import { SearchResultsSkeleton } from "../components/SearchResultsSkeleton";
 import {
   citationFor,
+  countSearchFilterGroups,
   parseSearchParameters,
   searchResultBylineParts,
   searchResultMetadataParts,
@@ -109,7 +110,7 @@ export function SearchPage() {
   const request: SearchRequest = {
     query: parsed.query,
     strength: parsed.strength,
-    limit: productConfig.search.resultLimit,
+    limit: parsed.limit,
     filters: parsed.filters,
   };
   const result = useQuery({
@@ -141,12 +142,14 @@ export function SearchPage() {
   };
 
   const error = result.error instanceof ApiError ? result.error : null;
+  const filterCount = countSearchFilterGroups(parsed.filters);
   return (
     <main className={styles.resultsPage}>
       <div className={styles.resultsSearch}>
         <SearchForm
           initialQuery={parsed.query}
           initialStrength={parsed.strength}
+          initialLimit={parsed.limit}
           filters={parsed.filters}
           compact
           busy={result.isPending && Boolean(parsed.query)}
@@ -209,6 +212,7 @@ export function SearchPage() {
                   {result.data.strength === "thorough"
                     ? messages.search.thorough
                     : messages.search.standard}
+                  {filterCount ? ` · ${filterCount} filters` : ""}
                 </span>
               </div>
               <div>

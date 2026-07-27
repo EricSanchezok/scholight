@@ -9,15 +9,19 @@ import { productConfig } from "../config/product";
 import { buildSearchUrl } from "../lib/format";
 import { styles } from "../styles/classes";
 import { EditorialSelect } from "./EditorialSelect";
+import { SearchFiltersControl } from "./SearchFiltersControl";
 
 const strengthOptions = [
   { value: "standard", label: "Standard" },
   { value: "thorough", label: "Thorough" },
 ] as const;
 
+const emptyFilters: SearchFilters = {};
+
 interface Props {
   initialQuery?: string;
   initialStrength?: SearchStrength;
+  initialLimit?: number;
   filters?: SearchFilters;
   compact?: boolean;
   busy?: boolean;
@@ -26,17 +30,22 @@ interface Props {
 export function SearchForm({
   initialQuery = "",
   initialStrength = "standard",
-  filters = {},
+  initialLimit = productConfig.search.resultLimit,
+  filters = emptyFilters,
   compact = false,
   busy = false,
 }: Props) {
   const navigate = useNavigate();
   const [query, setQuery] = useState(initialQuery);
   const [strength, setStrength] = useState<SearchStrength>(initialStrength);
+  const [searchFilters, setSearchFilters] = useState<SearchFilters>(filters);
+  const [limit, setLimit] = useState(initialLimit);
   const [error, setError] = useState("");
 
   useEffect(() => setQuery(initialQuery), [initialQuery]);
   useEffect(() => setStrength(initialStrength), [initialStrength]);
+  useEffect(() => setSearchFilters(filters), [filters]);
+  useEffect(() => setLimit(initialLimit), [initialLimit]);
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -49,7 +58,8 @@ export function SearchForm({
       buildSearchUrl({
         query: normalized,
         strength,
-        filters,
+        limit,
+        filters: searchFilters,
       }),
     );
   };
@@ -73,6 +83,25 @@ export function SearchForm({
         aria-describedby={error ? "search-error" : undefined}
       />
       <div className={styles.searchActions}>
+        <SearchFiltersControl
+          filters={searchFilters}
+          limit={limit}
+          onApply={(nextFilters, nextLimit) => {
+            setSearchFilters(nextFilters);
+            setLimit(nextLimit);
+            const normalized = query.trim();
+            if (compact && normalized) {
+              navigate(
+                buildSearchUrl({
+                  query: normalized,
+                  strength,
+                  limit: nextLimit,
+                  filters: nextFilters,
+                }),
+              );
+            }
+          }}
+        />
         <div className={styles.strengthSelect}>
           <EditorialSelect
             label="Search strength"

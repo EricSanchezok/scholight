@@ -249,7 +249,7 @@ async def search_papers(
         int,
         Field(
             ge=1,
-            le=20,
+            le=50,
             description=(
                 "Maximum number of ranked papers to return. Use 5 for a focused answer and increase "
                 "only when the user needs broader coverage."

@@ -105,7 +105,7 @@ class PublicSearchRequest(BaseModel):
 
     query: StrictString
     strength: SearchStrength = SearchStrength.STANDARD
-    limit: StrictInt = Field(default=10, ge=1, le=20)
+    limit: StrictInt = Field(default=10, ge=1, le=50)
     filters: PublicSearchFilters = Field(default_factory=PublicSearchFilters)
 
     @field_validator("query")

@@ -196,12 +196,17 @@ def _parse_record(record_xml: str) -> dict[str, Any] | None:
         m = re.search(f"<{name}>(.*?)</{name}>", record_xml, re.DOTALL)
         return m.group(1).strip() if m else default
 
-    # Authors: arXivRaw has flat author strings separated by " and "
+    # arXivRaw currently emits display names as a comma-separated string,
+    # sometimes with "and" before the final name.
     def _authors_raw() -> list[str]:
         raw = _tag("authors")
         if not raw:
             return []
-        return [a.strip() for a in re.split(r"\s+and\s+", raw) if a.strip()]
+        return [
+            author.strip()
+            for author in re.split(r",\s*(?:and\s+)?|\s+and\s+", raw)
+            if author.strip()
+        ]
 
     datestamp = _normalize_date(_tag("datestamp", ""))
     version_dates = [

@@ -4,6 +4,7 @@ import type { SearchHit } from "../api/types";
 import {
   buildSearchUrl,
   citationFor,
+  dateFromPreset,
   formatAuthors,
   parseSearchParameters,
   searchResultBylineParts,
@@ -62,6 +63,7 @@ describe("search presentation helpers", () => {
     const url = buildSearchUrl({
       query: "retrieval",
       strength: "thorough",
+      limit: 30,
       filters: {
         categories: ["cs.IR", "cs.AI"],
         authors: ["Lovelace"],
@@ -73,6 +75,7 @@ describe("search presentation helpers", () => {
     expect(parsed).toEqual({
       query: "retrieval",
       strength: "thorough",
+      limit: 30,
       filters: {
         categories: ["cs.IR", "cs.AI"],
         authors: ["Lovelace"],
@@ -80,5 +83,9 @@ describe("search presentation helpers", () => {
         date_to: "2025-01-01",
       },
     });
+  });
+
+  it("maps relative date presets to an inclusive UTC lower bound", () => {
+    expect(dateFromPreset("6months", new Date("2026-07-27T18:00:00Z"))).toBe("2026-01-27");
   });
 });

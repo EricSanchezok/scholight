@@ -60,10 +60,16 @@ def test_public_search_request_rejects_invalid_query(query: str) -> None:
         PublicSearchRequest(query=query)
 
 
-@pytest.mark.parametrize("limit", [True, 1.0, "10", 0, 21])
+@pytest.mark.parametrize("limit", [True, 1.0, "10", 0, 51])
 def test_public_search_request_enforces_strict_limit_bounds(limit: object) -> None:
     with pytest.raises(ValidationError):
         PublicSearchRequest(query="test", limit=limit)  # type: ignore[arg-type]
+
+
+def test_public_search_request_accepts_fifty_results() -> None:
+    request = PublicSearchRequest(query="test", limit=50)
+
+    assert request.limit == 50
 
 
 def test_public_search_filters_trim_deduplicate_and_preserve_order() -> None:

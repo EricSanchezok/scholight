@@ -1386,7 +1386,7 @@
           },
           "limit": {
             "default": 10,
-            "maximum": 20.0,
+            "maximum": 50.0,
             "minimum": 1.0,
             "title": "Limit",
             "type": "integer"

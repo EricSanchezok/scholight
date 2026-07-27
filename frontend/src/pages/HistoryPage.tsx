@@ -224,6 +224,7 @@ export function HistoryPage() {
                           buildSearchUrl({
                             query: item.query,
                             strength: item.strength,
+                            limit: productConfig.search.resultLimit,
                             filters: item.filters,
                           }),
                         )

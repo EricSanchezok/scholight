@@ -58,13 +58,51 @@ export function searchResultMetadataParts(
 export interface SearchParameters {
   query: string;
   strength: SearchStrength;
+  limit: number;
   filters: SearchFilters;
 }
 
+export type DatePreset = "any" | "1month" | "3months" | "6months" | "12months";
+
+const datePresetMonths: Record<Exclude<DatePreset, "any">, number> = {
+  "1month": 1,
+  "3months": 3,
+  "6months": 6,
+  "12months": 12,
+};
+
+export function dateFromPreset(preset: Exclude<DatePreset, "any">, now = new Date()): string {
+  const months = datePresetMonths[preset];
+  const targetMonth = now.getUTCMonth() - months;
+  const firstOfTargetMonth = new Date(Date.UTC(now.getUTCFullYear(), targetMonth, 1));
+  const finalDayOfTargetMonth = new Date(
+    Date.UTC(firstOfTargetMonth.getUTCFullYear(), firstOfTargetMonth.getUTCMonth() + 1, 0),
+  ).getUTCDate();
+  const target = new Date(
+    Date.UTC(
+      firstOfTargetMonth.getUTCFullYear(),
+      firstOfTargetMonth.getUTCMonth(),
+      Math.min(now.getUTCDate(), finalDayOfTargetMonth),
+    ),
+  );
+  return target.toISOString().slice(0, 10);
+}
+
+export function countSearchFilterGroups(filters: SearchFilters): number {
+  return (
+    Number(Boolean(filters.categories?.length)) +
+    Number(Boolean(filters.authors?.length)) +
+    Number(Boolean(filters.date_from || filters.date_to))
+  );
+}
+
 export function parseSearchParameters(params: URLSearchParams): SearchParameters {
+  const requestedLimit = Number(params.get("limit") ?? 10);
+  const limit = [10, 20, 30, 40, 50].includes(requestedLimit) ? requestedLimit : 10;
   return {
     query: (params.get("q") ?? "").trim().slice(0, 500),
     strength: params.get("strength") === "thorough" ? "thorough" : "standard",
+    limit,
     filters: {
       categories: params.getAll("category").filter(Boolean),
       authors: params.getAll("author").filter(Boolean),
@@ -76,6 +114,7 @@ export function parseSearchParameters(params: URLSearchParams): SearchParameters
 
 export function buildSearchUrl(parameters: SearchParameters): string {
   const params = new URLSearchParams({ q: parameters.query, strength: parameters.strength });
+  if (parameters.limit !== 10) params.set("limit", String(parameters.limit));
   parameters.filters.categories?.forEach((value) => params.append("category", value));
   parameters.filters.authors?.forEach((value) => params.append("author", value));
   if (parameters.filters.date_from) params.set("from", parameters.filters.date_from);
