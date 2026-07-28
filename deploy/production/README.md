@@ -11,12 +11,30 @@ database migrations.
 - Amazon Linux 2023 x86_64 EC2 host with its AMI-provided AWS CLI and SSM Agent
 - EC2 instance role with ECR pull, SSM managed-instance, and the single Parameter Store read permission documented below
 - DNS for `SCHOLIGHT_DOMAIN` pointing to the host
+- An optional external TLS load balancer whose origin hostname is
+  `SCHOLIGHT_EDGE_DOMAIN` and whose target is HTTP port 80
 - inbound TCP 80/443 and outbound access to ECR, ACME, RDS, Zilliz, and the embedding API
 
 `bootstrap.sh` installs Docker and the pinned, checksum-verified Compose v2 plugin,
 creates the host directories, installs the deployment package carried inside the
 backend image, and restores a missing runtime file. It does not replace an
 existing `/etc/scholight/runtime.env`.
+
+### External TLS edge origin
+
+`SCHOLIGHT_DOMAIN` remains the canonical hostname served directly by Caddy over
+HTTPS. `SCHOLIGHT_EDGE_DOMAIN` is a second, explicit hostname accepted over
+plaintext HTTP only for a trusted load balancer that terminates TLS externally.
+The load balancer target group must use HTTP port 80 and `/healthz` with success
+code 200. That health endpoint is intentionally independent of the `Host` header;
+every other request with an unknown host returns 404.
+
+The edge load balancer must preserve the request path, `Host`, `Authorization`,
+and `Content-Type` headers, must not cache `/api/mcp`, and must not automatically
+retry search POST requests. Allow inbound port 80 from the load balancer security
+group rather than from the whole internet. Add the edge HTTPS origin to
+`SCHOLIGHT_CORS_ALLOW_ORIGINS` so browser and MCP Origin checks accept it. The
+canonical `SCHOLIGHT_PUBLIC_WEB_URL` may remain on `SCHOLIGHT_DOMAIN`.
 
 ## One-time AWS and GitHub setup
 

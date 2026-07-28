@@ -56,7 +56,9 @@ service_running() {
 }
 
 SCHOLIGHT_DOMAIN=$(read_env_value SCHOLIGHT_DOMAIN)
+SCHOLIGHT_EDGE_DOMAIN=$(read_env_value SCHOLIGHT_EDGE_DOMAIN)
 LOCAL_INGRESS_RESOLVE="${SCHOLIGHT_DOMAIN}:443:127.0.0.1"
+LOCAL_EDGE_RESOLVE="${SCHOLIGHT_EDGE_DOMAIN}:80:127.0.0.1"
 
 retry "API readiness" compose exec -T api \
   curl --fail --silent --show-error http://127.0.0.1:8000/readyz
@@ -64,6 +66,11 @@ retry "frontend health" compose exec -T frontend \
   wget -q -O /dev/null http://127.0.0.1:8080/healthz
 retry "metadata-sync running" service_running metadata-sync
 retry "paper-ingest running" service_running paper-ingest
+retry "load balancer origin health" curl --fail --silent --show-error \
+  --output /dev/null "http://127.0.0.1/healthz"
+retry "edge HTTP API ingress" curl --fail --silent --show-error \
+  --resolve "${LOCAL_EDGE_RESOLVE}" \
+  --output /dev/null "http://${SCHOLIGHT_EDGE_DOMAIN}/api/openapi.json"
 retry "local TLS frontend ingress" curl --fail --silent --show-error \
   --resolve "${LOCAL_INGRESS_RESOLVE}" \
   --output /dev/null "https://${SCHOLIGHT_DOMAIN}/healthz"

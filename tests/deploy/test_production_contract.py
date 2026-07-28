@@ -147,6 +147,11 @@ def test_release_manifest_examples_are_digest_qualified() -> None:
 def test_caddy_blocks_internal_health_and_routes_api_directly() -> None:
     caddyfile = (PRODUCTION / "Caddyfile").read_text(encoding="utf-8")
 
+    assert "https://{$SCHOLIGHT_DOMAIN}" in caddyfile
+    assert "@edge_host host {$SCHOLIGHT_EDGE_DOMAIN}" in caddyfile
+    assert "@origin_health path /healthz" in caddyfile
+    assert "respond @origin_health 200" in caddyfile
+    assert "respond 404" in caddyfile
     assert "\troute {" in caddyfile
     assert "/api/livez" in caddyfile
     assert "/api/readyz" in caddyfile
@@ -159,6 +164,16 @@ def test_caddy_blocks_internal_health_and_routes_api_directly() -> None:
     assert "keepalive 30s" in caddyfile
     assert "lb_try_duration" not in caddyfile
     assert caddyfile.index("respond @internal_health 404") < caddyfile.index("handle_path /api/*")
+
+
+def test_caddy_receives_only_explicit_public_domains() -> None:
+    compose = yaml.safe_load((PRODUCTION / "compose.yaml").read_text(encoding="utf-8"))
+    environment = compose["services"]["caddy"]["environment"]
+
+    assert environment["SCHOLIGHT_DOMAIN"] == ("${SCHOLIGHT_DOMAIN:?SCHOLIGHT_DOMAIN is required}")
+    assert environment["SCHOLIGHT_EDGE_DOMAIN"] == (
+        "${SCHOLIGHT_EDGE_DOMAIN:?SCHOLIGHT_EDGE_DOMAIN is required}"
+    )
 
 
 def test_production_services_have_hard_resource_boundaries() -> None:
@@ -507,6 +522,7 @@ def test_ci_validates_bootstrap_with_shellcheck() -> None:
     assert "Verify backend host package" in workflow
     assert "/opt/scholight-package/${name}" in workflow
     assert "tests/deploy/test_keepalive_integration.sh" in workflow
+    assert "tests/deploy/test_edge_ingress_integration.sh" in workflow
 
 
 def test_host_smoke_uses_local_tls_ingress_instead_of_public_ip_hairpin() -> None:
@@ -514,6 +530,9 @@ def test_host_smoke_uses_local_tls_ingress_instead_of_public_ip_hairpin() -> Non
 
     assert "--resolve" in smoke
     assert "${SCHOLIGHT_DOMAIN}:443:127.0.0.1" in smoke
+    assert "${SCHOLIGHT_EDGE_DOMAIN}:80:127.0.0.1" in smoke
+    assert "http://127.0.0.1/healthz" in smoke
+    assert "http://${SCHOLIGHT_EDGE_DOMAIN}/api/openapi.json" in smoke
     assert "https://${SCHOLIGHT_DOMAIN}/healthz" in smoke
     assert "https://${SCHOLIGHT_DOMAIN}/api/openapi.json" in smoke
     assert "https://${SCHOLIGHT_DOMAIN}/llms.txt" in smoke

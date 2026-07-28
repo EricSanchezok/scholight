@@ -38,6 +38,7 @@ def runtime_contents() -> str:
     return "\n".join(
         (
             "SCHOLIGHT_DOMAIN=scholight.example.invalid",
+            "SCHOLIGHT_EDGE_DOMAIN=edge.example.invalid",
             "SCHOLIGHT_ACME_EMAIL=operator@example.invalid",
             "SCHOLIGHT_AWS_REGION=ap-southeast-1",
             "SCHOLIGHT_ECR_REGISTRY=683390797772.dkr.ecr.ap-southeast-1.amazonaws.com",
@@ -255,6 +256,20 @@ def test_missing_static_network_address_is_rejected_before_install(tmp_path: Pat
     runtime = Path(env["SCHOLIGHT_BOOTSTRAP_ROOT"]) / "etc" / "scholight" / "runtime.env"
     assert result.returncode != 0
     assert "SCHOLIGHT_PAPER_INGEST_IP is required" in result.stderr
+    assert not runtime.exists()
+
+
+def test_missing_edge_domain_is_rejected_before_install(tmp_path: Path) -> None:
+    env, source, _ = bootstrap_environment(tmp_path, None)
+    env["FAKE_PARAMETER_VALUE"] = runtime_contents().replace(
+        "SCHOLIGHT_EDGE_DOMAIN=edge.example.invalid\n", ""
+    )
+
+    result = run_bootstrap(env, source)
+
+    runtime = Path(env["SCHOLIGHT_BOOTSTRAP_ROOT"]) / "etc" / "scholight" / "runtime.env"
+    assert result.returncode != 0
+    assert "SCHOLIGHT_EDGE_DOMAIN is required" in result.stderr
     assert not runtime.exists()
 
 

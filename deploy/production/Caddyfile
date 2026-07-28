@@ -2,13 +2,7 @@
 	email {$SCHOLIGHT_ACME_EMAIL}
 }
 
-{$SCHOLIGHT_DOMAIN} {
-	log {
-		output stdout
-		format json
-	}
-	encode zstd gzip
-
+(scholight_proxy_routes) {
 	route {
 		@internal_health path /api/livez /api/livez/ /api/readyz /api/readyz/
 		respond @internal_health 404
@@ -26,5 +20,38 @@
 		handle {
 			reverse_proxy frontend:8080
 		}
+	}
+}
+
+https://{$SCHOLIGHT_DOMAIN} {
+	log {
+		output stdout
+		format json
+	}
+	encode zstd gzip
+
+	import scholight_proxy_routes
+}
+
+:80 {
+	log {
+		output stdout
+		format json
+	}
+	encode zstd gzip
+
+	route {
+		# The load balancer health check uses the target IP as Host, so this
+		# endpoint must not depend on a public hostname.
+		@origin_health path /healthz
+		respond @origin_health 200
+
+		# Only the reviewed edge hostname may reach the plaintext origin.
+		@edge_host host {$SCHOLIGHT_EDGE_DOMAIN}
+		handle @edge_host {
+			import scholight_proxy_routes
+		}
+
+		respond 404
 	}
 }

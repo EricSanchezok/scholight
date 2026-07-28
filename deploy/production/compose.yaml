@@ -24,6 +24,7 @@ services:
     image: docker.io/library/caddy@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
     environment:
       SCHOLIGHT_DOMAIN: ${SCHOLIGHT_DOMAIN:?SCHOLIGHT_DOMAIN is required}
+      SCHOLIGHT_EDGE_DOMAIN: ${SCHOLIGHT_EDGE_DOMAIN:?SCHOLIGHT_EDGE_DOMAIN is required}
       SCHOLIGHT_ACME_EMAIL: ${SCHOLIGHT_ACME_EMAIL:?SCHOLIGHT_ACME_EMAIL is required}
     ports:
       - "80:80"
