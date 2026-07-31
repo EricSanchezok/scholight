@@ -320,6 +320,8 @@ def test_survey_aggregate_migration_fails_closed_before_replacing_legacy_table()
     assert "create table scholight.surveys" in sql
     assert "create table scholight.survey_drafts" in sql
     assert sql.count("create table scholight.survey_jobs") == 1
+    assert "progress_stage" in sql
+    assert "progress_updated_at" in sql
     assert "references auth.users(id) on delete cascade" in sql
     assert (
         "status in ('drafting', 'queued', 'running', 'archiving', 'succeeded', 'failed', 'cancelled')"

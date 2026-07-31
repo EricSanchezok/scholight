@@ -111,6 +111,8 @@ CREATE TABLE scholight.survey_jobs (
     lease_owner        UUID,
     lease_expires_at   TIMESTAMPTZ,
     heartbeat_at       TIMESTAMPTZ,
+    progress_stage     TEXT NOT NULL DEFAULT 'waiting',
+    progress_updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     archive_attempts   INTEGER NOT NULL DEFAULT 0,
     next_archive_at    TIMESTAMPTZ,
     created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -132,6 +134,12 @@ CREATE TABLE scholight.survey_jobs (
     CONSTRAINT survey_jobs_lease_state CHECK (
         (lease_owner IS NULL AND lease_expires_at IS NULL)
         OR (lease_owner IS NOT NULL AND lease_expires_at IS NOT NULL)
+    ),
+    CONSTRAINT survey_jobs_progress_stage CHECK (
+        progress_stage IN (
+            'waiting', 'planning', 'discovering', 'reviewing_evidence',
+            'structuring_report', 'writing_report', 'finalizing'
+        )
     ),
     CONSTRAINT survey_jobs_archive_attempts_nonnegative CHECK (archive_attempts >= 0),
     CONSTRAINT survey_jobs_approved_draft_owner FOREIGN KEY (survey_id, approved_draft_id)

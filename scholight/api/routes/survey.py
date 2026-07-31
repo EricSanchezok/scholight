@@ -16,11 +16,13 @@ from scholight.config import settings
 from scholight.db.client import DBError
 from scholight.db.queries_survey import (
     Survey,
+    SurveyProgressSnapshot,
     SurveyQuotaExceededError,
     SurveyStateError,
     cancel_survey,
     create_survey,
     get_survey,
+    get_survey_progress,
     list_surveys,
     start_survey,
 )
@@ -30,6 +32,11 @@ from scholight.db.queries_survey_drafts import (
     create_manual_draft,
     list_survey_drafts,
     request_generated_draft,
+)
+from scholight.survey.progress import (
+    TOTAL_PROGRESS_STEPS,
+    PublicProgressStage,
+    present_progress,
 )
 
 router = APIRouter()
@@ -104,6 +111,19 @@ class SurveyDraftResponse(BaseModel):
     finished_at: datetime | None
 
 
+class SurveyProgressResponse(BaseModel):
+    survey_id: UUID
+    status: str
+    stage: PublicProgressStage
+    percent: int
+    step: int
+    total_steps: int
+    queue_ahead: int | None
+    started_at: datetime | None
+    finished_at: datetime | None
+    last_activity_at: datetime
+
+
 def _survey_response(survey: Survey) -> SurveyResponse:
     return SurveyResponse(
         id=survey.id,
@@ -133,6 +153,25 @@ def _draft_response(draft: SurveyDraft) -> SurveyDraftResponse:
         created_at=draft.created_at,
         started_at=draft.started_at,
         finished_at=draft.finished_at,
+    )
+
+
+def _progress_response(snapshot: SurveyProgressSnapshot) -> SurveyProgressResponse:
+    stage, percent, step = present_progress(
+        survey_status=snapshot.status,
+        execution_stage=snapshot.execution_stage,
+    )
+    return SurveyProgressResponse(
+        survey_id=snapshot.survey_id,
+        status=snapshot.status,
+        stage=stage,
+        percent=percent,
+        step=step,
+        total_steps=TOTAL_PROGRESS_STEPS,
+        queue_ahead=snapshot.queue_ahead,
+        started_at=snapshot.started_at,
+        finished_at=snapshot.finished_at,
+        last_activity_at=snapshot.last_activity_at,
     )
 
 
@@ -231,6 +270,27 @@ async def survey(
 ) -> SurveyResponse:
     _require_enabled()
     return _survey_response(await _owned_survey(survey_id=survey_id, user_id=current_user.id))
+
+
+@router.get("/surveys/{survey_id}/progress", response_model=SurveyProgressResponse)
+async def survey_progress(
+    survey_id: UUID,
+    current_user: UserRecord = Depends(get_current_user),
+) -> SurveyProgressResponse:
+    _require_enabled()
+    try:
+        snapshot = await get_survey_progress(survey_id=survey_id, user_id=current_user.id)
+    except DBError as exc:
+        raise _service_unavailable() from exc
+    if snapshot is None:
+        raise http_error(
+            404,
+            code="survey_not_found",
+            message="This Survey no longer exists or is not available to this account.",
+            retryable=False,
+            retry_after=None,
+        )
+    return _progress_response(snapshot)
 
 
 @router.get("/surveys/{survey_id}/drafts", response_model=list[SurveyDraftResponse])

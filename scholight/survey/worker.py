@@ -15,6 +15,7 @@ from uuid import UUID, uuid4
 import structlog
 
 from scholight.config import settings
+from scholight.db.client import DBError
 from scholight.db.queries_survey import (
     SurveyJob,
     claim_survey_job,
@@ -24,8 +25,10 @@ from scholight.db.queries_survey import (
     mark_survey_workspace_missing,
     recover_expired_survey_jobs,
     settle_survey_execution,
+    update_survey_job_progress,
 )
 from scholight.survey.artifacts import SurveyArtifactStore
+from scholight.survey.progress import stage_for_component
 from scholight.survey.runtime import survey_environment
 
 logger = structlog.get_logger(__name__)
@@ -93,6 +96,9 @@ async def _stop_process(process: asyncio.subprocess.Process) -> None:
 
 async def _collect_stage_timings(
     stream: asyncio.StreamReader | None,
+    *,
+    job_id: UUID | None = None,
+    worker_id: UUID | None = None,
 ) -> tuple[dict[str, object], ...]:
     """Drain RCM events while retaining only bounded, non-content stage metadata."""
     if not isinstance(stream, asyncio.StreamReader):
@@ -101,6 +107,7 @@ async def _collect_stage_timings(
     discard_until_newline = False
     active: dict[tuple[str, str, int], tuple[datetime, float]] = {}
     records: list[dict[str, object]] = []
+    last_progress_stage: str | None = None
 
     while chunk := await stream.read(_EVENT_READ_BYTES):
         buffer.extend(chunk)
@@ -129,6 +136,27 @@ async def _collect_stage_timings(
             now = datetime.now(UTC)
             if event_type == "component_start":
                 active[key] = (now, time.monotonic())
+                progress_stage = stage_for_component(name)
+                if (
+                    progress_stage is not None
+                    and progress_stage != last_progress_stage
+                    and job_id is not None
+                    and worker_id is not None
+                ):
+                    try:
+                        await update_survey_job_progress(
+                            job_id=job_id,
+                            worker_id=worker_id,
+                            stage=progress_stage,
+                        )
+                    except DBError as exc:
+                        logger.warning(
+                            "survey_progress_persist_failed",
+                            job_id=str(job_id),
+                            error_type=type(exc).__name__,
+                        )
+                    else:
+                        last_progress_stage = progress_stage
             elif event_type in {"component_done", "component_skipped"}:
                 started_at, started_monotonic = active.pop(key, (now, time.monotonic()))
                 if len(records) < _STAGE_RECORD_LIMIT:
@@ -167,7 +195,13 @@ async def execute_survey(job: SurveyJob, run_root: Path) -> SurveyExecutionResul
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.DEVNULL,
     )
-    stage_collector = asyncio.create_task(_collect_stage_timings(process.stdout))
+    stage_collector = asyncio.create_task(
+        _collect_stage_timings(
+            process.stdout,
+            job_id=job.id,
+            worker_id=job.lease_owner,
+        )
+    )
     try:
         return_code = await asyncio.wait_for(
             process.wait(),

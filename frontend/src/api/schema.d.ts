@@ -516,6 +516,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/surveys/{survey_id}/progress": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Survey Progress */
+    get: operations["survey_progress_surveys__survey_id__progress_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/surveys/{survey_id}/start": {
     parameters: {
       query?: never;
@@ -1422,6 +1439,49 @@ export interface components {
       status: string;
       /** User Message */
       user_message: string;
+    };
+    /** SurveyProgressResponse */
+    SurveyProgressResponse: {
+      /** Finished At */
+      finished_at: string | null;
+      /**
+       * Last Activity At
+       * Format: date-time
+       */
+      last_activity_at: string;
+      /** Percent */
+      percent: number;
+      /** Queue Ahead */
+      queue_ahead: number | null;
+      /**
+       * Stage
+       * @enum {string}
+       */
+      stage:
+        | "drafting"
+        | "waiting"
+        | "planning"
+        | "discovering"
+        | "reviewing_evidence"
+        | "structuring_report"
+        | "writing_report"
+        | "finalizing"
+        | "saving_results"
+        | "completed"
+        | "cancelled";
+      /** Started At */
+      started_at: string | null;
+      /** Status */
+      status: string;
+      /** Step */
+      step: number;
+      /**
+       * Survey Id
+       * Format: uuid
+       */
+      survey_id: string;
+      /** Total Steps */
+      total_steps: number;
     };
     /** SurveyResponse */
     SurveyResponse: {
@@ -2574,6 +2634,37 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["SurveyDraftResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  survey_progress_surveys__survey_id__progress_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        survey_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SurveyProgressResponse"];
         };
       };
       /** @description Validation Error */

@@ -52,6 +52,8 @@ def _job(
         lease_owner=worker_id,
         lease_expires_at=now,
         heartbeat_at=now,
+        progress_stage="planning",
+        progress_updated_at=now,
         archive_attempts=0,
         next_archive_at=None,
         created_at=now,
@@ -298,6 +300,32 @@ async def test_stage_collector_keeps_only_safe_bounded_metadata() -> None:
     assert records[0]["name"] == "discovery"
     assert records[0]["status"] == "completed"
     assert "preview" not in records[0]
+
+
+@pytest.mark.asyncio
+async def test_stage_collector_persists_only_public_milestone_transitions() -> None:
+    stream = asyncio.StreamReader()
+    stream.feed_data(
+        b'{"type":"component_start","name":"discovery","kind":"accelerator","index":1}\n'
+        b'{"type":"component_start","name":"method_scout","kind":"accelerator","index":2}\n'
+        b'{"type":"component_start","name":"PaperCard","kind":"subworkflow","index":3}\n'
+        b'{"type":"component_start","name":"internal_unknown","kind":"accelerator","index":4}\n'
+    )
+    stream.feed_eof()
+    job_id = uuid4()
+    worker_id = uuid4()
+
+    with patch(
+        "scholight.survey.worker.update_survey_job_progress",
+        new_callable=AsyncMock,
+        return_value=True,
+    ) as update:
+        await _collect_stage_timings(stream, job_id=job_id, worker_id=worker_id)
+
+    assert [call.kwargs["stage"] for call in update.await_args_list] == [
+        "discovering",
+        "reviewing_evidence",
+    ]
 
 
 def test_child_environment_exposes_only_required_provider_credentials(

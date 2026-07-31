@@ -11,6 +11,7 @@ import asyncpg
 import structlog
 
 from scholight.db.client import DBError, get_pool
+from scholight.survey.progress import EXECUTION_PROGRESS_STAGES, ExecutionProgressStage
 
 logger = structlog.get_logger(__name__)
 
@@ -65,11 +66,24 @@ class SurveyJob:
     lease_owner: UUID | None
     lease_expires_at: datetime | None
     heartbeat_at: datetime | None
+    progress_stage: ExecutionProgressStage
+    progress_updated_at: datetime
     archive_attempts: int
     next_archive_at: datetime | None
     created_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class SurveyProgressSnapshot:
+    survey_id: UUID
+    status: SurveyStatus
+    execution_stage: ExecutionProgressStage | None
+    queue_ahead: int | None
+    started_at: datetime | None
+    finished_at: datetime | None
+    last_activity_at: datetime
 
 
 def _survey(row: asyncpg.Record | dict[str, Any]) -> Survey:
@@ -108,6 +122,8 @@ def _job(row: asyncpg.Record | dict[str, Any]) -> SurveyJob:
         lease_owner=row["lease_owner"],
         lease_expires_at=row["lease_expires_at"],
         heartbeat_at=row["heartbeat_at"],
+        progress_stage=row["progress_stage"],
+        progress_updated_at=row["progress_updated_at"],
         archive_attempts=int(row["archive_attempts"]),
         next_archive_at=row["next_archive_at"],
         created_at=row["created_at"],
@@ -221,6 +237,46 @@ async def list_surveys(*, user_id: int, limit: int = 50) -> list[Survey]:
         logger.error("surveys_list_failed", error_type=type(exc).__name__)
         raise DBError("Failed to list Surveys") from exc
     return [_survey(row) for row in rows]
+
+
+async def get_survey_progress(*, survey_id: UUID, user_id: int) -> SurveyProgressSnapshot | None:
+    """Read one owner-scoped public progress snapshot without exposing workflow internals."""
+    try:
+        row = await get_pool().fetchrow(
+            "SELECT s.id AS survey_id, s.status, s.started_at, s.finished_at, s.updated_at, "
+            "j.progress_stage, j.progress_updated_at, j.heartbeat_at, "
+            "CASE WHEN j.status = 'queued' THEN ("
+            "SELECT count(*) FROM scholight.survey_jobs ahead "
+            "WHERE ahead.id <> j.id AND (ahead.status = 'running' "
+            "OR (ahead.status = 'archiving' AND "
+            "(ahead.next_archive_at IS NULL OR ahead.next_archive_at <= now())) "
+            "OR (ahead.status = 'queued' "
+            "AND (ahead.created_at, ahead.id) < (j.created_at, j.id)))"
+            ") ELSE NULL END AS queue_ahead "
+            "FROM scholight.surveys s LEFT JOIN scholight.survey_jobs j ON j.survey_id = s.id "
+            "WHERE s.id = $1 AND s.user_id = $2",
+            survey_id,
+            user_id,
+        )
+    except asyncpg.PostgresError as exc:
+        logger.error("survey_progress_read_failed", error_type=type(exc).__name__)
+        raise DBError("Failed to read Survey progress") from exc
+    if row is None:
+        return None
+    activity_candidates = [
+        timestamp
+        for timestamp in (row["updated_at"], row["progress_updated_at"], row["heartbeat_at"])
+        if timestamp is not None
+    ]
+    return SurveyProgressSnapshot(
+        survey_id=row["survey_id"],
+        status=row["status"],
+        execution_stage=row["progress_stage"],
+        queue_ahead=int(row["queue_ahead"]) if row["queue_ahead"] is not None else None,
+        started_at=row["started_at"],
+        finished_at=row["finished_at"],
+        last_activity_at=max(activity_candidates),
+    )
 
 
 async def start_survey(
@@ -357,7 +413,8 @@ async def claim_survey_job(*, worker_id: UUID, lease_seconds: int) -> SurveyJob 
                 )
                 row = await connection.fetchrow(
                     "UPDATE scholight.survey_jobs SET status = 'running', lease_owner = $2, "
-                    "lease_expires_at = now() + $3, heartbeat_at = now(), started_at = now() "
+                    "lease_expires_at = now() + $3, heartbeat_at = now(), started_at = now(), "
+                    "progress_stage = 'planning', progress_updated_at = now() "
                     "WHERE id = $1 RETURNING *",
                     row["id"],
                     worker_id,
@@ -391,6 +448,27 @@ async def heartbeat_survey_job(*, job_id: UUID, worker_id: UUID, lease_seconds: 
     except asyncpg.PostgresError as exc:
         logger.error("survey_job_heartbeat_failed", error_type=type(exc).__name__)
         raise DBError("Failed to heartbeat Survey job") from exc
+    return str(result) == "UPDATE 1"
+
+
+async def update_survey_job_progress(
+    *, job_id: UUID, worker_id: UUID, stage: ExecutionProgressStage
+) -> bool:
+    """Advance the durable execution milestone while the worker still owns the lease."""
+    try:
+        result = await get_pool().execute(
+            "UPDATE scholight.survey_jobs SET progress_stage = $3, progress_updated_at = now() "
+            "WHERE id = $1 AND lease_owner = $2 AND status = 'running' "
+            "AND array_position($4::text[], progress_stage) "
+            "<= array_position($4::text[], $3)",
+            job_id,
+            worker_id,
+            stage,
+            list(EXECUTION_PROGRESS_STAGES),
+        )
+    except asyncpg.PostgresError as exc:
+        logger.error("survey_progress_update_failed", error_type=type(exc).__name__)
+        raise DBError("Failed to update Survey progress") from exc
     return str(result) == "UPDATE 1"
 
 
@@ -619,6 +697,7 @@ __all__ = [
     "Survey",
     "SurveyJob",
     "SurveyOutcome",
+    "SurveyProgressSnapshot",
     "SurveyQuotaExceededError",
     "SurveyStateError",
     "cancel_survey",
@@ -627,6 +706,7 @@ __all__ = [
     "defer_survey_archive",
     "finish_survey_archive",
     "get_survey",
+    "get_survey_progress",
     "get_survey_job_counts",
     "heartbeat_survey_job",
     "list_surveys",
@@ -634,4 +714,5 @@ __all__ = [
     "recover_expired_survey_jobs",
     "settle_survey_execution",
     "start_survey",
+    "update_survey_job_progress",
 ]

@@ -14,7 +14,11 @@ from fastapi import FastAPI
 
 from scholight.api.deps import get_current_user
 from scholight.config import settings
-from scholight.db.queries_survey import Survey, SurveyQuotaExceededError
+from scholight.db.queries_survey import (
+    Survey,
+    SurveyProgressSnapshot,
+    SurveyQuotaExceededError,
+)
 from scholight.db.queries_survey_drafts import SurveyDraft
 
 pytestmark = pytest.mark.asyncio
@@ -268,6 +272,69 @@ async def test_cross_owner_survey_is_not_exposed(
         return_value=None,
     ):
         response = await api_client.get(f"/surveys/{uuid4()}")
+
+    assert response.status_code == 404
+    assert response.json()["detail"]["code"] == "survey_not_found"
+
+
+async def test_progress_endpoint_returns_stable_public_milestone(
+    api_app: FastAPI,
+    api_client: httpx.AsyncClient,
+    active_user: UserRecord,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _authenticate(api_app, active_user)
+    monkeypatch.setattr(settings, "survey_enabled", True)
+    survey_id = uuid4()
+    now = datetime.now(UTC)
+    snapshot = SurveyProgressSnapshot(
+        survey_id=survey_id,
+        status="running",
+        execution_stage="reviewing_evidence",
+        queue_ahead=None,
+        started_at=now,
+        finished_at=None,
+        last_activity_at=now,
+    )
+    with patch(
+        "scholight.api.routes.survey.get_survey_progress",
+        new_callable=AsyncMock,
+        return_value=snapshot,
+    ) as get_progress:
+        response = await api_client.get(f"/surveys/{survey_id}/progress")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "survey_id": str(survey_id),
+        "status": "running",
+        "stage": "reviewing_evidence",
+        "percent": 55,
+        "step": 3,
+        "total_steps": 8,
+        "queue_ahead": None,
+        "started_at": now.isoformat().replace("+00:00", "Z"),
+        "finished_at": None,
+        "last_activity_at": now.isoformat().replace("+00:00", "Z"),
+    }
+    call = get_progress.await_args
+    assert call is not None
+    assert call.kwargs["user_id"] == active_user.id
+
+
+async def test_progress_endpoint_hides_cross_owner_survey(
+    api_app: FastAPI,
+    api_client: httpx.AsyncClient,
+    active_user: UserRecord,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _authenticate(api_app, active_user)
+    monkeypatch.setattr(settings, "survey_enabled", True)
+    with patch(
+        "scholight.api.routes.survey.get_survey_progress",
+        new_callable=AsyncMock,
+        return_value=None,
+    ):
+        response = await api_client.get(f"/surveys/{uuid4()}/progress")
 
     assert response.status_code == 404
     assert response.json()["detail"]["code"] == "survey_not_found"

@@ -73,6 +73,8 @@ def _job_row(
         "lease_owner": worker_id,
         "lease_expires_at": now,
         "heartbeat_at": now,
+        "progress_stage": "reviewing_evidence",
+        "progress_updated_at": now,
         "archive_attempts": 0,
         "next_archive_at": None,
         "created_at": now,

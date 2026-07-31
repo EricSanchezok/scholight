@@ -20,10 +20,12 @@ from scholight.db.queries_survey import (
     create_survey,
     finish_survey_archive,
     get_survey,
+    get_survey_progress,
     mark_survey_workspace_missing,
     recover_expired_survey_jobs,
     settle_survey_execution,
     start_survey,
+    update_survey_job_progress,
 )
 from scholight.db.queries_survey_drafts import (
     SurveyDraftLimitError,
@@ -299,6 +301,48 @@ async def test_formal_failure_keeps_one_failed_survey_and_releases_quota(
     assert survey.quota_state == "released"
     assert await survey_pool.fetchval("SELECT count(*) FROM scholight.surveys") == 1
     assert await _usage(survey_pool) == (0, 0)
+
+
+@pytest.mark.asyncio
+async def test_progress_snapshot_advances_monotonically_and_is_owner_scoped(
+    survey_pool: asyncpg.Pool,
+) -> None:
+    with (
+        patch("scholight.db.queries_survey.get_pool", return_value=survey_pool),
+        patch("scholight.db.queries_survey_drafts.get_pool", return_value=survey_pool),
+    ):
+        survey_id = await _create()
+        await _complete_next_draft(markdown="# Approved Draft")
+        await start_survey(
+            survey_id=survey_id,
+            user_id=42,
+            job_id=uuid4(),
+            client_request_id=uuid4(),
+        )
+        queued = await get_survey_progress(survey_id=survey_id, user_id=42)
+        worker_id = uuid4()
+        job = await claim_survey_job(worker_id=worker_id, lease_seconds=3600)
+        assert job is not None
+        assert await update_survey_job_progress(
+            job_id=job.id,
+            worker_id=worker_id,
+            stage="reviewing_evidence",
+        )
+        assert not await update_survey_job_progress(
+            job_id=job.id,
+            worker_id=worker_id,
+            stage="discovering",
+        )
+        running = await get_survey_progress(survey_id=survey_id, user_id=42)
+        hidden = await get_survey_progress(survey_id=survey_id, user_id=999)
+
+    assert queued is not None
+    assert queued.execution_stage == "waiting"
+    assert queued.queue_ahead == 0
+    assert running is not None
+    assert running.execution_stage == "reviewing_evidence"
+    assert running.queue_ahead is None
+    assert hidden is None
 
 
 @pytest.mark.asyncio

@@ -1786,6 +1786,102 @@
         "title": "SurveyDraftResponse",
         "type": "object"
       },
+      "SurveyProgressResponse": {
+        "properties": {
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "last_activity_at": {
+            "format": "date-time",
+            "title": "Last Activity At",
+            "type": "string"
+          },
+          "percent": {
+            "title": "Percent",
+            "type": "integer"
+          },
+          "queue_ahead": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Queue Ahead"
+          },
+          "stage": {
+            "enum": [
+              "drafting",
+              "waiting",
+              "planning",
+              "discovering",
+              "reviewing_evidence",
+              "structuring_report",
+              "writing_report",
+              "finalizing",
+              "saving_results",
+              "completed",
+              "cancelled"
+            ],
+            "title": "Stage",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "step": {
+            "title": "Step",
+            "type": "integer"
+          },
+          "survey_id": {
+            "format": "uuid",
+            "title": "Survey Id",
+            "type": "string"
+          },
+          "total_steps": {
+            "title": "Total Steps",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "survey_id",
+          "status",
+          "stage",
+          "percent",
+          "step",
+          "total_steps",
+          "queue_ahead",
+          "started_at",
+          "finished_at",
+          "last_activity_at"
+        ],
+        "title": "SurveyProgressResponse",
+        "type": "object"
+      },
       "SurveyResponse": {
         "properties": {
           "created_at": {
@@ -3674,6 +3770,52 @@
           }
         ],
         "summary": "Add Manual Survey Draft",
+        "tags": ["survey"]
+      }
+    },
+    "/surveys/{survey_id}/progress": {
+      "get": {
+        "operationId": "survey_progress_surveys__survey_id__progress_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "survey_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Survey Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SurveyProgressResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Survey Progress",
         "tags": ["survey"]
       }
     },
