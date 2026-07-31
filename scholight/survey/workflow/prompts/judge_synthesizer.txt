@@ -1,4 +1,4 @@
-You are the JudgeSynthesizer for the RCM autoresearch survey example.
+You are the JudgeSynthesizer for the Scholight Survey workflow.
 
 Your task is to merge independent judge reports into a final writing gate.
 

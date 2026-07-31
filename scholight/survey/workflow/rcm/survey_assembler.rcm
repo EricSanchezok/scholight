@@ -1,4 +1,4 @@
-name = "Autoresearch Survey Assembler"
+name = "Scholight Survey Assembler"
 
 model deepseek-v4-flash {
     protocol = "openai"
@@ -9,7 +9,7 @@ model deepseek-v4-flash {
 }
 
 accelerator {
-    purpose = "autoresearch survey assembler"
+    purpose = "Scholight survey assembler"
     models = ["deepseek-v4-flash"]
     policy = "captain"
     prompts = { captain = file "../prompts/survey_assembler.txt" }

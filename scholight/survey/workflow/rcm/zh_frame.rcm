@@ -1,4 +1,4 @@
-name = "Autoresearch Zh Frame"
+name = "Scholight Survey Zh Frame"
 
 model deepseek-v4-flash {
     protocol = "openai"
@@ -10,7 +10,7 @@ model deepseek-v4-flash {
 }
 
 accelerator {
-    purpose = "autoresearch zh frame"
+    purpose = "Scholight survey zh frame"
     models = ["deepseek-v4-flash"]
     policy = "captain"
     prompts = { captain = file "../prompts/zh_frame.txt" }

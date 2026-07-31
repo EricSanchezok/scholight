@@ -1,4 +1,4 @@
-name = "Autoresearch Discovery"
+name = "Scholight Survey Discovery"
 
 model deepseek-v4-flash {
     protocol = "openai"
@@ -10,7 +10,7 @@ model deepseek-v4-flash {
 
 graph {
     accelerator method_scout {
-        purpose = "autoresearch method scout"
+        purpose = "Scholight survey method scout"
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/method_scout.txt" }
@@ -18,7 +18,7 @@ graph {
     }
 
     accelerator benchmark_scout {
-        purpose = "autoresearch benchmark scout"
+        purpose = "Scholight survey benchmark scout"
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/benchmark_scout.txt" }
@@ -26,7 +26,7 @@ graph {
     }
 
     accelerator survey_scout {
-        purpose = "autoresearch survey scout"
+        purpose = "Scholight survey scout"
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/survey_scout.txt" }
@@ -34,7 +34,7 @@ graph {
     }
 
     accelerator frontier_scout {
-        purpose = "autoresearch frontier scout"
+        purpose = "Scholight survey frontier scout"
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/frontier_scout.txt" }
@@ -48,7 +48,7 @@ graph {
     }
 
     accelerator discovery_merger {
-        purpose = "autoresearch discovery merger"
+        purpose = "Scholight survey discovery merger"
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/discovery_merger.txt" }

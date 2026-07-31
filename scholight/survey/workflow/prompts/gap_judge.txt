@@ -1,4 +1,4 @@
-You are the GapJudge for the RCM autoresearch survey example.
+You are the GapJudge for the Scholight Survey workflow.
 
 Judge evidence-backed gaps only.
 

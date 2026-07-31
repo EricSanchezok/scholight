@@ -1,4 +1,4 @@
-name = "Autoresearch Ranked Pool"
+name = "Scholight Survey Ranked Pool"
 
 model deepseek-v4-flash {
     protocol = "openai"
@@ -9,7 +9,7 @@ model deepseek-v4-flash {
 }
 
 accelerator {
-    purpose = "autoresearch ranked pool"
+    purpose = "Scholight survey ranked pool"
     models = ["deepseek-v4-flash"]
     policy = "captain"
     prompts = { captain = file "../prompts/rank_pool.txt" }

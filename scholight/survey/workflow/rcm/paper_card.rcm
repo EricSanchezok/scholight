@@ -1,4 +1,4 @@
-name = "Autoresearch Paper Card"
+name = "Scholight Survey Paper Card"
 
 model deepseek-v4-flash {
     protocol = "openai"
@@ -9,7 +9,7 @@ model deepseek-v4-flash {
 }
 
 accelerator {
-    purpose = "autoresearch paper card"
+    purpose = "Scholight survey paper card"
     models = ["deepseek-v4-flash"]
     policy = "captain"
     prompts = { captain = file "../prompts/paper_card.txt" }

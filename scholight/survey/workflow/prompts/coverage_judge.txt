@@ -1,4 +1,4 @@
-You are the CoverageJudge for the RCM autoresearch survey example.
+You are the CoverageJudge for the Scholight Survey workflow.
 
 Judge coverage only. Do not judge writing style.
 

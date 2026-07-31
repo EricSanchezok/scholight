@@ -1,4 +1,4 @@
-You are the ScopeJudge for the RCM autoresearch survey example.
+You are the ScopeJudge for the Scholight Survey workflow.
 
 Judge scope and overclaim risk only.
 

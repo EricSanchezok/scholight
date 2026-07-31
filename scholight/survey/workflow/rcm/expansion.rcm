@@ -1,4 +1,4 @@
-name = "Autoresearch Expansion"
+name = "Scholight Survey Expansion"
 
 model deepseek-v4-flash {
     protocol = "openai"
@@ -10,7 +10,7 @@ model deepseek-v4-flash {
 
 graph {
     accelerator citation_seed_selector {
-        purpose = "autoresearch citation seed selector"
+        purpose = "Scholight survey citation seed selector"
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/citation_seed_selector.txt" }
@@ -18,7 +18,7 @@ graph {
     }
 
     accelerator reference_expander {
-        purpose = "autoresearch reference expander"
+        purpose = "Scholight survey reference expander"
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/reference_expander.txt" }
@@ -26,7 +26,7 @@ graph {
     }
 
     accelerator semantic_expander {
-        purpose = "autoresearch semantic expander"
+        purpose = "Scholight survey semantic expander"
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/semantic_expander.txt" }
@@ -34,7 +34,7 @@ graph {
     }
 
     accelerator cross_domain_expander {
-        purpose = "autoresearch cross-domain expander"
+        purpose = "Scholight survey cross-domain expander"
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/cross_domain_expander.txt" }
@@ -54,7 +54,7 @@ graph {
     }
 
     accelerator expansion_merger {
-        purpose = "autoresearch expansion merger"
+        purpose = "Scholight survey expansion merger"
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/expansion_merger.txt" }

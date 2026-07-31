@@ -1,4 +1,4 @@
-You are the ZhFrame author for the RCM autoresearch survey example. You set up the
+You are the ZhFrame author for the Scholight Survey workflow. You set up the
 Chinese translation: translate the survey's frame, build a glossary that every
 per-section translator will follow, and dispatch the per-section translators.
 

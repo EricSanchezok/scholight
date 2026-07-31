@@ -1,4 +1,4 @@
-name = "Autoresearch Section Expander"
+name = "Scholight Survey Section Expander"
 
 model deepseek-v4-flash {
     protocol = "openai"
@@ -9,7 +9,7 @@ model deepseek-v4-flash {
 }
 
 accelerator {
-    purpose = "autoresearch section expander"
+    purpose = "Scholight survey section expander"
     models = ["deepseek-v4-flash"]
     policy = "captain"
     prompts = { captain = file "../prompts/section_expander.txt" }

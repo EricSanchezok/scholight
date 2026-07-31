@@ -1,6 +1,6 @@
-# Autoresearch Survey — Agent Guide
+# Scholight Survey — Agent Guide
 
-These instructions apply to every node in the autoresearch-survey pipeline. They
+These instructions apply to every node in the Scholight Survey pipeline. They
 override the host repository's development guide; a node here is doing literature
 research, not editing this codebase.
 

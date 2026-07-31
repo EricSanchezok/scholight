@@ -1,4 +1,4 @@
-name = "Autoresearch Research Map"
+name = "Scholight Survey Research Map"
 
 model deepseek-v4-flash {
     protocol = "openai"
@@ -9,7 +9,7 @@ model deepseek-v4-flash {
 }
 
 accelerator {
-    purpose = "autoresearch research map"
+    purpose = "Scholight survey research map"
     models = ["deepseek-v4-flash"]
     policy = "captain"
     prompts = { captain = file "../prompts/research_map.txt" }

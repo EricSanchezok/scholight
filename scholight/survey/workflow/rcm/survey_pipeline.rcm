@@ -1,4 +1,4 @@
-name = "Autoresearch Survey Pipeline"
+name = "Scholight Survey Pipeline"
 
 use "./anchor.rcm" as Anchor
 use "./query_plan.rcm" as QueryPlan

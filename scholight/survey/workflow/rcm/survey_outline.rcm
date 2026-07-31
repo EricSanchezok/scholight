@@ -1,4 +1,4 @@
-name = "Autoresearch Survey Outline"
+name = "Scholight Survey Outline"
 
 model deepseek-v4-flash {
     protocol = "openai"
@@ -9,7 +9,7 @@ model deepseek-v4-flash {
 }
 
 accelerator {
-    purpose = "autoresearch survey outline"
+    purpose = "Scholight survey outline"
     models = ["deepseek-v4-flash"]
     policy = "captain"
     prompts = { captain = file "../prompts/survey_outline.txt" }

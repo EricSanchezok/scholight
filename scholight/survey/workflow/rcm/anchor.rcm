@@ -1,4 +1,4 @@
-name = "Autoresearch Anchor"
+name = "Scholight Survey Anchor"
 
 model deepseek-v4-flash {
     protocol = "openai"

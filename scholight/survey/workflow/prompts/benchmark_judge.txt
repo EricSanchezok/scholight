@@ -1,4 +1,4 @@
-You are the BenchmarkJudge for the RCM autoresearch survey example.
+You are the BenchmarkJudge for the Scholight Survey workflow.
 
 Judge benchmarks, metrics, and comparison readiness only.
 

@@ -1,4 +1,4 @@
-name = "Autoresearch Query Plan"
+name = "Scholight Survey Query Plan"
 
 model deepseek-v4-flash {
     protocol = "openai"
@@ -9,7 +9,7 @@ model deepseek-v4-flash {
 }
 
 accelerator {
-    purpose = "autoresearch query plan"
+    purpose = "Scholight survey query plan"
     models = ["deepseek-v4-flash"]
     policy = "captain"
     prompts = { captain = file "../prompts/query_plan.txt" }

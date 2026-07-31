@@ -1,4 +1,4 @@
-name = "Autoresearch Section Translator"
+name = "Scholight Survey Section Translator"
 
 model deepseek-v4-flash {
     protocol = "openai"
@@ -10,7 +10,7 @@ model deepseek-v4-flash {
 }
 
 accelerator {
-    purpose = "autoresearch section translator"
+    purpose = "Scholight survey section translator"
     models = ["deepseek-v4-flash"]
     policy = "captain"
     prompts = { captain = file "../prompts/section_translator.txt" }

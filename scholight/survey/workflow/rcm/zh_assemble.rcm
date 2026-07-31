@@ -1,4 +1,4 @@
-name = "Autoresearch Zh Assemble"
+name = "Scholight Survey Zh Assemble"
 
 model deepseek-v4-flash {
     protocol = "openai"
@@ -10,7 +10,7 @@ model deepseek-v4-flash {
 }
 
 accelerator {
-    purpose = "autoresearch zh assemble"
+    purpose = "Scholight survey zh assemble"
     models = ["deepseek-v4-flash"]
     policy = "captain"
     prompts = { captain = file "../prompts/zh_assemble.txt" }
