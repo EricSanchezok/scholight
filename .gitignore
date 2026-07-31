@@ -82,6 +82,7 @@ module_table*
 # Cloned external repos
 rdc/
 RCM/
+!scholight/survey/workflow/rcm/
 # Independent repos (under academic-compass directory but tracked separately)
 cloud-auth/
 
