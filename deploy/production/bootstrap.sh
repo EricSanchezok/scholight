@@ -374,7 +374,7 @@ validate_compose_config() {
   rm -f "${release_env}"
 }
 
-ensure_runtime_env() {
+refresh_runtime_env() {
   local package_directory=$1
   local package_digest=$2
   local release_sha=$3
@@ -382,7 +382,6 @@ ensure_runtime_env() {
   local frontend_image=$5
   if [[ -e ${RUNTIME_ENV} || -L ${RUNTIME_ENV} ]]; then
     validate_existing_runtime
-    return
   fi
 
   require_command aws
@@ -490,7 +489,7 @@ deploy() {
     fail "source production package does not match package SHA"
   install_package "${source_digest}"
   ensure_observability
-  ensure_runtime_env \
+  refresh_runtime_env \
     "${HOST_PACKAGE_DIR}" "${source_digest}" "${release_sha}" \
     "${backend_image}" "${frontend_image}"
 
