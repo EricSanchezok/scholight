@@ -169,6 +169,7 @@ def create_app() -> FastAPI:
     from scholight.api.routes.admin_operations import router as admin_operations_router
     from scholight.api.routes.search import router as search_router
     from scholight.api.routes.sessions import router as session_router
+    from scholight.api.routes.survey import router as survey_router
     from scholight.api.routes.usage import router as usage_router
     from scholight.db.client import get_pool
 
@@ -224,6 +225,7 @@ def create_app() -> FastAPI:
     app.include_router(access_key_router, prefix="/user/access-keys", tags=["access-keys"])
     app.include_router(usage_router, prefix="/user/usage", tags=["usage"])
     app.include_router(session_router, prefix="/auth/sessions", tags=["sessions"])
+    app.include_router(survey_router, prefix="/survey", tags=["survey"])
     app.include_router(admin_router, prefix="/admin", tags=["admin"])
     app.include_router(
         admin_operations_router,

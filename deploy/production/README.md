@@ -17,8 +17,9 @@ database migrations.
 
 `bootstrap.sh` installs Docker and the pinned, checksum-verified Compose v2 plugin,
 creates the host directories, installs the deployment package carried inside the
-backend image, and restores a missing runtime file. It does not replace an
-existing `/etc/scholight/runtime.env`.
+backend image, and refreshes `/etc/scholight/runtime.env` from the fixed encrypted
+Parameter Store value on every deployment. The downloaded configuration is validated
+before it atomically replaces the existing runtime file.
 
 ### External TLS edge origin
 
@@ -185,9 +186,9 @@ Stable secrets live only in `/etc/scholight/runtime.env`. A release manifest is 
 - `deploy.lock` — host-side release serialization
 
 Keep JWT and anonymous quota HMAC secrets stable across releases and rollbacks.
-Parameter Store is a recovery copy: a normal release reads it only when
-`/etc/scholight/runtime.env` is absent. Configuration changes remain a separate
-manual change window and must update both copies before redeploying.
+Parameter Store is the source of truth for stable runtime configuration. Every normal
+deployment downloads, validates, and atomically installs it before starting the release.
+Update the SecureString in a separate configuration change window before redeploying.
 
 ## Deploy
 

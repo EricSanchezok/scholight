@@ -189,8 +189,11 @@ def run_bootstrap(
     )
 
 
-def test_existing_runtime_env_is_never_fetched_or_rewritten(tmp_path: Path) -> None:
-    original = runtime_contents()
+def test_existing_runtime_env_is_refreshed_from_secure_parameter(tmp_path: Path) -> None:
+    original = runtime_contents().replace(
+        "SCHOLIGHT_EMBEDDING_API_KEY=embedding-key",
+        "SCHOLIGHT_EMBEDDING_API_KEY=old-embedding-key",
+    )
     env, source, log = bootstrap_environment(tmp_path, original)
 
     result = run_bootstrap(env, source)
@@ -198,8 +201,30 @@ def test_existing_runtime_env_is_never_fetched_or_rewritten(tmp_path: Path) -> N
     runtime = Path(env["SCHOLIGHT_BOOTSTRAP_ROOT"]) / "etc" / "scholight" / "runtime.env"
     commands = log.read_text(encoding="utf-8")
     assert result.returncode == 0, result.stderr
+    assert runtime.read_text(encoding="utf-8") == runtime_contents().rstrip("\n")
+    assert (
+        "aws ssm get-parameter --name /scholight/production/runtime-env "
+        "--with-decryption --query Parameter.Value --output text "
+        "--region ap-southeast-1"
+    ) in commands
+
+
+def test_invalid_runtime_refresh_preserves_existing_file(tmp_path: Path) -> None:
+    original = runtime_contents().replace(
+        "SCHOLIGHT_EMBEDDING_API_KEY=embedding-key",
+        "SCHOLIGHT_EMBEDDING_API_KEY=old-embedding-key",
+    )
+    env, source, _ = bootstrap_environment(tmp_path, original)
+    env["FAKE_PARAMETER_VALUE"] = runtime_contents() + (
+        "SCHOLIGHT_EMBEDDING_API_KEY=duplicate-key\n"
+    )
+
+    result = run_bootstrap(env, source)
+
+    runtime = Path(env["SCHOLIGHT_BOOTSTRAP_ROOT"]) / "etc" / "scholight" / "runtime.env"
+    assert result.returncode != 0
+    assert "duplicate SCHOLIGHT_EMBEDDING_API_KEY" in result.stderr
     assert runtime.read_text(encoding="utf-8") == original
-    assert "aws " not in commands
 
 
 def test_amazon_linux_os_release_symlink_is_accepted(tmp_path: Path) -> None:

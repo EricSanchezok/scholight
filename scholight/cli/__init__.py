@@ -95,6 +95,15 @@ cli.add_command(
 )
 cli.add_command(
     _lazy(
+        "scholight.cli.survey",
+        "survey_group",
+        "survey",
+        group=True,
+        help="Run and inspect durable Scholight Survey jobs",
+    )
+)
+cli.add_command(
+    _lazy(
         "scholight.cli.store",
         "store_group",
         "store",

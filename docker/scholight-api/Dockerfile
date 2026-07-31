@@ -7,6 +7,9 @@ FROM ${PYTHON_IMAGE} AS builder
 
 ARG PRIVATE_DEP_ARCHIVE=https://api.github.com/repos/EricSanchezok/cloud-auth/tarball
 ARG PRIVATE_DEP_REVISION=9e82bb25f38a33aaa309933bfb0affb6d47c1df2
+ARG RCM_VERSION=v0.2.4
+ARG RCM_LINUX_X86_64_SHA256=9f7025f06aba2c2e9fd90fa292ed6a206f0c9938c8a71aef0629a6ba0008836c
+ARG TARGETARCH
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl \
@@ -23,6 +26,19 @@ RUN --mount=type=secret,id=github_token \
         "${PRIVATE_DEP_ARCHIVE}/${PRIVATE_DEP_REVISION}" \
     && tar -xzf /tmp/cloud-auth.tar.gz --strip-components=1 -C /app/cloud-auth \
     && rm /tmp/cloud-auth.tar.gz
+
+RUN test "${TARGETARCH}" = amd64 \
+    && mkdir -p /app/bin /tmp/rcm \
+    && curl --fail --location --silent --show-error \
+        --output /tmp/accelerate.tar.gz \
+        "https://github.com/EricSanchezok/rcm-dist/releases/download/${RCM_VERSION}/accelerate-x86_64-linux.tar.gz" \
+    && printf '%s  %s\n' \
+        "${RCM_LINUX_X86_64_SHA256}" \
+        /tmp/accelerate.tar.gz \
+        | sha256sum --check - \
+    && tar -xzf /tmp/accelerate.tar.gz -C /tmp/rcm \
+    && install -m 0755 /tmp/rcm/accelerate /app/bin/accelerate \
+    && rm -rf /tmp/rcm /tmp/accelerate.tar.gz
 
 COPY pyproject.toml uv.lock /app/
 RUN uv sync --frozen --no-dev --no-install-project --no-install-package cloud-auth \
@@ -47,6 +63,7 @@ COPY --from=builder /app/.venv/ /app/.venv/
 COPY --from=builder /app/scholight/ /app/scholight/
 COPY --from=builder /app/migrations/ /app/migrations/
 COPY --from=builder /app/start.py /app/start.py
+COPY --from=builder /app/bin/accelerate /usr/local/bin/accelerate
 COPY global-bundle.pem /etc/ssl/certs/global-bundle.pem
 COPY deploy/production/bootstrap.sh /opt/scholight-package/bootstrap.sh
 COPY deploy/production/release.sh /opt/scholight-package/release.sh

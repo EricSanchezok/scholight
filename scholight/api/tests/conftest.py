@@ -39,6 +39,8 @@ def api_app(monkeypatch: pytest.MonkeyPatch) -> Iterator[FastAPI]:
     monkeypatch.setattr(settings, "anonymous_quota_hmac_secret", "h" * 32)
     monkeypatch.setattr(settings, "access_key_hmac_secret", "k" * 32)
     monkeypatch.setattr(settings, "mcp_delegation_jwt_secret", "d" * 32)
+    monkeypatch.setattr(settings, "survey_mcp_jwt_secret", "s" * 32)
+    monkeypatch.setattr(settings, "survey_enabled", False)
     monkeypatch.setattr(settings, "zilliz_uri", "https://zilliz.example.invalid")
     monkeypatch.setattr(settings, "zilliz_token", "fixture-token")
     monkeypatch.setattr(settings, "embedding_base_url", "https://embedding.example.invalid/v1")

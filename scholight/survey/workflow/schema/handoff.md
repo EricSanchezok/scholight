@@ -1,0 +1,59 @@
+# Handoff Contract
+
+Every node ends its turn with a **handoff**: the final assistant message that the
+graph carries on the `context` channel to the next node. The handoff is *not* the
+artifact — full data always lives in `run_dir` files. The handoff only tells the
+next node where to look and how the run is doing.
+
+Keep it short: at most ~15 lines, one `key: value` per line.
+
+## This must be your LAST message — and it carries run_dir downstream
+
+The graph forwards only your **last message** to the next node. If your last
+message is a tool result (e.g. a file-write receipt) or any text without
+`run_dir`, the next node receives no run_dir and has to guess it. So:
+
+- Do all your file writes and tool calls **first**.
+- Then send the handoff as a **plain text message with no tool call**, so it is
+  the final fragment in your context.
+- `run_dir` must be the **first line**. Scholight starts the workflow with
+  `--run-dir`, so cwd *is* the job workspace and every node must use `.` as
+  `run_dir`. Do not discover, create, or switch to another workspace.
+
+## Required keys
+
+- `run_dir`: the run directory, verbatim. **Must be the first line.** The whole
+  chain depends on this to find upstream artifacts.
+- `artifact`: the primary file this node wrote, relative to repo root. Producer
+  nodes always set this; a pure gate may omit it.
+- `status`: `ok` | `partial` | `blocked`.
+
+## Optional keys (include only what applies; omit empty ones)
+
+- `counts`: small integers as `k=v` pairs, e.g. `total=42, core=8, method=12`.
+- `ids`: up to 5 representative arXiv IDs / titles / names.
+- `verdict`: judge or gate nodes only — `strong` | `acceptable` | `insufficient` | `blocked`.
+- `risks`: up to 3 short caveats (scope drift, benchmark mismatch, missing evidence…).
+- `next`: up to 3 follow-up queries or actions for another retrieval loop.
+
+## run_dir invariant
+
+`run_dir` is the single key the whole chain shares. Rules:
+
+1. Use `run_dir: .` from incoming context.
+2. If incoming context has no `run_dir`, return `status: blocked`; never inspect
+   sibling directories or create a replacement workspace.
+3. The Scholight worker is the only component that creates a run directory.
+
+## Example
+
+```
+run_dir: .
+artifact: ./02a_method_candidates.md
+status: ok
+counts: candidates=14
+ids: 2306.14048, 2401.18079, 2404.06654, 2503.24000, 2308.14508
+risks: 2 titles lacked arXiv IDs; kept by title
+```
+
+Do not paste full search results, PDF text, tables, or artifact bodies into the handoff.

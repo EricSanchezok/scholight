@@ -74,7 +74,7 @@ class UsageAccessKey(BaseModel):
 class UsageRecord(BaseModel):
     id: int
     created_at: datetime
-    actor_type: Literal["web", "access_key"]
+    actor_type: Literal["web", "access_key", "delegated"]
     access_key: UsageAccessKey | None
     strength: Literal["standard", "thorough"]
     search_duration_ms: float | None = Field(ge=0)
