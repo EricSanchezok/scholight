@@ -14,12 +14,17 @@ from scholight.config import settings
 from scholight.db.queries_survey import SurveyJob
 from scholight.survey.artifacts import SurveyArchive
 from scholight.survey.worker import (
+    RCM_VERSION,
     SurveyExecutionResult,
     _child_environment,
     _collect_stage_timings,
     execute_survey,
     process_survey_job,
 )
+
+
+def test_worker_expects_pinned_rcm_release() -> None:
+    assert RCM_VERSION == "0.2.2"
 
 
 def _job(

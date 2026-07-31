@@ -434,6 +434,28 @@ def test_backend_image_carries_the_complete_host_deployment_package() -> None:
     assert dockerfile.index("/opt/scholight-package") < dockerfile.index("USER scholight")
 
 
+def test_backend_image_pins_verified_rcm_release() -> None:
+    dockerfile = (ROOT / "docker" / "scholight-api" / "Dockerfile").read_text(encoding="utf-8")
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+    assert "ARG RCM_VERSION=v0.2.2" in dockerfile
+    assert (
+        "ARG RCM_LINUX_X86_64_SHA256="
+        "43d2b4413d407dec86b0d76a01b430d9cb0bb69a216e1762587b084d22aa52fb"
+    ) in dockerfile
+    assert (
+        "https://github.com/EricSanchezok/rcm-dist/releases/download/"
+        "${RCM_VERSION}/accelerate-x86_64-linux.tar.gz"
+    ) in dockerfile
+    assert "ARG TARGETARCH" in dockerfile
+    assert 'test "${TARGETARCH}" = amd64' in dockerfile
+    assert "sha256sum --check" in dockerfile
+    assert "COPY --from=builder /app/bin/accelerate /usr/local/bin/accelerate" in dockerfile
+    assert "/releases/latest/" not in dockerfile
+    assert "test -x /usr/local/bin/accelerate" in workflow
+    assert "/usr/local/bin/accelerate --help" in workflow
+
+
 def test_bootstrap_is_part_of_the_release_package_digest() -> None:
     release_script = (PRODUCTION / "release.sh").read_text(encoding="utf-8")
 

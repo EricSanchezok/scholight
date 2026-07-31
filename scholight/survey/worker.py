@@ -31,7 +31,7 @@ from scholight.survey.artifacts import SurveyArtifactStore
 
 logger = structlog.get_logger(__name__)
 
-RCM_VERSION = "0.2.1"
+RCM_VERSION = "0.2.2"
 WORKFLOW_VERSION = "scholight-survey-v1"
 _HEARTBEAT_SECONDS = 30
 _LEASE_SECONDS = 300

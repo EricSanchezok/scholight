@@ -259,6 +259,8 @@ jobs:
             done
             test -x /opt/scholight-package/bootstrap.sh
             test -x /opt/scholight-package/release.sh
+            test -x /usr/local/bin/accelerate
+            /usr/local/bin/accelerate --help >/dev/null
           '
       - name: Verify Caddy and Uvicorn idle keep-alive integration
         if: github.event_name != 'pull_request'
