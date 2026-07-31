@@ -438,10 +438,10 @@ def test_backend_image_pins_verified_rcm_release() -> None:
     dockerfile = (ROOT / "docker" / "scholight-api" / "Dockerfile").read_text(encoding="utf-8")
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 
-    assert "ARG RCM_VERSION=v0.2.2" in dockerfile
+    assert "ARG RCM_VERSION=v0.2.4" in dockerfile
     assert (
         "ARG RCM_LINUX_X86_64_SHA256="
-        "43d2b4413d407dec86b0d76a01b430d9cb0bb69a216e1762587b084d22aa52fb"
+        "9f7025f06aba2c2e9fd90fa292ed6a206f0c9938c8a71aef0629a6ba0008836c"
     ) in dockerfile
     assert (
         "https://github.com/EricSanchezok/rcm-dist/releases/download/"

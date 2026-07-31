@@ -24,7 +24,7 @@ from scholight.survey.worker import (
 
 
 def test_worker_expects_pinned_rcm_release() -> None:
-    assert RCM_VERSION == "0.2.2"
+    assert RCM_VERSION == "0.2.4"
 
 
 def _job(
