@@ -76,6 +76,7 @@ async def mcp_client() -> AsyncIterator[httpx.AsyncClient]:
     monkeypatch.setattr(settings, "anonymous_quota_hmac_secret", "h" * 32)
     monkeypatch.setattr(settings, "access_key_hmac_secret", "k" * 32)
     monkeypatch.setattr(settings, "mcp_delegation_jwt_secret", "d" * 32)
+    monkeypatch.setattr(settings, "survey_mcp_jwt_secret", "s" * 32)
     monkeypatch.setattr(settings, "zilliz_uri", "https://zilliz.example.invalid")
     monkeypatch.setattr(settings, "zilliz_token", "fixture-token")
     monkeypatch.setattr(settings, "embedding_base_url", "https://embedding.example.invalid/v1")
@@ -355,6 +356,32 @@ async def test_delegation_rejects_wrong_audience() -> None:
     )
     with pytest.raises(DelegationError, match="invalid_delegation"):
         await resolve_delegated_search_actor(token)
+
+
+async def test_survey_delegation_resolves_same_active_user(active_user: UserRecord) -> None:
+    token = jwt.encode(
+        {
+            "iss": "scholight-survey",
+            "aud": "scholight-mcp",
+            "sub": str(active_user.id),
+            "scope": "search",
+            "iat": int(datetime.now(UTC).timestamp()),
+            "exp": int(datetime.now(UTC).timestamp()) + 60,
+            "jti": str(uuid4()),
+        },
+        "s" * 32,
+        algorithm="HS256",
+    )
+    user_db = AsyncMock()
+    user_db.get_user_by_id.return_value = active_user
+    with (
+        patch("scholight.api.deps._user_db", user_db),
+        patch("scholight.api.deps.ensure_product_access", new_callable=AsyncMock),
+    ):
+        actor = await resolve_delegated_search_actor(token)
+
+    assert actor.user == active_user
+    assert actor.actor_type == "delegated"
 
 
 @pytest.mark.parametrize("authorization", ["Basic abc", "Bearer"])

@@ -289,3 +289,18 @@ def test_delegated_actor_migration_requires_explicit_checksum_approval() -> None
 
     with pytest.raises(ValueError, match="destructive migration rejected"):
         validate_expand_only_sql(sql)
+
+
+def test_survey_migration_is_product_scoped_and_expand_only() -> None:
+    migration = Path(__file__).parents[3] / "migrations/005_survey_jobs.sql"
+    raw_sql = migration.read_text(encoding="utf-8")
+    sql = " ".join(raw_sql.split()).lower()
+
+    validate_expand_only_sql(raw_sql)
+    assert "create table scholight.survey_jobs" in sql
+    assert "create table scholight.survey_daily_usage" in sql
+    assert "references auth.users(id) on delete cascade" in sql
+    assert "reserved_count" in sql and "succeeded_count" in sql
+    assert "drop " not in sql
+    assert "truncate " not in sql
+    assert "delete from" not in sql

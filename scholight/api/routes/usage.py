@@ -253,7 +253,7 @@ async def usage_records(
     cursor: str | None = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     strength: Literal["standard", "thorough"] | None = None,
-    actor_type: Literal["web", "access_key"] | None = None,
+    actor_type: Literal["web", "access_key", "delegated"] | None = None,
     access_key_id: UUID | None = None,
     outcome: Literal["success", "degraded", "failed"] | None = None,
     from_: Annotated[str | None, Query(alias="from")] = None,
@@ -291,7 +291,7 @@ async def usage_records(
 )
 async def usage_export(
     strength: Literal["standard", "thorough"] | None = None,
-    actor_type: Literal["web", "access_key"] | None = None,
+    actor_type: Literal["web", "access_key", "delegated"] | None = None,
     access_key_id: UUID | None = None,
     outcome: Literal["success", "degraded", "failed"] | None = None,
     from_: Annotated[str | None, Query(alias="from")] = None,

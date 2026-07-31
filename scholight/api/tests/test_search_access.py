@@ -157,3 +157,36 @@ def test_api_runtime_requires_search_dependencies(
 
     with pytest.raises(ValueError, match=message):
         validate_api_runtime_settings()
+
+
+def test_survey_provider_keys_use_unprefixed_environment_names(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "deepseek-secret")
+    monkeypatch.setenv("IMAGE_GEN_API_KEY", "image-secret")
+    monkeypatch.delenv("SCHOLIGHT_DEEPSEEK_API_KEY", raising=False)
+    monkeypatch.delenv("SCHOLIGHT_IMAGE_GEN_API_KEY", raising=False)
+
+    loaded = Settings(_env_file=None)  # type: ignore[call-arg]
+
+    assert loaded.deepseek_api_key == "deepseek-secret"
+    assert loaded.image_gen_api_key == "image-secret"
+
+
+def test_runtime_validation_requires_survey_boundaries_only_when_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "jwt_secret", "j" * 32)
+    monkeypatch.setattr(settings, "anonymous_quota_hmac_secret", "h" * 32)
+    monkeypatch.setattr(settings, "access_key_hmac_secret", "k" * 32)
+    monkeypatch.setattr(settings, "mcp_delegation_jwt_secret", "d" * 32)
+    monkeypatch.setattr(settings, "zilliz_uri", "https://zilliz.example.invalid")
+    monkeypatch.setattr(settings, "zilliz_token", "fixture-token")
+    monkeypatch.setattr(settings, "embedding_base_url", "https://embedding.example.invalid/v1")
+    monkeypatch.setattr(settings, "cors_allow_origins", ["http://localhost:3000"])
+    monkeypatch.setattr(settings, "survey_enabled", True)
+    monkeypatch.setattr(settings, "survey_mcp_jwt_secret", "")
+    monkeypatch.setattr(settings, "survey_s3_bucket", "")
+
+    with pytest.raises(ValueError, match="SCHOLIGHT_SURVEY_MCP_JWT_SECRET"):
+        validate_api_runtime_settings()

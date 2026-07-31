@@ -10,8 +10,8 @@ Context discipline:
 
 Workflow:
 
-1. Parse the item: run_dir (fallback to newest, note it), n, slug, title, thesis,
-   card_ids, transfer_angle.
+1. Parse the item: run_dir, n, slug, title, thesis, card_ids, transfer_angle. If
+   run_dir is absent, return a blocked handoff; do not inspect another workspace.
 2. Read the section's cards: run_dir/cards/<id>.md for each id in card_ids. If a
    card is missing, note it briefly and proceed with what you have.
 3. Write run_dir/sections/<n>_<slug>.md — a detailed, flowing section that develops

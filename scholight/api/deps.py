@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Literal, cast
+from typing import Any, Literal, cast
 from uuid import UUID
 
 import jwt
@@ -240,24 +240,40 @@ async def resolve_access_key_search_actor(token: str) -> SearchActor:
 
 
 async def resolve_delegated_search_actor(token: str) -> SearchActor:
-    """Verify a short-lived Scholens delegation and resolve its shared user."""
+    """Verify an approved product delegation and resolve its shared user."""
     from scholight.config import settings
 
+    credentials = (
+        (settings.mcp_delegation_jwt_secret, "scholens"),
+        (settings.survey_mcp_jwt_secret, "scholight-survey"),
+    )
+    claims: dict[str, Any] | None = None
+    last_error: jwt.PyJWTError | None = None
+    for secret, issuer in credentials:
+        if len(secret.encode("utf-8")) < 32:
+            continue
+        try:
+            claims = jwt.decode(
+                token,
+                secret,
+                algorithms=["HS256"],
+                audience="scholight-mcp",
+                issuer=issuer,
+                options={"require": ["sub", "scope", "iat", "exp", "jti"]},
+            )
+            break
+        except jwt.PyJWTError as exc:
+            last_error = exc
+    if claims is None:
+        raise DelegationError("invalid_delegation") from last_error
+
     try:
-        claims = jwt.decode(
-            token,
-            settings.mcp_delegation_jwt_secret,
-            algorithms=["HS256"],
-            audience="scholight-mcp",
-            issuer="scholens",
-            options={"require": ["sub", "scope", "iat", "exp", "jti"]},
-        )
         if claims.get("scope") != "search":
             raise DelegationError("invalid_delegation")
         user_id = int(claims["sub"])
     except DelegationError:
         raise
-    except (jwt.PyJWTError, TypeError, ValueError, KeyError) as exc:
+    except (TypeError, ValueError, KeyError) as exc:
         raise DelegationError("invalid_delegation") from exc
 
     if _user_db is None:

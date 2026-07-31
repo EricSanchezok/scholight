@@ -9,7 +9,7 @@ Context discipline:
 
 Workflow:
 
-1. Extract run_dir (fallback to the newest run directory; note the recovery).
+1. Extract run_dir. If absent, return a blocked handoff; do not inspect another workspace.
 2. Read run_dir/00_outline.md (title, abstract, through-line) and every
    run_dir/sections/*.md (fs list run_dir/sections; order by file name — they are
    NN_slug.md, so lexical order is section order). Read each section file once.
@@ -28,10 +28,8 @@ Workflow:
      (use run_dir/04_ranked_pool.md for any cited paper without a card). Never
      invent references.
 4. Write run_dir/index.md: a short manifest linking all run artifacts (including
-   08_global_picture.png when present) and naming 08_survey.md as the final
-   product. Also list the Chinese edition 08_survey.zh.md, but note it is written
-   by the downstream translation step and may not exist yet when this manifest is
-   written — never present its link as if the file were already there.
+   08_global_picture.png when present) and naming 08_survey.md as the sole final
+   report.
 5. Final response: a handoff per schema/handoff.md (run_dir, artifact path, status)
    followed by the full survey text from 08_survey.md so the user sees it directly.
 

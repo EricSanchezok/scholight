@@ -429,6 +429,59 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/survey/jobs": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Survey Jobs */
+    get: operations["survey_jobs_survey_jobs_get"];
+    put?: never;
+    /** Submit Survey Job */
+    post: operations["submit_survey_job_survey_jobs_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/survey/jobs/{job_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Survey Job */
+    get: operations["survey_job_survey_jobs__job_id__get"];
+    put?: never;
+    post?: never;
+    /** Delete Survey Job */
+    delete: operations["delete_survey_job_survey_jobs__job_id__delete"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/survey/jobs/{job_id}/artifacts": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Survey Artifacts */
+    get: operations["survey_artifacts_survey_jobs__job_id__artifacts_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/user/access-keys": {
     parameters: {
       query?: never;
@@ -1243,6 +1296,61 @@ export interface components {
       /** User Agent */
       user_agent?: string | null;
     };
+    /** SurveyArtifactResponse */
+    SurveyArtifactResponse: {
+      /** Mime */
+      mime: string;
+      /** Path */
+      path: string;
+      /** Sha256 */
+      sha256: string;
+      /** Size */
+      size: number;
+      /** Url */
+      url: string;
+    };
+    /** SurveyArtifactsResponse */
+    SurveyArtifactsResponse: {
+      /**
+       * Expires In Seconds
+       * @default 300
+       */
+      expires_in_seconds: number;
+      /** Items */
+      items: components["schemas"]["SurveyArtifactResponse"][];
+    };
+    /** SurveyJobCreateRequest */
+    SurveyJobCreateRequest: {
+      /** Topic */
+      topic: string;
+    };
+    /** SurveyJobResponse */
+    SurveyJobResponse: {
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Error Code */
+      error_code: string | null;
+      /** Error Message */
+      error_message: string | null;
+      /** Finished At */
+      finished_at: string | null;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Started At */
+      started_at: string | null;
+      /** Status */
+      status: string;
+      /** Terminal Outcome */
+      terminal_outcome: string | null;
+      /** Topic */
+      topic: string;
+    };
     /** TodayUsage */
     TodayUsage: {
       standard: components["schemas"]["DailyQuotaUsage"];
@@ -1282,7 +1390,7 @@ export interface components {
        * Actor Type
        * @enum {string}
        */
-      actor_type: "web" | "access_key";
+      actor_type: "web" | "access_key" | "delegated";
       /**
        * Created At
        * Format: date-time
@@ -2144,6 +2252,161 @@ export interface operations {
       };
     };
   };
+  survey_jobs_survey_jobs_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SurveyJobResponse"][];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  submit_survey_job_survey_jobs_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["SurveyJobCreateRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SurveyJobResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  survey_job_survey_jobs__job_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        job_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SurveyJobResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  delete_survey_job_survey_jobs__job_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        job_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  survey_artifacts_survey_jobs__job_id__artifacts_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        job_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SurveyArtifactsResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
   get_keys_user_access_keys_get: {
     parameters: {
       query?: never;
@@ -2351,7 +2614,7 @@ export interface operations {
     parameters: {
       query?: {
         strength?: ("standard" | "thorough") | null;
-        actor_type?: ("web" | "access_key") | null;
+        actor_type?: ("web" | "access_key" | "delegated") | null;
         access_key_id?: string | null;
         outcome?: ("success" | "degraded" | "failed") | null;
         from?: string | null;
@@ -2423,7 +2686,7 @@ export interface operations {
         cursor?: string | null;
         limit?: number;
         strength?: ("standard" | "thorough") | null;
-        actor_type?: ("web" | "access_key") | null;
+        actor_type?: ("web" | "access_key" | "delegated") | null;
         access_key_id?: string | null;
         outcome?: ("success" | "degraded" | "failed") | null;
         from?: string | null;

@@ -1,6 +1,3 @@
 [project]
-name = "RCM Auto Research Survey"
-description = "Coverage-guided, evidence-constrained survey pipeline using modular RCM units"
-
-[env]
-DEEPSEEK_API_KEY = "keep-in-shell-env"
+name = "Scholight Survey"
+description = "Coverage-guided, evidence-constrained Scholight literature survey workflow"

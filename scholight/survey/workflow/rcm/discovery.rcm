@@ -8,13 +8,20 @@ model deepseek-v4-flash {
     modalities = { input = ["text"], output = ["text"] }
 }
 
+mcp scholight {
+    transport = http
+    url = "http://api:8000/mcp"
+    headers = { Authorization = env "SCHOLIGHT_SURVEY_MCP_AUTHORIZATION" }
+}
+
 graph {
     accelerator method_scout {
         purpose = "Scholight survey method scout"
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/method_scout.txt" }
-        tools = ["arxiv_search", "fs"]
+        tools = ["fs"]
+        mcps = ["scholight"]
     }
 
     accelerator benchmark_scout {
@@ -22,7 +29,8 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/benchmark_scout.txt" }
-        tools = ["arxiv_search", "fs"]
+        tools = ["fs"]
+        mcps = ["scholight"]
     }
 
     accelerator survey_scout {
@@ -30,7 +38,8 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/survey_scout.txt" }
-        tools = ["arxiv_search", "fs"]
+        tools = ["fs"]
+        mcps = ["scholight"]
     }
 
     accelerator frontier_scout {
@@ -38,7 +47,8 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/frontier_scout.txt" }
-        tools = ["arxiv_search", "fs"]
+        tools = ["fs"]
+        mcps = ["scholight"]
     }
 
     flux scout_merge {

@@ -16,13 +16,9 @@ message is a tool result (e.g. a file-write receipt) or any text without
 - Do all your file writes and tool calls **first**.
 - Then send the handoff as a **plain text message with no tool call**, so it is
   the final fragment in your context.
-- `run_dir` must be the **first line**, verbatim, in the exact form you received
-  it (e.g. `runs/20260603T120600Z`) — do not add a prefix, do not make it
-  absolute. The next node will use it as-is to build paths.
-  **Exception:** when the env fragment contains an absolute `run_dir:` (set via
-  `--run-dir`), use `.` (the current directory) as the run_dir in your handoff
-  — because cwd *is* the run directory, and writing `run_dir/<file>` puts files
-  at the right place without nesting.
+- `run_dir` must be the **first line**. Scholight starts the workflow with
+  `--run-dir`, so cwd *is* the job workspace and every node must use `.` as
+  `run_dir`. Do not discover, create, or switch to another workspace.
 
 ## Required keys
 
@@ -44,20 +40,16 @@ message is a tool result (e.g. a file-write receipt) or any text without
 
 `run_dir` is the single key the whole chain shares. Rules:
 
-1. Prefer `run_dir` from incoming context.
-2. If incoming context has no `run_dir` (e.g. running this unit standalone), you
-   may fall back to the newest run directory: `fs list` the `runs` directory
-   **directly** (listing its parent hides it — `runs/` is gitignored) and pick
-   the last entry, since the UTC timestamp names sort chronologically. You
-   **must** then add a `risks:` line saying the run_dir was recovered from disk,
-   not from context. Never switch run_dir silently.
-3. `anchor` is the only node that creates a new `run_dir`.
+1. Use `run_dir: .` from incoming context.
+2. If incoming context has no `run_dir`, return `status: blocked`; never inspect
+   sibling directories or create a replacement workspace.
+3. The Scholight worker is the only component that creates a run directory.
 
 ## Example
 
 ```
-run_dir: runs/20260530T144227Z
-artifact: runs/20260530T144227Z/02a_method_candidates.md
+run_dir: .
+artifact: ./02a_method_candidates.md
 status: ok
 counts: candidates=14
 ids: 2306.14048, 2401.18079, 2404.06654, 2503.24000, 2308.14508

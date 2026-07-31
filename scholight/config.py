@@ -127,6 +127,16 @@ class Settings(BaseSettings):
     access_key_hmac_secret: str = ""
     mcp_delegation_jwt_secret: str = ""
 
+    # ── Survey ──
+    # Provider-standard names intentionally remain unprefixed end to end.
+    deepseek_api_key: str = Field(default="", validation_alias="DEEPSEEK_API_KEY")
+    image_gen_api_key: str = Field(default="", validation_alias="IMAGE_GEN_API_KEY")
+    survey_mcp_jwt_secret: str = ""
+    survey_s3_bucket: str = ""
+    survey_enabled: bool = False
+    survey_daily_limit: int = Field(default=5, ge=1, le=100)
+    survey_job_timeout_seconds: int = Field(default=86400, ge=60, le=172800)
+
     # ── Anonymous public search ──
     anonymous_rate_limit_per_minute: int = Field(default=30, gt=0)
     anonymous_standard_daily_limit: int = Field(default=100, gt=0)
@@ -170,6 +180,11 @@ def validate_api_runtime_settings() -> None:
         raise ValueError("SCHOLIGHT_ACCESS_KEY_HMAC_SECRET must contain at least 32 UTF-8 bytes")
     if len(settings.mcp_delegation_jwt_secret.encode("utf-8")) < 32:
         raise ValueError("SCHOLIGHT_MCP_DELEGATION_JWT_SECRET must contain at least 32 UTF-8 bytes")
+    if settings.survey_enabled:
+        if len(settings.survey_mcp_jwt_secret.encode("utf-8")) < 32:
+            raise ValueError("SCHOLIGHT_SURVEY_MCP_JWT_SECRET must contain at least 32 UTF-8 bytes")
+        if not settings.survey_s3_bucket.strip():
+            raise ValueError("SCHOLIGHT_SURVEY_S3_BUCKET is required when Survey is enabled")
     if settings.proxy_headers and settings.forwarded_allow_ips.strip() == "*":
         raise ValueError(
             "SCHOLIGHT_FORWARDED_ALLOW_IPS must not be '*' when proxy headers are enabled"
@@ -182,3 +197,15 @@ def validate_api_runtime_settings() -> None:
         raise ValueError("SCHOLIGHT_ZILLIZ_TOKEN is required by the search API")
     if not settings.embedding_base_url.strip():
         raise ValueError("SCHOLIGHT_EMBEDDING_BASE_URL is required by the search API")
+
+
+def validate_survey_worker_settings() -> None:
+    """Validate only the secrets and storage needed by the Survey worker."""
+    if not settings.survey_enabled:
+        raise ValueError("SCHOLIGHT_SURVEY_ENABLED must be true to run the Survey worker")
+    if not settings.deepseek_api_key.strip():
+        raise ValueError("DEEPSEEK_API_KEY is required by the Survey worker")
+    if len(settings.survey_mcp_jwt_secret.encode("utf-8")) < 32:
+        raise ValueError("SCHOLIGHT_SURVEY_MCP_JWT_SECRET must contain at least 32 UTF-8 bytes")
+    if not settings.survey_s3_bucket.strip():
+        raise ValueError("SCHOLIGHT_SURVEY_S3_BUCKET is required by the Survey worker")
