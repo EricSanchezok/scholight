@@ -21,4 +21,6 @@ The plan must include at least:
 - 2 frontier queries.
 - 2 cross-domain queries.
 
-Queries should be short enough for arXiv search and broad enough for embedding retrieval.
+Queries should be focused natural-language requests suitable for Scholight
+search, while remaining diverse enough to expose adjacent methods, evidence,
+and boundary cases.

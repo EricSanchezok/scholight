@@ -24,14 +24,16 @@ message is a tool result (e.g. a file-write receipt) or any text without
 
 - `run_dir`: the run directory, verbatim. **Must be the first line.** The whole
   chain depends on this to find upstream artifacts.
-- `artifact`: the primary file this node wrote, relative to repo root. Producer
+- `artifact`: the primary file this node wrote, relative to `run_dir`. Producer
   nodes always set this; a pure gate may omit it.
-- `status`: `ok` | `partial` | `blocked`.
+- `status`: `ok` | `partial` | `degraded` | `blocked`. Use `degraded` when an
+  optional capability failed but downstream work can safely continue.
 
 ## Optional keys (include only what applies; omit empty ones)
 
 - `counts`: small integers as `k=v` pairs, e.g. `total=42, core=8, method=12`.
-- `ids`: up to 5 representative arXiv IDs / titles / names.
+- `ids`: up to 5 representative paper IDs, titles, benchmark names, or other
+  named entities.
 - `verdict`: judge or gate nodes only — `strong` | `acceptable` | `insufficient` | `blocked`.
 - `risks`: up to 3 short caveats (scope drift, benchmark mismatch, missing evidence…).
 - `next`: up to 3 follow-up queries or actions for another retrieval loop.

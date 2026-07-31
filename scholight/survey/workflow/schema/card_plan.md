@@ -1,7 +1,7 @@
 # CardPlan Contract
 
-`CardPlan` selects which papers the per-paper `paper_cards` stage reads in full.
-It is the budget gate between the ranked pool and full-text reading.
+`CardPlan` selects which papers the `PaperCard` workers read in full. It is the
+budget gate between the ranked pool and full-text reading.
 
 ## Constant
 
@@ -9,16 +9,19 @@ It is the budget gate between the ranked pool and full-text reading.
   Reading full text is the expensive step, so this caps cost. Tune the budget
   here, in the contract — not by editing the prompt text.
 
-## Output
+## Dispatch
 
-The planner writes a JSON array to `run_dir/00_card_plan.json` (consumed by the
-`paper_cards` map), one element per selected paper:
+The planner calls `spawn_PaperCard` with one item per selected paper. It does not
+write an intermediate scatter file. Each item contains:
 
-- `run_dir`: the run directory, verbatim, in every element.
-- `id`: the paper's arXiv id — must exist in the ranked pool; never invented.
+- `run_dir`: the run directory, verbatim, in every item.
+- `id`: the paper's arXiv ID as returned in the ranked pool; never invented.
 - `title`: the paper title.
 - `why`: one line — its role + why it matters to the anchor. Tag cross-domain
   picks with "cross_domain transfer".
+
+Use `max_parallel=20`. If a work item fails, retry only that failed item rather
+than dispatching successful papers again.
 
 ## Selection priority
 

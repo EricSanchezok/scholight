@@ -20,7 +20,7 @@ graph {
     accelerator discovery = Discovery
     accelerator expansion = Expansion
     accelerator rank_pool = RankPool
-    // CardPlan gets spawn_PaperCard so its LLM dispatches paper_card workers.
+    // CardPlan gets spawn_PaperCard so its LLM dispatches PaperCard workers.
     accelerator card_plan = CardPlan { spawns = ["PaperCard"] }
     accelerator research_map = ResearchMap
     accelerator judge_panel = JudgePanel

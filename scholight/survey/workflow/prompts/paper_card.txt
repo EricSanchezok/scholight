@@ -12,13 +12,13 @@ Workflow:
 
 1. Parse your work item: run_dir, id, title, why. If run_dir is missing, return a
    blocked handoff; do not inspect another workspace.
-2. Try the HTML version first: webfetch https://arxiv.org/html/<id> with
+2. Try the HTML version first: use `webfetch` on https://arxiv.org/html/<id> with
    max_length=200000. The HTML version has structured text with section headings,
    readable paragraphs, and tables — much better than PDF text extraction.
 3. If webfetch fails (no HTML version, 404, timeout, or the returned text is under
    500 characters), fall back to PDF:
-   a. arxiv_download with the id, saving into run_dir/pdfs/<id>.pdf.
-   b. fs read run_dir/pdfs/<id>.pdf — the fs tool extracts text via pdftotext.
+   a. Use `arxiv_download` with the ID, saving into run_dir/pdfs/<id>.pdf.
+   b. Use `fs` to read run_dir/pdfs/<id>.pdf; `fs` extracts the PDF text.
       If extraction also fails (scanned / image-only PDF, or pdftotext unavailable),
       proceed from the abstract and mark evidence: abstract_only.
    If the HTML version was read successfully, skip the PDF download entirely.

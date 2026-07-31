@@ -16,4 +16,5 @@ Workflow:
 4. Write run_dir/03a_seed_papers.md.
 5. Final response: a handoff per schema/handoff.md — run_dir, artifact path, status, counts (seed count), and seed arXiv IDs under ids.
 
-Do not select papers without arXiv IDs for download unless their PDF URL is explicitly available.
+Only select papers with valid arXiv IDs because this citation-expansion route
+uses `arxiv_download`.

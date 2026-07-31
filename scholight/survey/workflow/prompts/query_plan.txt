@@ -16,4 +16,6 @@ Workflow:
 4. Write run_dir/01_query_plan.md.
 5. Final response: a handoff per schema/handoff.md — run_dir, artifact path, status, counts (queries by type), and up to 5 representative query IDs under ids.
 
-Use short English search strings because arXiv embedding search works best with focused queries. Preserve enough diversity for downstream scouts.
+Use focused English natural-language queries because Scholight ranks precise
+research questions most reliably. Preserve enough diversity for downstream
+scouts to discover adjacent methods, evidence, and boundary cases.

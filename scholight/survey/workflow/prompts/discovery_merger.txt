@@ -13,7 +13,7 @@ Workflow:
 1. Read schema/candidate_pool.md.
 2. Extract run_dir from context. If absent, return a blocked handoff; do not inspect another workspace.
 3. Merge method, benchmark, survey, and frontier scout outputs.
-4. Deduplicate by arXiv ID first, then normalized title.
+4. Deduplicate by normalized title first, then by paper_id when present.
 5. Preserve source_agent and source_query provenance.
 6. Write run_dir/02_candidate_pool.md.
 7. Final response: a handoff per schema/handoff.md — run_dir, artifact path, status, and counts (total candidates and by likely_role).

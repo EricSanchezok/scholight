@@ -15,12 +15,39 @@ def _text_files() -> list[Path]:
 
 def test_workflow_has_no_legacy_search_or_translation_branch() -> None:
     combined = "\n".join(path.read_text(encoding="utf-8") for path in _text_files())
+    normalized = combined.lower()
 
     assert "arxiv_search" not in combined
+    assert "arxiv search" not in normalized
+    assert "arxiv embedding search" not in normalized
+    assert "arxiv embedding-search" not in normalized
+    assert "arxiv results" not in normalized
+    assert "our field's arxiv categories" not in normalized
     assert "OPENAI_API_KEY" not in combined
+    assert "this example" not in normalized
+    assert "relative to repo root" not in normalized
     assert not any("zh_" in path.name for path in _text_files())
     assert not (_WORKFLOW / "rcm" / "section_translator.rcm").exists()
     assert not (_WORKFLOW / "rcm" / "zh_assemble.rcm").exists()
+
+
+def test_agent_guide_defines_one_search_boundary() -> None:
+    guide = (_WORKFLOW / "AGENTS.md").read_text(encoding="utf-8")
+
+    assert "`scholight__search_papers` is the only paper-search tool" in guide
+    assert "`arxiv_download` is a full-text retrieval tool, not a search tool" in guide
+    assert "Treat papers returned by the MCP server as Scholight search results" in guide
+
+
+def test_spawn_contracts_do_not_describe_removed_file_scatter() -> None:
+    card_plan = (_WORKFLOW / "schema" / "card_plan.md").read_text(encoding="utf-8")
+    section = (_WORKFLOW / "schema" / "section.md").read_text(encoding="utf-8")
+    combined = "\n".join(path.read_text(encoding="utf-8") for path in _text_files())
+
+    assert "spawn_PaperCard" in card_plan
+    assert "spawn_SectionExpander" in section
+    assert "00_card_plan.json" not in combined
+    assert "00_sections.json" not in combined
 
 
 def test_discovery_and_expansion_use_authenticated_scholight_mcp() -> None:
@@ -81,4 +108,4 @@ def test_english_report_is_the_only_final_assembly_output() -> None:
 
     assert writers == ["survey_assembler.txt"]
     assert "sole final report" in " ".join(assembler.split())
-    assert "status degraded" in (prompts / "image_planner.txt").read_text(encoding="utf-8")
+    assert "status: degraded" in (prompts / "image_planner.txt").read_text(encoding="utf-8")

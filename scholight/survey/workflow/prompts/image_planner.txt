@@ -21,4 +21,6 @@ Rules:
 - Produce exactly one image (the global picture). Do not write any markdown or prose artifact.
 - Keep the figure faithful to the research map: only depict families and relations that exist in the artifacts; do not invent method names.
 - Do not name internal objects or stages (research map, judge panel, pipeline, etc.) anywhere in the image — it is a figure about the field, not about this system.
-- If image_gen fails (for example, IMAGE_GEN_API_KEY is unavailable or the image service rejects the request), report status degraded with the reason under risks so the survey assembler can proceed without a figure.
+- If `image_gen` fails (for example, `IMAGE_GEN_API_KEY` is unavailable or the
+  image service rejects the request), report `status: degraded` with the reason
+  under risks so the survey assembler can proceed without a figure.

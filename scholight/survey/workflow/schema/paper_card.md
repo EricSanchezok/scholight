@@ -8,7 +8,7 @@ One file per paper at `run_dir/cards/<arxiv_id>.md`.
 
 ## Required sections
 
-- `header`: arXiv id, title, authors (if available), year/venue.
+- `header`: arXiv ID, title, authors (if available), year/venue.
 - `problem`: the problem the paper addresses (1–2 sentences).
 - `method`: the core mechanism in enough detail to *write about* it — the key
   idea, how it works, what is novel. Grounded in the body, not just the abstract.
