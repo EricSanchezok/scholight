@@ -7,7 +7,10 @@ import json
 
 import click
 
-from scholight.config import validate_survey_worker_settings
+from scholight.config import (
+    validate_survey_draft_worker_settings,
+    validate_survey_worker_settings,
+)
 from scholight.db.client import close_pool, create_pool
 from scholight.db.queries_survey import get_survey_job_counts
 from scholight.logging import configure_logging
@@ -32,6 +35,27 @@ def serve_worker() -> None:
         await create_pool()
         try:
             await serve_survey_worker()
+        finally:
+            await close_pool()
+
+    asyncio.run(_run())
+
+
+@survey_group.command("serve-draft-worker")
+def serve_draft_worker() -> None:
+    """Run the independent single-node Survey Draft worker."""
+    configure_logging()
+    try:
+        validate_survey_draft_worker_settings()
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    async def _run() -> None:
+        from scholight.survey.draft_worker import serve_survey_draft_worker
+
+        await create_pool()
+        try:
+            await serve_survey_draft_worker()
         finally:
             await close_pool()
 

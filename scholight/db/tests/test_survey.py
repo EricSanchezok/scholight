@@ -1,4 +1,4 @@
-"""Survey reservation and durable state-transition tests."""
+"""Survey aggregate reservation and formal execution transaction tests."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ import pytest
 
 from scholight.db.queries_survey import (
     SurveyQuotaExceededError,
-    create_survey_job,
+    create_survey,
     settle_survey_execution,
 )
 
@@ -33,32 +33,50 @@ class _AsyncContext(AbstractAsyncContextManager[MagicMock]):
         return None
 
 
+def _survey_row(*, survey_id: UUID, status: str = "drafting") -> dict[str, object]:
+    now = datetime.now(UTC)
+    return {
+        "id": survey_id,
+        "user_id": 42,
+        "client_request_id": uuid4(),
+        "initial_request": "retrieval augmented generation",
+        "status": status,
+        "quota_date": date(2026, 7, 31),
+        "quota_state": "reserved" if status not in {"succeeded", "failed"} else "released",
+        "error_code": None,
+        "error_message": None,
+        "created_at": now,
+        "updated_at": now,
+        "started_at": now if status == "running" else None,
+        "finished_at": None,
+    }
+
+
 def _job_row(
-    *,
-    job_id: UUID,
-    worker_id: UUID | None = None,
-    status: str = "pending",
-    terminal_outcome: str | None = None,
+    *, job_id: UUID, survey_id: UUID, worker_id: UUID, status: str = "running"
 ) -> dict[str, object]:
     now = datetime.now(UTC)
     return {
         "id": job_id,
+        "survey_id": survey_id,
         "user_id": 42,
-        "topic": "retrieval augmented generation",
+        "approved_draft_id": uuid4(),
+        "approved_draft": "# Research brief",
+        "approved_draft_revision": 1,
+        "client_request_id": uuid4(),
         "status": status,
-        "terminal_outcome": terminal_outcome,
-        "quota_date": date(2026, 7, 31),
+        "terminal_outcome": None,
         "storage_prefix": None,
         "manifest_key": None,
         "error_code": None,
         "error_message": None,
         "lease_owner": worker_id,
-        "lease_expires_at": now if worker_id else None,
-        "heartbeat_at": now if worker_id else None,
+        "lease_expires_at": now,
+        "heartbeat_at": now,
         "archive_attempts": 0,
         "next_archive_at": None,
         "created_at": now,
-        "started_at": now if status != "pending" else None,
+        "started_at": now,
         "finished_at": None,
     }
 
@@ -71,14 +89,15 @@ def _pool_with_connection(connection: MagicMock) -> MagicMock:
 
 
 @pytest.mark.asyncio
-async def test_create_job_reserves_quota_in_same_transaction() -> None:
-    job_id = uuid4()
+async def test_create_survey_reserves_quota_and_queues_initial_draft_atomically() -> None:
+    survey_id = uuid4()
     connection = MagicMock()
     connection.execute = AsyncMock()
     connection.fetchrow = AsyncMock(
         side_effect=[
             {"reserved_count": 1, "succeeded_count": 2},
-            _job_row(job_id=job_id),
+            None,
+            _survey_row(survey_id=survey_id),
         ]
     )
 
@@ -86,26 +105,27 @@ async def test_create_job_reserves_quota_in_same_transaction() -> None:
         "scholight.db.queries_survey.get_pool",
         return_value=_pool_with_connection(connection),
     ):
-        job = await create_survey_job(
-            job_id=job_id,
+        survey = await create_survey(
+            survey_id=survey_id,
+            draft_id=uuid4(),
             user_id=42,
-            topic="retrieval augmented generation",
+            initial_request="retrieval augmented generation",
+            client_request_id=uuid4(),
             quota_date=date(2026, 7, 31),
             daily_limit=5,
         )
 
-    assert job.id == job_id
-    assert any(
-        "reserved_count = reserved_count + 1" in call.args[0]
-        for call in connection.execute.await_args_list
-    )
+    assert survey.id == survey_id
+    statements = [call.args[0] for call in connection.execute.await_args_list]
+    assert any("reserved_count = reserved_count + 1" in sql for sql in statements)
+    assert any("INSERT INTO scholight.survey_drafts" in sql for sql in statements)
 
 
 @pytest.mark.asyncio
-async def test_create_job_rejects_sixth_reserved_or_successful_run() -> None:
+async def test_create_survey_rejects_sixth_reserved_or_successful_run() -> None:
     connection = MagicMock()
     connection.execute = AsyncMock()
-    connection.fetchrow = AsyncMock(return_value={"reserved_count": 2, "succeeded_count": 3})
+    connection.fetchrow = AsyncMock(side_effect=[{"reserved_count": 2, "succeeded_count": 3}, None])
 
     with (
         patch(
@@ -114,63 +134,44 @@ async def test_create_job_rejects_sixth_reserved_or_successful_run() -> None:
         ),
         pytest.raises(SurveyQuotaExceededError),
     ):
-        await create_survey_job(
-            job_id=uuid4(),
+        await create_survey(
+            survey_id=uuid4(),
+            draft_id=uuid4(),
             user_id=42,
-            topic="retrieval augmented generation",
+            initial_request="retrieval augmented generation",
+            client_request_id=uuid4(),
             quota_date=date(2026, 7, 31),
             daily_limit=5,
         )
 
     assert not any(
-        "INSERT INTO scholight.survey_jobs" in call.args[0]
+        "INSERT INTO scholight.surveys" in call.args[0]
         for call in connection.fetchrow.await_args_list
     )
 
 
 @pytest.mark.asyncio
-async def test_success_settlement_moves_reservation_to_success_once() -> None:
+async def test_failed_execution_releases_reservation_without_creating_another_survey() -> None:
+    survey_id = uuid4()
     job_id = uuid4()
     worker_id = uuid4()
-    running = _job_row(job_id=job_id, worker_id=worker_id, status="running")
-    archiving = {
-        **running,
+    running_job = _job_row(job_id=job_id, survey_id=survey_id, worker_id=worker_id)
+    archiving_job = {
+        **running_job,
         "status": "archiving",
-        "terminal_outcome": "succeeded",
+        "terminal_outcome": "failed",
+        "error_code": "survey_execution_failed",
     }
     connection = MagicMock()
-    connection.fetchrow = AsyncMock(side_effect=[running, {"reserved_count": 0}, archiving])
-
-    with patch(
-        "scholight.db.queries_survey.get_pool",
-        return_value=_pool_with_connection(connection),
-    ):
-        job = await settle_survey_execution(
-            job_id=job_id,
-            worker_id=worker_id,
-            outcome="succeeded",
-            error_code=None,
-            error_message=None,
-        )
-
-    quota_update = connection.fetchrow.await_args_list[1]
-    assert quota_update.args[3] == 1
-    assert job.status == "archiving"
-    assert job.terminal_outcome == "succeeded"
-
-
-@pytest.mark.asyncio
-async def test_archiving_settlement_is_idempotent() -> None:
-    job_id = uuid4()
-    worker_id = uuid4()
-    archiving = _job_row(
-        job_id=job_id,
-        worker_id=worker_id,
-        status="archiving",
-        terminal_outcome="failed",
+    connection.execute = AsyncMock()
+    connection.fetchrow = AsyncMock(
+        side_effect=[
+            running_job,
+            _survey_row(survey_id=survey_id, status="running"),
+            {"settled": 1},
+            archiving_job,
+        ]
     )
-    connection = MagicMock()
-    connection.fetchrow = AsyncMock(return_value=archiving)
 
     with patch(
         "scholight.db.queries_survey.get_pool",
@@ -185,4 +186,6 @@ async def test_archiving_settlement_is_idempotent() -> None:
         )
 
     assert job.status == "archiving"
-    connection.fetchrow.assert_awaited_once()
+    assert job.terminal_outcome == "failed"
+    statements = [call.args[0] for call in connection.execute.await_args_list]
+    assert all("INSERT INTO scholight.surveys" not in sql for sql in statements)

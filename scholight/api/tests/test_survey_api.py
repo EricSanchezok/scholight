@@ -1,4 +1,4 @@
-"""Web-JWT-only Survey API contract tests."""
+"""Web-JWT-only Survey aggregate API contract tests."""
 
 from __future__ import annotations
 
@@ -14,29 +14,49 @@ from fastapi import FastAPI
 
 from scholight.api.deps import get_current_user
 from scholight.config import settings
-from scholight.db.queries_survey import SurveyJob, SurveyQuotaExceededError
+from scholight.db.queries_survey import Survey, SurveyQuotaExceededError
+from scholight.db.queries_survey_drafts import SurveyDraft
 
 pytestmark = pytest.mark.asyncio
 
 
-def _job(*, job_id: UUID, status: str = "pending") -> SurveyJob:
+def _survey(*, survey_id: UUID, status: str = "drafting") -> Survey:
     now = datetime.now(UTC)
-    return SurveyJob(
-        id=job_id,
+    return Survey(
+        id=survey_id,
         user_id=42,
-        topic="retrieval augmented generation",
+        client_request_id=uuid4(),
+        initial_request="retrieval augmented generation",
         status=status,  # type: ignore[arg-type]
-        terminal_outcome=None,
         quota_date=date(2026, 7, 31),
-        storage_prefix=None,
-        manifest_key=None,
+        quota_state="reserved",
+        error_code=None,
+        error_message=None,
+        created_at=now,
+        updated_at=now,
+        started_at=None,
+        finished_at=None,
+    )
+
+
+def _draft(*, survey_id: UUID, status: str = "queued") -> SurveyDraft:
+    now = datetime.now(UTC)
+    return SurveyDraft(
+        id=uuid4(),
+        survey_id=survey_id,
+        user_id=42,
+        revision=None,
+        source="generated",
+        user_message="Focus on evaluation methods",
+        markdown=None,
+        status=status,  # type: ignore[arg-type]
+        based_on_revision=None,
+        client_request_id=uuid4(),
         error_code=None,
         error_message=None,
         lease_owner=None,
         lease_expires_at=None,
         heartbeat_at=None,
-        archive_attempts=0,
-        next_archive_at=None,
         created_at=now,
         started_at=None,
         finished_at=None,
@@ -55,13 +75,13 @@ async def test_survey_is_disabled_fail_closed(
     _authenticate(api_app, active_user)
     settings.survey_enabled = False
 
-    response = await api_client.get("/survey/jobs")
+    response = await api_client.get("/surveys")
 
     assert response.status_code == 503
     assert response.json()["detail"]["code"] == "survey_unavailable"
 
 
-async def test_submit_reserves_one_user_daily_slot(
+async def test_create_survey_reserves_slot_and_queues_initial_draft(
     api_app: FastAPI,
     api_client: httpx.AsyncClient,
     active_user: UserRecord,
@@ -70,23 +90,28 @@ async def test_submit_reserves_one_user_daily_slot(
     _authenticate(api_app, active_user)
     monkeypatch.setattr(settings, "survey_enabled", True)
     monkeypatch.setattr(settings, "survey_daily_limit", 5)
-    job_id = uuid4()
+    survey_id = uuid4()
+    request_id = uuid4()
     with patch(
-        "scholight.api.routes.survey.create_survey_job",
+        "scholight.api.routes.survey.create_survey",
         new_callable=AsyncMock,
-        return_value=_job(job_id=job_id),
+        return_value=_survey(survey_id=survey_id),
     ) as create:
         response = await api_client.post(
-            "/survey/jobs",
-            json={"topic": "  retrieval augmented generation  "},
+            "/surveys",
+            json={
+                "initial_request": "  retrieval augmented generation  ",
+                "client_request_id": str(request_id),
+            },
         )
 
     assert response.status_code == 201
-    assert response.json()["id"] == str(job_id)
+    assert response.json()["id"] == str(survey_id)
     call = create.await_args
     assert call is not None
     assert call.kwargs["user_id"] == active_user.id
-    assert call.kwargs["topic"] == "retrieval augmented generation"
+    assert call.kwargs["initial_request"] == "retrieval augmented generation"
+    assert call.kwargs["client_request_id"] == request_id
     assert call.kwargs["daily_limit"] == 5
 
 
@@ -99,13 +124,16 @@ async def test_survey_quota_has_stable_error(
     _authenticate(api_app, active_user)
     monkeypatch.setattr(settings, "survey_enabled", True)
     with patch(
-        "scholight.api.routes.survey.create_survey_job",
+        "scholight.api.routes.survey.create_survey",
         new_callable=AsyncMock,
         side_effect=SurveyQuotaExceededError,
     ):
         response = await api_client.post(
-            "/survey/jobs",
-            json={"topic": "retrieval augmented generation"},
+            "/surveys",
+            json={
+                "initial_request": "retrieval augmented generation",
+                "client_request_id": str(uuid4()),
+            },
         )
 
     assert response.status_code == 429
@@ -116,37 +144,29 @@ async def test_survey_quota_has_stable_error(
     }
 
 
-async def test_anonymous_cannot_submit_survey(
+async def test_anonymous_and_access_key_cannot_create_survey(
     api_client: httpx.AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(settings, "survey_enabled", True)
+    body = {
+        "initial_request": "retrieval augmented generation",
+        "client_request_id": str(uuid4()),
+    }
 
-    response = await api_client.post(
-        "/survey/jobs",
-        json={"topic": "retrieval augmented generation"},
-    )
-
-    assert response.status_code in {401, 403}
-
-
-async def test_access_key_cannot_submit_survey(
-    api_client: httpx.AsyncClient,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(settings, "survey_enabled", True)
-
-    response = await api_client.post(
-        "/survey/jobs",
+    anonymous = await api_client.post("/surveys", json=body)
+    access_key = await api_client.post(
+        "/surveys",
         headers={"Authorization": "Bearer sk_live_test-only"},
-        json={"topic": "retrieval augmented generation"},
+        json=body,
     )
 
-    assert response.status_code == 401
-    assert response.json()["detail"]["code"] == "authentication_required"
+    assert anonymous.status_code in {401, 403}
+    assert access_key.status_code == 401
+    assert access_key.json()["detail"]["code"] == "authentication_required"
 
 
-async def test_running_job_cannot_be_deleted(
+async def test_revision_endpoint_queues_async_draft_for_owner(
     api_app: FastAPI,
     api_client: httpx.AsyncClient,
     active_user: UserRecord,
@@ -154,19 +174,36 @@ async def test_running_job_cannot_be_deleted(
 ) -> None:
     _authenticate(api_app, active_user)
     monkeypatch.setattr(settings, "survey_enabled", True)
-    job_id = uuid4()
-    with patch(
-        "scholight.api.routes.survey.get_survey_job",
-        new_callable=AsyncMock,
-        return_value=_job(job_id=job_id, status="running"),
+    survey_id = uuid4()
+    request_id = uuid4()
+    with (
+        patch(
+            "scholight.api.routes.survey.get_survey",
+            new_callable=AsyncMock,
+            return_value=_survey(survey_id=survey_id),
+        ),
+        patch(
+            "scholight.api.routes.survey.request_generated_draft",
+            new_callable=AsyncMock,
+            return_value=_draft(survey_id=survey_id),
+        ) as revise,
     ):
-        response = await api_client.delete(f"/survey/jobs/{job_id}")
+        response = await api_client.post(
+            f"/surveys/{survey_id}/drafts",
+            json={
+                "message": "  Focus on evaluation methods  ",
+                "client_request_id": str(request_id),
+            },
+        )
 
-    assert response.status_code == 409
-    assert response.json()["detail"]["code"] == "survey_job_in_progress"
+    assert response.status_code == 201
+    call = revise.await_args
+    assert call is not None
+    assert call.kwargs["user_message"] == "Focus on evaluation methods"
+    assert call.kwargs["client_request_id"] == request_id
 
 
-async def test_artifacts_fail_closed_on_cross_owner_manifest_key(
+async def test_manual_draft_and_start_use_distinct_write_endpoints(
     api_app: FastAPI,
     api_client: httpx.AsyncClient,
     active_user: UserRecord,
@@ -174,27 +211,63 @@ async def test_artifacts_fail_closed_on_cross_owner_manifest_key(
 ) -> None:
     _authenticate(api_app, active_user)
     monkeypatch.setattr(settings, "survey_enabled", True)
-    job_id = uuid4()
-    job = replace(
-        _job(job_id=job_id, status="pending"),
-        status="succeeded",
-        terminal_outcome="succeeded",
-        storage_prefix=f"surveys/v1/99/{job_id}",
-        manifest_key=f"surveys/v1/99/{job_id}/manifest.json",
-        finished_at=datetime.now(UTC),
+    survey_id = uuid4()
+    owner = _survey(survey_id=survey_id)
+    ready = replace(
+        _draft(survey_id=survey_id, status="ready"),
+        revision=1,
+        markdown="# Approved scope",
     )
     with (
         patch(
-            "scholight.api.routes.survey.get_survey_job",
+            "scholight.api.routes.survey.get_survey",
             new_callable=AsyncMock,
-            return_value=job,
+            return_value=owner,
         ),
         patch(
-            "scholight.api.routes.survey.get_survey_artifact_store",
-        ) as artifact_store,
+            "scholight.api.routes.survey.create_manual_draft",
+            new_callable=AsyncMock,
+            return_value=ready,
+        ),
+        patch(
+            "scholight.api.routes.survey.start_survey",
+            new_callable=AsyncMock,
+            return_value=_survey(survey_id=survey_id, status="queued"),
+        ),
     ):
-        response = await api_client.get(f"/survey/jobs/{job_id}/artifacts")
+        manual = await api_client.post(
+            f"/surveys/{survey_id}/drafts/manual",
+            json={
+                "markdown": "# Approved scope",
+                "message": "Manual edit",
+                "client_request_id": str(uuid4()),
+            },
+        )
+        started = await api_client.post(
+            f"/surveys/{survey_id}/start",
+            json={"client_request_id": str(uuid4())},
+        )
 
-    assert response.status_code == 503
-    assert response.json()["detail"]["code"] == "survey_service_unavailable"
-    artifact_store.assert_not_called()
+    assert manual.status_code == 201
+    assert manual.json()["markdown"] == "# Approved scope"
+    assert started.status_code == 200
+    assert started.json()["status"] == "queued"
+
+
+async def test_cross_owner_survey_is_not_exposed(
+    api_app: FastAPI,
+    api_client: httpx.AsyncClient,
+    active_user: UserRecord,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _authenticate(api_app, active_user)
+    monkeypatch.setattr(settings, "survey_enabled", True)
+    with patch(
+        "scholight.api.routes.survey.get_survey",
+        new_callable=AsyncMock,
+        return_value=None,
+    ):
+        response = await api_client.get(f"/surveys/{uuid4()}")
+
+    assert response.status_code == 404
+    assert response.json()["detail"]["code"] == "survey_not_found"

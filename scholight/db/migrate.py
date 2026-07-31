@@ -28,7 +28,11 @@ _APPROVED_CONTRACT_MIGRATIONS = {
     (
         4,
         "allow_delegated_usage_actor",
-    ): "09d7bc9fc1358cdcdcc66a754992aa72eee31ad550a71f0dde481e612ff45186"
+    ): "09d7bc9fc1358cdcdcc66a754992aa72eee31ad550a71f0dde481e612ff45186",
+    (
+        6,
+        "survey_aggregate",
+    ): "7839587fb113308b08a29af4453e30d5d51babb90dbf43b720426315fdcaaac9",
 }
 
 

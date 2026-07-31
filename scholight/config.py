@@ -135,6 +135,7 @@ class Settings(BaseSettings):
     survey_s3_bucket: str = ""
     survey_enabled: bool = False
     survey_daily_limit: int = Field(default=5, ge=1, le=100)
+    survey_draft_timeout_seconds: int = Field(default=1800, ge=60, le=3600)
     survey_job_timeout_seconds: int = Field(default=86400, ge=60, le=172800)
 
     # ── Anonymous public search ──
@@ -209,3 +210,13 @@ def validate_survey_worker_settings() -> None:
         raise ValueError("SCHOLIGHT_SURVEY_MCP_JWT_SECRET must contain at least 32 UTF-8 bytes")
     if not settings.survey_s3_bucket.strip():
         raise ValueError("SCHOLIGHT_SURVEY_S3_BUCKET is required by the Survey worker")
+
+
+def validate_survey_draft_worker_settings() -> None:
+    """Validate the smaller secret boundary needed by the Draft worker."""
+    if not settings.survey_enabled:
+        raise ValueError("SCHOLIGHT_SURVEY_ENABLED must be true to run the Survey Draft worker")
+    if not settings.deepseek_api_key.strip():
+        raise ValueError("DEEPSEEK_API_KEY is required by the Survey Draft worker")
+    if len(settings.survey_mcp_jwt_secret.encode("utf-8")) < 32:
+        raise ValueError("SCHOLIGHT_SURVEY_MCP_JWT_SECRET must contain at least 32 UTF-8 bytes")

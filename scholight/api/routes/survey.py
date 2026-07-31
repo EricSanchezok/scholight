@@ -1,4 +1,4 @@
-"""Owner-scoped, Web-JWT-only Scholight Survey job routes."""
+"""Owner-scoped, Web-JWT-only Survey aggregate routes."""
 
 from __future__ import annotations
 
@@ -7,45 +7,96 @@ from typing import Annotated
 from uuid import UUID, uuid4
 
 from cloud_auth.models.user import UserRecord
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from pydantic import BaseModel, Field, field_validator
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, field_validator
 
 from scholight.api.deps import get_current_user
 from scholight.api.http_errors import http_error
 from scholight.config import settings
 from scholight.db.client import DBError
 from scholight.db.queries_survey import (
-    SurveyJob,
-    SurveyJobStateError,
+    Survey,
     SurveyQuotaExceededError,
-    create_survey_job,
-    delete_pending_survey_job,
-    delete_terminal_survey_job,
-    get_survey_job,
-    list_survey_jobs,
+    SurveyStateError,
+    cancel_survey,
+    create_survey,
+    get_survey,
+    list_surveys,
+    start_survey,
 )
-from scholight.survey.artifacts import SurveyArtifactError, SurveyArtifactStore
+from scholight.db.queries_survey_drafts import (
+    SurveyDraft,
+    SurveyDraftLimitError,
+    create_manual_draft,
+    list_survey_drafts,
+    request_generated_draft,
+)
 
 router = APIRouter()
 
 
-class SurveyJobCreateRequest(BaseModel):
-    topic: str
+class SurveyCreateRequest(BaseModel):
+    initial_request: str
+    client_request_id: UUID
 
-    @field_validator("topic")
+    @field_validator("initial_request")
     @classmethod
-    def _topic_not_blank(cls, value: str) -> str:
-        normalized = value.strip()
-        if not normalized:
-            raise ValueError("Survey topic must not be blank")
+    def _request_not_blank(cls, value: str) -> str:
+        if not (normalized := value.strip()):
+            raise ValueError("Survey request must not be blank")
         return normalized
 
 
-class SurveyJobResponse(BaseModel):
+class DraftCreateRequest(BaseModel):
+    message: str
+    client_request_id: UUID
+
+    @field_validator("message")
+    @classmethod
+    def _message_not_blank(cls, value: str) -> str:
+        if not (normalized := value.strip()):
+            raise ValueError("Draft revision message must not be blank")
+        return normalized
+
+
+class ManualDraftCreateRequest(BaseModel):
+    markdown: str
+    client_request_id: UUID
+    message: str = "Manual Draft revision"
+
+    @field_validator("markdown", "message")
+    @classmethod
+    def _text_not_blank(cls, value: str) -> str:
+        if not (normalized := value.strip()):
+            raise ValueError("Manual Draft text must not be blank")
+        return normalized
+
+
+class SurveyActionRequest(BaseModel):
+    client_request_id: UUID
+
+
+class SurveyResponse(BaseModel):
     id: UUID
-    topic: str
+    initial_request: str
     status: str
-    terminal_outcome: str | None
+    quota_state: str
+    error_code: str | None
+    error_message: str | None
+    created_at: datetime
+    updated_at: datetime
+    started_at: datetime | None
+    finished_at: datetime | None
+
+
+class SurveyDraftResponse(BaseModel):
+    id: UUID
+    revision: int | None
+    source: str
+    user_message: str
+    markdown: str | None
+    status: str
+    based_on_revision: int | None
     error_code: str | None
     error_message: str | None
     created_at: datetime
@@ -53,30 +104,35 @@ class SurveyJobResponse(BaseModel):
     finished_at: datetime | None
 
 
-class SurveyArtifactResponse(BaseModel):
-    path: str
-    size: int = Field(ge=0)
-    sha256: str
-    mime: str
-    url: str
+def _survey_response(survey: Survey) -> SurveyResponse:
+    return SurveyResponse(
+        id=survey.id,
+        initial_request=survey.initial_request,
+        status=survey.status,
+        quota_state=survey.quota_state,
+        error_code=survey.error_code,
+        error_message=survey.error_message,
+        created_at=survey.created_at,
+        updated_at=survey.updated_at,
+        started_at=survey.started_at,
+        finished_at=survey.finished_at,
+    )
 
 
-class SurveyArtifactsResponse(BaseModel):
-    expires_in_seconds: int = 300
-    items: list[SurveyArtifactResponse]
-
-
-def _response(job: SurveyJob) -> SurveyJobResponse:
-    return SurveyJobResponse(
-        id=job.id,
-        topic=job.topic,
-        status=job.status,
-        terminal_outcome=job.terminal_outcome,
-        error_code=job.error_code,
-        error_message=job.error_message,
-        created_at=job.created_at,
-        started_at=job.started_at,
-        finished_at=job.finished_at,
+def _draft_response(draft: SurveyDraft) -> SurveyDraftResponse:
+    return SurveyDraftResponse(
+        id=draft.id,
+        revision=draft.revision,
+        source=draft.source,
+        user_message=draft.user_message,
+        markdown=draft.markdown,
+        status=draft.status,
+        based_on_revision=draft.based_on_revision,
+        error_code=draft.error_code,
+        error_message=draft.error_message,
+        created_at=draft.created_at,
+        started_at=draft.started_at,
+        finished_at=draft.finished_at,
     )
 
 
@@ -91,17 +147,6 @@ def _require_enabled() -> None:
         )
 
 
-def get_survey_artifact_store() -> SurveyArtifactStore:
-    return SurveyArtifactStore(bucket=settings.survey_s3_bucket)
-
-
-def _verified_manifest_key(job: SurveyJob) -> str:
-    expected = f"{SurveyArtifactStore.prefix(user_id=job.user_id, job_id=job.id)}/manifest.json"
-    if job.manifest_key != expected:
-        raise SurveyArtifactError("Survey manifest ownership is invalid")
-    return expected
-
-
 def _service_unavailable() -> HTTPException:
     return http_error(
         503,
@@ -112,17 +157,44 @@ def _service_unavailable() -> HTTPException:
     )
 
 
-@router.post("/jobs", response_model=SurveyJobResponse, status_code=201)
-async def submit_survey_job(
-    body: SurveyJobCreateRequest,
+def _state_error(exc: SurveyStateError) -> HTTPException:
+    message = str(exc)
+    code = "survey_state_conflict"
+    if isinstance(exc, SurveyDraftLimitError):
+        code = "survey_draft_limit_reached"
+        message = "This Survey already has the maximum of 10 Draft revisions."
+    return http_error(409, code=code, message=message, retryable=False, retry_after=None)
+
+
+async def _owned_survey(*, survey_id: UUID, user_id: int) -> Survey:
+    try:
+        survey = await get_survey(survey_id=survey_id, user_id=user_id)
+    except DBError as exc:
+        raise _service_unavailable() from exc
+    if survey is None:
+        raise http_error(
+            404,
+            code="survey_not_found",
+            message="This Survey no longer exists or is not available to this account.",
+            retryable=False,
+            retry_after=None,
+        )
+    return survey
+
+
+@router.post("/surveys", response_model=SurveyResponse, status_code=201)
+async def submit_survey(
+    body: SurveyCreateRequest,
     current_user: UserRecord = Depends(get_current_user),
-) -> SurveyJobResponse:
+) -> SurveyResponse:
     _require_enabled()
     try:
-        job = await create_survey_job(
-            job_id=uuid4(),
+        survey = await create_survey(
+            survey_id=uuid4(),
+            draft_id=uuid4(),
             user_id=current_user.id,
-            topic=body.topic,
+            initial_request=body.initial_request,
+            client_request_id=body.client_request_id,
             quota_date=datetime.now(UTC).date(),
             daily_limit=settings.survey_daily_limit,
         )
@@ -136,127 +208,134 @@ async def submit_survey_job(
         ) from exc
     except DBError as exc:
         raise _service_unavailable() from exc
-    return _response(job)
+    return _survey_response(survey)
 
 
-@router.get("/jobs", response_model=list[SurveyJobResponse])
-async def survey_jobs(
+@router.get("/surveys", response_model=list[SurveyResponse])
+async def surveys(
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     current_user: UserRecord = Depends(get_current_user),
-) -> list[SurveyJobResponse]:
+) -> list[SurveyResponse]:
     _require_enabled()
     try:
-        jobs = await list_survey_jobs(user_id=current_user.id, limit=limit)
+        rows = await list_surveys(user_id=current_user.id, limit=limit)
     except DBError as exc:
         raise _service_unavailable() from exc
-    return [_response(job) for job in jobs]
+    return [_survey_response(row) for row in rows]
 
 
-async def _owned_job(*, job_id: UUID, user_id: int) -> SurveyJob:
+@router.get("/surveys/{survey_id}", response_model=SurveyResponse)
+async def survey(
+    survey_id: UUID,
+    current_user: UserRecord = Depends(get_current_user),
+) -> SurveyResponse:
+    _require_enabled()
+    return _survey_response(await _owned_survey(survey_id=survey_id, user_id=current_user.id))
+
+
+@router.get("/surveys/{survey_id}/drafts", response_model=list[SurveyDraftResponse])
+async def survey_drafts(
+    survey_id: UUID,
+    current_user: UserRecord = Depends(get_current_user),
+) -> list[SurveyDraftResponse]:
+    _require_enabled()
+    await _owned_survey(survey_id=survey_id, user_id=current_user.id)
     try:
-        job = await get_survey_job(job_id=job_id, user_id=user_id)
+        rows = await list_survey_drafts(survey_id=survey_id, user_id=current_user.id)
     except DBError as exc:
         raise _service_unavailable() from exc
-    if job is None:
-        raise http_error(
-            404,
-            code="survey_job_not_found",
-            message="This Survey job no longer exists or is not available to this account.",
-            retryable=False,
-            retry_after=None,
-        )
-    return job
+    return [_draft_response(row) for row in rows]
 
 
-@router.get("/jobs/{job_id}", response_model=SurveyJobResponse)
-async def survey_job(
-    job_id: UUID,
+@router.post("/surveys/{survey_id}/drafts", response_model=SurveyDraftResponse, status_code=201)
+async def revise_survey_draft(
+    survey_id: UUID,
+    body: DraftCreateRequest,
     current_user: UserRecord = Depends(get_current_user),
-) -> SurveyJobResponse:
+) -> SurveyDraftResponse:
     _require_enabled()
-    return _response(await _owned_job(job_id=job_id, user_id=current_user.id))
-
-
-@router.get("/jobs/{job_id}/artifacts", response_model=SurveyArtifactsResponse)
-async def survey_artifacts(
-    job_id: UUID,
-    current_user: UserRecord = Depends(get_current_user),
-) -> SurveyArtifactsResponse:
-    _require_enabled()
-    job = await _owned_job(job_id=job_id, user_id=current_user.id)
-    if job.status not in {"succeeded", "failed"} or job.manifest_key is None:
-        raise http_error(
-            409,
-            code="survey_artifacts_not_ready",
-            message="Survey artifacts are still being prepared.",
-            retryable=True,
-            retry_after=5,
-        )
+    await _owned_survey(survey_id=survey_id, user_id=current_user.id)
     try:
-        manifest_key = _verified_manifest_key(job)
-        records = await get_survey_artifact_store().presigned_artifacts(
-            manifest_key=manifest_key,
+        draft = await request_generated_draft(
+            survey_id=survey_id,
+            user_id=current_user.id,
+            draft_id=uuid4(),
+            client_request_id=body.client_request_id,
+            user_message=body.message,
         )
-    except SurveyArtifactError as exc:
+    except SurveyStateError as exc:
+        raise _state_error(exc) from exc
+    except DBError as exc:
         raise _service_unavailable() from exc
-    return SurveyArtifactsResponse(items=[SurveyArtifactResponse(**record) for record in records])
+    return _draft_response(draft)
 
 
-@router.delete("/jobs/{job_id}", status_code=204)
-async def delete_survey_job(
-    job_id: UUID,
+@router.post(
+    "/surveys/{survey_id}/drafts/manual",
+    response_model=SurveyDraftResponse,
+    status_code=201,
+)
+async def add_manual_survey_draft(
+    survey_id: UUID,
+    body: ManualDraftCreateRequest,
     current_user: UserRecord = Depends(get_current_user),
-) -> Response:
+) -> SurveyDraftResponse:
     _require_enabled()
-    job = await _owned_job(job_id=job_id, user_id=current_user.id)
+    await _owned_survey(survey_id=survey_id, user_id=current_user.id)
     try:
-        if job.status == "pending":
-            deleted = await delete_pending_survey_job(
-                job_id=job_id,
-                user_id=current_user.id,
-            )
-        elif job.status in {"running", "archiving"}:
-            raise http_error(
-                409,
-                code="survey_job_in_progress",
-                message="A running or archiving Survey job cannot be deleted.",
-                retryable=False,
-                retry_after=None,
-            )
-        else:
-            if job.manifest_key is None:
-                raise SurveyArtifactError("Survey manifest is missing")
-            manifest_key = _verified_manifest_key(job)
-            artifact_store = get_survey_artifact_store()
-            await artifact_store.delete_archive(
-                manifest_key=manifest_key,
-                preserve_manifest=True,
-            )
-            deleted = await delete_terminal_survey_job(
-                job_id=job_id,
-                user_id=current_user.id,
-            )
-            if deleted:
-                await artifact_store.delete_manifest(manifest_key=manifest_key)
-    except SurveyJobStateError as exc:
-        raise http_error(
-            409,
-            code="survey_job_state_changed",
-            message="The Survey job changed state. Refresh and try again.",
-            retryable=True,
-            retry_after=1,
-        ) from exc
-    except (DBError, SurveyArtifactError) as exc:
-        raise _service_unavailable() from exc
-    if not deleted:
-        raise http_error(
-            404,
-            code="survey_job_not_found",
-            message="This Survey job no longer exists.",
-            retryable=False,
-            retry_after=None,
+        draft = await create_manual_draft(
+            survey_id=survey_id,
+            user_id=current_user.id,
+            draft_id=uuid4(),
+            client_request_id=body.client_request_id,
+            user_message=body.message,
+            markdown=body.markdown,
         )
-    return Response(status_code=204)
+    except SurveyStateError as exc:
+        raise _state_error(exc) from exc
+    except DBError as exc:
+        raise _service_unavailable() from exc
+    return _draft_response(draft)
 
 
-__all__ = ["get_survey_artifact_store", "router"]
+@router.post("/surveys/{survey_id}/start", response_model=SurveyResponse)
+async def start_survey_execution(
+    survey_id: UUID,
+    body: SurveyActionRequest,
+    current_user: UserRecord = Depends(get_current_user),
+) -> SurveyResponse:
+    _require_enabled()
+    await _owned_survey(survey_id=survey_id, user_id=current_user.id)
+    try:
+        updated = await start_survey(
+            survey_id=survey_id,
+            user_id=current_user.id,
+            job_id=uuid4(),
+            client_request_id=body.client_request_id,
+        )
+    except SurveyStateError as exc:
+        raise _state_error(exc) from exc
+    except DBError as exc:
+        raise _service_unavailable() from exc
+    return _survey_response(updated)
+
+
+@router.post("/surveys/{survey_id}/cancel", response_model=SurveyResponse)
+async def cancel_survey_request(
+    survey_id: UUID,
+    body: SurveyActionRequest,
+    current_user: UserRecord = Depends(get_current_user),
+) -> SurveyResponse:
+    del body
+    _require_enabled()
+    await _owned_survey(survey_id=survey_id, user_id=current_user.id)
+    try:
+        updated = await cancel_survey(survey_id=survey_id, user_id=current_user.id)
+    except SurveyStateError as exc:
+        raise _state_error(exc) from exc
+    except DBError as exc:
+        raise _service_unavailable() from exc
+    return _survey_response(updated)
+
+
+__all__ = ["router"]

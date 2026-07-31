@@ -1,5 +1,10 @@
 # AGENTS.md — Scholight 项目规范
 
+## Git 工作流
+
+- 当前由单人维护，所有开发直接在 `main` 上进行；不要自行创建功能分支。
+- 每个完整逻辑变更仍须保持原子提交，并在提交前运行对应测试。
+
 ## Design Context
 
 Frontend product decisions are authoritative in [`PRODUCT.md`](PRODUCT.md); visual and interaction decisions are authoritative in [`DESIGN.md`](DESIGN.md). Read both before adding or reshaping frontend UI. Runtime design primitives live in `frontend/src/styles/tokens.css`; do not introduce page-local colors, shadows, typography roles, or motion timing when a semantic token exists.

@@ -6,7 +6,12 @@ import pytest
 from pydantic import ValidationError
 
 from scholight.api.search_access import anonymous_ip_digest
-from scholight.config import Settings, settings, validate_api_runtime_settings
+from scholight.config import (
+    Settings,
+    settings,
+    validate_api_runtime_settings,
+    validate_survey_draft_worker_settings,
+)
 
 
 def test_anonymous_ip_digest_is_deterministic_and_contains_no_plain_ip() -> None:
@@ -190,3 +195,15 @@ def test_runtime_validation_requires_survey_boundaries_only_when_enabled(
 
     with pytest.raises(ValueError, match="SCHOLIGHT_SURVEY_MCP_JWT_SECRET"):
         validate_api_runtime_settings()
+
+
+def test_draft_worker_does_not_require_artifact_or_image_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "survey_enabled", True)
+    monkeypatch.setattr(settings, "survey_mcp_jwt_secret", "s" * 32)
+    monkeypatch.setattr(settings, "deepseek_api_key", "deepseek-secret")
+    monkeypatch.setattr(settings, "survey_s3_bucket", "")
+    monkeypatch.setattr(settings, "image_gen_api_key", "")
+
+    validate_survey_draft_worker_settings()

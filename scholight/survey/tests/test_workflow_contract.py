@@ -31,6 +31,26 @@ def test_discovery_and_expansion_use_authenticated_scholight_mcp() -> None:
         assert 'mcps = ["scholight"]' in source
 
 
+def test_draft_workflow_is_single_node_mcp_only() -> None:
+    source = (_WORKFLOW / "rcm" / "draft.rcm").read_text(encoding="utf-8")
+
+    assert 'url = "http://api:8000/mcp"' in source
+    assert 'env "SCHOLIGHT_SURVEY_MCP_AUTHORIZATION"' in source
+    assert 'mcps = ["scholight"]' in source
+    assert "graph {" not in source
+    assert "tools =" not in source
+    assert '"fs"' not in source
+
+
+def test_draft_prompt_returns_markdown_without_artifact_files() -> None:
+    source = (_WORKFLOW / "prompts" / "draft.txt").read_text(encoding="utf-8")
+
+    assert "scholight__search_papers" in source
+    assert "Markdown" in source
+    assert "final assistant message" in source
+    assert "write" not in source.lower()
+
+
 def test_search_strengths_match_survey_retrieval_policy() -> None:
     prompts = _WORKFLOW / "prompts"
     for name in (

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import shutil
 import stat
 import time
@@ -13,7 +12,6 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID, uuid4
 
-import jwt
 import structlog
 
 from scholight.config import settings
@@ -28,6 +26,7 @@ from scholight.db.queries_survey import (
     settle_survey_execution,
 )
 from scholight.survey.artifacts import SurveyArtifactStore
+from scholight.survey.runtime import survey_environment
 
 logger = structlog.get_logger(__name__)
 
@@ -59,45 +58,12 @@ def _job_root(job_id: UUID) -> Path:
     return Path(settings.data_root) / "surveys" / str(job_id)
 
 
-def _delegated_authorization(*, user_id: int) -> str:
-    now = datetime.now(UTC)
-    token = jwt.encode(
-        {
-            "iss": "scholight-survey",
-            "aud": "scholight-mcp",
-            "sub": str(user_id),
-            "scope": "search",
-            "iat": int(now.timestamp()),
-            "exp": int(
-                (
-                    now
-                    + timedelta(seconds=settings.survey_job_timeout_seconds)
-                    + timedelta(minutes=15)
-                ).timestamp()
-            ),
-            "jti": str(uuid4()),
-        },
-        settings.survey_mcp_jwt_secret,
-        algorithm="HS256",
-    )
-    return f"Bearer {token}"
-
-
 def _child_environment(*, user_id: int) -> dict[str, str]:
-    environment = {
-        "HOME": os.environ.get("HOME", "/home/scholight"),
-        "LANG": os.environ.get("LANG", "C.UTF-8"),
-        "NO_PROXY": "api,localhost,127.0.0.1",
-        "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
-    }
-    for name in ("SSL_CERT_DIR", "SSL_CERT_FILE", "TZ"):
-        if value := os.environ.get(name):
-            environment[name] = value
-    environment["DEEPSEEK_API_KEY"] = settings.deepseek_api_key
-    if settings.image_gen_api_key:
-        environment["IMAGE_GEN_API_KEY"] = settings.image_gen_api_key
-    environment["SCHOLIGHT_SURVEY_MCP_AUTHORIZATION"] = _delegated_authorization(user_id=user_id)
-    return environment
+    return survey_environment(
+        user_id=user_id,
+        lifetime_seconds=settings.survey_job_timeout_seconds,
+        include_image=True,
+    )
 
 
 def _valid_final_report(run_root: Path) -> bool:
@@ -194,7 +160,7 @@ async def execute_survey(job: SurveyJob, run_root: Path) -> SurveyExecutionResul
         str(_workflow_file()),
         "--stream",
         "--purpose",
-        job.topic,
+        job.approved_draft,
         "--run-dir",
         str(run_root),
         env=_child_environment(user_id=job.user_id),
@@ -274,8 +240,10 @@ def _run_metadata(job: SurveyJob, result: SurveyExecutionResult | None) -> dict[
     return {
         "schema_version": 1,
         "job_id": str(job.id),
+        "survey_id": str(job.survey_id),
         "user_id": job.user_id,
-        "topic": job.topic,
+        "approved_draft_id": str(job.approved_draft_id),
+        "approved_draft_revision": job.approved_draft_revision,
         "outcome": job.terminal_outcome or (result.outcome if result else "failed"),
         "error_code": job.error_code or (result.error_code if result else None),
         "rcm_version": RCM_VERSION,

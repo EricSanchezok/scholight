@@ -982,6 +982,22 @@
         "title": "DailyQuotaUsage",
         "type": "object"
       },
+      "DraftCreateRequest": {
+        "properties": {
+          "client_request_id": {
+            "format": "uuid",
+            "title": "Client Request Id",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": ["message", "client_request_id"],
+        "title": "DraftCreateRequest",
+        "type": "object"
+      },
       "ForgotPasswordRequest": {
         "properties": {
           "email": {
@@ -1110,6 +1126,27 @@
         },
         "required": ["email", "password"],
         "title": "LoginRequest",
+        "type": "object"
+      },
+      "ManualDraftCreateRequest": {
+        "properties": {
+          "client_request_id": {
+            "format": "uuid",
+            "title": "Client Request Id",
+            "type": "string"
+          },
+          "markdown": {
+            "title": "Markdown",
+            "type": "string"
+          },
+          "message": {
+            "default": "Manual Draft revision",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": ["markdown", "client_request_id"],
+        "title": "ManualDraftCreateRequest",
         "type": "object"
       },
       "MessageResponse": {
@@ -1600,65 +1637,156 @@
         "title": "SessionResponse",
         "type": "object"
       },
-      "SurveyArtifactResponse": {
+      "SurveyActionRequest": {
         "properties": {
-          "mime": {
-            "title": "Mime",
-            "type": "string"
-          },
-          "path": {
-            "title": "Path",
-            "type": "string"
-          },
-          "sha256": {
-            "title": "Sha256",
-            "type": "string"
-          },
-          "size": {
-            "minimum": 0.0,
-            "title": "Size",
-            "type": "integer"
-          },
-          "url": {
-            "title": "Url",
+          "client_request_id": {
+            "format": "uuid",
+            "title": "Client Request Id",
             "type": "string"
           }
         },
-        "required": ["path", "size", "sha256", "mime", "url"],
-        "title": "SurveyArtifactResponse",
+        "required": ["client_request_id"],
+        "title": "SurveyActionRequest",
         "type": "object"
       },
-      "SurveyArtifactsResponse": {
+      "SurveyCreateRequest": {
         "properties": {
-          "expires_in_seconds": {
-            "default": 300,
-            "title": "Expires In Seconds",
-            "type": "integer"
+          "client_request_id": {
+            "format": "uuid",
+            "title": "Client Request Id",
+            "type": "string"
           },
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/SurveyArtifactResponse"
-            },
-            "title": "Items",
-            "type": "array"
-          }
-        },
-        "required": ["items"],
-        "title": "SurveyArtifactsResponse",
-        "type": "object"
-      },
-      "SurveyJobCreateRequest": {
-        "properties": {
-          "topic": {
-            "title": "Topic",
+          "initial_request": {
+            "title": "Initial Request",
             "type": "string"
           }
         },
-        "required": ["topic"],
-        "title": "SurveyJobCreateRequest",
+        "required": ["initial_request", "client_request_id"],
+        "title": "SurveyCreateRequest",
         "type": "object"
       },
-      "SurveyJobResponse": {
+      "SurveyDraftResponse": {
+        "properties": {
+          "based_on_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Based On Revision"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "markdown": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Markdown"
+          },
+          "revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "user_message": {
+            "title": "User Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "revision",
+          "source",
+          "user_message",
+          "markdown",
+          "status",
+          "based_on_revision",
+          "error_code",
+          "error_message",
+          "created_at",
+          "started_at",
+          "finished_at"
+        ],
+        "title": "SurveyDraftResponse",
+        "type": "object"
+      },
+      "SurveyResponse": {
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -1704,6 +1832,14 @@
             "title": "Id",
             "type": "string"
           },
+          "initial_request": {
+            "title": "Initial Request",
+            "type": "string"
+          },
+          "quota_state": {
+            "title": "Quota State",
+            "type": "string"
+          },
           "started_at": {
             "anyOf": [
               {
@@ -1720,34 +1856,25 @@
             "title": "Status",
             "type": "string"
           },
-          "terminal_outcome": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Terminal Outcome"
-          },
-          "topic": {
-            "title": "Topic",
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
             "type": "string"
           }
         },
         "required": [
           "id",
-          "topic",
+          "initial_request",
           "status",
-          "terminal_outcome",
+          "quota_state",
           "error_code",
           "error_message",
           "created_at",
+          "updated_at",
           "started_at",
           "finished_at"
         ],
-        "title": "SurveyJobResponse",
+        "title": "SurveyResponse",
         "type": "object"
       },
       "TodayUsage": {
@@ -3194,9 +3321,9 @@
         "tags": ["search"]
       }
     },
-    "/survey/jobs": {
+    "/surveys": {
       "get": {
-        "operationId": "survey_jobs_survey_jobs_get",
+        "operationId": "surveys_surveys_get",
         "parameters": [
           {
             "in": "query",
@@ -3217,9 +3344,9 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/SurveyJobResponse"
+                    "$ref": "#/components/schemas/SurveyResponse"
                   },
-                  "title": "Response Survey Jobs Survey Jobs Get",
+                  "title": "Response Surveys Surveys Get",
                   "type": "array"
                 }
               }
@@ -3242,16 +3369,16 @@
             "BearerAuth": []
           }
         ],
-        "summary": "Survey Jobs",
+        "summary": "Surveys",
         "tags": ["survey"]
       },
       "post": {
-        "operationId": "submit_survey_job_survey_jobs_post",
+        "operationId": "submit_survey_surveys_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SurveyJobCreateRequest"
+                "$ref": "#/components/schemas/SurveyCreateRequest"
               }
             }
           },
@@ -3262,7 +3389,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SurveyJobResponse"
+                  "$ref": "#/components/schemas/SurveyResponse"
                 }
               }
             },
@@ -3284,27 +3411,34 @@
             "BearerAuth": []
           }
         ],
-        "summary": "Submit Survey Job",
+        "summary": "Submit Survey",
         "tags": ["survey"]
       }
     },
-    "/survey/jobs/{job_id}": {
-      "delete": {
-        "operationId": "delete_survey_job_survey_jobs__job_id__delete",
+    "/surveys/{survey_id}": {
+      "get": {
+        "operationId": "survey_surveys__survey_id__get",
         "parameters": [
           {
             "in": "path",
-            "name": "job_id",
+            "name": "survey_id",
             "required": true,
             "schema": {
               "format": "uuid",
-              "title": "Job Id",
+              "title": "Survey Id",
               "type": "string"
             }
           }
         ],
         "responses": {
-          "204": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SurveyResponse"
+                }
+              }
+            },
             "description": "Successful Response"
           },
           "422": {
@@ -3323,29 +3457,145 @@
             "BearerAuth": []
           }
         ],
-        "summary": "Delete Survey Job",
+        "summary": "Survey",
+        "tags": ["survey"]
+      }
+    },
+    "/surveys/{survey_id}/cancel": {
+      "post": {
+        "operationId": "cancel_survey_request_surveys__survey_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "survey_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Survey Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SurveyActionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SurveyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Cancel Survey Request",
+        "tags": ["survey"]
+      }
+    },
+    "/surveys/{survey_id}/drafts": {
+      "get": {
+        "operationId": "survey_drafts_surveys__survey_id__drafts_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "survey_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Survey Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SurveyDraftResponse"
+                  },
+                  "title": "Response Survey Drafts Surveys  Survey Id  Drafts Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Survey Drafts",
         "tags": ["survey"]
       },
-      "get": {
-        "operationId": "survey_job_survey_jobs__job_id__get",
+      "post": {
+        "operationId": "revise_survey_draft_surveys__survey_id__drafts_post",
         "parameters": [
           {
             "in": "path",
-            "name": "job_id",
+            "name": "survey_id",
             "required": true,
             "schema": {
               "format": "uuid",
-              "title": "Job Id",
+              "title": "Survey Id",
               "type": "string"
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DraftCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
-          "200": {
+          "201": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SurveyJobResponse"
+                  "$ref": "#/components/schemas/SurveyDraftResponse"
                 }
               }
             },
@@ -3367,31 +3617,41 @@
             "BearerAuth": []
           }
         ],
-        "summary": "Survey Job",
+        "summary": "Revise Survey Draft",
         "tags": ["survey"]
       }
     },
-    "/survey/jobs/{job_id}/artifacts": {
-      "get": {
-        "operationId": "survey_artifacts_survey_jobs__job_id__artifacts_get",
+    "/surveys/{survey_id}/drafts/manual": {
+      "post": {
+        "operationId": "add_manual_survey_draft_surveys__survey_id__drafts_manual_post",
         "parameters": [
           {
             "in": "path",
-            "name": "job_id",
+            "name": "survey_id",
             "required": true,
             "schema": {
               "format": "uuid",
-              "title": "Job Id",
+              "title": "Survey Id",
               "type": "string"
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManualDraftCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
-          "200": {
+          "201": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SurveyArtifactsResponse"
+                  "$ref": "#/components/schemas/SurveyDraftResponse"
                 }
               }
             },
@@ -3413,7 +3673,63 @@
             "BearerAuth": []
           }
         ],
-        "summary": "Survey Artifacts",
+        "summary": "Add Manual Survey Draft",
+        "tags": ["survey"]
+      }
+    },
+    "/surveys/{survey_id}/start": {
+      "post": {
+        "operationId": "start_survey_execution_surveys__survey_id__start_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "survey_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Survey Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SurveyActionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SurveyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Start Survey Execution",
         "tags": ["survey"]
       }
     },

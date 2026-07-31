@@ -304,3 +304,43 @@ def test_survey_migration_is_product_scoped_and_expand_only() -> None:
     assert "drop " not in sql
     assert "truncate " not in sql
     assert "delete from" not in sql
+
+
+def test_survey_aggregate_migration_fails_closed_before_replacing_legacy_table() -> None:
+    migration = Path(__file__).parents[3] / "migrations/006_survey_aggregate.sql"
+    raw_sql = migration.read_text(encoding="utf-8")
+    sql = " ".join(raw_sql.split()).lower()
+
+    with pytest.raises(ValueError, match="destructive migration rejected"):
+        validate_expand_only_sql(raw_sql)
+    assert sql.index("if exists (select 1 from scholight.survey_jobs") < sql.index(
+        "drop table scholight.survey_jobs"
+    )
+    assert "raise exception" in sql
+    assert "create table scholight.surveys" in sql
+    assert "create table scholight.survey_drafts" in sql
+    assert sql.count("create table scholight.survey_jobs") == 1
+    assert "references auth.users(id) on delete cascade" in sql
+    assert (
+        "status in ('drafting', 'queued', 'running', 'archiving', 'succeeded', 'failed', 'cancelled')"
+        in sql
+    )
+
+
+@pytest.mark.asyncio
+async def test_reviewed_survey_aggregate_contract_migration_is_applied(tmp_path: Path) -> None:
+    source = Path(__file__).parents[3] / "migrations/006_survey_aggregate.sql"
+    migration = tmp_path / source.name
+    migration.write_bytes(source.read_bytes())
+    conn = MagicMock()
+    conn.execute = AsyncMock()
+    conn.fetchrow = AsyncMock(return_value=None)
+    conn.transaction.return_value = _Transaction()
+
+    with patch("scholight.db.migrate._MIGRATIONS_DIR", tmp_path):
+        await apply_migrations(conn)
+
+    assert any(
+        call.args == (migration.read_text(encoding="utf-8"),)
+        for call in conn.execute.await_args_list
+    )

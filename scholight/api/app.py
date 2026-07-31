@@ -225,7 +225,7 @@ def create_app() -> FastAPI:
     app.include_router(access_key_router, prefix="/user/access-keys", tags=["access-keys"])
     app.include_router(usage_router, prefix="/user/usage", tags=["usage"])
     app.include_router(session_router, prefix="/auth/sessions", tags=["sessions"])
-    app.include_router(survey_router, prefix="/survey", tags=["survey"])
+    app.include_router(survey_router, tags=["survey"])
     app.include_router(admin_router, prefix="/admin", tags=["admin"])
     app.include_router(
         admin_operations_router,

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 from uuid import UUID, uuid4
@@ -37,11 +37,14 @@ def _job(
     now = datetime.now(UTC)
     return SurveyJob(
         id=job_id,
+        survey_id=uuid4(),
         user_id=42,
-        topic="retrieval augmented generation",
+        approved_draft_id=uuid4(),
+        approved_draft="# Retrieval augmented generation\n\nStudy the field.",
+        approved_draft_revision=2,
+        client_request_id=uuid4(),
         status=status,  # type: ignore[arg-type]
         terminal_outcome=outcome,  # type: ignore[arg-type]
-        quota_date=date(2026, 7, 31),
         storage_prefix=None,
         manifest_key=None,
         error_code=None,

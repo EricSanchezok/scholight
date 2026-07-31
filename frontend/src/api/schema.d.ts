@@ -429,53 +429,104 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/survey/jobs": {
+  "/surveys": {
     parameters: {
       query?: never;
       header?: never;
       path?: never;
       cookie?: never;
     };
-    /** Survey Jobs */
-    get: operations["survey_jobs_survey_jobs_get"];
+    /** Surveys */
+    get: operations["surveys_surveys_get"];
     put?: never;
-    /** Submit Survey Job */
-    post: operations["submit_survey_job_survey_jobs_post"];
+    /** Submit Survey */
+    post: operations["submit_survey_surveys_post"];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/survey/jobs/{job_id}": {
+  "/surveys/{survey_id}": {
     parameters: {
       query?: never;
       header?: never;
       path?: never;
       cookie?: never;
     };
-    /** Survey Job */
-    get: operations["survey_job_survey_jobs__job_id__get"];
+    /** Survey */
+    get: operations["survey_surveys__survey_id__get"];
     put?: never;
     post?: never;
-    /** Delete Survey Job */
-    delete: operations["delete_survey_job_survey_jobs__job_id__delete"];
+    delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/survey/jobs/{job_id}/artifacts": {
+  "/surveys/{survey_id}/cancel": {
     parameters: {
       query?: never;
       header?: never;
       path?: never;
       cookie?: never;
     };
-    /** Survey Artifacts */
-    get: operations["survey_artifacts_survey_jobs__job_id__artifacts_get"];
+    get?: never;
     put?: never;
-    post?: never;
+    /** Cancel Survey Request */
+    post: operations["cancel_survey_request_surveys__survey_id__cancel_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/surveys/{survey_id}/drafts": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Survey Drafts */
+    get: operations["survey_drafts_surveys__survey_id__drafts_get"];
+    put?: never;
+    /** Revise Survey Draft */
+    post: operations["revise_survey_draft_surveys__survey_id__drafts_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/surveys/{survey_id}/drafts/manual": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Add Manual Survey Draft */
+    post: operations["add_manual_survey_draft_surveys__survey_id__drafts_manual_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/surveys/{survey_id}/start": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Start Survey Execution */
+    post: operations["start_survey_execution_surveys__survey_id__start_post"];
     delete?: never;
     options?: never;
     head?: never;
@@ -1006,6 +1057,16 @@ export interface components {
       /** Used */
       used: number;
     };
+    /** DraftCreateRequest */
+    DraftCreateRequest: {
+      /**
+       * Client Request Id
+       * Format: uuid
+       */
+      client_request_id: string;
+      /** Message */
+      message: string;
+    };
     /** ForgotPasswordRequest */
     ForgotPasswordRequest: {
       /**
@@ -1065,6 +1126,21 @@ export interface components {
       email: string;
       /** Password */
       password: string;
+    };
+    /** ManualDraftCreateRequest */
+    ManualDraftCreateRequest: {
+      /**
+       * Client Request Id
+       * Format: uuid
+       */
+      client_request_id: string;
+      /** Markdown */
+      markdown: string;
+      /**
+       * Message
+       * @default Manual Draft revision
+       */
+      message: string;
     };
     /** MessageResponse */
     MessageResponse: {
@@ -1296,36 +1372,28 @@ export interface components {
       /** User Agent */
       user_agent?: string | null;
     };
-    /** SurveyArtifactResponse */
-    SurveyArtifactResponse: {
-      /** Mime */
-      mime: string;
-      /** Path */
-      path: string;
-      /** Sha256 */
-      sha256: string;
-      /** Size */
-      size: number;
-      /** Url */
-      url: string;
-    };
-    /** SurveyArtifactsResponse */
-    SurveyArtifactsResponse: {
+    /** SurveyActionRequest */
+    SurveyActionRequest: {
       /**
-       * Expires In Seconds
-       * @default 300
+       * Client Request Id
+       * Format: uuid
        */
-      expires_in_seconds: number;
-      /** Items */
-      items: components["schemas"]["SurveyArtifactResponse"][];
+      client_request_id: string;
     };
-    /** SurveyJobCreateRequest */
-    SurveyJobCreateRequest: {
-      /** Topic */
-      topic: string;
+    /** SurveyCreateRequest */
+    SurveyCreateRequest: {
+      /**
+       * Client Request Id
+       * Format: uuid
+       */
+      client_request_id: string;
+      /** Initial Request */
+      initial_request: string;
     };
-    /** SurveyJobResponse */
-    SurveyJobResponse: {
+    /** SurveyDraftResponse */
+    SurveyDraftResponse: {
+      /** Based On Revision */
+      based_on_revision: number | null;
       /**
        * Created At
        * Format: date-time
@@ -1342,14 +1410,50 @@ export interface components {
        * Format: uuid
        */
       id: string;
+      /** Markdown */
+      markdown: string | null;
+      /** Revision */
+      revision: number | null;
+      /** Source */
+      source: string;
       /** Started At */
       started_at: string | null;
       /** Status */
       status: string;
-      /** Terminal Outcome */
-      terminal_outcome: string | null;
-      /** Topic */
-      topic: string;
+      /** User Message */
+      user_message: string;
+    };
+    /** SurveyResponse */
+    SurveyResponse: {
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Error Code */
+      error_code: string | null;
+      /** Error Message */
+      error_message: string | null;
+      /** Finished At */
+      finished_at: string | null;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Initial Request */
+      initial_request: string;
+      /** Quota State */
+      quota_state: string;
+      /** Started At */
+      started_at: string | null;
+      /** Status */
+      status: string;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
     };
     /** TodayUsage */
     TodayUsage: {
@@ -2252,7 +2356,7 @@ export interface operations {
       };
     };
   };
-  survey_jobs_survey_jobs_get: {
+  surveys_surveys_get: {
     parameters: {
       query?: {
         limit?: number;
@@ -2269,7 +2373,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["SurveyJobResponse"][];
+          "application/json": components["schemas"]["SurveyResponse"][];
         };
       };
       /** @description Validation Error */
@@ -2283,7 +2387,7 @@ export interface operations {
       };
     };
   };
-  submit_survey_job_survey_jobs_post: {
+  submit_survey_surveys_post: {
     parameters: {
       query?: never;
       header?: never;
@@ -2292,7 +2396,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        "application/json": components["schemas"]["SurveyJobCreateRequest"];
+        "application/json": components["schemas"]["SurveyCreateRequest"];
       };
     };
     responses: {
@@ -2302,7 +2406,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["SurveyJobResponse"];
+          "application/json": components["schemas"]["SurveyResponse"];
         };
       };
       /** @description Validation Error */
@@ -2316,12 +2420,12 @@ export interface operations {
       };
     };
   };
-  survey_job_survey_jobs__job_id__get: {
+  survey_surveys__survey_id__get: {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        job_id: string;
+        survey_id: string;
       };
       cookie?: never;
     };
@@ -2333,7 +2437,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["SurveyJobResponse"];
+          "application/json": components["schemas"]["SurveyResponse"];
         };
       };
       /** @description Validation Error */
@@ -2347,23 +2451,29 @@ export interface operations {
       };
     };
   };
-  delete_survey_job_survey_jobs__job_id__delete: {
+  cancel_survey_request_surveys__survey_id__cancel_post: {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        job_id: string;
+        survey_id: string;
       };
       cookie?: never;
     };
-    requestBody?: never;
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["SurveyActionRequest"];
+      };
+    };
     responses: {
       /** @description Successful Response */
-      204: {
+      200: {
         headers: {
           [name: string]: unknown;
         };
-        content?: never;
+        content: {
+          "application/json": components["schemas"]["SurveyResponse"];
+        };
       };
       /** @description Validation Error */
       422: {
@@ -2376,12 +2486,12 @@ export interface operations {
       };
     };
   };
-  survey_artifacts_survey_jobs__job_id__artifacts_get: {
+  survey_drafts_surveys__survey_id__drafts_get: {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        job_id: string;
+        survey_id: string;
       };
       cookie?: never;
     };
@@ -2393,7 +2503,112 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["SurveyArtifactsResponse"];
+          "application/json": components["schemas"]["SurveyDraftResponse"][];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  revise_survey_draft_surveys__survey_id__drafts_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        survey_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["DraftCreateRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SurveyDraftResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  add_manual_survey_draft_surveys__survey_id__drafts_manual_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        survey_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ManualDraftCreateRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SurveyDraftResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  start_survey_execution_surveys__survey_id__start_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        survey_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["SurveyActionRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SurveyResponse"];
         };
       };
       /** @description Validation Error */
