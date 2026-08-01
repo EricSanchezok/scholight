@@ -127,6 +127,25 @@ class Settings(BaseSettings):
     access_key_hmac_secret: str = ""
     mcp_delegation_jwt_secret: str = ""
 
+    # ── Web Extract ──
+    extract_enabled: bool = False
+    extract_service_url: str = "http://extract:8001"
+    extract_internal_token: str = ""
+    extract_request_timeout_seconds: float = Field(default=55.0, ge=1.0, le=180.0)
+    extract_fetch_timeout_seconds: float = Field(default=30.0, ge=1.0, le=120.0)
+    extract_render_timeout_seconds: float = Field(default=45.0, ge=1.0, le=180.0)
+    extract_max_download_bytes: int = Field(default=50_000_000, ge=1024, le=250_000_000)
+    extract_cache_ttl_seconds: int = Field(default=600, ge=1, le=86400)
+    extract_cache_max_bytes: int = Field(
+        default=256 * 1024 * 1024,
+        ge=1024 * 1024,
+        le=2 * 1024 * 1024 * 1024,
+    )
+    extract_static_concurrency: int = Field(default=16, ge=1, le=256)
+    extract_browser_concurrency: int = Field(default=2, ge=1, le=32)
+    extract_server_host: str = "0.0.0.0"
+    extract_server_port: int = Field(default=8001, ge=1, le=65535)
+
     # ── Survey ──
     # Provider-standard names intentionally remain unprefixed end to end.
     deepseek_api_key: str = Field(default="", validation_alias="DEEPSEEK_API_KEY")
@@ -181,6 +200,8 @@ def validate_api_runtime_settings() -> None:
         raise ValueError("SCHOLIGHT_ACCESS_KEY_HMAC_SECRET must contain at least 32 UTF-8 bytes")
     if len(settings.mcp_delegation_jwt_secret.encode("utf-8")) < 32:
         raise ValueError("SCHOLIGHT_MCP_DELEGATION_JWT_SECRET must contain at least 32 UTF-8 bytes")
+    if settings.extract_enabled:
+        _validate_extract_shared_settings()
     if settings.survey_enabled:
         if len(settings.survey_mcp_jwt_secret.encode("utf-8")) < 32:
             raise ValueError("SCHOLIGHT_SURVEY_MCP_JWT_SECRET must contain at least 32 UTF-8 bytes")
@@ -198,6 +219,18 @@ def validate_api_runtime_settings() -> None:
         raise ValueError("SCHOLIGHT_ZILLIZ_TOKEN is required by the search API")
     if not settings.embedding_base_url.strip():
         raise ValueError("SCHOLIGHT_EMBEDDING_BASE_URL is required by the search API")
+
+
+def _validate_extract_shared_settings() -> None:
+    if len(settings.extract_internal_token.encode("utf-8")) < 32:
+        raise ValueError("SCHOLIGHT_EXTRACT_INTERNAL_TOKEN must contain at least 32 UTF-8 bytes")
+    if not settings.extract_service_url.startswith(("http://", "https://")):
+        raise ValueError("SCHOLIGHT_EXTRACT_SERVICE_URL must be an HTTP or HTTPS URL")
+
+
+def validate_extract_runtime_settings() -> None:
+    """Validate only configuration required by the internal Extract sidecar."""
+    _validate_extract_shared_settings()
 
 
 def validate_survey_worker_settings() -> None:
