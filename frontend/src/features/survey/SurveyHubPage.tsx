@@ -1,5 +1,5 @@
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { surveyApi } from "../../api/domain";
@@ -27,6 +27,7 @@ export function SurveyHubPage() {
   const [request, setRequest] = useState("");
   const [requestError, setRequestError] = useState("");
   const requestId = useRef<string | undefined>(undefined);
+  const requestField = useRef<HTMLTextAreaElement>(null);
   const [signInOpen, setSignInOpen] = useState(false);
   const [limitOpen, setLimitOpen] = useState(false);
   const [cancelTarget, setCancelTarget] = useState<SurveySummary | null>(null);
@@ -35,6 +36,13 @@ export function SurveyHubPage() {
   useEffect(() => {
     document.title = messages.titles.survey;
   }, [messages]);
+
+  useLayoutEffect(() => {
+    const field = requestField.current;
+    if (!field) return;
+    field.style.height = "0px";
+    field.style.height = `${field.scrollHeight}px`;
+  }, [request]);
 
   const list = useInfiniteQuery({
     queryKey: queryKeys.surveys(view),
@@ -122,9 +130,10 @@ export function SurveyHubPage() {
         <label className={styles["sr-only"]} htmlFor="survey-request">
           Describe the survey you want to start
         </label>
-        <input
+        <textarea
+          ref={requestField}
           id="survey-request"
-          type="text"
+          rows={1}
           value={request}
           readOnly={status !== "authenticated"}
           placeholder="Describe the survey you want to start…"

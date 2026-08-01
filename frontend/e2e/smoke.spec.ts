@@ -349,6 +349,13 @@ test("signed-in survey controls follow the shared page geometry", async ({ page 
 
   await input.focus();
   expect(await input.evaluate((element) => getComputedStyle(element).outlineStyle)).toBe("none");
+
+  await input.fill(
+    "Compare how chain-of-thought supervision, process reward models, and outcome supervision affect reasoning robustness across mathematical, scientific, and code-generation benchmarks, including their assumptions, known failure modes, and recent empirical evidence.",
+  );
+  await expect
+    .poll(async () => (await form.boundingBox())?.height ?? 0)
+    .toBeGreaterThan(formBox!.height);
 });
 
 test("a delayed search immediately shows a stable editorial skeleton", async ({ page }) => {
