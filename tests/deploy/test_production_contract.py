@@ -438,6 +438,7 @@ def test_backend_image_carries_the_complete_host_deployment_package() -> None:
 
     for name in (
         "bootstrap.sh",
+        "compose-command.sh",
         "release.sh",
         "smoke.sh",
         "wait-ssm.sh",
@@ -479,7 +480,68 @@ def test_bootstrap_is_part_of_the_release_package_digest() -> None:
     release_script = (PRODUCTION / "release.sh").read_text(encoding="utf-8")
 
     assert '"${SCRIPT_DIR}/bootstrap.sh"' in release_script
+    assert '"${SCRIPT_DIR}/compose-command.sh"' in release_script
     assert '"${SCRIPT_DIR}/cloudwatch-agent.json"' in release_script
+
+
+def test_release_and_smoke_share_one_survey_profile_decision() -> None:
+    release = (PRODUCTION / "release.sh").read_text(encoding="utf-8")
+    smoke = (PRODUCTION / "smoke.sh").read_text(encoding="utf-8")
+    helper = (PRODUCTION / "compose-command.sh").read_text(encoding="utf-8")
+
+    assert (
+        'COMPOSE_COMMAND=${SCHOLIGHT_COMPOSE_COMMAND:-"${SCRIPT_DIR}/compose-command.sh"}'
+        in release
+    )
+    assert (
+        'COMPOSE_COMMAND=${SCHOLIGHT_COMPOSE_COMMAND:-"${SCRIPT_DIR}/compose-command.sh"}' in smoke
+    )
+    assert "--profile survey" in helper
+    assert "SCHOLIGHT_SURVEY_ENABLED must be exactly true or false" in helper
+    assert "--profile survey" not in release
+    assert "--profile survey" not in smoke
+
+
+def test_compose_helper_applies_survey_profile_only_when_enabled(tmp_path: Path) -> None:
+    helper = PRODUCTION / "compose-command.sh"
+    runtime = tmp_path / "runtime.env"
+    release = tmp_path / "release.env"
+    compose = tmp_path / "compose.yaml"
+    fake_bin = tmp_path / "bin"
+    log = tmp_path / "docker.log"
+    fake_bin.mkdir()
+    release.write_text("SCHOLIGHT_BACKEND_IMAGE=fixture\n", encoding="utf-8")
+    compose.write_text("services: {}\n", encoding="utf-8")
+    docker = fake_bin / "docker"
+    docker.write_text(
+        '#!/usr/bin/env bash\nprintf \'%s\\n\' "$*" >"${FAKE_DOCKER_LOG}"\n',
+        encoding="utf-8",
+    )
+    docker.chmod(0o755)
+    environment = {
+        **os.environ,
+        "PATH": f"{fake_bin}:{os.environ['PATH']}",
+        "FAKE_DOCKER_LOG": str(log),
+        "SCHOLIGHT_RUNTIME_ENV": str(runtime),
+        "SCHOLIGHT_RELEASE_ENV": str(release),
+        "SCHOLIGHT_COMPOSE_FILE": str(compose),
+    }
+
+    runtime.write_text("SCHOLIGHT_SURVEY_ENABLED=false\n", encoding="utf-8")
+    disabled = subprocess.run(
+        ["bash", str(helper), "ps"], env=environment, capture_output=True, text=True, check=False
+    )
+    disabled_command = log.read_text(encoding="utf-8")
+    runtime.write_text("SCHOLIGHT_SURVEY_ENABLED=true\n", encoding="utf-8")
+    enabled = subprocess.run(
+        ["bash", str(helper), "ps"], env=environment, capture_output=True, text=True, check=False
+    )
+    enabled_command = log.read_text(encoding="utf-8")
+
+    assert disabled.returncode == 0
+    assert "--profile survey" not in disabled_command
+    assert enabled.returncode == 0
+    assert "--profile survey ps" in enabled_command
 
 
 def test_observability_template_has_bounded_retention_and_required_alarms() -> None:

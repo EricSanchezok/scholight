@@ -10,12 +10,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).parents[2]
 BOOTSTRAP = ROOT / "deploy" / "production" / "bootstrap.sh"
+COMPOSE_COMMAND = ROOT / "deploy" / "production" / "compose-command.sh"
 PACKAGE_NAMES = (
     "compose.yaml",
     "Caddyfile",
     "cloudwatch-agent.json",
     "bootstrap-db.sql",
     "bootstrap.sh",
+    "compose-command.sh",
     "release.sh",
     "smoke.sh",
     "wait-ssm.sh",
@@ -48,6 +50,7 @@ def runtime_contents() -> str:
             "SCHOLIGHT_API_IP=172.31.0.20",
             "SCHOLIGHT_METADATA_SYNC_IP=172.31.0.30",
             "SCHOLIGHT_PAPER_INGEST_IP=172.31.0.40",
+            "SCHOLIGHT_SURVEY_ENABLED=false",
             "SCHOLIGHT_PG_HOST=postgres.example.invalid",
             "SCHOLIGHT_PG_DATABASE=sanchezcloud",
             "SCHOLIGHT_APP_PG_USER=scholight_app",
@@ -92,6 +95,8 @@ def bootstrap_environment(tmp_path: Path, runtime: str | None) -> tuple[dict[str
     for name in PACKAGE_NAMES:
         if name == "bootstrap.sh":
             (source / name).write_bytes(BOOTSTRAP.read_bytes())
+        elif name == "compose-command.sh":
+            (source / name).write_bytes(COMPOSE_COMMAND.read_bytes())
         elif name == "release.sh":
             make_executable(
                 source / name,
@@ -99,7 +104,7 @@ def bootstrap_environment(tmp_path: Path, runtime: str | None) -> tuple[dict[str
             )
         else:
             (source / name).write_text(f"fixture {name}\n", encoding="utf-8")
-    for name in ("smoke.sh", "wait-ssm.sh"):
+    for name in ("compose-command.sh", "smoke.sh", "wait-ssm.sh"):
         (source / name).chmod(0o755)
 
     make_executable(

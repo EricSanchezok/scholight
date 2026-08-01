@@ -147,10 +147,47 @@ Remove any remaining permission to send `AWS-RunShellScript`. No new IAM role,
 S3 bucket, Secrets Manager secret, or custom KMS key is required.
 
 Each release carries a SHA-256 digest of `compose.yaml`, `Caddyfile`,
-`cloudwatch-agent.json`, `bootstrap-db.sql`, `bootstrap.sh`, `release.sh`, `smoke.sh`, and
-`wait-ssm.sh`. The backend image contains those exact files under
+`cloudwatch-agent.json`, `bootstrap-db.sql`, `bootstrap.sh`, `compose-command.sh`,
+`release.sh`, `smoke.sh`, and `wait-ssm.sh`. The backend image contains those exact files under
 `/opt/scholight-package`; bootstrap verifies their digest before changing the
 host package. GitHub Actions never sends or mutates host runtime secrets.
+
+## Survey activation and artifact permissions
+
+`SCHOLIGHT_SURVEY_ENABLED` must be present in `runtime.env` and must be exactly
+`true` or `false`. The reviewed `compose-command.sh` is the single Compose entry
+point used by deploy, rollback, smoke, and diagnostics; it adds the `survey`
+profile only when the setting is `true`. A compatibility release therefore keeps
+both Survey workers absent without requiring Survey provider credentials.
+
+When Survey is activated, the existing EC2 role may access only the dedicated
+Survey bucket. Object permissions remain limited to `surveys/v1/*`. Prefix listing
+is used only when a server-generated manifest is missing during cleanup:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+      "Resource": "arn:aws:s3:::scholight-surveys-683390797772-ap-southeast-1/surveys/v1/*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::scholight-surveys-683390797772-ap-southeast-1",
+      "Condition": {
+        "StringLike": {"s3:prefix": "surveys/v1/*"}
+      }
+    }
+  ]
+}
+```
+
+Do not grant access to any other bucket or prefix. Updating this policy and the
+SecureString does not itself activate Survey; activation also requires the
+reviewed release after the EC2 resize and local E2E gate.
 
 ## One-time observability stack
 

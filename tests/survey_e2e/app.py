@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 
 import asyncpg
 from cloud_auth.models.user import UserRecord
+from fastapi import Header
 
 from scholight.api.deps import get_current_user
 from scholight.config import settings
@@ -49,21 +50,25 @@ async def _bootstrap_database() -> None:
             """
         )
         await apply_migrations(connection)
-        await connection.execute(
+        await connection.executemany(
             """
             INSERT INTO auth.users (
                 id, email, password_hash, display_name, status, email_verified_at
-            ) VALUES (42, 'survey-e2e@example.com', 'not-a-real-hash', 'Survey E2E',
-                      'active', now())
+            ) VALUES ($1, $2, 'not-a-real-hash', $3, 'active', now())
             ON CONFLICT (id) DO NOTHING
-            """
+            """,
+            [
+                (user_id, f"survey-e2e-{user_id}@example.com", f"Survey E2E {user_id}")
+                for user_id in [42, *range(100, 105)]
+            ],
         )
-        await connection.execute(
+        await connection.executemany(
             """
             INSERT INTO scholight.user_profiles (user_id, status)
-            VALUES (42, 'active')
+            VALUES ($1, 'active')
             ON CONFLICT (user_id) DO NOTHING
-            """
+            """,
+            [(user_id,) for user_id in [42, *range(100, 105)]],
         )
     finally:
         await connection.close()
@@ -132,14 +137,22 @@ store_client.get_client = lambda: object()
 from scholight.api.app import create_app  # noqa: E402
 
 app = create_app()
-_USER = UserRecord(
-    id=42,
-    email="survey-e2e@example.com",
-    password_hash="not-a-real-hash",
-    display_name="Survey E2E",
-    status="active",
-    email_verified=True,
-    created_at=datetime.now(UTC),
-    updated_at=datetime.now(UTC),
-)
-app.dependency_overrides[get_current_user] = lambda: _USER
+
+
+def _e2e_current_user(x_e2e_user_id: int = Header(default=42)) -> UserRecord:
+    """Select one of the local fixture users without implementing test auth."""
+    if x_e2e_user_id not in {42, *range(100, 105)}:
+        x_e2e_user_id = 42
+    return UserRecord(
+        id=x_e2e_user_id,
+        email=f"survey-e2e-{x_e2e_user_id}@example.com",
+        password_hash="not-a-real-hash",
+        display_name=f"Survey E2E {x_e2e_user_id}",
+        status="active",
+        email_verified=True,
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+
+
+app.dependency_overrides[get_current_user] = _e2e_current_user

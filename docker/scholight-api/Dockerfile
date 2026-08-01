@@ -67,6 +67,7 @@ COPY --from=builder /app/bin/accelerate /usr/local/bin/accelerate
 COPY global-bundle.pem /etc/ssl/certs/global-bundle.pem
 COPY deploy/production/bootstrap.sh /opt/scholight-package/bootstrap.sh
 COPY deploy/production/release.sh /opt/scholight-package/release.sh
+COPY deploy/production/compose-command.sh /opt/scholight-package/compose-command.sh
 COPY deploy/production/smoke.sh /opt/scholight-package/smoke.sh
 COPY deploy/production/wait-ssm.sh /opt/scholight-package/wait-ssm.sh
 COPY deploy/production/compose.yaml /opt/scholight-package/compose.yaml
@@ -76,6 +77,7 @@ COPY deploy/production/bootstrap-db.sql /opt/scholight-package/bootstrap-db.sql
 RUN chmod 0755 \
       /opt/scholight-package/bootstrap.sh \
       /opt/scholight-package/release.sh \
+      /opt/scholight-package/compose-command.sh \
       /opt/scholight-package/smoke.sh \
       /opt/scholight-package/wait-ssm.sh \
     && chmod 0600 /opt/scholight-package/bootstrap-db.sql \

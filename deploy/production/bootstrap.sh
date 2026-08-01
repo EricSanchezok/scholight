@@ -43,6 +43,7 @@ readonly PACKAGE_FILES=(
   cloudwatch-agent.json
   bootstrap-db.sql
   bootstrap.sh
+  compose-command.sh
   release.sh
   smoke.sh
   wait-ssm.sh
@@ -73,6 +74,7 @@ readonly REQUIRED_RUNTIME_KEYS=(
   SCHOLIGHT_AUTH_JWT_SECRET
   SCHOLIGHT_ANONYMOUS_QUOTA_HMAC_SECRET
   SCHOLIGHT_ACCESS_KEY_HMAC_SECRET
+  SCHOLIGHT_SURVEY_ENABLED
   SCHOLIGHT_PUBLIC_WEB_URL
   SCHOLIGHT_CORS_ALLOW_ORIGINS
 )
@@ -369,8 +371,9 @@ validate_compose_config() {
   TEMP_PATHS+=("${release_env}")
   write_release_manifest \
     "${release_env}" "${package_digest}" "${release_sha}" "${backend_image}" "${frontend_image}"
-  docker compose --env-file "${runtime_candidate}" --env-file "${release_env}" \
-    -f "${package_directory}/compose.yaml" config --quiet
+  SCHOLIGHT_RUNTIME_ENV="${runtime_candidate}" SCHOLIGHT_RELEASE_ENV="${release_env}" \
+    SCHOLIGHT_COMPOSE_FILE="${package_directory}/compose.yaml" \
+    "${package_directory}/compose-command.sh" config --quiet
   rm -f "${release_env}"
 }
 
@@ -426,7 +429,7 @@ install_package() {
   local name
   for name in "${PACKAGE_FILES[@]}"; do
     case ${name} in
-      bootstrap.sh | release.sh | smoke.sh | wait-ssm.sh)
+      bootstrap.sh | compose-command.sh | release.sh | smoke.sh | wait-ssm.sh)
         install -m 0755 "${SOURCE_PACKAGE_DIR}/${name}" "${staging}/${name}"
         ;;
       bootstrap-db.sql)

@@ -84,14 +84,8 @@ jobs:
         run: uv run ruff format --check
       - name: Mypy
         run: uv run mypy scholight
-      - name: Unit tests
-        run: uv run pytest scholight/ tests/ -v --tb=short
-      - name: PostgreSQL ingestion and hermetic workflow tests
-        run: >-
-          uv run pytest
-          scholight/db/tests/
-          scholight/scheduler/tests/test_ingestion_e2e_pg.py
-          -m pg_integration -v --tb=short
+      - name: Full backend test suite
+        run: uv run pytest -m "" -v --tb=short
       - name: Bandit
         run: uv run bandit -c pyproject.toml -r scholight/ --severity-level medium
       - name: Vulture
@@ -191,7 +185,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends shellcheck
           bash -n deploy/production/bootstrap.sh deploy/production/release.sh deploy/production/smoke.sh deploy/production/wait-ssm.sh
           sh -n frontend/runtime/render-docs.sh
-          shellcheck deploy/production/bootstrap.sh deploy/production/release.sh deploy/production/smoke.sh deploy/production/wait-ssm.sh tests/deploy/test_keepalive_integration.sh tests/deploy/test_edge_ingress_integration.sh
+          shellcheck deploy/production/bootstrap.sh deploy/production/compose-command.sh deploy/production/release.sh deploy/production/smoke.sh deploy/production/wait-ssm.sh tests/deploy/test_keepalive_integration.sh tests/deploy/test_edge_ingress_integration.sh
           shellcheck -s sh frontend/runtime/render-docs.sh
       - name: Validate production Compose
         env:
@@ -254,10 +248,11 @@ jobs:
         if: github.event_name != 'pull_request'
         run: |
           docker run --rm --user 0 --entrypoint /bin/sh scholight-api:ci -ec '
-            for name in bootstrap.sh release.sh smoke.sh wait-ssm.sh compose.yaml Caddyfile cloudwatch-agent.json bootstrap-db.sql; do
+            for name in bootstrap.sh compose-command.sh release.sh smoke.sh wait-ssm.sh compose.yaml Caddyfile cloudwatch-agent.json bootstrap-db.sql; do
               test -f "/opt/scholight-package/${name}"
             done
             test -x /opt/scholight-package/bootstrap.sh
+            test -x /opt/scholight-package/compose-command.sh
             test -x /opt/scholight-package/release.sh
             test -x /usr/local/bin/accelerate
             /usr/local/bin/accelerate --help >/dev/null

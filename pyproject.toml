@@ -149,7 +149,8 @@ min_confidence = 80
 # ── Pytest ────────────────────────────────────────────────────────────
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+pythonpath = ["."]
+testpaths = ["scholight", "tests"]
 addopts = ["-rXs", "--strict-config", "--strict-markers", "-m", "not pg_integration"]
 xfail_strict = true
 filterwarnings = ["error"]

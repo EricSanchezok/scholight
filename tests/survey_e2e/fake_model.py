@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from typing import Any
@@ -64,6 +65,9 @@ async def completion(request: Request, path: str) -> dict[str, Any]:
         for message in messages
         if isinstance(message, dict) and message.get("role") == "tool"
     ]
+    serialized = json.dumps(body)
+    if "SLOW_E2E_DRAFT" in serialized and "fs" not in names and not tool_results:
+        await asyncio.sleep(15)
     search_name = next((name for name in names if name.endswith("search_papers")), None)
     if search_name is not None and not tool_results:
         return _response(
@@ -77,6 +81,11 @@ async def completion(request: Request, path: str) -> dict[str, Any]:
             ),
             finish_reason="tool_calls",
         )
+    if (
+        any(marker in serialized for marker in ("SLOW_E2E_CANCEL", "SLOW_E2E_FORMAL"))
+        and "fs" in names
+    ):
+        await asyncio.sleep(30)
     if "fs" in names and len(tool_results) == 1:
         return _response(
             _tool_call(

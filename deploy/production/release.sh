@@ -5,6 +5,7 @@ readonly CONTRACT_VERSION=1
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 COMPOSE_FILE=${SCHOLIGHT_COMPOSE_FILE:-"${SCRIPT_DIR}/compose.yaml"}
 SMOKE_SCRIPT=${SCHOLIGHT_SMOKE_SCRIPT:-"${SCRIPT_DIR}/smoke.sh"}
+COMPOSE_COMMAND=${SCHOLIGHT_COMPOSE_COMMAND:-"${SCRIPT_DIR}/compose-command.sh"}
 RUNTIME_ENV=${SCHOLIGHT_RUNTIME_ENV:-/etc/scholight/runtime.env}
 STATE_DIR=${SCHOLIGHT_STATE_DIR:-/var/lib/scholight}
 CURRENT_ENV="${STATE_DIR}/current.env"
@@ -113,7 +114,7 @@ package_sha() {
   for path in "${SCRIPT_DIR}/compose.yaml" "${SCRIPT_DIR}/Caddyfile" \
     "${SCRIPT_DIR}/cloudwatch-agent.json" \
     "${SCRIPT_DIR}/bootstrap-db.sql" "${SCRIPT_DIR}/bootstrap.sh" \
-    "${SCRIPT_DIR}/release.sh" \
+    "${SCRIPT_DIR}/compose-command.sh" "${SCRIPT_DIR}/release.sh" \
     "${SCRIPT_DIR}/smoke.sh" "${SCRIPT_DIR}/wait-ssm.sh"; do
     [[ -f ${path} && ! -L ${path} ]] || fail "production package file missing: ${path}"
     inventory+="${path##*/}:$(sha256_file "${path}")"$'\n'
@@ -124,8 +125,8 @@ package_sha() {
 compose() {
   local release_env=$1
   shift
-  docker compose --env-file "${RUNTIME_ENV}" --env-file "${release_env}" \
-    -f "${COMPOSE_FILE}" "$@"
+  SCHOLIGHT_RUNTIME_ENV="${RUNTIME_ENV}" SCHOLIGHT_RELEASE_ENV="${release_env}" \
+    SCHOLIGHT_COMPOSE_FILE="${COMPOSE_FILE}" "${COMPOSE_COMMAND}" "$@"
 }
 
 acquire_lock() {
