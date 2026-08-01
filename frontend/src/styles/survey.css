@@ -485,7 +485,7 @@
 
 .surveyDraftStage,
 .surveyDraftStage > div {
-  min-height: 300px;
+  min-height: 362px;
 }
 
 .surveyDraftSectionHeading {
@@ -550,29 +550,67 @@
 .surveyDraftLoading {
   display: grid;
   align-content: center;
-  gap: 14px;
+  gap: 26px;
 }
 
-.surveyDraftLoading span {
+.surveyDraftLoadingLines {
+  display: grid;
+  width: min(100%, 650px);
+  gap: 10px;
+}
+
+.surveyDraftLoadingLines span {
   display: block;
-  width: 72%;
-  height: 10px;
-  border-radius: 2px;
+  width: 92%;
+  height: 8px;
+  border-radius: 3px;
   background: var(--surface-skeleton);
 }
 
-.surveyDraftLoading span:nth-child(2) {
-  width: 92%;
+.surveyDraftLoadingLines span:first-child {
+  width: 34%;
+  height: 12px;
+  margin-bottom: 5px;
 }
 
-.surveyDraftLoading span:nth-child(3) {
-  width: 48%;
+.surveyDraftLoadingLines span:nth-child(3) {
+  width: 86%;
+}
+
+.surveyDraftLoadingLines span:nth-child(4) {
+  width: 68%;
+}
+
+.surveyDraftLoadingLines span:nth-child(5) {
+  width: 26%;
+  height: 10px;
+  margin-top: 12px;
+}
+
+.surveyDraftLoadingLines span:nth-child(6) {
+  width: 96%;
+}
+
+.surveyDraftLoadingLines span:nth-child(7) {
+  width: 76%;
 }
 
 .surveyDraftLoading p {
-  margin: 10px 0 0;
+  display: flex;
+  margin: 0;
   color: var(--muted);
   font-size: 13px;
+  align-items: center;
+  gap: 10px;
+}
+
+.surveyDraftLoading p::before {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--brand);
+  content: "";
+  flex: 0 0 auto;
 }
 
 .surveyDraftFailure {

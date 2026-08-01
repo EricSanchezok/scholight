@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { surveyApi } from "../../api/domain";
 import type { Survey, SurveyDraft, SurveyProgress } from "../../api/types";
 import { I18nProvider } from "../../i18n/I18nProvider";
+import { queryKeys } from "../../app/queryKeys";
 import { SurveyDraftPage } from "./SurveyDraftPage";
 
 vi.mock("../../api/domain", () => ({
@@ -63,7 +64,7 @@ const progress: SurveyProgress = {
 
 function renderDraft() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  const view = render(
     <QueryClientProvider client={client}>
       <I18nProvider>
         <MemoryRouter initialEntries={[`/survey/${survey.id}/draft`]}>
@@ -74,6 +75,7 @@ function renderDraft() {
       </I18nProvider>
     </QueryClientProvider>,
   );
+  return { client, ...view };
 }
 
 describe("SurveyDraftPage", () => {
@@ -112,5 +114,29 @@ describe("SurveyDraftPage", () => {
       survey.id,
       expect.objectContaining({ markdown: "# Updated brief", message: "Manual draft revision" }),
     );
+  });
+
+  it("keeps the loading surface mounted when draft work starts", async () => {
+    const queuedDraft: SurveyDraft = {
+      ...draft,
+      markdown: null,
+      status: "queued",
+      started_at: null,
+      finished_at: null,
+    };
+    vi.mocked(surveyApi.drafts).mockResolvedValue([queuedDraft]);
+    const { client } = renderDraft();
+
+    const loadingSurface = await screen.findByRole("status", {
+      name: "Waiting to prepare research brief",
+    });
+    client.setQueryData(queryKeys.surveyDrafts(survey.id), [
+      { ...queuedDraft, status: "running", started_at: "2026-07-31T10:01:00Z" },
+    ]);
+
+    const runningSurface = await screen.findByRole("status", {
+      name: "Generating research brief",
+    });
+    expect(runningSurface).toBe(loadingSurface);
   });
 });

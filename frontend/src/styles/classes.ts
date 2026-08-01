@@ -267,6 +267,7 @@ export const styles: Readonly<Record<string, string>> = Object.freeze({
   surveyDraftHistorySelected: "surveyDraftHistorySelected",
   surveyDraftLayout: "surveyDraftLayout",
   surveyDraftLoading: "surveyDraftLoading",
+  surveyDraftLoadingLines: "surveyDraftLoadingLines",
   surveyDraftMain: "surveyDraftMain",
   surveyDraftPreview: "surveyDraftPreview",
   surveyDraftSectionHeading: "surveyDraftSectionHeading",

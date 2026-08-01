@@ -10,12 +10,13 @@ import type { SurveyDraft } from "../../api/types";
 import { queryKeys } from "../../app/queryKeys";
 import { contentSwapMotion } from "../../app/motion";
 import { routes } from "../../app/routes";
-import { SkeletonPulse, SurveyDetailSkeleton } from "../../components/EditorialSkeleton";
+import { SurveyDetailSkeleton } from "../../components/EditorialSkeleton";
 import { formatRelativeTime } from "../../i18n/format";
 import { useI18n } from "../../i18n/I18nProvider";
 import { styles } from "../../styles/classes";
 import { SurveyStartDialog } from "./SurveyDialogs";
 import { SurveyDraftHistory } from "./SurveyDraftHistory";
+import { SurveyDraftLoading } from "./SurveyDraftLoading";
 import { SurveyMarkdown } from "./SurveyMarkdown";
 import { queueAhead, SURVEY_POLL_INTERVAL, surveyTitle } from "./survey";
 
@@ -185,24 +186,8 @@ export function SurveyDraftPage() {
           <div className={styles.surveyDraftStage}>
             <AnimatePresence initial={false} mode="wait">
               {active ? (
-                <m.div key={`active-${active.id}-${active.status}`} {...contentSwapMotion}>
-                  <SkeletonPulse
-                    label={
-                      active.status === "queued"
-                        ? "Waiting to prepare research brief"
-                        : "Generating research brief"
-                    }
-                    className={styles.surveyDraftLoading}
-                  >
-                    <span />
-                    <span />
-                    <span />
-                    <p>
-                      {active.status === "queued"
-                        ? "Research is busy. Your draft will begin automatically."
-                        : "Generating a draft…"}
-                    </p>
-                  </SkeletonPulse>
+                <m.div key={`active-${active.id}`} {...contentSwapMotion}>
+                  <SurveyDraftLoading status={active.status === "queued" ? "queued" : "running"} />
                 </m.div>
               ) : failed && (!current || failed.created_at > current.created_at) ? (
                 <m.div key={`failed-${failed.id}`} {...contentSwapMotion}>
