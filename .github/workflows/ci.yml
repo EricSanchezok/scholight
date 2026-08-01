@@ -370,11 +370,15 @@ jobs:
                    AND to_regclass('scholight.ingestion_jobs') IS NOT NULL
                    AND to_regclass('auth.users') IS NOT NULL
                    AND to_regclass('auth.refresh_tokens') IS NOT NULL
+                   AND to_regclass('auth.user_clients') IS NOT NULL
                    AND NOT has_table_privilege(
                      'scholight_app', 'auth.users', 'DELETE'
                    )
                    AND NOT has_table_privilege(
                      'scholight_app', 'auth.refresh_tokens', 'DELETE'
+                   )
+                   AND NOT has_table_privilege(
+                     'scholight_app', 'auth.user_clients', 'DELETE'
                    )
                    AND NOT EXISTS (
                      SELECT 1 FROM scholight.schema_migrations WHERE checksum IS NULL
@@ -455,6 +459,16 @@ jobs:
                END
                \$contract\$;
                ROLLBACK;"
+
+          docker run --rm --network host \
+            -e SCHOLIGHT_PG_HOST=127.0.0.1 \
+            -e SCHOLIGHT_PG_PORT=5432 \
+            -e SCHOLIGHT_PG_DATABASE=sanchezcloud \
+            -e SCHOLIGHT_PG_USER=scholight_app \
+            -e SCHOLIGHT_PG_PASSWORD="$APP_PASSWORD" \
+            -v "$PWD/tests/deploy/identity_runtime_smoke.py:/identity-runtime-smoke.py:ro" \
+            scholight-api:ci \
+            /app/.venv/bin/python /identity-runtime-smoke.py
 
           if docker run --rm --network host \
             -e PGPASSWORD="$APP_PASSWORD" \
