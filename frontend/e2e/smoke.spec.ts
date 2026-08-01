@@ -323,6 +323,34 @@ test("anonymous survey hub prompts for sign-in without hiding the public shell",
   ).toEqual([]);
 });
 
+test("signed-in survey controls follow the shared page geometry", async ({ page }) => {
+  await mockAuthenticated(page);
+  await page.route("**/api/surveys**", (route) =>
+    route.fulfill({
+      json: {
+        items: [],
+        quota: { daily_limit: 5, reserved: 0, succeeded: 0, remaining: 5 },
+        next_cursor: null,
+      },
+    }),
+  );
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/survey");
+
+  const input = page.getByRole("textbox", { name: "Describe the survey you want to start" });
+  const refresh = page.getByRole("button", { name: "Refresh surveys" });
+  const form = input.locator("xpath=..");
+  const [refreshBox, formBox] = await Promise.all([refresh.boundingBox(), form.boundingBox()]);
+
+  expect(refreshBox).not.toBeNull();
+  expect(formBox).not.toBeNull();
+  expect(refreshBox!.y + refreshBox!.height).toBeLessThan(formBox!.y);
+  expect(refreshBox!.x).toBeGreaterThan(formBox!.x + formBox!.width / 2);
+
+  await input.focus();
+  expect(await input.evaluate((element) => getComputedStyle(element).outlineStyle)).toBe("none");
+});
+
 test("a delayed search immediately shows a stable editorial skeleton", async ({ page }) => {
   await page.route("**/api/search", async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 500));

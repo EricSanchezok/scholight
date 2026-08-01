@@ -9,6 +9,10 @@
   margin-bottom: 26px;
 }
 
+.surveyPageHeading.pageHeadingAction {
+  display: flex;
+}
+
 .surveyPageHeading.pageHeadingAction > div {
   gap: 0;
 }
@@ -70,12 +74,6 @@
 
 .surveyStartForm input::placeholder {
   color: var(--text-placeholder);
-}
-
-.surveyStartForm input:focus-visible {
-  border-radius: var(--radius-sm);
-  outline: 3px solid var(--focus-ring);
-  outline-offset: -1px;
 }
 
 .surveySignInEmpty button,
