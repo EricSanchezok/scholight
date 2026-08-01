@@ -9,6 +9,7 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
+from botocore.exceptions import ClientError
 
 from scholight.survey.artifacts import SurveyArtifactError, SurveyArtifactStore
 
@@ -17,6 +18,7 @@ class _FakeS3:
     def __init__(self) -> None:
         self.objects: dict[str, bytes] = {}
         self.operations: list[tuple[str, str]] = []
+        self.corrupt_get_key: str | None = None
 
     def upload_fileobj(
         self,
@@ -36,8 +38,12 @@ class _FakeS3:
     def head_object(self, **kwargs: Any) -> dict[str, int]:
         return {"ContentLength": len(self.objects[kwargs["Key"]])}
 
-    def get_object(self, **kwargs: Any) -> dict[str, io.BytesIO]:
-        return {"Body": io.BytesIO(self.objects[kwargs["Key"]])}
+    def get_object(self, **kwargs: Any) -> dict[str, Any]:
+        if kwargs["Key"] not in self.objects:
+            raise ClientError({"Error": {"Code": "NoSuchKey"}}, "GetObject")
+        value = self.objects[kwargs["Key"]]
+        body = b"corrupted" if kwargs["Key"] == self.corrupt_get_key else value
+        return {"Body": io.BytesIO(body), "ContentLength": len(body)}
 
     def generate_presigned_url(
         self,
@@ -54,6 +60,13 @@ class _FakeS3:
 
     def delete_object(self, **kwargs: Any) -> None:
         self.objects.pop(kwargs["Key"], None)
+
+    def list_objects_v2(self, **kwargs: Any) -> dict[str, Any]:
+        prefix = kwargs["Prefix"]
+        return {
+            "Contents": [{"Key": key} for key in sorted(self.objects) if key.startswith(prefix)],
+            "IsTruncated": False,
+        }
 
 
 @pytest.mark.asyncio
@@ -173,3 +186,43 @@ async def test_manifest_key_must_match_its_declared_relative_path(tmp_path: Path
 
     with pytest.raises(SurveyArtifactError, match="entry"):
         await store.presigned_artifacts(manifest_key=archive.manifest_key)
+
+
+@pytest.mark.asyncio
+async def test_archive_does_not_publish_manifest_after_checksum_mismatch(tmp_path: Path) -> None:
+    (tmp_path / "08_survey.md").write_text("# Survey", encoding="utf-8")
+    fake = _FakeS3()
+    job_id = uuid4()
+    prefix = SurveyArtifactStore.prefix(user_id=42, job_id=job_id)
+    fake.corrupt_get_key = f"{prefix}/run/08_survey.md"
+    store = SurveyArtifactStore(bucket="survey-test", client=fake)
+
+    with pytest.raises(SurveyArtifactError, match="checksum"):
+        await store.archive_run(
+            user_id=42,
+            job_id=job_id,
+            run_root=tmp_path,
+            run_metadata={"outcome": "succeeded"},
+        )
+
+    assert f"{prefix}/manifest.json" not in fake.objects
+
+
+@pytest.mark.asyncio
+async def test_cleanup_missing_manifest_is_scoped_to_exact_server_prefix() -> None:
+    fake = _FakeS3()
+    job_id = uuid4()
+    prefix = SurveyArtifactStore.prefix(user_id=42, job_id=job_id)
+    fake.objects[f"{prefix}/run/partial.txt"] = b"partial"
+    unrelated_key = f"surveys/v1/42/{uuid4()}/run/keep.txt"
+    fake.objects[unrelated_key] = b"keep"
+    store = SurveyArtifactStore(bucket="survey-test", client=fake)
+
+    await store.cleanup_archive(
+        user_id=42,
+        job_id=job_id,
+        storage_prefix=prefix,
+        manifest_key=f"{prefix}/manifest.json",
+    )
+
+    assert fake.objects == {unrelated_key: b"keep"}

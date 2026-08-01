@@ -261,7 +261,32 @@ jobs:
             test -x /opt/scholight-package/release.sh
             test -x /usr/local/bin/accelerate
             /usr/local/bin/accelerate --help >/dev/null
+            command -v pdftotext >/dev/null
+            /app/.venv/bin/python -c "import fitz; d=fitz.open(); p=d.new_page(); p.insert_text((72,72), \"Scholight PDF fallback\"); d.save(\"/tmp/fallback.pdf\")"
+            pdftotext /tmp/fallback.pdf /tmp/fallback.txt
+            grep -F "Scholight PDF fallback" /tmp/fallback.txt >/dev/null
           '
+      - name: Run hermetic Survey E2E
+        if: github.event_name != 'pull_request'
+        run: |
+          compose_file=tests/survey_e2e/compose.yaml
+          cleanup() {
+            docker compose -f "$compose_file" down -v --remove-orphans
+          }
+          trap cleanup EXIT
+
+          docker build \
+            --build-arg BASE_IMAGE=scholight-api:ci \
+            -f tests/survey_e2e/Dockerfile \
+            -t scholight-survey-e2e:ci \
+            .
+          docker compose -f "$compose_file" up -d
+          driver_id=$(docker compose -f "$compose_file" ps -q driver)
+          driver_exit=$(docker wait "$driver_id")
+          docker compose -f "$compose_file" logs \
+            --tail=200 \
+            driver survey-draft-worker survey-worker
+          test "$driver_exit" = 0
       - name: Verify Caddy and Uvicorn idle keep-alive integration
         if: github.event_name != 'pull_request'
         run: tests/deploy/test_keepalive_integration.sh
@@ -369,6 +394,50 @@ jobs:
                UPDATE scholight.ingestion_jobs
                  SET status = 'succeeded'
                  WHERE arxiv_id = '2401.00001';
+               INSERT INTO scholight.survey_daily_usage
+                 (user_id, usage_date, succeeded_count)
+                 VALUES (currval('auth.users_id_seq'), CURRENT_DATE, 1);
+               INSERT INTO scholight.surveys
+                 (id, user_id, client_request_id, initial_request, status, quota_date,
+                  quota_state, finished_at)
+                 VALUES ('00000000-0000-0000-0000-000000000101',
+                         currval('auth.users_id_seq'),
+                         '00000000-0000-0000-0000-000000000102',
+                         'CI artifact cleanup contract', 'succeeded', CURRENT_DATE,
+                         'consumed', now());
+               INSERT INTO scholight.survey_drafts
+                 (id, survey_id, client_request_id, revision, source, user_message,
+                  markdown, status, finished_at)
+                 VALUES ('00000000-0000-0000-0000-000000000103',
+                         '00000000-0000-0000-0000-000000000101',
+                         '00000000-0000-0000-0000-000000000104', 1, 'manual',
+                         'CI Draft', '# CI Draft', 'ready', now());
+               INSERT INTO scholight.survey_jobs
+                 (id, survey_id, approved_draft_id, client_request_id, status,
+                  terminal_outcome, storage_bucket, storage_prefix, manifest_key,
+                  finished_at)
+                 VALUES ('00000000-0000-0000-0000-000000000105',
+                         '00000000-0000-0000-0000-000000000101',
+                         '00000000-0000-0000-0000-000000000103',
+                         '00000000-0000-0000-0000-000000000106', 'finished',
+                         'succeeded', 'ci-private-bucket',
+                         'surveys/v1/' || currval('auth.users_id_seq') ||
+                           '/00000000-0000-0000-0000-000000000105',
+                         'surveys/v1/' || currval('auth.users_id_seq') ||
+                           '/00000000-0000-0000-0000-000000000105/manifest.json',
+                         now());
+               DELETE FROM scholight.surveys
+                 WHERE id = '00000000-0000-0000-0000-000000000101';
+               DO \$contract\$
+               BEGIN
+                 IF NOT EXISTS (
+                   SELECT 1 FROM scholight.survey_artifact_cleanup_outbox
+                   WHERE source_job_id = '00000000-0000-0000-0000-000000000105'
+                 ) THEN
+                   RAISE EXCEPTION 'Survey artifact cleanup outbox contract failed';
+                 END IF;
+               END
+               \$contract\$;
                ROLLBACK;"
 
           if docker run --rm --network host \

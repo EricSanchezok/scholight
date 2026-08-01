@@ -24,7 +24,7 @@ def survey_group() -> None:
 
 @survey_group.command("serve-worker")
 def serve_worker() -> None:
-    """Run the single-process Survey execution and archive worker."""
+    """Run the concurrent Survey execution and archive supervisor."""
     configure_logging()
     try:
         validate_survey_worker_settings()
@@ -43,7 +43,7 @@ def serve_worker() -> None:
 
 @survey_group.command("serve-draft-worker")
 def serve_draft_worker() -> None:
-    """Run the independent single-node Survey Draft worker."""
+    """Run the independent concurrent Survey Draft supervisor."""
     configure_logging()
     try:
         validate_survey_draft_worker_settings()

@@ -1,4 +1,4 @@
-"""Single-process Scholight Survey execution and durable artifact archiving."""
+"""Concurrent Scholight Survey execution and durable artifact archiving."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Literal
 from uuid import UUID, uuid4
 
 import structlog
@@ -28,16 +29,24 @@ from scholight.db.queries_survey import (
     update_survey_job_progress,
 )
 from scholight.survey.artifacts import SurveyArtifactStore
+from scholight.survey.cleanup_worker import serve_artifact_cleanup
+from scholight.survey.contracts import SurveyLeaseLostError
+from scholight.survey.process import (
+    ProcessControl,
+    classify_rcm_error,
+    read_sanitized_tail,
+    terminate_process_group,
+    write_stdin,
+)
 from scholight.survey.progress import stage_for_component
 from scholight.survey.runtime import survey_environment
 
 logger = structlog.get_logger(__name__)
 
-RCM_VERSION = "0.2.4"
+RCM_VERSION = "0.2.6"
 WORKFLOW_VERSION = "scholight-survey-v1"
-_HEARTBEAT_SECONDS = 30
-_LEASE_SECONDS = 300
-_IDLE_SECONDS = 5
+_IDLE_SECONDS = 1
+_RECOVERY_SECONDS = 30
 _EVENT_READ_BYTES = 64 * 1024
 _EVENT_LINE_LIMIT = 1024 * 1024
 _STAGE_RECORD_LIMIT = 512
@@ -45,7 +54,7 @@ _STAGE_RECORD_LIMIT = 512
 
 @dataclass(frozen=True, slots=True)
 class SurveyExecutionResult:
-    outcome: str
+    outcome: Literal["succeeded", "failed"]
     error_code: str | None
     error_message: str | None
     started_at: datetime
@@ -83,15 +92,6 @@ def _valid_final_report(run_root: Path) -> bool:
         and resolved_report.parent == resolved_root
         and report_stat.st_size > 0
     )
-
-
-async def _stop_process(process: asyncio.subprocess.Process) -> None:
-    process.terminate()
-    try:
-        await asyncio.wait_for(process.wait(), timeout=10)
-    except TimeoutError:
-        process.kill()
-        await process.wait()
 
 
 async def _collect_stage_timings(
@@ -179,7 +179,17 @@ async def _collect_stage_timings(
     return tuple(records)
 
 
-async def execute_survey(job: SurveyJob, run_root: Path) -> SurveyExecutionResult:
+def _timeout_message(seconds: int) -> str:
+    hours = max(1, round(seconds / 3600))
+    return f"Survey generation exceeded its {hours}-hour execution window."
+
+
+async def execute_survey(
+    job: SurveyJob,
+    run_root: Path,
+    *,
+    control: ProcessControl | None = None,
+) -> SurveyExecutionResult:
     """Run the fixed RCM workflow without retaining unbounded subprocess output."""
     started_at = datetime.now(UTC)
     process = await asyncio.create_subprocess_exec(
@@ -187,14 +197,17 @@ async def execute_survey(job: SurveyJob, run_root: Path) -> SurveyExecutionResul
         "run",
         str(_workflow_file()),
         "--stream",
-        "--purpose",
-        job.approved_draft,
+        "--purpose-stdin",
         "--run-dir",
         str(run_root),
         env=_child_environment(user_id=job.user_id),
+        stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
+        start_new_session=True,
     )
+    control = control or ProcessControl()
+    await control.attach(process)
     stage_collector = asyncio.create_task(
         _collect_stage_timings(
             process.stdout,
@@ -202,72 +215,130 @@ async def execute_survey(job: SurveyJob, run_root: Path) -> SurveyExecutionResul
             worker_id=job.lease_owner,
         )
     )
+    stderr_task = asyncio.create_task(read_sanitized_tail(process.stderr))
+    wait_task = asyncio.create_task(process.wait())
+    lost_task = asyncio.create_task(control.lease_lost.wait())
+
+    async def _complete_process() -> tuple[int, tuple[dict[str, object], ...]]:
+        await write_stdin(process, job.approved_draft)
+        return_code, stage_timings = await asyncio.gather(wait_task, stage_collector)
+        return return_code, stage_timings
+
+    lifecycle_task = asyncio.create_task(_complete_process())
     try:
-        return_code = await asyncio.wait_for(
-            process.wait(),
+        done, _pending = await asyncio.wait(
+            {lifecycle_task, lost_task},
             timeout=settings.survey_job_timeout_seconds,
+            return_when=asyncio.FIRST_COMPLETED,
         )
-    except TimeoutError:
-        await _stop_process(process)
-        stage_timings = await stage_collector
-        return SurveyExecutionResult(
-            outcome="failed",
-            error_code="survey_timed_out",
-            error_message="Survey generation exceeded the 24-hour execution window.",
-            started_at=started_at,
-            finished_at=datetime.now(UTC),
-            stage_timings=stage_timings,
-        )
-    stage_timings = await stage_collector
-    if return_code != 0:
-        return SurveyExecutionResult(
-            outcome="failed",
-            error_code="survey_execution_failed",
-            error_message="Survey generation did not complete successfully.",
-            started_at=started_at,
-            finished_at=datetime.now(UTC),
-            stage_timings=stage_timings,
-        )
-    if not _valid_final_report(run_root):
-        return SurveyExecutionResult(
-            outcome="failed",
-            error_code="survey_report_missing",
-            error_message="Survey generation did not produce a final report.",
-            started_at=started_at,
-            finished_at=datetime.now(UTC),
-            stage_timings=stage_timings,
-        )
-    return SurveyExecutionResult(
-        outcome="succeeded",
-        error_code=None,
-        error_message=None,
-        started_at=started_at,
-        finished_at=datetime.now(UTC),
-        stage_timings=stage_timings,
-    )
-
-
-async def _heartbeat(*, job_id: UUID, worker_id: UUID, stop: asyncio.Event) -> None:
-    while True:
+        if lost_task in done and control.lease_lost.is_set():
+            await terminate_process_group(process)
+            raise SurveyLeaseLostError("Survey execution lease is no longer owned")
+        if not done:
+            await terminate_process_group(process)
+            stage_timings = await stage_collector
+            return SurveyExecutionResult(
+                outcome="failed",
+                error_code="survey_timed_out",
+                error_message=_timeout_message(settings.survey_job_timeout_seconds),
+                started_at=started_at,
+                finished_at=datetime.now(UTC),
+                stage_timings=stage_timings,
+            )
         try:
-            await asyncio.wait_for(stop.wait(), timeout=_HEARTBEAT_SECONDS)
+            return_code, stage_timings = await lifecycle_task
+        except Exception:
+            await terminate_process_group(process)
+            raise
+        stderr_tail = await stderr_task
+        if return_code != 0:
+            error_code, error_message = classify_rcm_error(stderr_tail)
+            logger.error(
+                "survey_rcm_failed",
+                job_id=str(job.id),
+                return_code=return_code,
+                diagnostics=stderr_tail,
+            )
+            return SurveyExecutionResult(
+                outcome="failed",
+                error_code=error_code,
+                error_message=error_message,
+                started_at=started_at,
+                finished_at=datetime.now(UTC),
+                stage_timings=stage_timings,
+            )
+        if not _valid_final_report(run_root):
+            return SurveyExecutionResult(
+                outcome="failed",
+                error_code="survey_report_missing",
+                error_message="Survey generation did not produce a final report.",
+                started_at=started_at,
+                finished_at=datetime.now(UTC),
+                stage_timings=stage_timings,
+            )
+        return SurveyExecutionResult(
+            outcome="succeeded",
+            error_code=None,
+            error_message=None,
+            started_at=started_at,
+            finished_at=datetime.now(UTC),
+            stage_timings=stage_timings,
+        )
+    except asyncio.CancelledError:
+        await terminate_process_group(process)
+        raise
+    finally:
+        lost_task.cancel()
+        if process.returncode is None:
+            await terminate_process_group(process)
+        for task in (lifecycle_task, wait_task, stage_collector, stderr_task, lost_task):
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(
+            lifecycle_task,
+            wait_task,
+            stage_collector,
+            stderr_task,
+            lost_task,
+            return_exceptions=True,
+        )
+
+
+async def _heartbeat(
+    *,
+    job_id: UUID,
+    worker_id: UUID,
+    stop: asyncio.Event,
+    control: ProcessControl,
+) -> None:
+    last_owned = time.monotonic()
+    while not stop.is_set():
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=settings.survey_heartbeat_seconds)
             return
         except TimeoutError:
             try:
-                owned = await heartbeat_survey_job(
+                state = await heartbeat_survey_job(
                     job_id=job_id,
                     worker_id=worker_id,
-                    lease_seconds=_LEASE_SECONDS,
+                    lease_seconds=settings.survey_lease_seconds,
                 )
-                if not owned:
-                    logger.warning("survey_heartbeat_lease_lost", job_id=str(job_id))
-                    return
             except Exception as exc:
-                logger.error(
+                logger.warning(
                     "survey_heartbeat_failed",
                     job_id=str(job_id),
                     error_type=type(exc).__name__,
                 )
+                if time.monotonic() - last_owned < settings.survey_lease_seconds:
+                    continue
+                state = "lost"
+            if state == "owned":
+                last_owned = time.monotonic()
+                continue
+            if state == "lost" or time.monotonic() - last_owned >= settings.survey_lease_seconds:
+                logger.warning("survey_heartbeat_lease_lost", job_id=str(job_id))
+                await control.lose_lease()
+                return
 
 
 def _run_metadata(job: SurveyJob, result: SurveyExecutionResult | None) -> dict[str, object]:
@@ -313,25 +384,35 @@ async def _archive(
         await finish_survey_archive(
             job_id=job.id,
             worker_id=worker_id,
+            storage_bucket=settings.survey_s3_bucket,
             storage_prefix=archive.storage_prefix,
             manifest_key=archive.manifest_key,
         )
+    except SurveyLeaseLostError:
+        raise
     except Exception as exc:
         delay_seconds = min(3600, 30 * (2 ** min(job.archive_attempts, 7)))
         await defer_survey_archive(
             job_id=job.id,
             worker_id=worker_id,
             retry_after=timedelta(seconds=delay_seconds),
-            error_code="survey_archive_failed",
-            error_message="Survey artifacts could not be archived yet.",
+            error_code="survey_archive_pending",
+            error_message="Survey artifacts are still being archived and will be retried.",
         )
         logger.error(
-            "survey_archive_failed",
+            "survey_archive_deferred",
             job_id=str(job.id),
             error_type=type(exc).__name__,
         )
         return
-    shutil.rmtree(_job_root(job.id))
+    try:
+        shutil.rmtree(_job_root(job.id))
+    except OSError as exc:
+        logger.warning(
+            "survey_workspace_cleanup_deferred",
+            job_id=str(job.id),
+            error_type=type(exc).__name__,
+        )
     logger.info(
         "survey_job_finished",
         job_id=str(job.id),
@@ -349,18 +430,24 @@ async def process_survey_job(
     run_root = _job_root(job.id) / "run"
     result: SurveyExecutionResult | None = None
     stop = asyncio.Event()
-    heartbeat = asyncio.create_task(_heartbeat(job_id=job.id, worker_id=worker_id, stop=stop))
+    control = ProcessControl()
+    heartbeat = asyncio.create_task(
+        _heartbeat(job_id=job.id, worker_id=worker_id, stop=stop, control=control)
+    )
     try:
         if job.status == "running":
             run_root.mkdir(parents=True, exist_ok=True)
             try:
-                result = await execute_survey(job, run_root)
+                result = await execute_survey(job, run_root, control=control)
+            except SurveyLeaseLostError:
+                logger.info("survey_stopped_after_lease_loss", job_id=str(job.id))
+                return
             except Exception as exc:
                 now = datetime.now(UTC)
                 result = SurveyExecutionResult(
                     outcome="failed",
-                    error_code="survey_execution_failed",
-                    error_message="Survey generation did not complete successfully.",
+                    error_code="survey_runtime_unavailable",
+                    error_message="Survey generation could not be completed.",
                     started_at=job.started_at or now,
                     finished_at=now,
                 )
@@ -369,13 +456,17 @@ async def process_survey_job(
                     job_id=str(job.id),
                     error_type=type(exc).__name__,
                 )
+            if control.lease_lost.is_set():
+                return
             job = await settle_survey_execution(
                 job_id=job.id,
                 worker_id=worker_id,
-                outcome=result.outcome,  # type: ignore[arg-type]
+                outcome=result.outcome,
                 error_code=result.error_code,
                 error_message=result.error_message,
             )
+        if control.lease_lost.is_set():
+            return
         await _archive(
             job=job,
             worker_id=worker_id,
@@ -383,30 +474,100 @@ async def process_survey_job(
             artifact_store=artifact_store,
             result=result,
         )
+    except SurveyLeaseLostError:
+        logger.info("survey_stopped_after_lease_loss", job_id=str(job.id))
+    except asyncio.CancelledError:
+        await control.lose_lease()
+        raise
     finally:
         stop.set()
         await heartbeat
 
 
 async def serve_survey_worker() -> None:
-    """Continuously run one Survey at a time and prioritize archive recovery."""
-    worker_id = uuid4()
-    artifact_store = SurveyArtifactStore(bucket=settings.survey_s3_bucket)
-    logger.info("survey_worker_started", worker_id=str(worker_id), rcm_version=RCM_VERSION)
-    while True:
-        await recover_expired_survey_jobs()
-        job = await claim_survey_job(
-            worker_id=worker_id,
-            lease_seconds=_LEASE_SECONDS,
-        )
-        if job is None:
-            await asyncio.sleep(_IDLE_SECONDS)
-            continue
+    """Supervise bounded concurrent Surveys with independent leases and process groups."""
+    artifact_store = SurveyArtifactStore(
+        bucket=settings.survey_s3_bucket,
+        endpoint_url=settings.survey_s3_endpoint_url,
+    )
+    active: set[asyncio.Task[None]] = set()
+    cleanup_supervisor = asyncio.create_task(serve_artifact_cleanup())
+    last_recovery = 0.0
+    logger.info(
+        "survey_supervisor_started",
+        rcm_version=RCM_VERSION,
+        concurrency=settings.survey_job_concurrency,
+        per_user_concurrency=settings.survey_job_per_user_concurrency,
+        heartbeat_seconds=settings.survey_heartbeat_seconds,
+        lease_seconds=settings.survey_lease_seconds,
+    )
+    try:
+        while True:
+            active = {task for task in active if not task.done()}
+            if cleanup_supervisor.done():
+                try:
+                    cleanup_supervisor.result()
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.exception("survey_cleanup_supervisor_restarted")
+                cleanup_supervisor = asyncio.create_task(serve_artifact_cleanup())
+            now = time.monotonic()
+            if now - last_recovery >= _RECOVERY_SECONDS:
+                try:
+                    await recover_expired_survey_jobs()
+                except Exception:
+                    logger.exception("survey_recovery_cycle_failed")
+                last_recovery = now
+            claimed = False
+            while len(active) < settings.survey_job_concurrency:
+                worker_id = uuid4()
+                try:
+                    job = await claim_survey_job(
+                        worker_id=worker_id,
+                        lease_seconds=settings.survey_lease_seconds,
+                        per_user_concurrency=settings.survey_job_per_user_concurrency,
+                    )
+                except Exception:
+                    logger.exception("survey_claim_cycle_failed")
+                    break
+                if job is None:
+                    break
+                task = asyncio.create_task(
+                    _run_claimed_job(
+                        job=job,
+                        worker_id=worker_id,
+                        artifact_store=artifact_store,
+                    )
+                )
+                active.add(task)
+                claimed = True
+            if not claimed:
+                await asyncio.sleep(_IDLE_SECONDS)
+    finally:
+        cleanup_supervisor.cancel()
+        for task in active:
+            task.cancel()
+        await asyncio.gather(cleanup_supervisor, *active, return_exceptions=True)
+        logger.info("survey_supervisor_stopped")
+
+
+async def _run_claimed_job(
+    *,
+    job: SurveyJob,
+    worker_id: UUID,
+    artifact_store: SurveyArtifactStore,
+) -> None:
+    try:
         await process_survey_job(
             job=job,
             worker_id=worker_id,
             artifact_store=artifact_store,
         )
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.exception("survey_task_escaped", job_id=str(job.id))
 
 
 __all__ = [

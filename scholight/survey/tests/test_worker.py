@@ -13,18 +13,22 @@ import pytest
 from scholight.config import settings
 from scholight.db.queries_survey import SurveyJob
 from scholight.survey.artifacts import SurveyArchive
+from scholight.survey.process import ProcessControl
 from scholight.survey.worker import (
     RCM_VERSION,
     SurveyExecutionResult,
     _child_environment,
     _collect_stage_timings,
+    _heartbeat,
+    _run_claimed_job,
     execute_survey,
     process_survey_job,
+    serve_survey_worker,
 )
 
 
 def test_worker_expects_pinned_rcm_release() -> None:
-    assert RCM_VERSION == "0.2.4"
+    assert RCM_VERSION == "0.2.6"
 
 
 def _job(
@@ -43,9 +47,11 @@ def _job(
         approved_draft="# Retrieval augmented generation\n\nStudy the field.",
         approved_draft_revision=2,
         client_request_id=uuid4(),
+        request_hash="2" * 64,
         status=status,  # type: ignore[arg-type]
         terminal_outcome=outcome,  # type: ignore[arg-type]
         storage_prefix=None,
+        storage_bucket=None,
         manifest_key=None,
         error_code=None,
         error_message=None,
@@ -56,6 +62,8 @@ def _job(
         progress_updated_at=now,
         archive_attempts=0,
         next_archive_at=None,
+        queued_at=now,
+        last_claim_at=now,
         created_at=now,
         started_at=now,
         finished_at=None,
@@ -64,14 +72,17 @@ def _job(
 
 class _TimeoutProcess:
     stdout = None
-    returncode = None
+    stderr = None
+    stdin = None
+    returncode: int | None = None
 
     def __init__(self) -> None:
         self.terminated = False
+        self.stopped = asyncio.Event()
 
     async def wait(self) -> int:
         if not self.terminated:
-            await asyncio.sleep(60)
+            await self.stopped.wait()
         return -15
 
     def terminate(self) -> None:
@@ -79,6 +90,19 @@ class _TimeoutProcess:
 
     def kill(self) -> None:
         self.terminated = True
+
+
+class _CompletedProcess:
+    def __init__(self, *, returncode: int = 0) -> None:
+        self.stdout = asyncio.StreamReader()
+        self.stdout.feed_eof()
+        self.stderr = asyncio.StreamReader()
+        self.stderr.feed_eof()
+        self.stdin = None
+        self.returncode = returncode
+
+    async def wait(self) -> int:
+        return self.returncode
 
 
 @pytest.mark.asyncio
@@ -93,10 +117,20 @@ async def test_execution_timeout_terminates_process_and_preserves_workspace(
     monkeypatch.setattr(settings, "survey_mcp_jwt_secret", "s" * 32)
     monkeypatch.setattr(settings, "deepseek_api_key", "deepseek")
     monkeypatch.setattr(settings, "image_gen_api_key", "image")
-    with patch(
-        "scholight.survey.worker.asyncio.create_subprocess_exec",
-        new_callable=AsyncMock,
-        return_value=process,
+
+    async def _terminate(candidate: _TimeoutProcess) -> None:
+        candidate.terminated = True
+        candidate.returncode = -15
+        candidate.stopped.set()
+
+    with (
+        patch(
+            "scholight.survey.worker.asyncio.create_subprocess_exec",
+            new_callable=AsyncMock,
+            return_value=process,
+        ),
+        patch("scholight.survey.worker.write_stdin", new_callable=AsyncMock),
+        patch("scholight.survey.worker.terminate_process_group", side_effect=_terminate),
     ):
         result = await execute_survey(
             _job(job_id=job_id, worker_id=worker_id, status="running"),
@@ -150,6 +184,39 @@ async def test_archiving_recovery_never_reruns_expensive_workflow(tmp_path: Path
 
 
 @pytest.mark.asyncio
+async def test_archive_failure_is_exposed_as_retrying_not_terminal(tmp_path: Path) -> None:
+    job_id = uuid4()
+    worker_id = uuid4()
+    job_root = tmp_path / str(job_id)
+    (job_root / "run").mkdir(parents=True)
+    artifact_store = AsyncMock()
+    artifact_store.archive_run.side_effect = OSError("temporary object-store failure")
+    with (
+        patch("scholight.survey.worker._job_root", return_value=job_root),
+        patch("scholight.survey.worker._heartbeat", new_callable=AsyncMock),
+        patch(
+            "scholight.survey.worker.defer_survey_archive",
+            new_callable=AsyncMock,
+        ) as defer,
+    ):
+        await process_survey_job(
+            job=_job(
+                job_id=job_id,
+                worker_id=worker_id,
+                status="archiving",
+                outcome="succeeded",
+            ),
+            worker_id=worker_id,
+            artifact_store=artifact_store,
+        )
+
+    call = defer.await_args
+    assert call is not None
+    assert call.kwargs["error_code"] == "survey_archive_pending"
+    assert job_root.exists()
+
+
+@pytest.mark.asyncio
 async def test_success_requires_nonempty_regular_final_report(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -161,12 +228,14 @@ async def test_success_requires_nonempty_regular_final_report(
     monkeypatch.setattr(settings, "survey_mcp_jwt_secret", "s" * 32)
     monkeypatch.setattr(settings, "deepseek_api_key", "deepseek")
     monkeypatch.setattr(settings, "image_gen_api_key", "image")
-    process = AsyncMock()
-    process.wait.return_value = 0
-    with patch(
-        "scholight.survey.worker.asyncio.create_subprocess_exec",
-        new_callable=AsyncMock,
-        return_value=process,
+    process = _CompletedProcess()
+    with (
+        patch(
+            "scholight.survey.worker.asyncio.create_subprocess_exec",
+            new_callable=AsyncMock,
+            return_value=process,
+        ),
+        patch("scholight.survey.worker.write_stdin", new_callable=AsyncMock),
     ):
         result = await execute_survey(
             _job(job_id=job_id, worker_id=worker_id, status="running"),
@@ -280,7 +349,7 @@ async def test_process_start_failure_is_settled_and_archived_without_waiting_for
     settled = settle.await_args
     assert settled is not None
     assert settled.kwargs["outcome"] == "failed"
-    assert settled.kwargs["error_code"] == "survey_execution_failed"
+    assert settled.kwargs["error_code"] == "survey_runtime_unavailable"
     artifact_store.archive_run.assert_awaited_once()
 
 
@@ -346,3 +415,106 @@ def test_child_environment_exposes_only_required_provider_credentials(
     assert "SCHOLIGHT_PG_PASSWORD" not in environment
     assert "SCHOLIGHT_ZILLIZ_TOKEN" not in environment
     assert "AWS_SECRET_ACCESS_KEY" not in environment
+
+
+@pytest.mark.asyncio
+async def test_job_heartbeat_database_failure_stops_work_after_lease_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    control = ProcessControl()
+    monkeypatch.setattr(settings, "survey_heartbeat_seconds", 0.001)
+    monkeypatch.setattr(settings, "survey_lease_seconds", 0)
+
+    with (
+        patch(
+            "scholight.survey.worker.heartbeat_survey_job",
+            new_callable=AsyncMock,
+            side_effect=OSError("database unavailable"),
+        ) as heartbeat,
+    ):
+        await asyncio.wait_for(
+            _heartbeat(
+                job_id=uuid4(),
+                worker_id=uuid4(),
+                stop=asyncio.Event(),
+                control=control,
+            ),
+            timeout=1,
+        )
+
+    heartbeat.assert_awaited_once()
+    assert control.lease_lost.is_set()
+
+
+@pytest.mark.asyncio
+async def test_survey_supervisor_keeps_execution_bounded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    jobs = [_job(job_id=uuid4(), worker_id=uuid4(), status="running") for _ in range(4)]
+    running = 0
+    maximum_running = 0
+    started = 0
+    at_capacity = asyncio.Event()
+    all_started = asyncio.Event()
+    release = asyncio.Event()
+    monkeypatch.setattr(settings, "survey_job_concurrency", 2)
+    monkeypatch.setattr(settings, "survey_job_per_user_concurrency", 1)
+
+    async def _claim(**kwargs: object) -> SurveyJob | None:
+        del kwargs
+        return jobs.pop(0) if jobs else None
+
+    async def _run(**kwargs: object) -> None:
+        nonlocal running, maximum_running, started
+        del kwargs
+        running += 1
+        started += 1
+        maximum_running = max(maximum_running, running)
+        if running == 2:
+            at_capacity.set()
+        if started == 4:
+            all_started.set()
+        try:
+            await release.wait()
+        finally:
+            running -= 1
+
+    async def _cleanup() -> None:
+        await asyncio.Event().wait()
+
+    with (
+        patch("scholight.survey.worker.claim_survey_job", side_effect=_claim),
+        patch("scholight.survey.worker._run_claimed_job", side_effect=_run),
+        patch(
+            "scholight.survey.worker.recover_expired_survey_jobs",
+            new_callable=AsyncMock,
+        ),
+        patch("scholight.survey.worker.serve_artifact_cleanup", side_effect=_cleanup),
+        patch("scholight.survey.worker.SurveyArtifactStore"),
+        patch("scholight.survey.worker._IDLE_SECONDS", 0.001),
+    ):
+        supervisor = asyncio.create_task(serve_survey_worker())
+        await asyncio.wait_for(at_capacity.wait(), timeout=1)
+        assert running == 2
+        release.set()
+        await asyncio.wait_for(all_started.wait(), timeout=1)
+        supervisor.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await supervisor
+
+    assert maximum_running == 2
+
+
+@pytest.mark.asyncio
+async def test_survey_task_failure_does_not_escape_supervisor_boundary() -> None:
+    job = _job(job_id=uuid4(), worker_id=uuid4(), status="running")
+    with patch(
+        "scholight.survey.worker.process_survey_job",
+        new_callable=AsyncMock,
+        side_effect=RuntimeError("isolated failure"),
+    ):
+        await _run_claimed_job(
+            job=job,
+            worker_id=uuid4(),
+            artifact_store=AsyncMock(),
+        )

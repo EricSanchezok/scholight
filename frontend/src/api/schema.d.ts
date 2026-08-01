@@ -1442,6 +1442,8 @@ export interface components {
     };
     /** SurveyProgressResponse */
     SurveyProgressResponse: {
+      /** Elapsed Seconds */
+      elapsed_seconds: number;
       /** Finished At */
       finished_at: string | null;
       /**
@@ -1451,15 +1453,15 @@ export interface components {
       last_activity_at: string;
       /** Percent */
       percent: number;
-      /** Queue Ahead */
-      queue_ahead: number | null;
+      queue: components["schemas"]["SurveyQueueResponse"] | null;
       /**
        * Stage
        * @enum {string}
        */
       stage:
         | "drafting"
-        | "waiting"
+        | "waiting_for_draft"
+        | "waiting_for_execution"
         | "planning"
         | "discovering"
         | "reviewing_evidence"
@@ -1468,6 +1470,7 @@ export interface components {
         | "finalizing"
         | "saving_results"
         | "completed"
+        | "failed"
         | "cancelled";
       /** Started At */
       started_at: string | null;
@@ -1482,6 +1485,22 @@ export interface components {
       survey_id: string;
       /** Total Steps */
       total_steps: number;
+    };
+    /** SurveyQueueResponse */
+    SurveyQueueResponse: {
+      /** Kind */
+      kind: string;
+      /** Max Slots */
+      max_slots: number;
+      /** Position */
+      position: number;
+      /**
+       * Queued At
+       * Format: date-time
+       */
+      queued_at: string;
+      /** Running Slots */
+      running_slots: number;
     };
     /** SurveyResponse */
     SurveyResponse: {
@@ -2520,11 +2539,7 @@ export interface operations {
       };
       cookie?: never;
     };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["SurveyActionRequest"];
-      };
-    };
+    requestBody?: never;
     responses: {
       /** @description Successful Response */
       200: {

@@ -31,7 +31,7 @@ def test_archiving_and_terminal_states_override_execution_stage() -> None:
 
 def test_failed_survey_keeps_last_real_execution_milestone() -> None:
     assert present_progress(survey_status="failed", execution_stage="reviewing_evidence") == (
-        "reviewing_evidence",
+        "failed",
         55,
         3,
     )

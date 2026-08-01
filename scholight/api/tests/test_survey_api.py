@@ -18,6 +18,7 @@ from scholight.db.queries_survey import (
     Survey,
     SurveyProgressSnapshot,
     SurveyQuotaExceededError,
+    SurveyStateError,
 )
 from scholight.db.queries_survey_drafts import SurveyDraft
 
@@ -30,6 +31,7 @@ def _survey(*, survey_id: UUID, status: str = "drafting") -> Survey:
         id=survey_id,
         user_id=42,
         client_request_id=uuid4(),
+        request_hash="0" * 64,
         initial_request="retrieval augmented generation",
         status=status,  # type: ignore[arg-type]
         quota_date=date(2026, 7, 31),
@@ -56,11 +58,14 @@ def _draft(*, survey_id: UUID, status: str = "queued") -> SurveyDraft:
         status=status,  # type: ignore[arg-type]
         based_on_revision=None,
         client_request_id=uuid4(),
+        request_hash="1" * 64,
         error_code=None,
         error_message=None,
         lease_owner=None,
         lease_expires_at=None,
         heartbeat_at=None,
+        queued_at=now,
+        last_claim_at=None,
         created_at=now,
         started_at=None,
         finished_at=None,
@@ -258,6 +263,47 @@ async def test_manual_draft_and_start_use_distinct_write_endpoints(
     assert started.json()["status"] == "queued"
 
 
+async def test_manual_draft_accepts_full_one_mib_payload(
+    api_app: FastAPI,
+    api_client: httpx.AsyncClient,
+    active_user: UserRecord,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _authenticate(api_app, active_user)
+    monkeypatch.setattr(settings, "survey_enabled", True)
+    survey_id = uuid4()
+    markdown = "x" * (1024 * 1024)
+    ready = replace(
+        _draft(survey_id=survey_id, status="ready"),
+        revision=1,
+        markdown=markdown,
+    )
+    with (
+        patch(
+            "scholight.api.routes.survey.get_survey",
+            new_callable=AsyncMock,
+            return_value=_survey(survey_id=survey_id),
+        ),
+        patch(
+            "scholight.api.routes.survey.create_manual_draft",
+            new_callable=AsyncMock,
+            return_value=ready,
+        ) as create,
+    ):
+        response = await api_client.post(
+            f"/surveys/{survey_id}/drafts/manual",
+            json={
+                "markdown": markdown,
+                "message": "Manual edit",
+                "client_request_id": str(uuid4()),
+            },
+        )
+
+    assert response.status_code == 201
+    assert create.await_args is not None
+    assert create.await_args.kwargs["markdown"] == markdown
+
+
 async def test_cross_owner_survey_is_not_exposed(
     api_app: FastAPI,
     api_client: httpx.AsyncClient,
@@ -277,6 +323,39 @@ async def test_cross_owner_survey_is_not_exposed(
     assert response.json()["detail"]["code"] == "survey_not_found"
 
 
+async def test_survey_disappearing_during_write_still_returns_not_found(
+    api_app: FastAPI,
+    api_client: httpx.AsyncClient,
+    active_user: UserRecord,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _authenticate(api_app, active_user)
+    monkeypatch.setattr(settings, "survey_enabled", True)
+    survey_id = uuid4()
+    with (
+        patch(
+            "scholight.api.routes.survey.get_survey",
+            new_callable=AsyncMock,
+            return_value=_survey(survey_id=survey_id),
+        ),
+        patch(
+            "scholight.api.routes.survey.request_generated_draft",
+            new_callable=AsyncMock,
+            side_effect=SurveyStateError("Survey not found", code="survey_not_found"),
+        ),
+    ):
+        response = await api_client.post(
+            f"/surveys/{survey_id}/drafts",
+            json={
+                "message": "Focus on evaluation methods",
+                "client_request_id": str(uuid4()),
+            },
+        )
+
+    assert response.status_code == 404
+    assert response.json()["detail"]["code"] == "survey_not_found"
+
+
 async def test_progress_endpoint_returns_stable_public_milestone(
     api_app: FastAPI,
     api_client: httpx.AsyncClient,
@@ -291,7 +370,10 @@ async def test_progress_endpoint_returns_stable_public_milestone(
         survey_id=survey_id,
         status="running",
         execution_stage="reviewing_evidence",
-        queue_ahead=None,
+        queue_kind=None,
+        queue_position=None,
+        queued_at=None,
+        running_slots=1,
         started_at=now,
         finished_at=None,
         last_activity_at=now,
@@ -311,7 +393,8 @@ async def test_progress_endpoint_returns_stable_public_milestone(
         "percent": 55,
         "step": 3,
         "total_steps": 8,
-        "queue_ahead": None,
+        "queue": None,
+        "elapsed_seconds": 0,
         "started_at": now.isoformat().replace("+00:00", "Z"),
         "finished_at": None,
         "last_activity_at": now.isoformat().replace("+00:00", "Z"),

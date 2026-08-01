@@ -320,13 +320,31 @@ def test_survey_aggregate_migration_fails_closed_before_replacing_legacy_table()
     assert "create table scholight.surveys" in sql
     assert "create table scholight.survey_drafts" in sql
     assert sql.count("create table scholight.survey_jobs") == 1
-    assert "progress_stage" in sql
-    assert "progress_updated_at" in sql
+    assert "progress_stage" not in sql
+    assert "progress_updated_at" not in sql
     assert "references auth.users(id) on delete cascade" in sql
     assert (
         "status in ('drafting', 'queued', 'running', 'archiving', 'succeeded', 'failed', 'cancelled')"
         in sql
     )
+
+
+def test_survey_reliability_migration_is_product_scoped_and_expand_only() -> None:
+    migration = Path(__file__).parents[3] / "migrations/007_survey_reliability.sql"
+    raw_sql = migration.read_text(encoding="utf-8")
+    sql = " ".join(raw_sql.split()).lower()
+
+    validate_expand_only_sql(raw_sql)
+    assert "alter table scholight.surveys" in sql
+    assert "request_hash" in sql
+    assert "queued_at" in sql and "last_claim_at" in sql
+    assert "create table scholight.survey_artifact_cleanup_outbox" in sql
+    assert "before delete on scholight.surveys" in sql
+    assert "from scholight.survey_jobs" in sql
+    assert "auth." not in sql
+    assert "drop " not in sql
+    assert "truncate " not in sql
+    assert "delete from" not in sql
 
 
 @pytest.mark.asyncio

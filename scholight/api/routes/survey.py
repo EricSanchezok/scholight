@@ -33,6 +33,13 @@ from scholight.db.queries_survey_drafts import (
     list_survey_drafts,
     request_generated_draft,
 )
+from scholight.survey.contracts import (
+    INITIAL_REQUEST_MAX_BYTES,
+    MANUAL_DRAFT_MAX_BYTES,
+    REVISION_MESSAGE_MAX_BYTES,
+    canonical_request_hash,
+    utf8_size,
+)
 from scholight.survey.progress import (
     TOTAL_PROGRESS_STEPS,
     PublicProgressStage,
@@ -51,6 +58,8 @@ class SurveyCreateRequest(BaseModel):
     def _request_not_blank(cls, value: str) -> str:
         if not (normalized := value.strip()):
             raise ValueError("Survey request must not be blank")
+        if utf8_size(normalized) > INITIAL_REQUEST_MAX_BYTES:
+            raise ValueError("Survey request must not exceed 64 KiB")
         return normalized
 
 
@@ -63,6 +72,8 @@ class DraftCreateRequest(BaseModel):
     def _message_not_blank(cls, value: str) -> str:
         if not (normalized := value.strip()):
             raise ValueError("Draft revision message must not be blank")
+        if utf8_size(normalized) > REVISION_MESSAGE_MAX_BYTES:
+            raise ValueError("Draft revision message must not exceed 64 KiB")
         return normalized
 
 
@@ -71,11 +82,22 @@ class ManualDraftCreateRequest(BaseModel):
     client_request_id: UUID
     message: str = "Manual Draft revision"
 
-    @field_validator("markdown", "message")
+    @field_validator("markdown")
     @classmethod
-    def _text_not_blank(cls, value: str) -> str:
+    def _draft_not_blank(cls, value: str) -> str:
         if not (normalized := value.strip()):
             raise ValueError("Manual Draft text must not be blank")
+        if utf8_size(normalized) > MANUAL_DRAFT_MAX_BYTES:
+            raise ValueError("Manual Draft must not exceed 1 MiB")
+        return normalized
+
+    @field_validator("message")
+    @classmethod
+    def _message_not_blank(cls, value: str) -> str:
+        if not (normalized := value.strip()):
+            raise ValueError("Manual Draft message must not be blank")
+        if utf8_size(normalized) > REVISION_MESSAGE_MAX_BYTES:
+            raise ValueError("Manual Draft message must not exceed 64 KiB")
         return normalized
 
 
@@ -118,10 +140,19 @@ class SurveyProgressResponse(BaseModel):
     percent: int
     step: int
     total_steps: int
-    queue_ahead: int | None
+    queue: SurveyQueueResponse | None
+    elapsed_seconds: int
     started_at: datetime | None
     finished_at: datetime | None
     last_activity_at: datetime
+
+
+class SurveyQueueResponse(BaseModel):
+    kind: str
+    position: int
+    queued_at: datetime
+    running_slots: int
+    max_slots: int
 
 
 def _survey_response(survey: Survey) -> SurveyResponse:
@@ -161,6 +192,32 @@ def _progress_response(snapshot: SurveyProgressSnapshot) -> SurveyProgressRespon
         survey_status=snapshot.status,
         execution_stage=snapshot.execution_stage,
     )
+    if snapshot.queue_kind == "draft" and snapshot.queue_position is not None:
+        stage = "waiting_for_draft"
+    max_slots = (
+        settings.survey_draft_concurrency
+        if snapshot.queue_kind == "draft"
+        else settings.survey_job_concurrency
+    )
+    queue = (
+        SurveyQueueResponse(
+            kind=snapshot.queue_kind,
+            position=snapshot.queue_position,
+            queued_at=snapshot.queued_at,
+            running_slots=snapshot.running_slots,
+            max_slots=max_slots,
+        )
+        if snapshot.queue_kind is not None
+        and snapshot.queue_position is not None
+        and snapshot.queued_at is not None
+        else None
+    )
+    elapsed_start = snapshot.started_at if snapshot.status == "running" else None
+    elapsed_seconds = (
+        max(0, int(((snapshot.finished_at or datetime.now(UTC)) - elapsed_start).total_seconds()))
+        if elapsed_start is not None
+        else 0
+    )
     return SurveyProgressResponse(
         survey_id=snapshot.survey_id,
         status=snapshot.status,
@@ -168,7 +225,8 @@ def _progress_response(snapshot: SurveyProgressSnapshot) -> SurveyProgressRespon
         percent=percent,
         step=step,
         total_steps=TOTAL_PROGRESS_STEPS,
-        queue_ahead=snapshot.queue_ahead,
+        queue=queue,
+        elapsed_seconds=elapsed_seconds,
         started_at=snapshot.started_at,
         finished_at=snapshot.finished_at,
         last_activity_at=snapshot.last_activity_at,
@@ -198,11 +256,11 @@ def _service_unavailable() -> HTTPException:
 
 def _state_error(exc: SurveyStateError) -> HTTPException:
     message = str(exc)
-    code = "survey_state_conflict"
+    code = exc.code
     if isinstance(exc, SurveyDraftLimitError):
-        code = "survey_draft_limit_reached"
         message = "This Survey already has the maximum of 10 Draft revisions."
-    return http_error(409, code=code, message=message, retryable=False, retry_after=None)
+    status_code = 404 if code == "survey_not_found" else 409
+    return http_error(status_code, code=code, message=message, retryable=False, retry_after=None)
 
 
 async def _owned_survey(*, survey_id: UUID, user_id: int) -> Survey:
@@ -234,6 +292,10 @@ async def submit_survey(
             user_id=current_user.id,
             initial_request=body.initial_request,
             client_request_id=body.client_request_id,
+            request_hash=canonical_request_hash(
+                operation="create_survey",
+                payload={"initial_request": body.initial_request},
+            ),
             quota_date=datetime.now(UTC).date(),
             daily_limit=settings.survey_daily_limit,
         )
@@ -321,6 +383,10 @@ async def revise_survey_draft(
             user_id=current_user.id,
             draft_id=uuid4(),
             client_request_id=body.client_request_id,
+            request_hash=canonical_request_hash(
+                operation="generate_draft",
+                payload={"survey_id": str(survey_id), "message": body.message},
+            ),
             user_message=body.message,
         )
     except SurveyStateError as exc:
@@ -348,6 +414,14 @@ async def add_manual_survey_draft(
             user_id=current_user.id,
             draft_id=uuid4(),
             client_request_id=body.client_request_id,
+            request_hash=canonical_request_hash(
+                operation="manual_draft",
+                payload={
+                    "survey_id": str(survey_id),
+                    "message": body.message,
+                    "markdown": body.markdown,
+                },
+            ),
             user_message=body.message,
             markdown=body.markdown,
         )
@@ -372,6 +446,10 @@ async def start_survey_execution(
             user_id=current_user.id,
             job_id=uuid4(),
             client_request_id=body.client_request_id,
+            request_hash=canonical_request_hash(
+                operation="start_survey",
+                payload={"survey_id": str(survey_id)},
+            ),
         )
     except SurveyStateError as exc:
         raise _state_error(exc) from exc
@@ -383,10 +461,8 @@ async def start_survey_execution(
 @router.post("/surveys/{survey_id}/cancel", response_model=SurveyResponse)
 async def cancel_survey_request(
     survey_id: UUID,
-    body: SurveyActionRequest,
     current_user: UserRecord = Depends(get_current_user),
 ) -> SurveyResponse:
-    del body
     _require_enabled()
     await _owned_survey(survey_id=survey_id, user_id=current_user.id)
     try:

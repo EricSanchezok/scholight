@@ -45,6 +45,15 @@ scholight = "scholight.cli:cli"
 [tool.setuptools.packages.find]
 include = ["scholight*"]
 
+[tool.setuptools.package-data]
+"scholight.survey" = [
+    "workflow/AGENTS.md",
+    "workflow/rcm.toml",
+    "workflow/prompts/*.txt",
+    "workflow/rcm/*.rcm",
+    "workflow/schema/*.md",
+]
+
 
 # ── Ruff ─────────────────────────────────────────────────────────────
 

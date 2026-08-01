@@ -184,6 +184,8 @@ def test_production_services_have_hard_resource_boundaries() -> None:
         "metadata-sync": ("384m", "0.2", 128),
         "caddy": ("192m", "0.25", 128),
         "frontend": ("128m", "0.1", 64),
+        "survey-draft-worker": ("768m", "0.5", 256),
+        "survey-worker": ("2560m", "1.0", 512),
     }
 
     for service_name, (memory, cpus, pids) in expected.items():
@@ -210,9 +212,24 @@ def test_production_database_pools_are_scoped_per_service() -> None:
 
     assert compose["services"]["api"]["environment"]["SCHOLIGHT_PG_POOL_MIN_SIZE"] == 2
     assert compose["services"]["api"]["environment"]["SCHOLIGHT_PG_POOL_MAX_SIZE"] == 12
-    for name in ("metadata-sync", "paper-ingest"):
+    for name in ("metadata-sync", "paper-ingest", "survey-draft-worker", "survey-worker"):
         assert compose["services"][name]["environment"]["SCHOLIGHT_PG_POOL_MIN_SIZE"] == 1
         assert compose["services"][name]["environment"]["SCHOLIGHT_PG_POOL_MAX_SIZE"] == 4
+
+
+def test_survey_workers_are_opt_in_and_hardened_for_compatibility_release() -> None:
+    compose = yaml.safe_load((PRODUCTION / "compose.yaml").read_text(encoding="utf-8"))
+
+    for name in ("survey-draft-worker", "survey-worker"):
+        service = compose["services"][name]
+        assert service["profiles"] == ["survey"]
+        assert service["read_only"] is True
+        assert service["cap_drop"] == ["ALL"]
+        assert service["security_opt"] == ["no-new-privileges:true"]
+        assert service["restart"] == "unless-stopped"
+        assert service["mem_limit"] == service["memswap_limit"]
+    assert compose["services"]["survey-worker"]["volumes"] == ["scholight-data:/data"]
+    assert "volumes" not in compose["services"]["survey-draft-worker"]
 
 
 def test_uvicorn_has_explicit_tunable_connection_boundaries() -> None:
@@ -438,10 +455,10 @@ def test_backend_image_pins_verified_rcm_release() -> None:
     dockerfile = (ROOT / "docker" / "scholight-api" / "Dockerfile").read_text(encoding="utf-8")
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 
-    assert "ARG RCM_VERSION=v0.2.4" in dockerfile
+    assert "ARG RCM_VERSION=v0.2.6" in dockerfile
     assert (
         "ARG RCM_LINUX_X86_64_SHA256="
-        "9f7025f06aba2c2e9fd90fa292ed6a206f0c9938c8a71aef0629a6ba0008836c"
+        "edfc1d996a1a76dad127e98256e70a94dade95ab9c79d9b170f9ef25c150147a"
     ) in dockerfile
     assert (
         "https://github.com/EricSanchezok/rcm-dist/releases/download/"
@@ -454,6 +471,8 @@ def test_backend_image_pins_verified_rcm_release() -> None:
     assert "/releases/latest/" not in dockerfile
     assert "test -x /usr/local/bin/accelerate" in workflow
     assert "/usr/local/bin/accelerate --help" in workflow
+    assert "poppler-utils" in dockerfile
+    assert "pdftotext /tmp/fallback.pdf" in workflow
 
 
 def test_bootstrap_is_part_of_the_release_package_digest() -> None:

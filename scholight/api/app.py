@@ -108,17 +108,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await close_pool()
 
 
-_ONE_MB = 1_048_576
+_MAX_REQUEST_BODY_BYTES = 8 * 1_048_576
 
 
 async def _limit_body_size(request: Request) -> None:
     cl = request.headers.get("content-length")
     if cl is not None:
         try:
-            if int(cl) > _ONE_MB:
+            if int(cl) > _MAX_REQUEST_BODY_BYTES:
                 raise ValueError
         except ValueError:
-            raise ValueError("Request body exceeds 1 MB limit") from None
+            raise ValueError("Request body exceeds 8 MiB limit") from None
 
 
 def create_app() -> FastAPI:

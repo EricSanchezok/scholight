@@ -63,6 +63,7 @@ async def test_migrations_apply_once_and_replay_without_schema_changes(
         (4, "allow_delegated_usage_actor"),
         (5, "survey_jobs"),
         (6, "survey_aggregate"),
+        (7, "survey_reliability"),
     ]
 
 

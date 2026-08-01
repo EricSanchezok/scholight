@@ -16,10 +16,13 @@ from uuid import UUID
 
 import boto3
 import structlog
+from botocore.config import Config
+from botocore.exceptions import ClientError
 
 logger = structlog.get_logger(__name__)
 
 _READ_CHUNK_BYTES = 1024 * 1024
+_MANIFEST_MAX_BYTES = 8 * 1024 * 1024
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -133,11 +136,26 @@ def _validated_records(
 class SurveyArtifactStore:
     """Archive complete Survey workspaces without following unsafe filesystem entries."""
 
-    def __init__(self, *, bucket: str, client: Any | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        bucket: str,
+        endpoint_url: str | None = None,
+        client: Any | None = None,
+    ) -> None:
         if not bucket.strip():
             raise ValueError("Survey artifact bucket is required")
         self._bucket = bucket
-        self._client = client or boto3.client("s3")
+        self._client = client or boto3.client(
+            "s3",
+            endpoint_url=endpoint_url,
+            config=Config(
+                connect_timeout=3,
+                read_timeout=30,
+                retries={"max_attempts": 3, "mode": "standard"},
+                s3={"addressing_style": "path" if endpoint_url else "auto"},
+            ),
+        )
 
     @staticmethod
     def prefix(*, user_id: int, job_id: UUID) -> str:
@@ -194,7 +212,7 @@ class SurveyArtifactStore:
                     ExtraArgs={"ContentType": content_type},
                 )
                 size = file_stat.st_size
-            self._verify_size(key=key, expected=size)
+            self._verify_object(key=key, expected_size=size, expected_sha256=sha256)
             records.append(
                 {
                     "path": f"run/{relative}",
@@ -218,7 +236,11 @@ class SurveyArtifactStore:
             Body=run_body,
             ContentType="application/json",
         )
-        self._verify_size(key=run_key, expected=len(run_body))
+        self._verify_object(
+            key=run_key,
+            expected_size=len(run_body),
+            expected_sha256=hashlib.sha256(run_body).hexdigest(),
+        )
         records.append(
             {
                 "path": "run.json",
@@ -243,13 +265,19 @@ class SurveyArtifactStore:
             separators=(",", ":"),
             sort_keys=True,
         ).encode("utf-8")
+        if len(manifest_body) > _MANIFEST_MAX_BYTES:
+            raise SurveyArtifactError("Survey artifact manifest is too large")
         self._client.put_object(
             Bucket=self._bucket,
             Key=manifest_key,
             Body=manifest_body,
             ContentType="application/json",
         )
-        self._verify_size(key=manifest_key, expected=len(manifest_body))
+        self._verify_object(
+            key=manifest_key,
+            expected_size=len(manifest_body),
+            expected_sha256=hashlib.sha256(manifest_body).hexdigest(),
+        )
         logger.info(
             "survey_artifacts_archived",
             job_id=str(job_id),
@@ -262,17 +290,37 @@ class SurveyArtifactStore:
             manifest=manifest,
         )
 
-    def _verify_size(self, *, key: str, expected: int) -> None:
-        response = self._client.head_object(Bucket=self._bucket, Key=key)
-        if int(response["ContentLength"]) != expected:
-            raise SurveyArtifactError("Survey artifact size verification failed")
+    def _verify_object(self, *, key: str, expected_size: int, expected_sha256: str) -> None:
+        response = self._client.get_object(Bucket=self._bucket, Key=key)
+        body = response["Body"]
+        try:
+            size = int(response.get("ContentLength", expected_size))
+            digest = _sha256_stream(body)
+        finally:
+            close = getattr(body, "close", None)
+            if callable(close):
+                close()
+        if size != expected_size or digest != expected_sha256:
+            raise SurveyArtifactError("Survey artifact checksum verification failed")
 
     async def read_manifest(self, *, manifest_key: str) -> dict[str, Any]:
         return await asyncio.to_thread(self._read_manifest_sync, manifest_key)
 
     def _read_manifest_sync(self, manifest_key: str) -> dict[str, Any]:
         response = self._client.get_object(Bucket=self._bucket, Key=manifest_key)
-        payload = json.load(response["Body"])
+        body = response["Body"]
+        try:
+            raw = body.read(_MANIFEST_MAX_BYTES + 1)
+        finally:
+            close = getattr(body, "close", None)
+            if callable(close):
+                close()
+        if len(raw) > _MANIFEST_MAX_BYTES:
+            raise SurveyArtifactError("Survey artifact manifest is too large")
+        try:
+            payload = json.loads(raw)
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise SurveyArtifactError("Survey artifact manifest is invalid") from exc
         if (
             not isinstance(payload, dict)
             or payload.get("schema_version") != 1
@@ -349,6 +397,58 @@ class SurveyArtifactStore:
             Bucket=self._bucket,
             Key=manifest_key,
         )
+
+    async def cleanup_archive(
+        self,
+        *,
+        user_id: int,
+        job_id: UUID,
+        storage_prefix: str,
+        manifest_key: str,
+    ) -> None:
+        """Delete exact manifest objects, or the server-generated job prefix if absent."""
+        expected_prefix = self.prefix(user_id=user_id, job_id=job_id)
+        if storage_prefix != expected_prefix or manifest_key != f"{expected_prefix}/manifest.json":
+            raise SurveyArtifactError("Survey artifact cleanup scope is invalid")
+        try:
+            await self.delete_archive(manifest_key=manifest_key)
+            return
+        except ClientError as exc:
+            code = str(exc.response.get("Error", {}).get("Code", ""))
+            if code not in {"NoSuchKey", "404", "NotFound"}:
+                raise
+        await asyncio.to_thread(self._delete_prefix_sync, expected_prefix)
+
+    def _delete_prefix_sync(self, prefix: str) -> None:
+        continuation: str | None = None
+        while True:
+            parameters: dict[str, Any] = {
+                "Bucket": self._bucket,
+                "Prefix": f"{prefix}/",
+                "MaxKeys": 1000,
+            }
+            if continuation is not None:
+                parameters["ContinuationToken"] = continuation
+            response = self._client.list_objects_v2(**parameters)
+            keys = [
+                item["Key"]
+                for item in response.get("Contents", [])
+                if isinstance(item, dict)
+                and isinstance(item.get("Key"), str)
+                and item["Key"].startswith(f"{prefix}/")
+            ]
+            if keys:
+                deleted = self._client.delete_objects(
+                    Bucket=self._bucket,
+                    Delete={"Objects": [{"Key": key} for key in keys], "Quiet": True},
+                )
+                if deleted.get("Errors"):
+                    raise SurveyArtifactError("Survey artifact cleanup was incomplete")
+            if not response.get("IsTruncated"):
+                return
+            continuation = response.get("NextContinuationToken")
+            if not isinstance(continuation, str):
+                raise SurveyArtifactError("Survey artifact cleanup pagination was invalid")
 
 
 __all__ = [

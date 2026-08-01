@@ -49,6 +49,10 @@ logs/
 # ── Tests ─────────────────────────────────────────────────────────
 tests/
 **/tests/
+!tests/
+tests/*
+!tests/survey_e2e/
+!tests/survey_e2e/**
 
 # ── Host-only operational scripts ─────────────────────────────────
 scripts/

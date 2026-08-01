@@ -7,8 +7,8 @@ FROM ${PYTHON_IMAGE} AS builder
 
 ARG PRIVATE_DEP_ARCHIVE=https://api.github.com/repos/EricSanchezok/cloud-auth/tarball
 ARG PRIVATE_DEP_REVISION=9e82bb25f38a33aaa309933bfb0affb6d47c1df2
-ARG RCM_VERSION=v0.2.4
-ARG RCM_LINUX_X86_64_SHA256=9f7025f06aba2c2e9fd90fa292ed6a206f0c9938c8a71aef0629a6ba0008836c
+ARG RCM_VERSION=v0.2.6
+ARG RCM_LINUX_X86_64_SHA256=edfc1d996a1a76dad127e98256e70a94dade95ab9c79d9b170f9ef25c150147a
 ARG TARGETARCH
 
 RUN apt-get update \
@@ -52,7 +52,7 @@ RUN uv pip install --no-deps /app
 FROM ${PYTHON_IMAGE} AS runtime
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl pandoc \
+    && apt-get install -y --no-install-recommends ca-certificates curl pandoc poppler-utils \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --uid 1000 scholight \
     && mkdir -p /app /data \

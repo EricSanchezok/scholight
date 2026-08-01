@@ -133,10 +133,36 @@ class Settings(BaseSettings):
     image_gen_api_key: str = Field(default="", validation_alias="IMAGE_GEN_API_KEY")
     survey_mcp_jwt_secret: str = ""
     survey_s3_bucket: str = ""
+    survey_s3_endpoint_url: str | None = None
     survey_enabled: bool = False
     survey_daily_limit: int = Field(default=5, ge=1, le=100)
     survey_draft_timeout_seconds: int = Field(default=1800, ge=60, le=3600)
     survey_job_timeout_seconds: int = Field(default=86400, ge=60, le=172800)
+    survey_draft_concurrency: int = Field(default=8, ge=1, le=64)
+    survey_job_concurrency: int = Field(default=2, ge=1, le=16)
+    survey_draft_per_user_concurrency: int = Field(default=2, ge=1, le=64)
+    survey_job_per_user_concurrency: int = Field(default=1, ge=1, le=16)
+    survey_heartbeat_seconds: int = Field(default=15, ge=5, le=60)
+    survey_lease_seconds: int = Field(default=120, ge=30, le=600)
+
+    @model_validator(mode="after")
+    def _validate_survey_concurrency(self) -> "Settings":
+        if self.survey_draft_per_user_concurrency > self.survey_draft_concurrency:
+            raise ValueError(
+                "SCHOLIGHT_SURVEY_DRAFT_PER_USER_CONCURRENCY must not exceed "
+                "SCHOLIGHT_SURVEY_DRAFT_CONCURRENCY"
+            )
+        if self.survey_job_per_user_concurrency > self.survey_job_concurrency:
+            raise ValueError(
+                "SCHOLIGHT_SURVEY_JOB_PER_USER_CONCURRENCY must not exceed "
+                "SCHOLIGHT_SURVEY_JOB_CONCURRENCY"
+            )
+        if self.survey_heartbeat_seconds * 2 >= self.survey_lease_seconds:
+            raise ValueError(
+                "SCHOLIGHT_SURVEY_LEASE_SECONDS must exceed twice "
+                "SCHOLIGHT_SURVEY_HEARTBEAT_SECONDS"
+            )
+        return self
 
     # ── Anonymous public search ──
     anonymous_rate_limit_per_minute: int = Field(default=30, gt=0)

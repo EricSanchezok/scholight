@@ -1788,6 +1788,10 @@
       },
       "SurveyProgressResponse": {
         "properties": {
+          "elapsed_seconds": {
+            "title": "Elapsed Seconds",
+            "type": "integer"
+          },
           "finished_at": {
             "anyOf": [
               {
@@ -1809,21 +1813,21 @@
             "title": "Percent",
             "type": "integer"
           },
-          "queue_ahead": {
+          "queue": {
             "anyOf": [
               {
-                "type": "integer"
+                "$ref": "#/components/schemas/SurveyQueueResponse"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Queue Ahead"
+            ]
           },
           "stage": {
             "enum": [
               "drafting",
-              "waiting",
+              "waiting_for_draft",
+              "waiting_for_execution",
               "planning",
               "discovering",
               "reviewing_evidence",
@@ -1832,6 +1836,7 @@
               "finalizing",
               "saving_results",
               "completed",
+              "failed",
               "cancelled"
             ],
             "title": "Stage",
@@ -1874,12 +1879,41 @@
           "percent",
           "step",
           "total_steps",
-          "queue_ahead",
+          "queue",
+          "elapsed_seconds",
           "started_at",
           "finished_at",
           "last_activity_at"
         ],
         "title": "SurveyProgressResponse",
+        "type": "object"
+      },
+      "SurveyQueueResponse": {
+        "properties": {
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "max_slots": {
+            "title": "Max Slots",
+            "type": "integer"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          },
+          "queued_at": {
+            "format": "date-time",
+            "title": "Queued At",
+            "type": "string"
+          },
+          "running_slots": {
+            "title": "Running Slots",
+            "type": "integer"
+          }
+        },
+        "required": ["kind", "position", "queued_at", "running_slots", "max_slots"],
+        "title": "SurveyQueueResponse",
         "type": "object"
       },
       "SurveyResponse": {
@@ -3572,16 +3606,6 @@
             }
           }
         ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SurveyActionRequest"
-              }
-            }
-          },
-          "required": true
-        },
         "responses": {
           "200": {
             "content": {

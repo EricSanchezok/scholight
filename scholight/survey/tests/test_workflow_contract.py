@@ -17,6 +17,7 @@ def test_workflow_has_no_legacy_search_or_translation_branch() -> None:
     combined = "\n".join(path.read_text(encoding="utf-8") for path in _text_files())
 
     assert "arxiv_search" not in combined
+    assert "webfetch" not in combined
     assert "OPENAI_API_KEY" not in combined
     assert not any("zh_" in path.name for path in _text_files())
     assert not (_WORKFLOW / "rcm" / "section_translator.rcm").exists()

@@ -1,9 +1,10 @@
-"""Single-node Draft RCM execution with PostgreSQL as the only result store."""
+"""Concurrent Draft RCM supervisor with lease-owned subprocesses."""
 
 from __future__ import annotations
 
 import asyncio
 import json
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -21,13 +22,27 @@ from scholight.db.queries_survey_drafts import (
     heartbeat_survey_draft,
     recover_expired_survey_drafts,
 )
+from scholight.survey.contracts import (
+    DRAFT_CONTEXT_MAX_BYTES,
+    DRAFT_OUTPUT_MAX_BYTES,
+    SurveyLeaseLostError,
+    utf8_size,
+)
+from scholight.survey.process import (
+    ProcessControl,
+    ProcessOutputTooLargeError,
+    classify_rcm_error,
+    read_bounded,
+    read_sanitized_tail,
+    terminate_process_group,
+    write_stdin,
+)
 from scholight.survey.runtime import survey_environment
 
 logger = structlog.get_logger(__name__)
 
-_HEARTBEAT_SECONDS = 30
-_LEASE_SECONDS = 300
-_IDLE_SECONDS = 2
+_IDLE_SECONDS = 1
+_RECOVERY_SECONDS = 30
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,12 +57,7 @@ def _workflow_file() -> str:
 
 
 def _purpose(*, draft: SurveyDraft, context: SurveyDraftContext) -> str:
-    sections = [
-        "# Initial request",
-        context.initial_request,
-        "",
-        "# Successful Draft history",
-    ]
+    sections = ["# Initial request", context.initial_request, "", "# Successful Draft history"]
     if context.history:
         for revision, (message, markdown) in enumerate(context.history, start=1):
             sections.extend(
@@ -63,116 +73,172 @@ def _purpose(*, draft: SurveyDraft, context: SurveyDraftContext) -> str:
     else:
         sections.append("No successful Draft exists yet.")
     sections.extend(["", "# Current user request", draft.user_message])
-    return "\n".join(sections)
+    purpose = "\n".join(sections)
+    if utf8_size(purpose) > DRAFT_CONTEXT_MAX_BYTES:
+        raise ValueError("Survey Draft context exceeds 8 MiB")
+    return purpose
 
 
-async def _stop_process(process: asyncio.subprocess.Process) -> None:
-    process.terminate()
-    try:
-        await asyncio.wait_for(process.wait(), timeout=10)
-    except TimeoutError:
-        process.kill()
-        await process.wait()
+def _timeout_message(seconds: int) -> str:
+    minutes = max(1, round(seconds / 60))
+    return f"Draft generation exceeded its {minutes}-minute execution window."
 
 
-async def execute_draft(*, draft: SurveyDraft, context: SurveyDraftContext) -> DraftExecutionResult:
+async def execute_draft(
+    *,
+    draft: SurveyDraft,
+    context: SurveyDraftContext,
+    control: ProcessControl | None = None,
+) -> DraftExecutionResult:
+    control = control or ProcessControl()
+    purpose = _purpose(draft=draft, context=context)
     process = await asyncio.create_subprocess_exec(
         "accelerate",
         "run",
         _workflow_file(),
         "--format",
         "json",
-        "--purpose",
-        _purpose(draft=draft, context=context),
+        "--purpose-stdin",
         env=survey_environment(
             user_id=draft.user_id,
             lifetime_seconds=settings.survey_draft_timeout_seconds,
             include_image=False,
         ),
+        stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
+        start_new_session=True,
     )
-    if not isinstance(process.stdout, asyncio.StreamReader):
-        await _stop_process(process)
-        return DraftExecutionResult(
-            markdown=None,
-            error_code="survey_draft_output_unavailable",
-            error_message="Draft generation returned no readable result.",
-        )
-    output_task = asyncio.create_task(process.stdout.read())
-    try:
-        return_code = await asyncio.wait_for(
-            process.wait(), timeout=settings.survey_draft_timeout_seconds
-        )
-    except TimeoutError:
-        await _stop_process(process)
-        await output_task
-        return DraftExecutionResult(
-            markdown=None,
-            error_code="survey_draft_timed_out",
-            error_message="Draft generation exceeded the 30-minute execution window.",
-        )
-    output = await output_task
-    if return_code != 0:
-        return DraftExecutionResult(
-            markdown=None,
-            error_code="survey_draft_generation_failed",
-            error_message="Draft generation did not complete successfully.",
-        )
-    try:
-        payload = json.loads(output)
-    except (UnicodeDecodeError, json.JSONDecodeError):
-        payload = None
-    message = payload.get("message") if isinstance(payload, dict) else None
-    if not isinstance(message, str) or not message.strip():
-        return DraftExecutionResult(
-            markdown=None,
-            error_code="survey_draft_empty",
-            error_message="Draft generation returned an empty result.",
-        )
-    return DraftExecutionResult(markdown=message, error_code=None, error_message=None)
+    await control.attach(process)
+    stderr_task = asyncio.create_task(read_sanitized_tail(process.stderr))
+    output_task = asyncio.create_task(read_bounded(process.stdout, limit=DRAFT_OUTPUT_MAX_BYTES))
+    wait_task = asyncio.create_task(process.wait())
+    lost_task = asyncio.create_task(control.lease_lost.wait())
 
+    async def _complete_process() -> tuple[int, bytes]:
+        await write_stdin(process, purpose)
+        return_code, output = await asyncio.gather(wait_task, output_task)
+        return return_code, output
 
-async def _heartbeat(*, draft_id: UUID, worker_id: UUID, stop: asyncio.Event) -> None:
-    while True:
+    lifecycle_task = asyncio.create_task(_complete_process())
+    try:
+        done, _pending = await asyncio.wait(
+            {lifecycle_task, lost_task},
+            timeout=settings.survey_draft_timeout_seconds,
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        if lost_task in done and control.lease_lost.is_set():
+            await terminate_process_group(process)
+            raise SurveyLeaseLostError("Survey Draft lease is no longer owned")
+        if not done:
+            await terminate_process_group(process)
+            return DraftExecutionResult(
+                markdown=None,
+                error_code="survey_timed_out",
+                error_message=_timeout_message(settings.survey_draft_timeout_seconds),
+            )
         try:
-            await asyncio.wait_for(stop.wait(), timeout=_HEARTBEAT_SECONDS)
+            return_code, output = await lifecycle_task
+        except ProcessOutputTooLargeError:
+            await terminate_process_group(process)
+            return DraftExecutionResult(
+                markdown=None,
+                error_code="survey_draft_output_too_large",
+                error_message="Draft generation returned more than 2 MiB of output.",
+            )
+        except Exception:
+            await terminate_process_group(process)
+            raise
+        stderr_tail = await stderr_task
+        if return_code != 0:
+            error_code, error_message = classify_rcm_error(stderr_tail)
+            logger.error(
+                "survey_draft_rcm_failed",
+                draft_id=str(draft.id),
+                return_code=return_code,
+                diagnostics=stderr_tail,
+            )
+            return DraftExecutionResult(None, error_code, error_message)
+        try:
+            payload = json.loads(output)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            payload = None
+        message = payload.get("message") if isinstance(payload, dict) else None
+        if not isinstance(message, str) or not message.strip():
+            return DraftExecutionResult(
+                None,
+                "survey_invalid_output",
+                "Draft generation returned no usable Markdown.",
+            )
+        return DraftExecutionResult(message, None, None)
+    except asyncio.CancelledError:
+        await terminate_process_group(process)
+        raise
+    finally:
+        lost_task.cancel()
+        if process.returncode is None:
+            await terminate_process_group(process)
+        for task in (lifecycle_task, wait_task, output_task, stderr_task, lost_task):
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(
+            lifecycle_task,
+            wait_task,
+            output_task,
+            stderr_task,
+            lost_task,
+            return_exceptions=True,
+        )
+
+
+async def _heartbeat(
+    *,
+    draft_id: UUID,
+    worker_id: UUID,
+    stop: asyncio.Event,
+    control: ProcessControl,
+) -> None:
+    last_owned = time.monotonic()
+    while not stop.is_set():
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=settings.survey_heartbeat_seconds)
             return
         except TimeoutError:
             try:
-                if not await heartbeat_survey_draft(
+                state = await heartbeat_survey_draft(
                     draft_id=draft_id,
                     worker_id=worker_id,
-                    lease_seconds=_LEASE_SECONDS,
-                ):
-                    logger.warning("survey_draft_lease_lost", draft_id=str(draft_id))
-                    return
+                    lease_seconds=settings.survey_lease_seconds,
+                )
             except Exception as exc:
-                logger.error(
+                logger.warning(
                     "survey_draft_heartbeat_failed",
                     draft_id=str(draft_id),
                     error_type=type(exc).__name__,
                 )
+                if time.monotonic() - last_owned < settings.survey_lease_seconds:
+                    continue
+                state = "lost"
+            if state == "owned":
+                last_owned = time.monotonic()
+                continue
+            if state == "lost" or time.monotonic() - last_owned >= settings.survey_lease_seconds:
+                logger.warning("survey_draft_lease_lost", draft_id=str(draft_id))
+                await control.lose_lease()
+                return
 
 
 async def process_survey_draft(*, draft: SurveyDraft, worker_id: UUID) -> None:
     stop = asyncio.Event()
-    heartbeat = asyncio.create_task(_heartbeat(draft_id=draft.id, worker_id=worker_id, stop=stop))
+    control = ProcessControl()
+    heartbeat = asyncio.create_task(
+        _heartbeat(draft_id=draft.id, worker_id=worker_id, stop=stop, control=control)
+    )
     try:
         context = await get_survey_draft_context(survey_id=draft.survey_id)
-        try:
-            result = await execute_draft(draft=draft, context=context)
-        except Exception as exc:
-            logger.error(
-                "survey_draft_execution_failed",
-                draft_id=str(draft.id),
-                error_type=type(exc).__name__,
-            )
-            result = DraftExecutionResult(
-                markdown=None,
-                error_code="survey_draft_generation_failed",
-                error_message="Draft generation did not complete successfully.",
-            )
+        result = await execute_draft(draft=draft, context=context, control=control)
+        if control.lease_lost.is_set():
+            return
         if result.markdown is not None:
             await complete_survey_draft(
                 draft_id=draft.id,
@@ -183,24 +249,89 @@ async def process_survey_draft(*, draft: SurveyDraft, worker_id: UUID) -> None:
             await fail_survey_draft(
                 draft_id=draft.id,
                 worker_id=worker_id,
-                error_code=result.error_code or "survey_draft_generation_failed",
-                error_message=result.error_message or "Draft generation failed.",
+                error_code=result.error_code or "survey_runtime_unavailable",
+                error_message=result.error_message or "Draft generation did not complete.",
             )
+    except SurveyLeaseLostError:
+        logger.info("survey_draft_stopped_after_lease_loss", draft_id=str(draft.id))
+    except asyncio.CancelledError:
+        await control.lose_lease()
+        raise
+    except Exception as exc:
+        logger.exception(
+            "survey_draft_task_failed",
+            draft_id=str(draft.id),
+            error_type=type(exc).__name__,
+        )
+        if not control.lease_lost.is_set():
+            try:
+                await fail_survey_draft(
+                    draft_id=draft.id,
+                    worker_id=worker_id,
+                    error_code="survey_runtime_unavailable",
+                    error_message="Draft generation could not be completed.",
+                )
+            except Exception:
+                logger.warning("survey_draft_failure_not_settled", draft_id=str(draft.id))
     finally:
         stop.set()
         await heartbeat
 
 
-async def serve_survey_draft_worker() -> None:
-    worker_id = uuid4()
-    logger.info("survey_draft_worker_started", worker_id=str(worker_id))
-    while True:
-        await recover_expired_survey_drafts()
-        draft = await claim_survey_draft(worker_id=worker_id, lease_seconds=_LEASE_SECONDS)
-        if draft is None:
-            await asyncio.sleep(_IDLE_SECONDS)
-            continue
+async def _run_claimed_draft(draft: SurveyDraft, worker_id: UUID) -> None:
+    try:
         await process_survey_draft(draft=draft, worker_id=worker_id)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.exception("survey_draft_task_escaped", draft_id=str(draft.id))
+
+
+async def serve_survey_draft_worker() -> None:
+    """Supervise bounded concurrent Drafts without sharing task failure state."""
+    active: set[asyncio.Task[None]] = set()
+    last_recovery = 0.0
+    logger.info(
+        "survey_draft_supervisor_started",
+        concurrency=settings.survey_draft_concurrency,
+        per_user_concurrency=settings.survey_draft_per_user_concurrency,
+        heartbeat_seconds=settings.survey_heartbeat_seconds,
+        lease_seconds=settings.survey_lease_seconds,
+    )
+    try:
+        while True:
+            active = {task for task in active if not task.done()}
+            now = time.monotonic()
+            if now - last_recovery >= _RECOVERY_SECONDS:
+                try:
+                    await recover_expired_survey_drafts()
+                except Exception:
+                    logger.exception("survey_draft_recovery_cycle_failed")
+                last_recovery = now
+            claimed = False
+            while len(active) < settings.survey_draft_concurrency:
+                worker_id = uuid4()
+                try:
+                    draft = await claim_survey_draft(
+                        worker_id=worker_id,
+                        lease_seconds=settings.survey_lease_seconds,
+                        per_user_concurrency=settings.survey_draft_per_user_concurrency,
+                    )
+                except Exception:
+                    logger.exception("survey_draft_claim_cycle_failed")
+                    break
+                if draft is None:
+                    break
+                task = asyncio.create_task(_run_claimed_draft(draft, worker_id))
+                active.add(task)
+                claimed = True
+            if not claimed:
+                await asyncio.sleep(_IDLE_SECONDS)
+    finally:
+        for task in active:
+            task.cancel()
+        await asyncio.gather(*active, return_exceptions=True)
+        logger.info("survey_draft_supervisor_stopped")
 
 
 __all__ = [
