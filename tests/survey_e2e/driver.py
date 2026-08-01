@@ -422,7 +422,9 @@ async def _delete_and_wait_for_cleanup(
 
 
 async def main() -> None:
-    timeout = httpx.Timeout(10.0)
+    # The bounded-fairness scenario intentionally issues concurrent requests.
+    # Keep a finite deadline while allowing slower shared CI runners to drain them.
+    timeout = httpx.Timeout(30.0)
     async with httpx.AsyncClient(timeout=timeout) as client:
         await _wait_http(client, f"{API}/livez")
         await _wait_http(client, "http://model:8080/health")
