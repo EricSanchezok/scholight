@@ -344,6 +344,41 @@ async def test_extract_url_returns_markdown_and_structured_content(
     assert execute_call.args[1].actor is actor
 
 
+async def test_extract_url_cross_field_validation_is_a_structured_tool_error(
+    mcp_client: httpx.AsyncClient,
+    active_user: UserRecord,
+) -> None:
+    actor = SearchActor(user=active_user, actor_type="access_key", access_key_id=uuid4())
+    with (
+        patch(
+            "scholight.api.mcp_server.resolve_access_key_search_actor",
+            new_callable=AsyncMock,
+            return_value=actor,
+        ),
+        patch(
+            "scholight.api.mcp_server.execute_public_extract",
+            new_callable=AsyncMock,
+        ) as execute,
+    ):
+        called = await mcp_client.post(
+            "/mcp",
+            headers={
+                **_MCP_HEADERS,
+                "authorization": "Bearer sk_live_0123456789abcdef_secret",
+            },
+            json=_request(
+                "tools/call",
+                request_id=401,
+                params={"name": "extract_url", "arguments": {}},
+            ),
+        )
+
+    result = called.json()["result"]
+    assert result["isError"] is True
+    assert result["structuredContent"]["error"]["code"] == "invalid_extract_request"
+    execute.assert_not_awaited()
+
+
 async def test_delegation_jwt_is_resolved_as_current_user(
     mcp_client: httpx.AsyncClient,
     active_user: UserRecord,

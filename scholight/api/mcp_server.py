@@ -10,7 +10,7 @@ from uuid import uuid4
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import CallToolResult, TextContent, ToolAnnotations
-from pydantic import Field
+from pydantic import Field, ValidationError
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 from structlog.contextvars import get_contextvars
@@ -414,20 +414,30 @@ async def extract_url(
     ] = None,
 ) -> CallToolResult:
     """Fetch a URL and extract readable, model-friendly content."""
-    request = (
-        ExtractRequest(cursor=cursor, max_chars=max_chars)
-        if cursor is not None
-        else ExtractRequest.model_validate(
-            {
-                "url": url,
-                "render": RenderMode(render),
-                "output": ExtractResponseFormat(output),
-                "headers": headers or {},
-                "cookies": cookies or {},
-                "max_chars": max_chars,
-            }
+    try:
+        request = (
+            ExtractRequest(cursor=cursor, max_chars=max_chars)
+            if cursor is not None
+            else ExtractRequest.model_validate(
+                {
+                    "url": url,
+                    "render": RenderMode(render),
+                    "output": ExtractResponseFormat(output),
+                    "headers": headers or {},
+                    "cookies": cookies or {},
+                    "max_chars": max_chars,
+                }
+            )
         )
-    )
+    except ValidationError:
+        return _extract_tool_error(
+            PublicExtractError(
+                status_code=422,
+                code="invalid_extract_request",
+                message="Web Extract input is invalid or combines incompatible fields.",
+                retryable=False,
+            )
+        )
     invocation = _invocation()
     try:
         response = await execute_public_extract(
