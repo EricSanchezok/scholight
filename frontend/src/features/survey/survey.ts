@@ -40,14 +40,14 @@ export function surveyStageLabel(stage: SurveyProgress["stage"]): string {
   return stageLabels[stage];
 }
 
-export function surveyTitle(initialRequest: string): string {
-  return (
+export function surveyTitle(title: string | null | undefined, initialRequest: string): string {
+  if (title?.trim()) return title.trim();
+  const fallback =
     initialRequest
       .split("\n")
       .find((line) => line.trim())
-      ?.trim()
-      .slice(0, 160) || "Untitled survey"
-  );
+      ?.trim() || "Untitled survey";
+  return fallback.length <= 96 ? fallback : `${fallback.slice(0, 95).trimEnd()}…`;
 }
 
 export function queueAhead(progress: SurveyProgress): number {

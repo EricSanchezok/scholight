@@ -41,6 +41,7 @@ def _survey(*, survey_id: UUID, status: str = "drafting") -> Survey:
         client_request_id=uuid4(),
         request_hash="0" * 64,
         initial_request="retrieval augmented generation",
+        title=None,
         status=status,  # type: ignore[arg-type]
         quota_date=date(2026, 7, 31),
         quota_state="reserved",
@@ -130,6 +131,45 @@ async def test_create_survey_reserves_slot_and_queues_initial_draft(
     assert call.kwargs["initial_request"] == "retrieval augmented generation"
     assert call.kwargs["client_request_id"] == request_id
     assert call.kwargs["daily_limit"] == 5
+
+
+async def test_create_survey_persists_generated_navigation_title(
+    api_app: FastAPI,
+    api_client: httpx.AsyncClient,
+    active_user: UserRecord,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _authenticate(api_app, active_user)
+    monkeypatch.setattr(settings, "survey_enabled", True)
+    survey_id = uuid4()
+    untitled = _survey(survey_id=survey_id)
+    titled = replace(untitled, title="RAG evaluation methods")
+    with (
+        patch(
+            "scholight.api.routes.survey.create_survey",
+            new_callable=AsyncMock,
+            return_value=untitled,
+        ),
+        patch(
+            "scholight.api.routes.survey.generate_survey_title",
+            new_callable=AsyncMock,
+            return_value="RAG evaluation methods",
+        ),
+        patch(
+            "scholight.api.routes.survey.set_survey_title_if_missing",
+            new_callable=AsyncMock,
+            return_value=titled,
+        ),
+    ):
+        response = await api_client.post(
+            "/surveys",
+            json={
+                "initial_request": "Compare retrieval-augmented generation evaluation methods",
+                "client_request_id": str(uuid4()),
+            },
+        )
+
+    assert response.json()["title"] == "RAG evaluation methods"
 
 
 async def test_survey_quota_has_stable_error(
@@ -444,6 +484,7 @@ async def test_survey_list_returns_aggregate_projection_and_quota(
     now = datetime.now(UTC)
     summary = SurveySummary(
         id=survey_id,
+        title=None,
         initial_request="A focused topic\nwith details",
         status="queued",
         created_at=now,

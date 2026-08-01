@@ -80,7 +80,8 @@ export function SurveyDraftPage() {
   const atLimit = (current?.revision ?? 0) >= 10;
 
   useEffect(() => {
-    if (survey.data) document.title = `${surveyTitle(survey.data.initial_request)} — Scholight`;
+    if (survey.data)
+      document.title = `${surveyTitle(survey.data.title, survey.data.initial_request)} — Scholight`;
   }, [survey.data]);
 
   const refresh = async () => {
@@ -168,7 +169,7 @@ export function SurveyDraftPage() {
         ← Back to surveys
       </Link>
       <header className={styles.surveyDraftHeader}>
-        <h1>{surveyTitle(survey.data.initial_request)}</h1>
+        <h1>{surveyTitle(survey.data.title, survey.data.initial_request)}</h1>
         <p>{statusLine}</p>
       </header>
       <div className={styles.surveyDraftLayout}>

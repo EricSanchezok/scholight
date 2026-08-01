@@ -2089,6 +2089,10 @@
             "title": "Status",
             "type": "string"
           },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -2097,6 +2101,7 @@
         },
         "required": [
           "id",
+          "title",
           "initial_request",
           "status",
           "quota_state",

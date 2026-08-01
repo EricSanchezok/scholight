@@ -1611,6 +1611,8 @@ export interface components {
       started_at: string | null;
       /** Status */
       status: string;
+      /** Title */
+      title: string;
       /**
        * Updated At
        * Format: date-time

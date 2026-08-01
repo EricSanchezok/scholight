@@ -33,6 +33,7 @@ class SurveyQuotaSnapshot:
 @dataclass(frozen=True, slots=True)
 class SurveySummary:
     id: UUID
+    title: str | None
     initial_request: str
     status: SurveyStatus
     created_at: datetime
@@ -109,7 +110,8 @@ async def list_survey_summaries(
             "('drafting','queued','running','archiving')) OR ($2 = 'completed' AND s.status IN "
             "('succeeded','failed','cancelled'))) AND ($3::timestamptz IS NULL OR "
             "(s.created_at, s.id) < ($3, $4::uuid)) ORDER BY s.created_at DESC, s.id DESC "
-            "LIMIT $5), item_rows AS (SELECT s.id, s.initial_request, s.status, s.created_at, "
+            "LIMIT $5), item_rows AS (SELECT s.id, s.title, s.initial_request, s.status, "
+            "s.created_at, "
             "s.updated_at, s.started_at, s.finished_at, j.progress_stage, "
             "j.progress_updated_at, j.heartbeat_at, j.cancel_requested_at, "
             "d.status AS draft_status, d.queued_at AS draft_queued_at, "
@@ -198,6 +200,7 @@ async def list_survey_summaries(
         summaries.append(
             SurveySummary(
                 id=snapshot.survey_id,
+                title=str(item["title"]) if item["title"] is not None else None,
                 initial_request=str(item["initial_request"]),
                 status=status,
                 created_at=created_at,

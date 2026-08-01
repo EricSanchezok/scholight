@@ -130,6 +130,7 @@ class Settings(BaseSettings):
     # ── Survey ──
     # Provider-standard names intentionally remain unprefixed end to end.
     deepseek_api_key: str = Field(default="", validation_alias="DEEPSEEK_API_KEY")
+    survey_title_api_url: str = "https://api.deepseek.com/chat/completions"
     image_gen_api_key: str = Field(default="", validation_alias="IMAGE_GEN_API_KEY")
     survey_mcp_jwt_secret: str = ""
     survey_s3_bucket: str = ""
@@ -208,6 +209,8 @@ def validate_api_runtime_settings() -> None:
     if len(settings.mcp_delegation_jwt_secret.encode("utf-8")) < 32:
         raise ValueError("SCHOLIGHT_MCP_DELEGATION_JWT_SECRET must contain at least 32 UTF-8 bytes")
     if settings.survey_enabled:
+        if not settings.deepseek_api_key.strip():
+            raise ValueError("DEEPSEEK_API_KEY is required when Survey is enabled")
         if len(settings.survey_mcp_jwt_secret.encode("utf-8")) < 32:
             raise ValueError("SCHOLIGHT_SURVEY_MCP_JWT_SECRET must contain at least 32 UTF-8 bytes")
         if not settings.survey_s3_bucket.strip():

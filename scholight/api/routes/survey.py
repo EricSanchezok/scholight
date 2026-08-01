@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated
 from uuid import UUID, uuid4
 
+import structlog
 from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import StreamingResponse
@@ -28,6 +29,7 @@ from scholight.db.queries_survey import (
     delete_survey,
     get_survey,
     get_survey_progress,
+    set_survey_title_if_missing,
     start_survey,
 )
 from scholight.db.queries_survey_drafts import (
@@ -61,8 +63,10 @@ from scholight.survey.progress import (
     PublicProgressStage,
     present_progress,
 )
+from scholight.survey.title import generate_survey_title
 
 router = APIRouter()
+logger = structlog.get_logger(__name__)
 
 
 class SurveyCreateRequest(BaseModel):
@@ -123,6 +127,7 @@ class SurveyActionRequest(BaseModel):
 
 class SurveyResponse(BaseModel):
     id: UUID
+    title: str
     initial_request: str
     status: str
     quota_state: str
@@ -215,6 +220,7 @@ class SurveyArtifactsResponse(BaseModel):
 def _survey_response(survey: Survey) -> SurveyResponse:
     return SurveyResponse(
         id=survey.id,
+        title=survey.title or _fallback_title(survey.initial_request),
         initial_request=survey.initial_request,
         status=survey.status,
         quota_state=survey.quota_state,
@@ -292,9 +298,11 @@ def _progress_response(snapshot: SurveyProgressSnapshot) -> SurveyProgressRespon
     )
 
 
-def _title(initial_request: str) -> str:
+def _fallback_title(initial_request: str) -> str:
     first_line = next((line.strip() for line in initial_request.splitlines() if line.strip()), "")
-    return first_line[:160]
+    if len(first_line) <= 96:
+        return first_line or "Untitled survey"
+    return f"{first_line[:95].rstrip()}…"
 
 
 def _encode_cursor(*, created_at: datetime, survey_id: UUID) -> str:
@@ -330,7 +338,7 @@ def _decode_cursor(value: str | None) -> tuple[datetime | None, UUID | None]:
 def _summary_response(summary: SurveySummary) -> SurveySummaryResponse:
     return SurveySummaryResponse(
         id=summary.id,
-        title=_title(summary.initial_request),
+        title=summary.title or _fallback_title(summary.initial_request),
         status=summary.status,
         created_at=summary.created_at,
         updated_at=summary.updated_at,
@@ -419,6 +427,23 @@ async def submit_survey(
         ) from exc
     except DBError as exc:
         raise _service_unavailable() from exc
+    if survey.title is None:
+        title = await generate_survey_title(body.initial_request)
+        if title is not None:
+            try:
+                titled_survey = await set_survey_title_if_missing(
+                    survey_id=survey.id,
+                    user_id=current_user.id,
+                    title=title,
+                )
+                if titled_survey is not None:
+                    survey = titled_survey
+            except DBError as exc:
+                logger.warning(
+                    "survey_title_persist_failed",
+                    survey_id=str(survey.id),
+                    error_type=type(exc).__name__,
+                )
     return _survey_response(survey)
 
 

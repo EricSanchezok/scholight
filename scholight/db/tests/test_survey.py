@@ -42,6 +42,7 @@ def _survey_row(*, survey_id: UUID, status: str = "drafting") -> dict[str, objec
         "client_request_id": uuid4(),
         "request_hash": "0" * 64,
         "initial_request": "retrieval augmented generation",
+        "title": None,
         "status": status,
         "quota_date": date(2026, 7, 31),
         "quota_state": "reserved" if status not in {"succeeded", "failed"} else "released",

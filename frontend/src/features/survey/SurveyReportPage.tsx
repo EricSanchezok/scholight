@@ -50,7 +50,8 @@ export function SurveyReportPage() {
   });
 
   useEffect(() => {
-    if (survey.data) document.title = `${surveyTitle(survey.data.initial_request)} — Scholight`;
+    if (survey.data)
+      document.title = `${surveyTitle(survey.data.title, survey.data.initial_request)} — Scholight`;
   }, [survey.data]);
 
   if (survey.isPending || report.isPending) return <SurveyDetailSkeleton />;
@@ -83,7 +84,7 @@ export function SurveyReportPage() {
     );
   }
 
-  const title = surveyTitle(survey.data.initial_request);
+  const title = surveyTitle(survey.data.title, survey.data.initial_request);
   const download = () => {
     const blob = new Blob([report.data], { type: "text/markdown;charset=utf-8" });
     const url = URL.createObjectURL(blob);

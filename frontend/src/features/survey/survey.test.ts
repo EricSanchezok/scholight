@@ -7,6 +7,7 @@ import {
   queueAhead,
   resolveReportImage,
   surveyStageLabel,
+  surveyTitle,
 } from "./survey";
 
 const queued: SurveyProgress = {
@@ -54,5 +55,15 @@ describe("Survey presentation helpers", () => {
 
   it("creates a filesystem-safe Markdown filename", () => {
     expect(markdownFilename("AI & scientific work: 2026")).toBe("AI-scientific-work-2026.md");
+  });
+
+  it("prefers the generated survey title", () => {
+    expect(surveyTitle("Reasoning compression strategies", "A much longer request")).toBe(
+      "Reasoning compression strategies",
+    );
+  });
+
+  it("keeps a bounded request fallback while title generation is unavailable", () => {
+    expect(surveyTitle(null, "x".repeat(120))).toHaveLength(96);
   });
 });

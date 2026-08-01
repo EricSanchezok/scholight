@@ -22,6 +22,7 @@ vi.mock("../../api/domain", () => ({
 
 const survey: Survey = {
   id: "00000000-0000-0000-0000-000000000001",
+  title: "AI and scientific work",
   initial_request: "AI and scientific work",
   status: "drafting",
   quota_state: "reserved",

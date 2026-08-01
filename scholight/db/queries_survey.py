@@ -47,6 +47,7 @@ class Survey:
     client_request_id: UUID
     request_hash: str | None
     initial_request: str
+    title: str | None
     status: SurveyStatus
     quota_date: date
     quota_state: QuotaState
@@ -112,6 +113,7 @@ def _survey(row: asyncpg.Record | dict[str, Any]) -> Survey:
         client_request_id=row["client_request_id"],
         request_hash=row["request_hash"],
         initial_request=str(row["initial_request"]),
+        title=str(row["title"]) if row["title"] is not None else None,
         status=row["status"],
         quota_date=row["quota_date"],
         quota_state=row["quota_state"],
@@ -256,6 +258,30 @@ async def get_survey(*, survey_id: UUID, user_id: int) -> Survey | None:
         logger.error("survey_read_failed", error_type=type(exc).__name__)
         raise DBError("Failed to read Survey") from exc
     return _survey(row) if row is not None else None
+
+
+async def set_survey_title_if_missing(
+    *, survey_id: UUID, user_id: int, title: str
+) -> Survey | None:
+    """Persist the first generated title without allowing later Drafts to rename the Survey."""
+    try:
+        row = await get_pool().fetchrow(
+            "UPDATE scholight.surveys SET title = $3, updated_at = now() "
+            "WHERE id = $1 AND user_id = $2 AND title IS NULL RETURNING *",
+            survey_id,
+            user_id,
+            title,
+        )
+        if row is None:
+            row = await get_pool().fetchrow(
+                "SELECT * FROM scholight.surveys WHERE id = $1 AND user_id = $2",
+                survey_id,
+                user_id,
+            )
+        return _survey(row) if row is not None else None
+    except asyncpg.PostgresError as exc:
+        logger.error("survey_title_store_failed", error_type=type(exc).__name__)
+        raise DBError("Failed to store Survey title") from exc
 
 
 async def list_surveys(*, user_id: int, limit: int = 50) -> list[Survey]:
