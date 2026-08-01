@@ -196,6 +196,7 @@ def test_runtime_validation_requires_survey_boundaries_only_when_enabled(
     monkeypatch.setattr(settings, "embedding_base_url", "https://embedding.example.invalid/v1")
     monkeypatch.setattr(settings, "cors_allow_origins", ["http://localhost:3000"])
     monkeypatch.setattr(settings, "survey_enabled", True)
+    monkeypatch.setattr(settings, "deepseek_api_key", "deepseek-secret")
     monkeypatch.setattr(settings, "survey_mcp_jwt_secret", "")
     monkeypatch.setattr(settings, "survey_s3_bucket", "")
 
