@@ -89,6 +89,7 @@ async def test_archive_uploads_complete_tree_and_manifest_last(tmp_path: Path) -
         "run/cards/paper.md",
         "run.json",
     ]
+    assert archive.manifest["files"][0]["mime"] == "text/markdown"
     assert fake.operations[-1] == ("put_object", archive.manifest_key)
 
 
@@ -186,6 +187,46 @@ async def test_manifest_key_must_match_its_declared_relative_path(tmp_path: Path
 
     with pytest.raises(SurveyArtifactError, match="entry"):
         await store.presigned_artifacts(manifest_key=archive.manifest_key)
+
+
+@pytest.mark.asyncio
+async def test_open_artifact_streams_only_exact_manifest_path(tmp_path: Path) -> None:
+    (tmp_path / "08_survey.md").write_text("# Survey", encoding="utf-8")
+    fake = _FakeS3()
+    store = SurveyArtifactStore(bucket="survey-test", client=fake)
+    archive = await store.archive_run(
+        user_id=42,
+        job_id=uuid4(),
+        run_root=tmp_path,
+        run_metadata={"outcome": "succeeded"},
+    )
+
+    artifact = await store.open_artifact(
+        manifest_key=archive.manifest_key,
+        path="run/08_survey.md",
+    )
+    body = b"".join([chunk async for chunk in artifact.chunks()])
+
+    assert body == b"# Survey"
+
+
+@pytest.mark.asyncio
+async def test_open_artifact_rejects_path_not_in_manifest(tmp_path: Path) -> None:
+    (tmp_path / "08_survey.md").write_text("# Survey", encoding="utf-8")
+    fake = _FakeS3()
+    store = SurveyArtifactStore(bucket="survey-test", client=fake)
+    archive = await store.archive_run(
+        user_id=42,
+        job_id=uuid4(),
+        run_root=tmp_path,
+        run_metadata={"outcome": "succeeded"},
+    )
+
+    with pytest.raises(SurveyArtifactError, match="not present"):
+        await store.open_artifact(
+            manifest_key=archive.manifest_key,
+            path="run/../secret.txt",
+        )
 
 
 @pytest.mark.asyncio

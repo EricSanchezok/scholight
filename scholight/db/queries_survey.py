@@ -26,7 +26,7 @@ SurveyStatus = Literal[
 ]
 QuotaState = Literal["reserved", "consumed", "released"]
 JobStatus = Literal["queued", "running", "archiving", "finished"]
-SurveyOutcome = Literal["succeeded", "failed"]
+SurveyOutcome = Literal["succeeded", "failed", "cancelled"]
 
 
 class SurveyQuotaExceededError(DBError):
@@ -87,6 +87,7 @@ class SurveyJob:
     created_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
+    cancel_requested_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,6 +102,7 @@ class SurveyProgressSnapshot:
     started_at: datetime | None
     finished_at: datetime | None
     last_activity_at: datetime
+    cancel_requested_at: datetime | None = None
 
 
 def _survey(row: asyncpg.Record | dict[str, Any]) -> Survey:
@@ -151,6 +153,7 @@ def _job(row: asyncpg.Record | dict[str, Any]) -> SurveyJob:
         created_at=row["created_at"],
         started_at=row["started_at"],
         finished_at=row["finished_at"],
+        cancel_requested_at=row.get("cancel_requested_at"),
     )
 
 
@@ -289,6 +292,7 @@ async def get_survey_progress(*, survey_id: UUID, user_id: int) -> SurveyProgres
             "AND (p.queued_at, p.id) < (j.queued_at, j.id)) turn WHERE j.status = 'queued') "
             "SELECT s.id AS survey_id, s.status, s.started_at, s.finished_at, s.updated_at, "
             "j.progress_stage, j.progress_updated_at, j.heartbeat_at, "
+            "j.cancel_requested_at, "
             "d.status AS draft_status, d.queued_at AS draft_queued_at, "
             "j.queued_at AS job_queued_at, dr.position AS draft_position, "
             "jr.position AS job_position, "
@@ -332,6 +336,7 @@ async def get_survey_progress(*, survey_id: UUID, user_id: int) -> SurveyProgres
         running_slots=(int(row["running_drafts"]) if draft_queue else int(row["running_jobs"])),
         started_at=row["started_at"],
         finished_at=row["finished_at"],
+        cancel_requested_at=row["cancel_requested_at"],
         last_activity_at=max(activity_candidates),
     )
 
@@ -418,7 +423,7 @@ async def start_survey(
 
 
 async def cancel_survey(*, survey_id: UUID, user_id: int) -> Survey:
-    """Cancel only pre-execution work and release its reservation once."""
+    """Cancel queued work immediately or request cooperative running cancellation."""
     try:
         async with get_pool().acquire() as connection, connection.transaction():
             locked = await lock_survey_aggregate(
@@ -429,14 +434,35 @@ async def cancel_survey(*, survey_id: UUID, user_id: int) -> Survey:
             if locked is None:
                 raise SurveyStateError("Survey not found", code="survey_not_found")
             row = locked.survey
-            if row["status"] == "cancelled":
+            if row["status"] in {"succeeded", "failed", "cancelled"}:
                 return _survey(row)
-            if row["status"] not in {"drafting", "queued"}:
+            job = locked.job
+            if row["status"] == "running":
+                if job is None or job["status"] != "running":
+                    raise SurveyStateError(
+                        "This Survey cannot be cancelled in its current state.",
+                        code="survey_not_cancellable",
+                    )
+                await connection.execute(
+                    "UPDATE scholight.survey_jobs SET cancel_requested_at = coalesce("
+                    "cancel_requested_at, now()), heartbeat_at = now() WHERE id = $1",
+                    job["id"],
+                )
+                refreshed = await connection.fetchrow(
+                    "UPDATE scholight.surveys SET updated_at = now() WHERE id = $1 RETURNING *",
+                    survey_id,
+                )
+                return _survey(refreshed)
+            if row["status"] == "archiving":
                 raise SurveyStateError(
-                    "This Survey has already begun and can no longer be cancelled.",
+                    "This Survey cannot be cancelled in its current state.",
                     code="survey_not_cancellable",
                 )
-            job = locked.job
+            if row["status"] not in {"drafting", "queued"}:
+                raise SurveyStateError(
+                    "This Survey cannot be cancelled in its current state.",
+                    code="survey_not_cancellable",
+                )
             if row["status"] == "queued":
                 if job is None or job["status"] != "queued":
                     raise SurveyStateError(
@@ -481,6 +507,67 @@ async def cancel_survey(*, survey_id: UUID, user_id: int) -> Survey:
     except asyncpg.PostgresError as exc:
         logger.error("survey_cancel_failed", error_type=type(exc).__name__)
         raise DBError("Failed to cancel Survey") from exc
+
+
+async def delete_survey(*, survey_id: UUID, user_id: int) -> None:
+    """Delete one owner-scoped Survey after atomically releasing any queued reservation."""
+    try:
+        async with get_pool().acquire() as connection, connection.transaction():
+            locked = await lock_survey_aggregate(
+                connection,
+                survey_id=survey_id,
+                user_id=user_id,
+            )
+            if locked is None:
+                raise SurveyStateError("Survey not found", code="survey_not_found")
+            survey = locked.survey
+            if survey["status"] in {"running", "archiving"}:
+                raise SurveyStateError(
+                    "Cancel this Survey and wait for artifact archiving before deleting it.",
+                    code="survey_delete_in_progress",
+                )
+            if survey["status"] in {"drafting", "queued"}:
+                if locked.job is not None:
+                    if locked.job["status"] != "queued":
+                        raise SurveyStateError(
+                            "Cancel this Survey before deleting it.",
+                            code="survey_delete_in_progress",
+                        )
+                    await connection.execute(
+                        "DELETE FROM scholight.survey_jobs WHERE id = $1", locked.job["id"]
+                    )
+                await connection.execute(
+                    "UPDATE scholight.survey_drafts SET status = 'cancelled', "
+                    "finished_at = now(), lease_owner = NULL, lease_expires_at = NULL "
+                    "WHERE survey_id = $1 AND status IN ('queued','running')",
+                    survey_id,
+                )
+                if survey["quota_state"] == "reserved":
+                    released = await connection.fetchrow(
+                        "UPDATE scholight.survey_daily_usage "
+                        "SET reserved_count = reserved_count - 1, updated_at = now() "
+                        "WHERE user_id = $1 AND usage_date = $2 AND reserved_count > 0 "
+                        "RETURNING reserved_count",
+                        user_id,
+                        survey["quota_date"],
+                    )
+                    if released is None:
+                        raise SurveyStateError(
+                            "This Survey reservation is no longer available.",
+                            code="survey_delete_in_progress",
+                        )
+            result = await connection.execute(
+                "DELETE FROM scholight.surveys WHERE id = $1 AND user_id = $2",
+                survey_id,
+                user_id,
+            )
+            if str(result) != "DELETE 1":
+                raise SurveyStateError("Survey not found", code="survey_not_found")
+    except SurveyStateError:
+        raise
+    except asyncpg.PostgresError as exc:
+        logger.error("survey_delete_failed", error_type=type(exc).__name__)
+        raise DBError("Failed to delete Survey") from exc
 
 
 async def claim_survey_job(
@@ -582,9 +669,10 @@ async def heartbeat_survey_job(
     *, job_id: UUID, worker_id: UUID, lease_seconds: int
 ) -> HeartbeatState:
     try:
-        result = await get_pool().execute(
+        row = await get_pool().fetchrow(
             "UPDATE scholight.survey_jobs SET heartbeat_at = now(), lease_expires_at = now() + $3 "
-            "WHERE id = $1 AND lease_owner = $2 AND status IN ('running', 'archiving')",
+            "WHERE id = $1 AND lease_owner = $2 AND status IN ('running', 'archiving') "
+            "RETURNING cancel_requested_at",
             job_id,
             worker_id,
             timedelta(seconds=lease_seconds),
@@ -592,7 +680,9 @@ async def heartbeat_survey_job(
     except (asyncpg.PostgresError, DBError) as exc:
         logger.error("survey_job_heartbeat_failed", error_type=type(exc).__name__)
         return "transient_error"
-    return "owned" if str(result) == "UPDATE 1" else "lost"
+    if row is None:
+        return "lost"
+    return "cancel_requested" if row["cancel_requested_at"] is not None else "owned"
 
 
 async def update_survey_job_progress(
@@ -603,6 +693,7 @@ async def update_survey_job_progress(
         result = await get_pool().execute(
             "UPDATE scholight.survey_jobs SET progress_stage = $3, progress_updated_at = now() "
             "WHERE id = $1 AND lease_owner = $2 AND status = 'running' "
+            "AND cancel_requested_at IS NULL "
             "AND array_position($4::text[], progress_stage) "
             "<= array_position($4::text[], $3)",
             job_id,
@@ -644,7 +735,10 @@ async def settle_survey_execution(
                 raise SurveyStateError(
                     "The Survey execution no longer exists.", code="survey_worker_lost"
                 )
-            if row["status"] == "archiving" and row["terminal_outcome"] == outcome:
+            effective_outcome: SurveyOutcome = (
+                "cancelled" if row.get("cancel_requested_at") is not None else outcome
+            )
+            if row["status"] == "archiving" and row["terminal_outcome"] == effective_outcome:
                 return _job(row)
             if row["status"] != "running" or row["lease_owner"] != worker_id:
                 raise SurveyLeaseLostError("Survey execution lease is no longer owned")
@@ -655,7 +749,7 @@ async def settle_survey_execution(
                 or survey["quota_state"] != "reserved"
             ):
                 raise SurveyLeaseLostError("Survey aggregate is no longer running")
-            success_delta = 1 if outcome == "succeeded" else 0
+            success_delta = 1 if effective_outcome == "succeeded" else 0
             usage = await connection.fetchrow(
                 "UPDATE scholight.survey_daily_usage SET reserved_count = reserved_count - 1, "
                 "succeeded_count = succeeded_count + $3, updated_at = now() "
@@ -670,18 +764,18 @@ async def settle_survey_execution(
                 "UPDATE scholight.surveys SET status = 'archiving', quota_state = $2, "
                 "error_code = $3, error_message = $4, updated_at = now() WHERE id = $1",
                 row["survey_id"],
-                "consumed" if outcome == "succeeded" else "released",
-                error_code,
-                error_message,
+                "consumed" if effective_outcome == "succeeded" else "released",
+                None if effective_outcome == "cancelled" else error_code,
+                None if effective_outcome == "cancelled" else error_message,
             )
             await connection.execute(
                 "UPDATE scholight.survey_jobs SET status = 'archiving', terminal_outcome = $2, "
                 "error_code = $3, error_message = $4, next_archive_at = now(), heartbeat_at = now() "
                 "WHERE id = $1",
                 job_id,
-                outcome,
-                error_code,
-                error_message,
+                effective_outcome,
+                None if effective_outcome == "cancelled" else error_code,
+                None if effective_outcome == "cancelled" else error_message,
             )
             updated = await connection.fetchrow(_JOB_SELECT + "WHERE j.id = $1", job_id)
             return _job(updated)
@@ -862,20 +956,24 @@ async def recover_expired_survey_jobs(*, limit: int = 20) -> int:
                 )
                 if usage is None:
                     raise DBError("Expired Survey reservation is missing")
+                cancelled = locked.job["cancel_requested_at"] is not None
                 await connection.execute(
                     "UPDATE scholight.survey_jobs SET status = 'archiving', "
-                    "terminal_outcome = 'failed', error_code = 'survey_worker_lost', "
-                    "error_message = 'The Survey worker stopped before completion.', "
+                    "terminal_outcome = $2, error_code = $3, error_message = $4, "
                     "lease_owner = NULL, lease_expires_at = NULL, next_archive_at = now(), "
                     "heartbeat_at = now() WHERE id = $1",
                     row["id"],
+                    "cancelled" if cancelled else "failed",
+                    None if cancelled else "survey_worker_lost",
+                    None if cancelled else "The Survey worker stopped before completion.",
                 )
                 await connection.execute(
                     "UPDATE scholight.surveys SET status = 'archiving', quota_state = 'released', "
-                    "error_code = 'survey_worker_lost', "
-                    "error_message = 'The Survey worker stopped before completion.', "
+                    "error_code = $2, error_message = $3, "
                     "updated_at = now() WHERE id = $1",
                     row["survey_id"],
+                    None if cancelled else "survey_worker_lost",
+                    None if cancelled else "The Survey worker stopped before completion.",
                 )
                 recovered += 1
     except asyncpg.PostgresError as exc:
@@ -908,6 +1006,7 @@ __all__ = [
     "cancel_survey",
     "claim_survey_job",
     "create_survey",
+    "delete_survey",
     "defer_survey_archive",
     "finish_survey_archive",
     "get_survey",

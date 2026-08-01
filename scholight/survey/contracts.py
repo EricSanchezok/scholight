@@ -15,7 +15,7 @@ DRAFT_CONTEXT_MAX_BYTES = 8 * 1024 * 1024
 DRAFT_OUTPUT_MAX_BYTES = 2 * 1024 * 1024
 STDERR_TAIL_MAX_BYTES = 64 * 1024
 
-HeartbeatState = Literal["owned", "lost", "transient_error"]
+HeartbeatState = Literal["owned", "cancel_requested", "lost", "transient_error"]
 
 
 class SurveyConflictError(DBError):

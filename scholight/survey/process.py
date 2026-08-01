@@ -31,15 +31,22 @@ class ProcessControl:
     """Share one process-group cancellation boundary with its heartbeat."""
 
     lease_lost: asyncio.Event = field(default_factory=asyncio.Event)
+    cancel_requested: asyncio.Event = field(default_factory=asyncio.Event)
     process: asyncio.subprocess.Process | None = None
 
     async def attach(self, process: asyncio.subprocess.Process) -> None:
         self.process = process
-        if self.lease_lost.is_set():
+        if self.lease_lost.is_set() or self.cancel_requested.is_set():
             await terminate_process_group(process)
 
     async def lose_lease(self) -> None:
         self.lease_lost.set()
+        if self.process is not None:
+            await terminate_process_group(self.process)
+
+    async def request_cancel(self) -> None:
+        """Stop this task without conflating a user cancellation with lease loss."""
+        self.cancel_requested.set()
         if self.process is not None:
             await terminate_process_group(self.process)
 

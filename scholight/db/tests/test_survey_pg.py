@@ -18,15 +18,18 @@ from scholight.db.queries_survey import (
     cancel_survey,
     claim_survey_job,
     create_survey,
+    delete_survey,
     finish_survey_archive,
     get_survey,
     get_survey_progress,
+    heartbeat_survey_job,
     mark_survey_workspace_missing,
     recover_expired_survey_jobs,
     settle_survey_execution,
     start_survey,
     update_survey_job_progress,
 )
+from scholight.db.queries_survey_cleanup import get_artifact_cleanup_status
 from scholight.db.queries_survey_drafts import (
     SurveyDraftLimitError,
     claim_survey_draft,
@@ -35,6 +38,10 @@ from scholight.db.queries_survey_drafts import (
     fail_survey_draft,
     list_survey_drafts,
     request_generated_draft,
+)
+from scholight.db.queries_survey_views import (
+    get_survey_artifact_reference,
+    list_survey_summaries,
 )
 from scholight.db.tests.pg_ingestion_support import (
     isolated_database_url,
@@ -567,6 +574,194 @@ async def test_cancel_retains_drafts_and_releases_reservation_once(
     assert first.status == second.status == "cancelled"
     assert await _usage(survey_pool) == (0, 0)
     assert await survey_pool.fetchval("SELECT count(*) FROM scholight.survey_drafts") == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("terminal_status", ["succeeded", "failed"])
+async def test_cancel_terminal_survey_is_idempotent(
+    survey_pool: asyncpg.Pool,
+    terminal_status: str,
+) -> None:
+    with patch("scholight.db.queries_survey.get_pool", return_value=survey_pool):
+        survey_id = await _create()
+        await survey_pool.execute(
+            "UPDATE scholight.surveys SET status = $2, quota_state = $3, "
+            "finished_at = now() WHERE id = $1",
+            survey_id,
+            terminal_status,
+            "consumed" if terminal_status == "succeeded" else "released",
+        )
+        unchanged = await cancel_survey(survey_id=survey_id, user_id=42)
+
+    assert unchanged.status == terminal_status
+
+
+@pytest.mark.asyncio
+async def test_running_cancel_is_observed_and_wins_before_success_settlement(
+    survey_pool: asyncpg.Pool,
+) -> None:
+    with (
+        patch("scholight.db.queries_survey.get_pool", return_value=survey_pool),
+        patch("scholight.db.queries_survey_drafts.get_pool", return_value=survey_pool),
+    ):
+        survey_id = await _create()
+        await _complete_next_draft(markdown="# Approved Draft")
+        await start_survey(
+            survey_id=survey_id,
+            user_id=42,
+            job_id=uuid4(),
+            client_request_id=uuid4(),
+            request_hash="c" * 64,
+        )
+        worker_id = uuid4()
+        job = await claim_survey_job(worker_id=worker_id, lease_seconds=3600)
+        assert job is not None
+        requested = await cancel_survey(survey_id=survey_id, user_id=42)
+        heartbeat = await heartbeat_survey_job(
+            job_id=job.id,
+            worker_id=worker_id,
+            lease_seconds=3600,
+        )
+        settled = await settle_survey_execution(
+            job_id=job.id,
+            worker_id=worker_id,
+            outcome="succeeded",
+            error_code=None,
+            error_message=None,
+        )
+
+    assert requested.status == "running"
+    assert heartbeat == "cancel_requested"
+    assert settled.terminal_outcome == "cancelled"
+    assert await _usage(survey_pool) == (0, 0)
+
+
+@pytest.mark.asyncio
+async def test_delete_drafting_survey_releases_quota_and_removes_aggregate(
+    survey_pool: asyncpg.Pool,
+) -> None:
+    with patch("scholight.db.queries_survey.get_pool", return_value=survey_pool):
+        survey_id = await _create()
+        await delete_survey(survey_id=survey_id, user_id=42)
+
+    assert (
+        await survey_pool.fetchval(
+            "SELECT 1 FROM scholight.surveys WHERE id = $1 AND user_id = $2",
+            survey_id,
+            42,
+        )
+        is None
+    )
+    assert await _usage(survey_pool) == (0, 0)
+
+
+@pytest.mark.asyncio
+async def test_delete_terminal_survey_enqueues_exact_artifact_cleanup(
+    survey_pool: asyncpg.Pool,
+) -> None:
+    with (
+        patch("scholight.db.queries_survey.get_pool", return_value=survey_pool),
+        patch("scholight.db.queries_survey_drafts.get_pool", return_value=survey_pool),
+    ):
+        survey_id = await _create()
+        await _complete_next_draft(markdown="# Approved Draft")
+        await start_survey(
+            survey_id=survey_id,
+            user_id=42,
+            job_id=uuid4(),
+            client_request_id=uuid4(),
+            request_hash="d" * 64,
+        )
+        worker_id = uuid4()
+        job = await claim_survey_job(worker_id=worker_id, lease_seconds=3600)
+        assert job is not None
+        await settle_survey_execution(
+            job_id=job.id,
+            worker_id=worker_id,
+            outcome="succeeded",
+            error_code=None,
+            error_message=None,
+        )
+        prefix = f"surveys/v1/42/{job.id}"
+        await finish_survey_archive(
+            job_id=job.id,
+            worker_id=worker_id,
+            storage_bucket="test-surveys",
+            storage_prefix=prefix,
+            manifest_key=f"{prefix}/manifest.json",
+        )
+        await delete_survey(survey_id=survey_id, user_id=42)
+
+    cleanup = await survey_pool.fetchrow(
+        "SELECT * FROM scholight.survey_artifact_cleanup_outbox WHERE source_job_id = $1",
+        job.id,
+    )
+    assert cleanup is not None
+    assert cleanup["storage_prefix"] == prefix
+    with patch("scholight.db.queries_survey_cleanup.get_pool", return_value=survey_pool):
+        status = await get_artifact_cleanup_status()
+    assert status.pending == 1
+    assert status.retry == 0
+    assert status.dead == 0
+    assert status.oldest_waiting_at is not None
+    assert (
+        await survey_pool.fetchval(
+            "SELECT count(*) FROM scholight.surveys WHERE id = $1", survey_id
+        )
+        == 0
+    )
+
+
+@pytest.mark.asyncio
+async def test_delete_running_or_archiving_survey_is_rejected(
+    survey_pool: asyncpg.Pool,
+) -> None:
+    with (
+        patch("scholight.db.queries_survey.get_pool", return_value=survey_pool),
+        patch("scholight.db.queries_survey_drafts.get_pool", return_value=survey_pool),
+    ):
+        survey_id = await _create()
+        await _complete_next_draft(markdown="# Approved Draft")
+        await start_survey(
+            survey_id=survey_id,
+            user_id=42,
+            job_id=uuid4(),
+            client_request_id=uuid4(),
+            request_hash="d" * 64,
+        )
+        assert await claim_survey_job(worker_id=uuid4(), lease_seconds=3600) is not None
+        with pytest.raises(SurveyStateError) as error:
+            await delete_survey(survey_id=survey_id, user_id=42)
+
+    assert error.value.code == "survey_delete_in_progress"
+
+
+@pytest.mark.asyncio
+async def test_aggregate_list_and_artifact_reference_are_owner_scoped(
+    survey_pool: asyncpg.Pool,
+) -> None:
+    with (
+        patch("scholight.db.queries_survey.get_pool", return_value=survey_pool),
+        patch("scholight.db.queries_survey_drafts.get_pool", return_value=survey_pool),
+        patch("scholight.db.queries_survey_views.get_pool", return_value=survey_pool),
+    ):
+        survey_id = await _create()
+        page = await list_survey_summaries(
+            user_id=42,
+            quota_date=_QUOTA_DATE,
+            daily_limit=5,
+            view="active",
+            limit=20,
+            cursor_created_at=None,
+            cursor_id=None,
+        )
+        hidden = await get_survey_artifact_reference(survey_id=survey_id, user_id=43)
+
+    assert len(page.items) == 1
+    assert page.items[0].id == survey_id
+    assert page.items[0].progress.queue_kind == "draft"
+    assert page.quota.remaining == 4
+    assert hidden is None
 
 
 @pytest.mark.asyncio

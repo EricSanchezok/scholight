@@ -347,6 +347,23 @@ def test_survey_reliability_migration_is_product_scoped_and_expand_only() -> Non
     assert "delete from" not in sql
 
 
+def test_survey_cancellation_migration_only_widens_the_job_contract() -> None:
+    migration = Path(__file__).parents[3] / "migrations/008_survey_cancellation.sql"
+    raw_sql = migration.read_text(encoding="utf-8")
+    sql = " ".join(raw_sql.split()).lower()
+
+    with pytest.raises(ValueError, match="destructive migration rejected"):
+        validate_expand_only_sql(raw_sql)
+    assert "alter table scholight.survey_jobs" in sql
+    assert "add column cancel_requested_at timestamptz" in sql
+    assert "terminal_outcome in ('succeeded', 'failed', 'cancelled')" in sql
+    assert "drop constraint survey_jobs_terminal_outcome" in sql
+    assert "drop table" not in sql
+    assert "truncate" not in sql
+    assert "delete from" not in sql
+    assert "auth." not in sql
+
+
 @pytest.mark.asyncio
 async def test_reviewed_survey_aggregate_contract_migration_is_applied(tmp_path: Path) -> None:
     source = Path(__file__).parents[3] / "migrations/006_survey_aggregate.sql"

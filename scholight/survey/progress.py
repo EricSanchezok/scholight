@@ -24,6 +24,7 @@ PublicProgressStage = Literal[
     "structuring_report",
     "writing_report",
     "finalizing",
+    "cancelling",
     "saving_results",
     "completed",
     "failed",
@@ -51,6 +52,7 @@ _STAGE_PRESENTATION: dict[PublicProgressStage, tuple[int, int]] = {
     "structuring_report": (75, 4),
     "writing_report": (88, 5),
     "finalizing": (96, 6),
+    "cancelling": (0, 0),
     "saving_results": (98, 7),
     "completed": (100, 8),
     "failed": (0, 0),
@@ -108,7 +110,9 @@ def present_progress(
     elif survey_status == "succeeded":
         stage = "completed"
     elif survey_status == "cancelled":
-        stage = "cancelled"
+        prior = execution_stage if execution_stage in _STAGE_PRESENTATION else "drafting"
+        prior_percent, prior_step = _STAGE_PRESENTATION[prior]
+        return "cancelled", prior_percent, prior_step
     elif survey_status == "failed":
         prior = execution_stage if execution_stage in _STAGE_PRESENTATION else "planning"
         prior_percent, prior_step = _STAGE_PRESENTATION[prior]

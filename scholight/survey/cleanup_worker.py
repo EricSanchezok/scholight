@@ -28,6 +28,12 @@ logger = structlog.get_logger(__name__)
 
 _CLEANUP_CONCURRENCY = 2
 _MAX_ATTEMPTS = 8
+# The worker owns this fixed file inside its private, size-bounded tmpfs.
+CLEANUP_HEALTH_PATH = Path("/tmp/scholight-survey-cleanup.heartbeat")  # nosec B108
+
+
+def _touch_health() -> None:
+    CLEANUP_HEALTH_PATH.touch(exist_ok=True)
 
 
 async def _heartbeat(
@@ -127,6 +133,7 @@ async def serve_artifact_cleanup() -> None:
     last_recovery = 0.0
     try:
         while True:
+            _touch_health()
             active = {task for task in active if not task.done()}
             now = time.monotonic()
             if now - last_recovery >= 30:
@@ -160,4 +167,4 @@ async def serve_artifact_cleanup() -> None:
         await asyncio.gather(*active, return_exceptions=True)
 
 
-__all__ = ["process_artifact_cleanup", "serve_artifact_cleanup"]
+__all__ = ["CLEANUP_HEALTH_PATH", "process_artifact_cleanup", "serve_artifact_cleanup"]

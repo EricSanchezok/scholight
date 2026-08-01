@@ -32,6 +32,16 @@ class SurveyArtifactCleanup:
     lease_expires_at: datetime | None
 
 
+@dataclass(frozen=True, slots=True)
+class SurveyArtifactCleanupStatus:
+    pending: int
+    running: int
+    retry: int
+    succeeded: int
+    dead: int
+    oldest_waiting_at: datetime | None
+
+
 def _cleanup(row: asyncpg.Record | dict[str, Any]) -> SurveyArtifactCleanup:
     return SurveyArtifactCleanup(
         id=row["id"],
@@ -144,11 +154,40 @@ async def recover_expired_artifact_cleanups() -> int:
     return int(str(result).rsplit(" ", 1)[-1])
 
 
+async def get_artifact_cleanup_status() -> SurveyArtifactCleanupStatus:
+    """Return low-cardinality cleanup health without exposing artifact locations."""
+    try:
+        row = await get_pool().fetchrow(
+            "SELECT "
+            "count(*) FILTER (WHERE status = 'pending')::int AS pending, "
+            "count(*) FILTER (WHERE status = 'running')::int AS running, "
+            "count(*) FILTER (WHERE status = 'retry')::int AS retry, "
+            "count(*) FILTER (WHERE status = 'succeeded')::int AS succeeded, "
+            "count(*) FILTER (WHERE status = 'dead')::int AS dead, "
+            "min(created_at) FILTER (WHERE status IN ('pending','retry')) AS oldest_waiting_at "
+            "FROM scholight.survey_artifact_cleanup_outbox"
+        )
+    except asyncpg.PostgresError as exc:
+        raise DBError("Failed to read Survey artifact cleanup status") from exc
+    if row is None:
+        raise DBError("Survey artifact cleanup status query returned no row")
+    return SurveyArtifactCleanupStatus(
+        pending=int(row["pending"]),
+        running=int(row["running"]),
+        retry=int(row["retry"]),
+        succeeded=int(row["succeeded"]),
+        dead=int(row["dead"]),
+        oldest_waiting_at=row["oldest_waiting_at"],
+    )
+
+
 __all__ = [
     "SurveyArtifactCleanup",
+    "SurveyArtifactCleanupStatus",
     "claim_artifact_cleanup",
     "complete_artifact_cleanup",
     "heartbeat_artifact_cleanup",
+    "get_artifact_cleanup_status",
     "recover_expired_artifact_cleanups",
     "retry_artifact_cleanup",
 ]

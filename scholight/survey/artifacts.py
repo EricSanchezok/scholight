@@ -9,10 +9,11 @@ import mimetypes
 import os
 import re
 import stat
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import boto3
 import structlog
@@ -30,11 +31,34 @@ class SurveyArtifactError(Exception):
     """A Survey run could not be safely archived or retrieved."""
 
 
+class SurveyArtifactNotFoundError(SurveyArtifactError):
+    """The requested path is not authorized by the archived manifest."""
+
+
 @dataclass(frozen=True, slots=True)
 class SurveyArchive:
     storage_prefix: str
     manifest_key: str
     manifest: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class SurveyArtifactStream:
+    path: str
+    size: int
+    sha256: str
+    content_type: str
+    _body: Any
+
+    async def chunks(self) -> AsyncIterator[bytes]:
+        """Read a private S3 object without materializing the complete file."""
+        try:
+            while chunk := await asyncio.to_thread(self._body.read, _READ_CHUNK_BYTES):
+                yield chunk
+        finally:
+            close = getattr(self._body, "close", None)
+            if callable(close):
+                await asyncio.to_thread(close)
 
 
 def _sha256_stream(stream: Any) -> str:
@@ -45,6 +69,11 @@ def _sha256_stream(stream: Any) -> str:
 
 
 def _content_type(path: Path) -> str:
+    # Python's platform MIME database is not consistent for Markdown.  Keep the
+    # public report contract deterministic across the development and runtime
+    # images instead of trusting /etc/mime.types.
+    if path.suffix.lower() in {".md", ".markdown"}:
+        return "text/markdown"
     guessed, _encoding = mimetypes.guess_type(path.name)
     return guessed or "application/octet-stream"
 
@@ -177,6 +206,31 @@ class SurveyArtifactStore:
             run_root=run_root,
             run_metadata=run_metadata,
         )
+
+    async def verify_access(self) -> None:
+        """Exercise scoped Put/Get/Delete access without creating a Survey run."""
+        key = f"surveys/v1/_smoke/{uuid4()}"
+        body = os.urandom(32)
+        await asyncio.to_thread(
+            self._client.put_object,
+            Bucket=self._bucket,
+            Key=key,
+            Body=body,
+            ContentType="application/octet-stream",
+        )
+        try:
+            await asyncio.to_thread(
+                self._verify_object,
+                key=key,
+                expected_size=len(body),
+                expected_sha256=hashlib.sha256(body).hexdigest(),
+            )
+        finally:
+            await asyncio.to_thread(
+                self._client.delete_object,
+                Bucket=self._bucket,
+                Key=key,
+            )
 
     def _archive_run_sync(
         self,
@@ -363,6 +417,42 @@ class SurveyArtifactStore:
             )
         return artifacts
 
+    async def open_artifact(
+        self,
+        *,
+        manifest_key: str,
+        path: str,
+    ) -> SurveyArtifactStream:
+        """Open exactly one manifest-authorized object for bounded streaming."""
+        return await asyncio.to_thread(self._open_artifact_sync, manifest_key, path)
+
+    def _open_artifact_sync(self, manifest_key: str, path: str) -> SurveyArtifactStream:
+        manifest = self._read_manifest_sync(manifest_key)
+        record = next(
+            (
+                candidate
+                for candidate in _validated_records(manifest, manifest_key=manifest_key)
+                if candidate["path"] == path
+            ),
+            None,
+        )
+        if record is None:
+            raise SurveyArtifactNotFoundError("Survey artifact is not present in the manifest")
+        response = self._client.get_object(Bucket=self._bucket, Key=record["key"])
+        body = response["Body"]
+        if int(response.get("ContentLength", -1)) != int(record["size"]):
+            close = getattr(body, "close", None)
+            if callable(close):
+                close()
+            raise SurveyArtifactError("Survey artifact size does not match the manifest")
+        return SurveyArtifactStream(
+            path=str(record["path"]),
+            size=int(record["size"]),
+            sha256=str(record["sha256"]),
+            content_type=str(record["mime"]),
+            _body=body,
+        )
+
     async def delete_archive(self, *, manifest_key: str, preserve_manifest: bool = False) -> None:
         manifest = await self.read_manifest(manifest_key=manifest_key)
         await asyncio.to_thread(
@@ -454,5 +544,7 @@ class SurveyArtifactStore:
 __all__ = [
     "SurveyArchive",
     "SurveyArtifactError",
+    "SurveyArtifactNotFoundError",
+    "SurveyArtifactStream",
     "SurveyArtifactStore",
 ]

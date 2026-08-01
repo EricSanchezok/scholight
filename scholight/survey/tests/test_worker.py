@@ -447,6 +447,33 @@ async def test_job_heartbeat_database_failure_stops_work_after_lease_deadline(
 
 
 @pytest.mark.asyncio
+async def test_job_heartbeat_stops_process_after_cancellation_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    control = ProcessControl()
+    monkeypatch.setattr(settings, "survey_heartbeat_seconds", 0.001)
+    monkeypatch.setattr(settings, "survey_lease_seconds", 30)
+
+    with patch(
+        "scholight.survey.worker.heartbeat_survey_job",
+        new_callable=AsyncMock,
+        return_value="cancel_requested",
+    ) as heartbeat:
+        await asyncio.wait_for(
+            _heartbeat(
+                job_id=uuid4(),
+                worker_id=uuid4(),
+                stop=asyncio.Event(),
+                control=control,
+            ),
+            timeout=1,
+        )
+
+    heartbeat.assert_awaited_once()
+    assert control.cancel_requested.is_set()
+
+
+@pytest.mark.asyncio
 async def test_survey_supervisor_keeps_execution_bounded(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

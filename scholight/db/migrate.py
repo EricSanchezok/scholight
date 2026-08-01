@@ -33,6 +33,10 @@ _APPROVED_CONTRACT_MIGRATIONS = {
         6,
         "survey_aggregate",
     ): "7839587fb113308b08a29af4453e30d5d51babb90dbf43b720426315fdcaaac9",
+    (
+        8,
+        "survey_cancellation",
+    ): "50ba44148b1d14853b2c67ff25f92fe549e8fde208119848789f906002f83a29",
 }
 
 

@@ -54,7 +54,7 @@ _STAGE_RECORD_LIMIT = 512
 
 @dataclass(frozen=True, slots=True)
 class SurveyExecutionResult:
-    outcome: Literal["succeeded", "failed"]
+    outcome: Literal["succeeded", "failed", "cancelled"]
     error_code: str | None
     error_message: str | None
     started_at: datetime
@@ -218,6 +218,7 @@ async def execute_survey(
     stderr_task = asyncio.create_task(read_sanitized_tail(process.stderr))
     wait_task = asyncio.create_task(process.wait())
     lost_task = asyncio.create_task(control.lease_lost.wait())
+    cancel_task = asyncio.create_task(control.cancel_requested.wait())
 
     async def _complete_process() -> tuple[int, tuple[dict[str, object], ...]]:
         await write_stdin(process, job.approved_draft)
@@ -227,13 +228,24 @@ async def execute_survey(
     lifecycle_task = asyncio.create_task(_complete_process())
     try:
         done, _pending = await asyncio.wait(
-            {lifecycle_task, lost_task},
+            {lifecycle_task, lost_task, cancel_task},
             timeout=settings.survey_job_timeout_seconds,
             return_when=asyncio.FIRST_COMPLETED,
         )
         if lost_task in done and control.lease_lost.is_set():
             await terminate_process_group(process)
             raise SurveyLeaseLostError("Survey execution lease is no longer owned")
+        if cancel_task in done and control.cancel_requested.is_set():
+            await terminate_process_group(process)
+            stage_timings = await stage_collector
+            return SurveyExecutionResult(
+                outcome="cancelled",
+                error_code=None,
+                error_message=None,
+                started_at=started_at,
+                finished_at=datetime.now(UTC),
+                stage_timings=stage_timings,
+            )
         if not done:
             await terminate_process_group(process)
             stage_timings = await stage_collector
@@ -291,7 +303,14 @@ async def execute_survey(
         lost_task.cancel()
         if process.returncode is None:
             await terminate_process_group(process)
-        for task in (lifecycle_task, wait_task, stage_collector, stderr_task, lost_task):
+        for task in (
+            lifecycle_task,
+            wait_task,
+            stage_collector,
+            stderr_task,
+            lost_task,
+            cancel_task,
+        ):
             if not task.done():
                 task.cancel()
         await asyncio.gather(
@@ -300,6 +319,7 @@ async def execute_survey(
             stage_collector,
             stderr_task,
             lost_task,
+            cancel_task,
             return_exceptions=True,
         )
 
@@ -335,6 +355,10 @@ async def _heartbeat(
             if state == "owned":
                 last_owned = time.monotonic()
                 continue
+            if state == "cancel_requested":
+                logger.info("survey_cancellation_observed", job_id=str(job_id))
+                await control.request_cancel()
+                return
             if state == "lost" or time.monotonic() - last_owned >= settings.survey_lease_seconds:
                 logger.warning("survey_heartbeat_lease_lost", job_id=str(job_id))
                 await control.lose_lease()
