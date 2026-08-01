@@ -72,7 +72,7 @@ def _pdf(data: bytes) -> ExtractedContent:
         import pymupdf
         import pymupdf4llm
 
-        document = pymupdf.open(stream=data, filetype="pdf")
+        document = pymupdf.open(stream=data, filetype="pdf")  # type: ignore[no-untyped-call]
         content = pymupdf4llm.to_markdown(document).strip()
         metadata = document.metadata or {}
     except Exception as exc:

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "scholight"
 version = "0.1.0"
-description = "AI-focused academic paper search engine — arXiv as single data source, passage-level vector search"
+description = "AI-focused academic research engine with paper search and general web extraction"
 requires-python = ">=3.11"
 dependencies = [
     "boto3>=1.35,<2",
@@ -118,7 +118,7 @@ ignore_missing_imports = true
 enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
 
 [[tool.mypy.overrides]]
-module = ["tests.*", "scholight.pipeline.tests.*", "scholight.search.*.tests.*", "scholight.store.tests.*"]
+module = ["tests.*", "scholight.pipeline.tests.*", "scholight.search.*.tests.*", "scholight.store.tests.*", "scholight.web_extract.tests.*"]
 ignore_errors = true
 
 [[tool.mypy.overrides]]

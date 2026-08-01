@@ -64,7 +64,7 @@
           },
           "scopes": {
             "items": {
-              "const": "search",
+              "const": "all",
               "type": "string"
             },
             "title": "Scopes",
@@ -860,7 +860,7 @@
           },
           "scopes": {
             "items": {
-              "const": "search",
+              "const": "all",
               "type": "string"
             },
             "title": "Scopes",
@@ -938,7 +938,7 @@
           },
           "scopes": {
             "items": {
-              "const": "search",
+              "const": "all",
               "type": "string"
             },
             "title": "Scopes",
@@ -997,6 +997,200 @@
         "required": ["message", "client_request_id"],
         "title": "DraftCreateRequest",
         "type": "object"
+      },
+      "ExtractRequest": {
+        "additionalProperties": false,
+        "description": "Start an extraction or continue one immutable cached result.",
+        "properties": {
+          "cookies": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "maxProperties": 64,
+            "title": "Cookies",
+            "type": "object"
+          },
+          "cursor": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cursor"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "maxProperties": 32,
+            "title": "Headers",
+            "type": "object"
+          },
+          "max_chars": {
+            "default": 20000,
+            "maximum": 100000.0,
+            "minimum": 1.0,
+            "title": "Max Chars",
+            "type": "integer"
+          },
+          "output": {
+            "$ref": "#/components/schemas/ExtractResponseFormat",
+            "default": "main_markdown"
+          },
+          "render": {
+            "$ref": "#/components/schemas/RenderMode",
+            "default": "auto"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "format": "uri",
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "title": "ExtractRequest",
+        "type": "object"
+      },
+      "ExtractResponse": {
+        "additionalProperties": false,
+        "description": "One bounded page of an immutable extracted document.",
+        "properties": {
+          "author": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author"
+          },
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "content_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "content_type": {
+            "title": "Content Type",
+            "type": "string"
+          },
+          "extractor": {
+            "title": "Extractor",
+            "type": "string"
+          },
+          "fetched_at": {
+            "format": "date-time",
+            "title": "Fetched At",
+            "type": "string"
+          },
+          "final_url": {
+            "format": "uri",
+            "minLength": 1,
+            "title": "Final Url",
+            "type": "string"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "rendered": {
+            "title": "Rendered",
+            "type": "boolean"
+          },
+          "requested_url": {
+            "format": "uri",
+            "minLength": 1,
+            "title": "Requested Url",
+            "type": "string"
+          },
+          "status_code": {
+            "maximum": 599.0,
+            "minimum": 100.0,
+            "title": "Status Code",
+            "type": "integer"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "requested_url",
+          "final_url",
+          "status_code",
+          "title",
+          "author",
+          "published_at",
+          "content_type",
+          "content",
+          "rendered",
+          "extractor",
+          "warnings",
+          "content_hash",
+          "fetched_at",
+          "truncated",
+          "next_cursor"
+        ],
+        "title": "ExtractResponse",
+        "type": "object"
+      },
+      "ExtractResponseFormat": {
+        "enum": ["main_markdown", "full_markdown", "text", "raw_html"],
+        "title": "ExtractResponseFormat",
+        "type": "string"
       },
       "ForgotPasswordRequest": {
         "properties": {
@@ -1573,6 +1767,11 @@
         "required": ["email", "password"],
         "title": "RegisterRequest",
         "type": "object"
+      },
+      "RenderMode": {
+        "enum": ["auto", "never", "always"],
+        "title": "RenderMode",
+        "type": "string"
       },
       "ResetPasswordRequest": {
         "properties": {
@@ -2335,7 +2534,7 @@
     }
   },
   "info": {
-    "description": "AI-powered academic paper search engine",
+    "description": "Academic paper search and general web extraction for AI research",
     "title": "Scholight API",
     "version": "0.1.0"
   },
@@ -3042,6 +3241,50 @@
         },
         "summary": "Verify Email",
         "tags": ["auth"]
+      }
+    },
+    "/extract": {
+      "post": {
+        "operationId": "extract_extract_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExtractRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExtractResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Extract",
+        "tags": ["extract"]
       }
     },
     "/health": {

@@ -10,7 +10,7 @@ const secret = {
   key: "sk_live_secret",
   prefix: "sk_live_",
   last4: "cret",
-  scopes: ["search" as const],
+  scopes: ["all" as const],
   created_at: "2026-07-23T00:00:00Z",
   expires_at: null,
   last_used_at: null,

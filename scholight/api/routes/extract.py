@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from structlog.contextvars import get_contextvars
 
 from scholight.api.deps import SearchActor, get_extract_actor
@@ -20,7 +20,6 @@ router = APIRouter()
 
 @router.post("", response_model=ExtractResponse)
 async def extract(
-    request: Request,
     body: ExtractRequest,
     actor: SearchActor = Depends(get_extract_actor),
 ) -> ExtractResponse:

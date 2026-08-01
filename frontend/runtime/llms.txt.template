@@ -1,6 +1,6 @@
 # Scholight
 
-> Scholight helps researchers and AI agents find relevant academic papers through web search, a REST API, and a stateless MCP server.
+> Scholight helps researchers and AI agents find relevant academic papers and retrieve readable source content through REST and a stateless MCP server.
 
 ## Documentation
 
@@ -9,4 +9,5 @@
 
 ## Integration
 
-- [MCP endpoint](@@SCHOLIGHT_PUBLIC_WEB_URL@@/api/mcp): Stateless Streamable HTTP endpoint exposing the `search_papers` tool.
+- [MCP endpoint](@@SCHOLIGHT_PUBLIC_WEB_URL@@/api/mcp): Stateless Streamable HTTP endpoint exposing `search_papers` and authenticated `extract_url`.
+- [Web Extract endpoint](@@SCHOLIGHT_PUBLIC_WEB_URL@@/api/extract): Access-Key-authenticated URL extraction for HTML, rendered pages, JSON, XML, and PDF.

@@ -417,13 +417,15 @@ async def extract_url(
     request = (
         ExtractRequest(cursor=cursor, max_chars=max_chars)
         if cursor is not None
-        else ExtractRequest(
-            url=url,
-            render=RenderMode(render),
-            output=ExtractResponseFormat(output),
-            headers=headers or {},
-            cookies=cookies or {},
-            max_chars=max_chars,
+        else ExtractRequest.model_validate(
+            {
+                "url": url,
+                "render": RenderMode(render),
+                "output": ExtractResponseFormat(output),
+                "headers": headers or {},
+                "cookies": cookies or {},
+                "max_chars": max_chars,
+            }
         )
     )
     invocation = _invocation()

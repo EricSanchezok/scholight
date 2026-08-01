@@ -3,20 +3,32 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, Protocol
+from uuid import UUID
 
 import httpx
+from cloud_auth.models.user import UserRecord
 
-from scholight.api.deps import SearchActor
 from scholight.config import settings
 from scholight.models.web_extract import ExtractRequest, ExtractResponse
 from scholight.web_extract.cache import ExtractResultCache, PageSlice
 from scholight.web_extract.service import InternalExtractResponse
 
 
+class _ExtractActor(Protocol):
+    @property
+    def user(self) -> UserRecord: ...
+
+    @property
+    def actor_type(self) -> Literal["web", "access_key", "delegated"]: ...
+
+    @property
+    def access_key_id(self) -> UUID | None: ...
+
+
 @dataclass(frozen=True, slots=True)
 class ExtractInvocation:
-    actor: SearchActor | None
+    actor: _ExtractActor | None
     request_id: str
     transport: Literal["rest", "mcp"]
 
@@ -65,7 +77,7 @@ def reset_extract_result_cache() -> None:
     _result_cache = _new_cache()
 
 
-def _actor_key(actor: SearchActor) -> str:
+def _actor_key(actor: _ExtractActor) -> str:
     key_id = str(actor.access_key_id) if actor.access_key_id is not None else "none"
     return f"{actor.actor_type}:{actor.user.id}:{key_id}"
 

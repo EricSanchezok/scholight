@@ -30,7 +30,6 @@ from scholight.api.models.search import (
 )
 from scholight.api.search_access import reset_anonymous_minute_limits
 from scholight.api.search_execution import PublicSearchError, SearchInvocation
-from scholight.api.extract_execution import PublicExtractError
 from scholight.config import settings
 from scholight.db.queries_anonymous_quota import AnonymousQuotaReservation
 from scholight.models.search import SearchResult
@@ -294,8 +293,8 @@ async def test_extract_url_returns_markdown_and_structured_content(
 ) -> None:
     actor = SearchActor(user=active_user, actor_type="access_key", access_key_id=uuid4())
     response = ExtractResponse(
-        requested_url="https://example.com/article",
-        final_url="https://example.com/article",
+        requested_url=AnyHttpUrl("https://example.com/article"),
+        final_url=AnyHttpUrl("https://example.com/article"),
         status_code=200,
         title="Example article",
         author=None,
@@ -340,7 +339,9 @@ async def test_extract_url_returns_markdown_and_structured_content(
     assert result["isError"] is False
     assert result["structuredContent"] == response.model_dump(mode="json")
     assert "# Extracted content" in result["content"][0]["text"]
-    assert execute.await_args.args[1].actor is actor
+    execute_call = execute.await_args
+    assert execute_call is not None
+    assert execute_call.args[1].actor is actor
 
 
 async def test_delegation_jwt_is_resolved_as_current_user(

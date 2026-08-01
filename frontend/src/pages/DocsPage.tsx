@@ -65,7 +65,7 @@ export function DocsPage({ origin }: DocsPageProps = {}) {
         <p className={styles.eyebrow}>Documentation</p>
         <h1>Using Scholight</h1>
         <p>
-          Search academic literature through Scholight on the web, from a REST client, or with an
+          Search academic literature and retrieve readable source content from REST or an
           MCP-enabled agent.
         </p>
       </header>
@@ -102,7 +102,8 @@ export function DocsPage({ origin }: DocsPageProps = {}) {
             <h2>Anonymous when exploring, Access Key when integrating</h2>
             <p className={styles.docsLead}>
               Omit the Authorization header for anonymous use. For tools and agents, create an
-              Access Key in your account and send it as a Bearer credential.
+              Access Key in your account and send it as a Bearer credential. The same key works
+              across every current and future Scholight tool.
             </p>
             <ol className={styles.docsSteps}>
               <li>
@@ -141,7 +142,7 @@ export function DocsPage({ origin }: DocsPageProps = {}) {
 
           <section className={styles.docsSection} id="rest-api">
             <p className={styles.docsSectionLabel}>03 · REST API</p>
-            <h2>Search papers through the REST API</h2>
+            <h2>Search papers and extract source content</h2>
             <p className={styles.docsLead}>
               Send a JSON request to the search endpoint. Authentication is optional; add an Access
               Key when you want the search associated with your account and authenticated quota.
@@ -152,6 +153,12 @@ export function DocsPage({ origin }: DocsPageProps = {}) {
                 method="POST"
                 url={urls.search}
                 description="Anonymous or Access Key"
+              />
+              <EndpointRow
+                label="Extract URL"
+                method="POST"
+                url={urls.extract}
+                description="Access Key required"
               />
             </div>
             <div className={styles.docsSplit}>
@@ -178,6 +185,15 @@ export function DocsPage({ origin }: DocsPageProps = {}) {
               unavailable, not that the ranked search failed.
             </p>
             <CopyCodeBlock code={code.response} language="json" />
+            <h3>Extract a URL</h3>
+            <p>
+              Web Extract accepts public HTTP and HTTPS URLs, including non-default ports. It can
+              send target headers or stateless cookies, automatically render JavaScript when needed,
+              and return main Markdown, full Markdown, text, or raw HTML. JSON, XML, and PDF
+              documents are handled directly. Use <code>next_cursor</code> to continue a long,
+              immutable result without fetching the source again.
+            </p>
+            <CopyCodeBlock code={code.extractCurl} language="bash" />
           </section>
 
           <section className={styles.docsSection} id="mcp-server">
@@ -185,22 +201,23 @@ export function DocsPage({ origin }: DocsPageProps = {}) {
             <h2>Connect an agent over Streamable HTTP</h2>
             <p className={styles.docsLead}>
               Scholight exposes a stateless MCP server at <code>{urls.mcp}</code>. Native clients
-              can connect directly; the Authorization header is optional for anonymous searches.
+              can connect directly; the Authorization header is optional for anonymous searches and
+              required for Web Extract.
             </p>
             <CopyCodeBlock code={code.mcp} language="json" />
             <div className={styles.docsSplit}>
               <div>
-                <h3>Tool</h3>
+                <h3>Paper search</h3>
                 <p>
                   <code>search_papers</code> returns concise Markdown and structured content that
                   matches the REST response.
                 </p>
               </div>
               <div>
-                <h3>Inputs</h3>
+                <h3>Web extraction</h3>
                 <p>
-                  <code>query</code>, <code>strength</code>, <code>limit</code>, categories,
-                  authors, and an optional date range.
+                  <code>extract_url</code> retrieves readable content from a URL and returns both
+                  concise Markdown and the structured REST-compatible response.
                 </p>
               </div>
             </div>
@@ -232,8 +249,9 @@ export function DocsPage({ origin }: DocsPageProps = {}) {
               </div>
             </div>
             <p>
-              Scholight searches AI research from arXiv. A focused natural-language question with a
-              task, method, or comparison usually performs better than disconnected keywords.
+              Scholight currently indexes AI research from arXiv and keeps its corpus boundary open
+              to additional scholarly sources. A focused question with a task, method, or comparison
+              usually performs better than disconnected keywords.
             </p>
           </section>
 
@@ -268,7 +286,8 @@ export function DocsPage({ origin }: DocsPageProps = {}) {
             </div>
             <p className={styles.docsNote}>
               Anonymous and authenticated daily limits differ. Sign in to review current quota and
-              recent usage; initialize and tool-list MCP requests do not consume search quota.
+              recent search usage. Web Extract has no daily quota; it uses bounded response sizes,
+              deadlines, and concurrency. Initialize and tool-list MCP requests consume no quota.
             </p>
           </section>
         </div>

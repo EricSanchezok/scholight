@@ -63,7 +63,8 @@ async def test_extract_pages_one_immutable_result_without_refetch() -> None:
         AsyncMock(return_value=_document()),
     ) as request_document:
         first = await execute_public_extract(
-            ExtractRequest(url="https://example.com/article", max_chars=4), invocation
+            ExtractRequest.model_validate({"url": "https://example.com/article", "max_chars": 4}),
+            invocation,
         )
         second = await execute_public_extract(
             ExtractRequest(cursor=first.next_cursor, max_chars=4), invocation
@@ -86,7 +87,7 @@ async def test_extract_cursor_is_bound_to_authenticated_actor() -> None:
         AsyncMock(return_value=_document()),
     ):
         first = await execute_public_extract(
-            ExtractRequest(url="https://example.com/article", max_chars=4),
+            ExtractRequest.model_validate({"url": "https://example.com/article", "max_chars": 4}),
             ExtractInvocation(actor=first_actor, request_id="request-1", transport="rest"),
         )
         with pytest.raises(PublicExtractError, match="invalid_cursor"):
@@ -100,6 +101,6 @@ async def test_extract_cursor_is_bound_to_authenticated_actor() -> None:
 async def test_extract_requires_authenticated_tool_identity() -> None:
     with pytest.raises(PublicExtractError, match="authentication_required"):
         await execute_public_extract(
-            ExtractRequest(url="https://example.com"),
+            ExtractRequest.model_validate({"url": "https://example.com"}),
             ExtractInvocation(actor=None, request_id="request-1", transport="mcp"),
         )
