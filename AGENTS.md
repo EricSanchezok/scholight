@@ -245,6 +245,7 @@ configure_logging(log_level="INFO", use_json=True, file_handler=("app.log", 50_0
 - **Zilliz 仅限只读搜索**：本地可连接远端 Zilliz 以获得真实论文搜索结果；优先使用 collection-scoped/read-only Key。不得在该环境启动 `metadata-sync`、`paper-ingest`、backfill、scheduler sync、store 维护或任何可能写入/删除 Zilliz 的命令。
 - **允许启动的服务**：Frontend、API、Survey Draft worker、Survey worker，以及本地 PostgreSQL/MinIO。论文摄入服务默认保持停止。
 - **模型按测试层级选择**：日常和 CI 使用固定假模型，不消耗真实 Token；最终人工验收可显式注入真实 `DEEPSEEK_API_KEY` 和 `IMAGE_GEN_API_KEY`。Secret 不得写入 Compose、测试产物、日志或 Git。
+- **真实模型凭据不落盘**：需要真实模型的本地人工测试通过 `scripts/run_with_survey_model_keys.sh <command>` 启动。该脚本只从 `/scholight/production/runtime-env` 提取两个模型 Key 到子进程环境，不得把完整 Parameter 或 Key 写入本地 `.env`。
 - **生产边界不混用**：本地环境不得连接生产 RDS 或生产 Survey S3 Bucket；生产运行时不得配置 MinIO endpoint。任何需要远端写操作的测试必须另行获得明确授权。
 - **环境可重建**：本地 PostgreSQL、MinIO Bucket 和测试账户都视为可丢弃状态；测试结果不得依赖手工修改后的持久容器。
 
