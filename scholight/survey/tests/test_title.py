@@ -74,6 +74,29 @@ async def test_generate_survey_title_calls_provider_for_short_input(
     assert captured["content"] == "RAG"
 
 
+async def test_generate_survey_title_disables_thinking(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "deepseek_api_key", "test-key")
+    captured: dict[str, object] = {}
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        captured["thinking"] = payload.get("thinking")
+        captured["reasoning_effort"] = payload.get("reasoning_effort")
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "RAG evaluation"}}]},
+            request=request,
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        await title_module.generate_survey_title("RAG", client=client)
+
+    assert captured["thinking"] == {"type": "disabled"}
+    assert captured["reasoning_effort"] is None
+
+
 async def test_generate_survey_title_prompt_requires_direct_bounded_output(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

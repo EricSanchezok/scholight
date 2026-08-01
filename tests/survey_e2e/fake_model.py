@@ -60,6 +60,18 @@ async def completion(request: Request, path: str) -> dict[str, Any]:
     body = await request.json()
     names = _tool_names(body)
     messages = body.get("messages", [])
+    is_title_request = any(
+        isinstance(message, dict)
+        and "SCHOLIGHT_SURVEY_NAVIGATION_TITLE" in str(message.get("content", ""))
+        for message in messages
+    )
+    if is_title_request:
+        if body.get("thinking") != {"type": "disabled"}:
+            raise AssertionError("Survey title generation must disable thinking")
+        return _response(
+            {"role": "assistant", "content": "Retrieval-Augmented Generation Evaluation"},
+            finish_reason="stop",
+        )
     tool_results = [
         message
         for message in messages

@@ -446,6 +446,7 @@ async def main() -> None:
             },
         )
         created.raise_for_status()
+        assert created.json()["title"] == "Retrieval-Augmented Generation Evaluation"
         survey_id = created.json()["id"]
         first = await _poll_draft(client, survey_id, expected_revision=1)
         assert first["revision"] == 1
