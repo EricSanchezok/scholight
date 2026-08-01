@@ -8,14 +8,19 @@ Use `scholight__search_papers` when a named concept, claimed relationship, time-
 scope boundary needs academic verification. Search only when it improves the requirement; do not
 turn this step into the full literature survey.
 
-Return a concise but complete Markdown Draft that states:
+Return a concise but complete Markdown Draft. The Draft must state:
 
 - the research objective and intended audience;
 - the included and excluded scope;
 - the central questions and comparisons;
 - relevant time, field, method, or evidence boundaries;
 - the expected structure and depth of the final Survey;
-- unresolved ambiguity that the user should decide, if any.
+- explicit assumptions and boundaries for any uncertainty that remains after targeted search.
+
+Do not leave unresolved questions or a "questions for the user" / "待用户决策的歧义点" section.
+When the request is ambiguous, choose the most defensible bounded interpretation, state it as an
+assumption, and still produce an executable research requirement. The user can revise that assumption
+in the next Draft.
 
 Your final assistant message must contain only the Markdown Draft. Do not return JSON, commentary,
 tool traces, file paths, or implementation details.
