@@ -66,7 +66,7 @@ async def generate_survey_title(
     }
     owns_client = client is None
     http_client = client or httpx.AsyncClient(
-        timeout=httpx.Timeout(connect=2.0, read=8.0, write=3.0, pool=1.0),
+        timeout=httpx.Timeout(connect=1.0, read=3.0, write=2.0, pool=1.0),
         follow_redirects=False,
     )
     try:
