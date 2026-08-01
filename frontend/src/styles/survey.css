@@ -483,6 +483,11 @@
   min-width: 0;
 }
 
+.surveyDraftStage,
+.surveyDraftStage > div {
+  min-height: 300px;
+}
+
 .surveyDraftSectionHeading {
   display: flex;
   margin-bottom: 20px;

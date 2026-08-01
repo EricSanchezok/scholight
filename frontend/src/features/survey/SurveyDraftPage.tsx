@@ -1,4 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AnimatePresence } from "motion/react";
+import * as m from "motion/react-m";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
@@ -6,6 +8,7 @@ import { surveyApi } from "../../api/domain";
 import { ApiError } from "../../api/errors";
 import type { SurveyDraft } from "../../api/types";
 import { queryKeys } from "../../app/queryKeys";
+import { contentSwapMotion } from "../../app/motion";
 import { routes } from "../../app/routes";
 import { SkeletonPulse, SurveyDetailSkeleton } from "../../components/EditorialSkeleton";
 import { formatRelativeTime } from "../../i18n/format";
@@ -179,113 +182,126 @@ export function SurveyDraftPage() {
             <span>{editing ? "MARKDOWN SOURCE" : "RENDERED PREVIEW"}</span>
           </div>
 
-          {active ? (
-            <SkeletonPulse
-              label={
-                active.status === "queued"
-                  ? "Waiting to prepare research brief"
-                  : "Generating research brief"
-              }
-              className={styles.surveyDraftLoading}
-            >
-              <span />
-              <span />
-              <span />
-              <p>
-                {active.status === "queued"
-                  ? "Research is busy. Your draft will begin automatically."
-                  : "Generating a draft…"}
-              </p>
-            </SkeletonPulse>
-          ) : failed && (!current || failed.created_at > current.created_at) ? (
-            <div className={styles.surveyDraftFailure} role="alert">
-              <h3>Draft generation failed</h3>
-              <p>{failed.error_message ?? "The draft could not be prepared."}</p>
-              <button
-                type="button"
-                disabled={revise.isPending}
-                onClick={() => revise.mutate(failed.user_message)}
-              >
-                Retry draft
-              </button>
-            </div>
-          ) : selected?.markdown ? (
-            <>
-              {editing ? (
-                <textarea
-                  className={styles.surveyDraftEditor}
-                  value={source}
-                  onChange={(event) => setSource(event.target.value)}
-                  aria-label="Markdown source"
-                />
+          <div className={styles.surveyDraftStage}>
+            <AnimatePresence initial={false} mode="wait">
+              {active ? (
+                <m.div key={`active-${active.id}-${active.status}`} {...contentSwapMotion}>
+                  <SkeletonPulse
+                    label={
+                      active.status === "queued"
+                        ? "Waiting to prepare research brief"
+                        : "Generating research brief"
+                    }
+                    className={styles.surveyDraftLoading}
+                  >
+                    <span />
+                    <span />
+                    <span />
+                    <p>
+                      {active.status === "queued"
+                        ? "Research is busy. Your draft will begin automatically."
+                        : "Generating a draft…"}
+                    </p>
+                  </SkeletonPulse>
+                </m.div>
+              ) : failed && (!current || failed.created_at > current.created_at) ? (
+                <m.div key={`failed-${failed.id}`} {...contentSwapMotion}>
+                  <div className={styles.surveyDraftFailure} role="alert">
+                    <h3>Draft generation failed</h3>
+                    <p>{failed.error_message ?? "The draft could not be prepared."}</p>
+                    <button
+                      type="button"
+                      disabled={revise.isPending}
+                      onClick={() => revise.mutate(failed.user_message)}
+                    >
+                      Retry draft
+                    </button>
+                  </div>
+                </m.div>
+              ) : selected?.markdown ? (
+                <m.div
+                  key={`${selected.id}-${editing ? "source" : "preview"}`}
+                  {...contentSwapMotion}
+                >
+                  {editing ? (
+                    <textarea
+                      className={styles.surveyDraftEditor}
+                      value={source}
+                      onChange={(event) => setSource(event.target.value)}
+                      aria-label="Markdown source"
+                    />
+                  ) : (
+                    <div className={styles.surveyDraftPreview}>
+                      <SurveyMarkdown markdown={selected.markdown} compact />
+                    </div>
+                  )}
+                  {viewingHistory ? (
+                    <div className={styles.surveyDraftActions}>
+                      <button
+                        type="button"
+                        className={styles.secondaryButton}
+                        onClick={() => setSelectedId(undefined)}
+                      >
+                        Return to current
+                      </button>
+                    </div>
+                  ) : editing ? (
+                    <div className={styles.surveyDraftActions}>
+                      <button
+                        type="button"
+                        className={styles.secondaryButton}
+                        onClick={() => {
+                          setEditing(false);
+                          setSource(current?.markdown ?? "");
+                        }}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        className={styles.primaryButton}
+                        disabled={!source.trim() || save.isPending}
+                        onClick={() => save.mutate()}
+                      >
+                        {save.isPending ? "Saving…" : "Save"}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className={styles.surveyDraftActions}>
+                      <button
+                        type="button"
+                        className={styles.secondaryButton}
+                        onClick={() => {
+                          setSource(current?.markdown ?? "");
+                          setEditing(true);
+                        }}
+                      >
+                        Edit draft
+                      </button>
+                      <button
+                        type="button"
+                        className={styles.primaryButton}
+                        onClick={() => setStartOpen(true)}
+                      >
+                        Approve &amp; start
+                      </button>
+                    </div>
+                  )}
+                  {(save.error || revise.error) && (
+                    <p className={styles.surveyInlineError} role="alert">
+                      {mutationMessage(save.error ?? revise.error, "Unable to save this revision.")}
+                    </p>
+                  )}
+                </m.div>
               ) : (
-                <div className={styles.surveyDraftPreview}>
-                  <SurveyMarkdown markdown={selected.markdown} compact />
-                </div>
+                <m.div key="empty" {...contentSwapMotion}>
+                  <div className={styles.surveyDraftFailure}>
+                    <p>No draft is available yet.</p>
+                  </div>
+                </m.div>
               )}
-              {viewingHistory ? (
-                <div className={styles.surveyDraftActions}>
-                  <button
-                    type="button"
-                    className={styles.secondaryButton}
-                    onClick={() => setSelectedId(undefined)}
-                  >
-                    Return to current
-                  </button>
-                </div>
-              ) : editing ? (
-                <div className={styles.surveyDraftActions}>
-                  <button
-                    type="button"
-                    className={styles.secondaryButton}
-                    onClick={() => {
-                      setEditing(false);
-                      setSource(current?.markdown ?? "");
-                    }}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    className={styles.primaryButton}
-                    disabled={!source.trim() || save.isPending}
-                    onClick={() => save.mutate()}
-                  >
-                    {save.isPending ? "Saving…" : "Save"}
-                  </button>
-                </div>
-              ) : (
-                <div className={styles.surveyDraftActions}>
-                  <button
-                    type="button"
-                    className={styles.secondaryButton}
-                    onClick={() => {
-                      setSource(current?.markdown ?? "");
-                      setEditing(true);
-                    }}
-                  >
-                    Edit draft
-                  </button>
-                  <button
-                    type="button"
-                    className={styles.primaryButton}
-                    onClick={() => setStartOpen(true)}
-                  >
-                    Approve &amp; start
-                  </button>
-                </div>
-              )}
-              {(save.error || revise.error) && (
-                <p className={styles.surveyInlineError} role="alert">
-                  {mutationMessage(save.error ?? revise.error, "Unable to save this revision.")}
-                </p>
-              )}
-            </>
-          ) : (
-            <div className={styles.surveyDraftFailure}>
-              <p>No draft is available yet.</p>
-            </div>
-          )}
+            </AnimatePresence>
+          </div>
 
           {!active && current && !editing && !viewingHistory && !atLimit && (
             <section className={styles.surveyRefineSection}>

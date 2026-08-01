@@ -59,6 +59,16 @@ export const sectionRevealMotion = {
   exit: { opacity: 0, transition: { duration: motionDuration.exit } },
 } as const;
 
+export const contentSwapMotion = {
+  initial: { opacity: 0.35, y: 4 },
+  animate: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: motionDuration.reveal },
+  },
+  exit: { opacity: 0, transition: { duration: motionDuration.exit } },
+} as const;
+
 export function metricRevealMotion(index: number) {
   return {
     initial: { opacity: 0, y: 3 },
