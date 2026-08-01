@@ -1,4 +1,4 @@
-"""Stateless MCP boundary exposing Scholight public search."""
+"""Stateless MCP boundary exposing Scholight public research tools."""
 
 from __future__ import annotations
 
@@ -21,6 +21,11 @@ from scholight.api.deps import (
     resolve_access_key_search_actor,
     resolve_delegated_search_actor,
 )
+from scholight.api.extract_execution import (
+    ExtractInvocation,
+    PublicExtractError,
+    execute_public_extract,
+)
 from scholight.api.models.search import (
     PublicSearchFilters,
     PublicSearchRequest,
@@ -34,6 +39,12 @@ from scholight.api.search_execution import (
 )
 from scholight.config import settings
 from scholight.db.client import DBError
+from scholight.models.web_extract import (
+    ExtractRequest,
+    ExtractResponse,
+    ExtractResponseFormat,
+    RenderMode,
+)
 
 _current_invocation: ContextVar[SearchInvocation | None] = ContextVar(
     "scholight_mcp_invocation",
@@ -74,7 +85,7 @@ def _error_response(
 
 
 class _MCPRequestBoundary:
-    """Apply exact Origin checks and search-scoped MCP identity."""
+    """Apply exact Origin checks and resolve one identity for every MCP tool."""
 
     def __init__(self, app: ASGIApp) -> None:
         self._app = app
@@ -223,6 +234,21 @@ def _tool_error(exc: PublicSearchError) -> CallToolResult:
     )
 
 
+def _extract_tool_error(exc: PublicExtractError) -> CallToolResult:
+    error: dict[str, Any] = {
+        "code": exc.code,
+        "message": exc.message,
+        "retryable": exc.retryable,
+    }
+    if exc.retry_after is not None:
+        error["retry_after"] = exc.retry_after
+    return CallToolResult(
+        isError=True,
+        content=[TextContent(type="text", text=f"{exc.code}: {exc.message}")],
+        structuredContent={"error": error},
+    )
+
+
 async def search_papers(
     query: Annotated[
         str,
@@ -318,14 +344,116 @@ async def search_papers(
     )
 
 
+def _format_extract_markdown(response: ExtractResponse) -> str:
+    heading = response.title or "Extracted web content"
+    lines = [f"# {heading}", "", f"Source: {response.final_url}", "", response.content]
+    if response.next_cursor is not None:
+        lines.extend(
+            [
+                "",
+                "---",
+                "Content continues. Call extract_url again with next_cursor as cursor.",
+            ]
+        )
+    return "\n".join(lines)
+
+
+async def extract_url(
+    url: Annotated[
+        str | None,
+        Field(
+            description=(
+                "HTTP or HTTPS URL to fetch and extract. Public hosts and arbitrary public ports "
+                "are supported. Omit when continuing with cursor."
+            )
+        ),
+    ] = None,
+    render: Annotated[
+        Literal["auto", "never", "always"],
+        Field(
+            description=(
+                "Rendering policy: auto uses Chromium only when static content is insufficient; "
+                "never disables JavaScript rendering; always forces Chromium."
+            )
+        ),
+    ] = "auto",
+    output: Annotated[
+        Literal["main_markdown", "full_markdown", "text", "raw_html"],
+        Field(
+            description="Content representation to return. main_markdown is the recommended default."
+        ),
+    ] = "main_markdown",
+    headers: Annotated[
+        dict[str, str] | None,
+        Field(
+            max_length=32,
+            description="Optional target request headers. Transport-managed headers are rejected.",
+        ),
+    ] = None,
+    cookies: Annotated[
+        dict[str, str] | None,
+        Field(
+            max_length=64, description="Optional stateless cookies sent only for this extraction."
+        ),
+    ] = None,
+    max_chars: Annotated[
+        int,
+        Field(
+            ge=1,
+            le=100_000,
+            description="Maximum content characters in this response page.",
+        ),
+    ] = 20_000,
+    cursor: Annotated[
+        str | None,
+        Field(
+            min_length=1,
+            max_length=512,
+            description="Opaque next_cursor from a previous call. Omit all extraction options when set.",
+        ),
+    ] = None,
+) -> CallToolResult:
+    """Fetch a URL and extract readable, model-friendly content."""
+    request = (
+        ExtractRequest(cursor=cursor, max_chars=max_chars)
+        if cursor is not None
+        else ExtractRequest(
+            url=url,
+            render=RenderMode(render),
+            output=ExtractResponseFormat(output),
+            headers=headers or {},
+            cookies=cookies or {},
+            max_chars=max_chars,
+        )
+    )
+    invocation = _invocation()
+    try:
+        response = await execute_public_extract(
+            request,
+            ExtractInvocation(
+                actor=invocation.actor,
+                request_id=invocation.request_id,
+                transport="mcp",
+            ),
+        )
+    except PublicExtractError as exc:
+        return _extract_tool_error(exc)
+    return CallToolResult(
+        isError=False,
+        content=[TextContent(type="text", text=_format_extract_markdown(response))],
+        structuredContent=response.model_dump(mode="json"),
+    )
+
+
 def create_mcp_app() -> tuple[FastMCP[Any], ASGIApp]:
     """Create a fresh MCP server and ASGI app for one FastAPI application."""
     server = FastMCP(
         name="Scholight",
         instructions=(
-            "Use Scholight to find and compare AI research papers. "
+            "Use Scholight to find and compare research papers and extract readable web content. "
             "Call search_papers for literature discovery, related-work research, method comparisons, "
-            "or author, category, and date-filtered paper searches. Prefer standard for most requests; "
+            "or author, category, and date-filtered paper searches. Call extract_url when you need the "
+            "content behind an HTTP or HTTPS URL. Prefer standard for most searches; "
             "use thorough when nuanced queries benefit from deeper ranking despite higher latency and "
             "consumption of the separate Thorough quota."
         ),
@@ -351,6 +479,21 @@ def create_mcp_app() -> tuple[FastMCP[Any], ASGIApp]:
             openWorldHint=True,
         ),
     )(search_papers)
+    server.tool(
+        name="extract_url",
+        description=(
+            "Fetch an HTTP or HTTPS URL and return readable Markdown, text, or raw HTML. Supports "
+            "ordinary pages, JavaScript-rendered sites, JSON, XML, PDFs, custom target headers, "
+            "stateless cookies, public non-default ports, and opaque cursor pagination. Use this after "
+            "search_papers or whenever source content must be read. Requires a Scholight Access Key."
+        ),
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=True,
+        ),
+    )(extract_url)
     app: ASGIApp = _MCPRequestBoundary(server.streamable_http_app())
     return server, app
 

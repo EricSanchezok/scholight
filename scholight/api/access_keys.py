@@ -1,4 +1,4 @@
-"""Search-only personal access-key generation and authentication."""
+"""All-tools personal access-key generation and authentication."""
 
 from __future__ import annotations
 
@@ -56,7 +56,7 @@ class AccessKeyRecord(BaseModel):
     key_prefix: str
     key_last4: str
     key_digest: bytes
-    scopes: tuple[Literal["search"], ...]
+    scopes: tuple[Literal["all"], ...]
     created_at: datetime
     last_used_at: datetime | None
     expires_at: datetime | None
@@ -68,7 +68,7 @@ class AccessKeyRecord(BaseModel):
             raise AccessKeyError("access_key_revoked")
         if self.expires_at is not None and self.expires_at <= current:
             raise AccessKeyError("access_key_expired")
-        if "search" not in self.scopes:
+        if self.scopes != ("all",):
             raise AccessKeyError("invalid_access_key")
 
 
@@ -123,7 +123,7 @@ def access_key_lookup_prefix(plaintext: str) -> str | None:
 
 
 async def resolve_access_key(plaintext: str) -> tuple[AccessKeyRecord, UserRecord]:
-    """Resolve an active search key and its active owner without logging the key."""
+    """Resolve an active all-tools key and its active owner without logging the key."""
     prefix = access_key_lookup_prefix(plaintext)
     record = await get_access_key_by_prefix(prefix) if prefix is not None else None
     expected = record.key_digest if record is not None else _DUMMY_DIGEST
@@ -156,7 +156,7 @@ async def issue_access_key(
         key_prefix=generated.lookup_prefix,
         key_last4=generated.last4,
         key_digest=digest_access_key(generated.plaintext, settings.access_key_hmac_secret),
-        scopes=("search",),
+        scopes=("all",),
         created_at=datetime.now(UTC),
         last_used_at=None,
         expires_at=expires_at,

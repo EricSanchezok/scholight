@@ -22,6 +22,21 @@ def test_private_cursor_pages_stable_content() -> None:
     assert (first.content, second.content, second.next_cursor) == ("abc", "def", None)
 
 
+def test_private_cursor_preserves_document_metadata() -> None:
+    cache = ExtractResultCache(ttl_seconds=600, max_bytes=1024)
+    cursor = cache.put_private(
+        actor_key="actor-a",
+        url="https://example.com",
+        content="abcdef",
+        metadata={"title": "Example"},
+    )
+
+    page = cache.read(cursor, actor_key="actor-a", max_chars=3)
+
+    assert page is not None
+    assert page.metadata == {"title": "Example"}
+
+
 def test_expired_cursor_is_not_readable() -> None:
     now = datetime(2026, 8, 1, tzinfo=UTC)
     cache = ExtractResultCache(ttl_seconds=60, max_bytes=1024, clock=lambda: now)

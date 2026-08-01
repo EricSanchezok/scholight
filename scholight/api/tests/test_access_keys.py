@@ -32,7 +32,7 @@ def _record(*, digest: bytes, expires_at: datetime | None = None) -> AccessKeyRe
         key_prefix="sk_live_lookup",
         key_last4="ABCD",
         key_digest=digest,
-        scopes=("search",),
+        scopes=("all",),
         created_at=datetime.now(UTC),
         last_used_at=None,
         expires_at=expires_at,
@@ -185,8 +185,15 @@ async def test_issue_access_key_returns_plaintext_once_without_persisting_it() -
 
     assert plaintext.startswith("sk_live_")
     assert created.key_last4 == plaintext[-4:]
+    assert created.scopes == ("all",)
     assert plaintext not in repr(captured)
     assert "key_digest" in captured
+
+
+def test_access_key_request_defaults_to_all_tools_scope() -> None:
+    request = CreateAccessKeyRequest(name="automation")
+
+    assert request.scopes == ["all"]
 
 
 def test_access_key_list_schema_never_contains_secret_or_digest(api_app: FastAPI) -> None:

@@ -33,6 +33,10 @@ _APPROVED_CONTRACT_MIGRATIONS = {
         6,
         "survey_aggregate",
     ): "7839587fb113308b08a29af4453e30d5d51babb90dbf43b720426315fdcaaac9",
+    (
+        7,
+        "access_keys_all_tools",
+    ): "73edc54a385429a0fb01e84f63f6449fc7e5dd4a28ea81d762afa42477329ba2",
 }
 
 

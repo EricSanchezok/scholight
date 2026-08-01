@@ -291,6 +291,15 @@ def test_delegated_actor_migration_requires_explicit_checksum_approval() -> None
         validate_expand_only_sql(sql)
 
 
+def test_access_key_all_tools_migration_rewrites_scope_atomically() -> None:
+    migration = Path(__file__).parents[3] / "migrations/007_access_keys_all_tools.sql"
+    sql = " ".join(migration.read_text(encoding="utf-8").split()).lower()
+
+    assert "update scholight.access_keys set scopes = array['all']::text[]" in sql
+    assert "default array['all']::text[]" in sql
+    assert "check (scopes = array['all']::text[])" in sql
+
+
 def test_survey_migration_is_product_scoped_and_expand_only() -> None:
     migration = Path(__file__).parents[3] / "migrations/005_survey_jobs.sql"
     raw_sql = migration.read_text(encoding="utf-8")

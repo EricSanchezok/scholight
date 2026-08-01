@@ -82,6 +82,7 @@ async def _is_zilliz_ready() -> bool:
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Startup / shutdown lifecycle for database connections."""
     from scholight.api.history_tasks import drain_search_history_tasks
+    from scholight.api.extract_execution import reset_extract_result_cache
     from scholight.api.search_access import reset_anonymous_minute_limits
     from scholight.api.search_in_flight import reset_search_in_flight_tracker
     from scholight.api.usage_tasks import drain_usage_tasks
@@ -93,6 +94,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     from scholight.store.client import get_client
 
     _reset_dependency_probe_cache()
+    reset_extract_result_cache()
     reset_anonymous_minute_limits()
     reset_search_in_flight_tracker()
     async with app.state.mcp_server.session_manager.run():
@@ -164,6 +166,7 @@ def create_app() -> FastAPI:
 
     from scholight.api.deps import get_current_user, wire_dependencies
     from scholight.api.routes.access_keys import router as access_key_router
+    from scholight.api.routes.extract import router as extract_router
     from scholight.api.routes.admin import router as admin_router
     from scholight.api.routes.admin_analytics import router as admin_analytics_router
     from scholight.api.routes.admin_operations import router as admin_operations_router
@@ -266,6 +269,7 @@ def create_app() -> FastAPI:
         }
 
     app.include_router(search_router, prefix="/search", tags=["search"])
+    app.include_router(extract_router, prefix="/extract", tags=["extract"])
     # Keep /mcp exact: a nested /mcp mount redirects to /mcp/, which drops the
     # public /api prefix after Caddy's handle_path rewrite.
     app.mount("/", mcp_app, name="mcp")

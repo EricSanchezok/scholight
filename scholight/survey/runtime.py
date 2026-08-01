@@ -18,7 +18,7 @@ def delegated_authorization(*, user_id: int, lifetime_seconds: int) -> str:
             "iss": "scholight-survey",
             "aud": "scholight-mcp",
             "sub": str(user_id),
-            "scope": "search",
+            "scope": "mcp",
             "iat": int(now.timestamp()),
             "exp": int((now + timedelta(seconds=lifetime_seconds, minutes=15)).timestamp()),
             "jti": str(uuid4()),

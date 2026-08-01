@@ -13,6 +13,7 @@ from datetime import UTC, datetime, timedelta
 class PageSlice:
     content: str
     next_cursor: str | None
+    metadata: dict[str, object]
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,6 +21,7 @@ class _Entry:
     actor_key: str
     url: str
     content: str
+    metadata: dict[str, object]
     expires_at: datetime
 
 
@@ -68,13 +70,21 @@ class ExtractResultCache:
         while self._bytes > self._max_bytes and self._entries:
             self._drop(next(iter(self._entries)))
 
-    def put_private(self, *, actor_key: str, url: str, content: str) -> str:
+    def put_private(
+        self,
+        *,
+        actor_key: str,
+        url: str,
+        content: str,
+        metadata: dict[str, object] | None = None,
+    ) -> str:
         self._prune()
         entry_id = self._token()
         entry = _Entry(
             actor_key=actor_key,
             url=url,
             content=content,
+            metadata=dict(metadata or {}),
             expires_at=self._clock() + self._ttl,
         )
         self._entries[entry_id] = entry
@@ -98,7 +108,7 @@ class ExtractResultCache:
             if next_offset < len(entry.content)
             else None
         )
-        return PageSlice(content=content, next_cursor=next_cursor)
+        return PageSlice(content=content, next_cursor=next_cursor, metadata=dict(entry.metadata))
 
 
 __all__ = ["ExtractResultCache", "PageSlice"]

@@ -30,9 +30,11 @@ from scholight.api.models.search import (
 )
 from scholight.api.search_access import reset_anonymous_minute_limits
 from scholight.api.search_execution import PublicSearchError, SearchInvocation
+from scholight.api.extract_execution import PublicExtractError
 from scholight.config import settings
 from scholight.db.queries_anonymous_quota import AnonymousQuotaReservation
 from scholight.models.search import SearchResult
+from scholight.models.web_extract import ExtractResponse
 
 pytestmark = pytest.mark.asyncio(loop_scope="module")
 
@@ -125,15 +127,16 @@ async def test_initialize_and_list_tools_do_not_execute_search(
     assert initialized.status_code == 200
     assert initialized.json()["result"]["protocolVersion"] == "2025-11-25"
     assert initialized.json()["result"]["instructions"] == (
-        "Use Scholight to find and compare AI research papers. "
+        "Use Scholight to find and compare research papers and extract readable web content. "
         "Call search_papers for literature discovery, related-work research, method comparisons, "
-        "or author, category, and date-filtered paper searches. Prefer standard for most requests; "
+        "or author, category, and date-filtered paper searches. Call extract_url when you need the "
+        "content behind an HTTP or HTTPS URL. Prefer standard for most searches; "
         "use thorough when nuanced queries benefit from deeper ranking despite higher latency and "
         "consumption of the separate Thorough quota."
     )
     assert listed.status_code == 200
     tools = listed.json()["result"]["tools"]
-    assert [tool["name"] for tool in tools] == ["search_papers"]
+    assert [tool["name"] for tool in tools] == ["search_papers", "extract_url"]
     assert tools[0]["description"] == (
         "Find ranked AI research papers relevant to a natural-language question or topic. Use this "
         "tool for literature discovery, related-work research, method comparisons, and author, "
@@ -283,6 +286,61 @@ async def test_access_key_is_resolved_as_search_actor(
     execute_call = execute.await_args
     assert execute_call is not None
     assert (execute_call.args[1].actor, execute_call.args[1].transport) == (actor, "mcp")
+
+
+async def test_extract_url_returns_markdown_and_structured_content(
+    mcp_client: httpx.AsyncClient,
+    active_user: UserRecord,
+) -> None:
+    actor = SearchActor(user=active_user, actor_type="access_key", access_key_id=uuid4())
+    response = ExtractResponse(
+        requested_url="https://example.com/article",
+        final_url="https://example.com/article",
+        status_code=200,
+        title="Example article",
+        author=None,
+        published_at=None,
+        content_type="text/html",
+        content="# Extracted content",
+        rendered=False,
+        extractor="trafilatura",
+        warnings=[],
+        content_hash="a" * 64,
+        fetched_at=datetime(2026, 8, 1, tzinfo=UTC),
+        truncated=False,
+        next_cursor=None,
+    )
+    with (
+        patch(
+            "scholight.api.mcp_server.resolve_access_key_search_actor",
+            new_callable=AsyncMock,
+            return_value=actor,
+        ),
+        patch(
+            "scholight.api.mcp_server.execute_public_extract",
+            new_callable=AsyncMock,
+            return_value=response,
+        ) as execute,
+    ):
+        called = await mcp_client.post(
+            "/mcp",
+            headers={
+                **_MCP_HEADERS,
+                "authorization": "Bearer sk_live_0123456789abcdef_secret",
+            },
+            json=_request(
+                "tools/call",
+                request_id=40,
+                params={"name": "extract_url", "arguments": {"url": "https://example.com/article"}},
+            ),
+        )
+
+    assert called.status_code == 200
+    result = called.json()["result"]
+    assert result["isError"] is False
+    assert result["structuredContent"] == response.model_dump(mode="json")
+    assert "# Extracted content" in result["content"][0]["text"]
+    assert execute.await_args.args[1].actor is actor
 
 
 async def test_delegation_jwt_is_resolved_as_current_user(
