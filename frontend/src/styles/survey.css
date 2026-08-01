@@ -9,6 +9,10 @@
   margin-bottom: 26px;
 }
 
+.surveyPageHeading.pageHeadingAction > div {
+  gap: 0;
+}
+
 .surveyPageHeading .eyebrow {
   display: block;
   margin-bottom: 18px;
@@ -38,39 +42,42 @@
 
 .surveyStartForm {
   display: grid;
+  height: 72px;
   min-height: 72px;
-  padding: 7px;
+  padding: 8px 8px 8px 22px;
   border: 1px solid var(--line-field);
   border-radius: var(--radius-lg);
   background: var(--surface);
-  grid-template-columns: minmax(0, 1fr) 150px;
-  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0;
 }
 
-.surveyStartForm textarea {
+.surveyStartForm input {
   width: 100%;
-  min-height: 56px;
-  padding: 16px 14px;
-  resize: none;
+  height: 26px;
+  min-height: 26px;
+  min-width: 0;
+  padding: 0;
   border: 0;
   outline: 0;
   color: var(--ink);
   background: transparent;
-  font-size: 14px;
-  line-height: 22px;
+  font-family: var(--font-ui);
+  font-size: 16px;
+  line-height: 26px;
 }
 
-.surveyStartForm textarea::placeholder {
+.surveyStartForm input::placeholder {
   color: var(--text-placeholder);
 }
 
-.surveyStartForm textarea:focus-visible {
+.surveyStartForm input:focus-visible {
   border-radius: var(--radius-sm);
   outline: 3px solid var(--focus-ring);
   outline-offset: -1px;
 }
 
-.surveyStartForm button,
 .surveySignInEmpty button,
 .surveyErrorState button,
 .surveyRefineSection > button,
@@ -83,11 +90,19 @@
   font-weight: 600;
 }
 
-.surveyStartForm button:disabled,
 .surveyRefineSection > button:disabled,
 .surveyDraftFailure button:disabled {
   opacity: 0.55;
   cursor: wait;
+}
+
+.surveyStartForm .primaryButton {
+  width: 150px;
+  height: 56px;
+  min-height: 56px;
+  padding: 0;
+  border-radius: 7px;
+  font-size: 14px;
 }
 
 .surveyInlineError {
@@ -102,7 +117,6 @@
   margin-top: 16px;
   border-bottom: 1px solid var(--line-soft);
   align-items: center;
-  justify-content: space-between;
 }
 
 .surveyTabs [role="tablist"] {
@@ -751,10 +765,20 @@
   }
 
   .surveyStartForm {
+    height: auto;
+    padding: 17px;
     grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
   }
 
-  .surveyStartForm button {
+  .surveyStartForm input {
+    height: 47px;
+    min-height: 47px;
+    padding: 10px 0;
+  }
+
+  .surveyStartForm .primaryButton {
+    width: 100%;
     min-height: 48px;
   }
 
@@ -802,15 +826,6 @@
   .surveyReportHeader h1 {
     font-size: 29px;
     line-height: 1.25;
-  }
-
-  .surveyTabs {
-    align-items: flex-end;
-  }
-
-  .surveyTabs .pageRefreshButton {
-    min-width: 40px;
-    padding: 0 10px;
   }
 
   .surveyReportThumbnail {

@@ -25,6 +25,7 @@ export function SurveyHubPage() {
   const [params, setParams] = useSearchParams();
   const view: SurveyView = params.get("view") === "completed" ? "completed" : "active";
   const [request, setRequest] = useState("");
+  const [requestError, setRequestError] = useState("");
   const requestId = useRef<string | undefined>(undefined);
   const [signInOpen, setSignInOpen] = useState(false);
   const [limitOpen, setLimitOpen] = useState(false);
@@ -93,7 +94,12 @@ export function SurveyHubPage() {
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
     if (status !== "authenticated") return requireSignIn();
-    if (request.trim() && !createSurvey.isPending) createSurvey.mutate();
+    if (!request.trim()) {
+      setRequestError("Describe the research survey you want to run.");
+      return;
+    }
+    setRequestError("");
+    if (!createSurvey.isPending) createSurvey.mutate();
   };
   const setView = (next: SurveyView) => {
     setParams(next === "completed" ? { view: "completed" } : {});
@@ -102,35 +108,44 @@ export function SurveyHubPage() {
 
   return (
     <main className={styles.surveyPage}>
-      <header className={styles.surveyPageHeading}>
-        <span className={styles.eyebrow}>SURVEY</span>
-        <h1>Research surveys</h1>
-        <p>Start a survey, refine its research brief, and return to completed reports.</p>
+      <header className={`${styles.surveyPageHeading} ${styles.pageHeadingAction}`}>
+        <div>
+          <span className={styles.eyebrow}>SURVEY</span>
+          <h1>Research surveys</h1>
+          <p>Start a survey, refine its research brief, and return to completed reports.</p>
+        </div>
+        {status === "authenticated" && (
+          <PageRefreshButton label="surveys" refreshing={list.isFetching} onRefresh={refresh} />
+        )}
       </header>
       <form className={styles.surveyStartForm} onSubmit={submit}>
         <label className={styles["sr-only"]} htmlFor="survey-request">
           Describe the survey you want to start
         </label>
-        <textarea
+        <input
           id="survey-request"
-          rows={2}
+          type="text"
           value={request}
           readOnly={status !== "authenticated"}
           placeholder="Describe the survey you want to start…"
+          aria-describedby={requestError ? "survey-request-error" : undefined}
           onFocus={requireSignIn}
           onClick={requireSignIn}
           onChange={(event) => {
             requestId.current = undefined;
+            setRequestError("");
             setRequest(event.target.value);
           }}
         />
-        <button
-          type="submit"
-          disabled={status === "authenticated" && (!request.trim() || createSurvey.isPending)}
-        >
+        <button className={styles.primaryButton} type="submit" disabled={createSurvey.isPending}>
           {createSurvey.isPending ? "Starting…" : "Start survey"}
         </button>
       </form>
+      {requestError && (
+        <p className={styles.surveyInlineError} id="survey-request-error" role="alert">
+          {requestError}
+        </p>
+      )}
       {createSurvey.error &&
         !(
           createSurvey.error instanceof ApiError &&
@@ -161,9 +176,6 @@ export function SurveyHubPage() {
             Completed
           </button>
         </div>
-        {status === "authenticated" && (
-          <PageRefreshButton label="surveys" refreshing={list.isFetching} onRefresh={refresh} />
-        )}
       </div>
 
       {status !== "authenticated" ? (
