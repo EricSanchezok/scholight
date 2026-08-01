@@ -1649,6 +1649,57 @@
         "title": "SurveyActionRequest",
         "type": "object"
       },
+      "SurveyArtifactItemResponse": {
+        "properties": {
+          "content_type": {
+            "title": "Content Type",
+            "type": "string"
+          },
+          "download_url": {
+            "title": "Download Url",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": ["path", "size", "sha256", "content_type", "download_url"],
+        "title": "SurveyArtifactItemResponse",
+        "type": "object"
+      },
+      "SurveyArtifactsResponse": {
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SurveyArtifactItemResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "survey_id": {
+            "format": "uuid",
+            "title": "Survey Id",
+            "type": "string"
+          }
+        },
+        "required": ["survey_id", "expires_at", "items"],
+        "title": "SurveyArtifactsResponse",
+        "type": "object"
+      },
       "SurveyCreateRequest": {
         "properties": {
           "client_request_id": {
@@ -1786,6 +1837,34 @@
         "title": "SurveyDraftResponse",
         "type": "object"
       },
+      "SurveyListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SurveySummaryResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "quota": {
+            "$ref": "#/components/schemas/SurveyQuotaResponse"
+          }
+        },
+        "required": ["items", "quota", "next_cursor"],
+        "title": "SurveyListResponse",
+        "type": "object"
+      },
       "SurveyProgressResponse": {
         "properties": {
           "elapsed_seconds": {
@@ -1834,6 +1913,7 @@
               "structuring_report",
               "writing_report",
               "finalizing",
+              "cancelling",
               "saving_results",
               "completed",
               "failed",
@@ -1914,6 +1994,29 @@
         },
         "required": ["kind", "position", "queued_at", "running_slots", "max_slots"],
         "title": "SurveyQueueResponse",
+        "type": "object"
+      },
+      "SurveyQuotaResponse": {
+        "properties": {
+          "daily_limit": {
+            "title": "Daily Limit",
+            "type": "integer"
+          },
+          "remaining": {
+            "title": "Remaining",
+            "type": "integer"
+          },
+          "reserved": {
+            "title": "Reserved",
+            "type": "integer"
+          },
+          "succeeded": {
+            "title": "Succeeded",
+            "type": "integer"
+          }
+        },
+        "required": ["daily_limit", "reserved", "succeeded", "remaining"],
+        "title": "SurveyQuotaResponse",
         "type": "object"
       },
       "SurveyResponse": {
@@ -2005,6 +2108,94 @@
           "finished_at"
         ],
         "title": "SurveyResponse",
+        "type": "object"
+      },
+      "SurveySummaryResponse": {
+        "properties": {
+          "artifacts_available": {
+            "title": "Artifacts Available",
+            "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "latest_draft_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Draft Revision"
+          },
+          "progress": {
+            "$ref": "#/components/schemas/SurveyProgressResponse"
+          },
+          "report_available": {
+            "title": "Report Available",
+            "type": "boolean"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "status",
+          "created_at",
+          "updated_at",
+          "started_at",
+          "finished_at",
+          "latest_draft_revision",
+          "progress",
+          "report_available",
+          "artifacts_available"
+        ],
+        "title": "SurveySummaryResponse",
         "type": "object"
       },
       "TodayUsage": {
@@ -3457,14 +3648,41 @@
         "parameters": [
           {
             "in": "query",
+            "name": "view",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "enum": ["active", "completed", "all"],
+              "title": "View",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
-              "default": 50,
+              "default": 20,
               "maximum": 100,
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
             }
           }
         ],
@@ -3473,11 +3691,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/SurveyResponse"
-                  },
-                  "title": "Response Surveys Surveys Get",
-                  "type": "array"
+                  "$ref": "#/components/schemas/SurveyListResponse"
                 }
               }
             },
@@ -3546,6 +3760,43 @@
       }
     },
     "/surveys/{survey_id}": {
+      "delete": {
+        "operationId": "remove_survey_surveys__survey_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "survey_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Survey Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Remove Survey",
+        "tags": ["survey"]
+      },
       "get": {
         "operationId": "survey_surveys__survey_id__get",
         "parameters": [
@@ -3588,6 +3839,52 @@
           }
         ],
         "summary": "Survey",
+        "tags": ["survey"]
+      }
+    },
+    "/surveys/{survey_id}/artifacts": {
+      "get": {
+        "operationId": "survey_artifacts_surveys__survey_id__artifacts_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "survey_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Survey Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SurveyArtifactsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Survey Artifacts",
         "tags": ["survey"]
       }
     },
@@ -3840,6 +4137,45 @@
           }
         ],
         "summary": "Survey Progress",
+        "tags": ["survey"]
+      }
+    },
+    "/surveys/{survey_id}/report": {
+      "get": {
+        "operationId": "survey_report_surveys__survey_id__report_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "survey_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Survey Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Survey Report",
         "tags": ["survey"]
       }
     },
