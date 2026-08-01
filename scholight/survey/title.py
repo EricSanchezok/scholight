@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import httpx
@@ -13,6 +14,7 @@ logger = structlog.get_logger(__name__)
 
 _MODEL = "deepseek-v4-flash"
 _TITLE_MAX_CHARACTERS = 80
+_REQUEST_TIMEOUT_SECONDS = 3.0
 _SYSTEM_PROMPT = """SCHOLIGHT_SURVEY_NAVIGATION_TITLE
 Generate exactly one concise navigation title for the research request.
 Preserve the user's primary language. Capture the research subject and comparison when present.
@@ -70,17 +72,18 @@ async def generate_survey_title(
         follow_redirects=False,
     )
     try:
-        response = await http_client.post(
-            settings.survey_title_api_url,
-            headers={"Authorization": f"Bearer {settings.deepseek_api_key}"},
-            json=request,
-        )
+        async with asyncio.timeout(_REQUEST_TIMEOUT_SECONDS):
+            response = await http_client.post(
+                settings.survey_title_api_url,
+                headers={"Authorization": f"Bearer {settings.deepseek_api_key}"},
+                json=request,
+            )
         response.raise_for_status()
         title = _response_title(response.json())
         if title is None:
             logger.warning("survey_title_invalid_response")
         return title
-    except (httpx.HTTPError, ValueError) as exc:
+    except (TimeoutError, httpx.HTTPError, ValueError) as exc:
         status_code = exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None
         logger.warning(
             "survey_title_generation_failed",
