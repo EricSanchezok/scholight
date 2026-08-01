@@ -65,6 +65,7 @@ async def test_migrations_apply_once_and_replay_without_schema_changes(
         (6, "survey_aggregate"),
         (7, "survey_reliability"),
         (8, "survey_cancellation"),
+        (9, "survey_titles"),
     ]
 
 
