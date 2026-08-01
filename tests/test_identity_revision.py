@@ -1,15 +1,19 @@
 """Keep every production Identity SDK consumer on the locked revision."""
 
-import tomllib
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def _locked_revision() -> str:
-    with (ROOT / "pyproject.toml").open("rb") as file:
-        project = tomllib.load(file)
-    return str(project["tool"]["uv"]["sources"]["sanchezcloud-identity"]["rev"])
+    lock = (ROOT / "uv.lock").read_text(encoding="utf-8")
+    match = re.search(
+        r"sanchezcloud-identity\.git\?(?:rev|tag)=[^#\"\s]+#([0-9a-f]{40})",
+        lock,
+    )
+    assert match is not None
+    return match.group(1)
 
 
 def test_backend_image_uses_locked_identity_revision() -> None:
@@ -18,10 +22,12 @@ def test_backend_image_uses_locked_identity_revision() -> None:
     assert f"ARG SANCHEZCLOUD_IDENTITY_REVISION={_locked_revision()}" in dockerfile
 
 
-def test_migration_contract_uses_locked_identity_revision() -> None:
+def test_migration_contract_uses_the_locked_consumer_environment() -> None:
     workflow = (ROOT / ".github/workflows/ci.yml").read_text()
 
-    assert f"ref: {_locked_revision()}" in workflow
+    assert ".venv/bin/sanchezcloud-identity migrate" in workflow
+    assert ".ci/sanchezcloud-identity" not in workflow
+    assert f"ref: {_locked_revision()}" not in workflow
 
 
 def test_workflows_use_the_scoped_dependency_reader_app() -> None:
