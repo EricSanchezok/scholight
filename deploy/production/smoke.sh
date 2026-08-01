@@ -71,6 +71,10 @@ retry "paper-ingest running" service_running paper-ingest
 if [[ ${SCHOLIGHT_SURVEY_ENABLED} == true ]]; then
   retry "Survey Draft worker running" service_running survey-draft-worker
   retry "Survey execution worker running" service_running survey-worker
+  retry "Survey Draft worker API service discovery" compose exec -T survey-draft-worker \
+    curl --fail --silent --show-error http://api:8000/livez
+  retry "Survey execution worker API service discovery" compose exec -T survey-worker \
+    curl --fail --silent --show-error http://api:8000/livez
   retry "Survey cleanup sibling heartbeat" compose exec -T survey-worker \
     /bin/sh -ec 'find /tmp/scholight-survey-cleanup.heartbeat -mmin -2 -print -quit | grep -q .'
   retry "Survey migrations, configuration, cleanup, and S3 access" compose exec -T survey-worker \

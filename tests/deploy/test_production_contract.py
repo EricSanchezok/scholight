@@ -232,6 +232,19 @@ def test_survey_workers_are_opt_in_and_hardened_for_compatibility_release() -> N
     assert "volumes" not in compose["services"]["survey-draft-worker"]
 
 
+def test_survey_workers_share_an_explicit_api_service_discovery_contract() -> None:
+    compose = yaml.safe_load((PRODUCTION / "compose.yaml").read_text(encoding="utf-8"))
+    smoke = (PRODUCTION / "smoke.sh").read_text(encoding="utf-8")
+
+    assert compose["services"]["api"]["networks"]["scholight"]["aliases"] == ["api"]
+    for worker in ("survey-draft-worker", "survey-worker"):
+        command = (
+            f"compose exec -T {worker} \\\n"
+            "    curl --fail --silent --show-error http://api:8000/livez"
+        )
+        assert command in smoke
+
+
 def test_uvicorn_has_explicit_tunable_connection_boundaries() -> None:
     entrypoint = (ROOT / "docker" / "scholight-api" / "start.py").read_text(encoding="utf-8")
 
