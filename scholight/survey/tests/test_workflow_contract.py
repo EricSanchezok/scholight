@@ -48,18 +48,18 @@ def test_draft_prompt_returns_markdown_without_artifact_files() -> None:
 
     assert "scholight__search_papers" in source
     assert "Markdown" in source
-    assert "final assistant message" in source
+    assert "Return only a concise Markdown Draft" in source
     assert "write" not in source.lower()
 
 
-def test_draft_prompt_keeps_requirements_proportional_and_assumptions_local() -> None:
+def test_draft_prompt_is_concise_positive_and_approval_ready() -> None:
     source = (_WORKFLOW / "prompts" / "draft.txt").read_text(encoding="utf-8")
     normalized = " ".join(source.split())
 
-    assert "Do not invent numeric targets" in normalized
-    assert "Do not infer an output language" in normalized
-    assert "Do not create a standalone assumptions or uncertainty section" in normalized
-    assert "Integrate each material assumption" in normalized
+    assert "Use qualitative depth by default" in normalized
+    assert "Place any material working assumption next to" in normalized
+    assert "ready to approve and execute, not a questionnaire" in normalized
+    assert source.count("Do not") <= 1
 
 
 def test_search_strengths_match_survey_retrieval_policy() -> None:
