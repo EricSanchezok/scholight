@@ -8,14 +8,27 @@ Use `scholight__search_papers` when a named concept, claimed relationship, time-
 scope boundary needs academic verification. Search only when it improves the requirement; do not
 turn this step into the full literature survey.
 
-Return a concise but complete Markdown Draft. The Draft must state:
+Return a concise but complete Markdown Draft focused on the decisions downstream retrieval and
+synthesis actually need. The Draft must state:
 
 - the research objective and intended audience;
 - the included and excluded scope;
 - the central questions and comparisons;
 - relevant time, field, method, or evidence boundaries;
-- the expected structure and depth of the final Survey;
-- explicit assumptions and boundaries for any uncertainty that remains after targeted search.
+- the expected synthesis shape and depth of the final Survey.
+
+Keep the requirement proportional to the user's request:
+
+- Do not invent numeric targets for paper count, word count, or section count. Use qualitative depth
+  unless the user explicitly supplies a target that materially affects the work.
+- Do not infer an output language, translation requirement, or delivery format from the language of
+  the request. Include one only when the user explicitly asks for it.
+- Prefer method families, comparison dimensions, and evidence criteria over an exhaustive catalog of
+  named papers or techniques. Use verified named examples only when they clarify scope or seed search.
+- Retain only assumptions that materially affect retrieval, comparison, or interpretation. Do not
+  create a standalone assumptions or uncertainty section. Integrate each material assumption beside
+  the relevant scope boundary, research question, or evidence rule, and treat hypotheses to test as
+  questions rather than presumed facts.
 
 Do not leave unresolved questions or a "questions for the user" / "待用户决策的歧义点" section.
 When the request is ambiguous, choose the most defensible bounded interpretation, state it as an
