@@ -52,6 +52,30 @@ def test_production_compose_uses_digest_images_and_only_caddy_ports() -> None:
     assert services["caddy"]["ports"] == ["80:80", "443:443"]
 
 
+def test_extract_sidecar_is_internal_hardened_and_health_gated() -> None:
+    compose = yaml.safe_load((PRODUCTION / "compose.yaml").read_text(encoding="utf-8"))
+    services = compose["services"]
+    extract = services["extract"]
+
+    assert extract["image"].startswith("${SCHOLIGHT_EXTRACT_IMAGE:")
+    assert "ports" not in extract
+    assert extract["read_only"] is True
+    assert extract["cap_drop"] == ["ALL"]
+    assert "no-new-privileges:true" in extract["security_opt"]
+    assert services["api"]["depends_on"]["extract"]["condition"] == "service_healthy"
+    assert services["api"]["environment"]["SCHOLIGHT_EXTRACT_SERVICE_URL"] == (
+        "http://extract:8001"
+    )
+    assert services["api"]["environment"]["SCHOLIGHT_EXTRACT_ENABLED"] == "true"
+
+
+def test_extract_runtime_contract_has_stable_token_and_dedicated_ip() -> None:
+    runtime = (PRODUCTION / "runtime.env.example").read_text(encoding="utf-8")
+
+    assert "SCHOLIGHT_EXTRACT_IP=172.31.0.25" in runtime
+    assert "SCHOLIGHT_EXTRACT_INTERNAL_TOKEN=" in runtime
+
+
 def test_production_compose_separates_application_and_migration_database_roles() -> None:
     compose = yaml.safe_load((PRODUCTION / "compose.yaml").read_text(encoding="utf-8"))
     api_environment = compose["services"]["api"]["environment"]
@@ -138,10 +162,11 @@ def test_release_manifest_examples_are_digest_qualified() -> None:
             key, value = line.split("=", 1)
             values[key] = value
 
-    assert values["SCHOLIGHT_RELEASE_CONTRACT_VERSION"] == "1"
+    assert values["SCHOLIGHT_RELEASE_CONTRACT_VERSION"] == "2"
     assert len(values["SCHOLIGHT_RELEASE_SHA"]) == 40
     assert DIGEST_REFERENCE.fullmatch(values["SCHOLIGHT_BACKEND_IMAGE"])
     assert DIGEST_REFERENCE.fullmatch(values["SCHOLIGHT_FRONTEND_IMAGE"])
+    assert DIGEST_REFERENCE.fullmatch(values["SCHOLIGHT_EXTRACT_IMAGE"])
 
 
 def test_caddy_blocks_internal_health_and_routes_api_directly() -> None:
@@ -364,6 +389,7 @@ def test_release_workflow_uses_fixed_bootstrap_document() -> None:
     assert "PackageSha:" in workflow
     assert "BackendImage:" in workflow
     assert "FrontendImage:" in workflow
+    assert "ExtractImage:" in workflow
 
 
 def test_ssm_document_has_only_fixed_validated_release_parameters() -> None:
@@ -379,6 +405,7 @@ def test_ssm_document_has_only_fixed_validated_release_parameters() -> None:
         "PackageSha",
         "BackendImage",
         "FrontendImage",
+        "ExtractImage",
     }
     assert parameters["Operation"]["allowedValues"] == ["deploy", "rollback"]
     assert parameters["AwsRegion"]["allowedValues"] == ["ap-southeast-1"]
@@ -391,6 +418,10 @@ def test_ssm_document_has_only_fixed_validated_release_parameters() -> None:
     assert (
         r"683390797772\.dkr\.ecr\.ap-southeast-1\.amazonaws\.com/scholight/frontend"
         in (parameters["FrontendImage"]["allowedPattern"])
+    )
+    assert (
+        r"683390797772\.dkr\.ecr\.ap-southeast-1\.amazonaws\.com/scholight/extract"
+        in (parameters["ExtractImage"]["allowedPattern"])
     )
     assert all(value.get("interpolationType") == "ENV_VAR" for value in parameters.values())
 

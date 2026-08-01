@@ -33,6 +33,7 @@ def build_extract_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         try:
+            await browser.warmup()
             yield
         finally:
             await browser.close()

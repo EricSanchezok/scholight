@@ -6,11 +6,10 @@ import asyncio
 import socket
 from collections.abc import Awaitable, Callable
 from http.cookies import SimpleCookie
-from typing import Any
 from urllib.parse import urljoin, urlsplit
 
 import aiohttp
-from aiohttp.abc import AbstractResolver
+from aiohttp.abc import AbstractResolver, ResolveResult
 
 from scholight.web_extract.engine import ExtractInput, FetchResult
 from scholight.web_extract.errors import ExtractError
@@ -28,7 +27,7 @@ class PublicResolver(AbstractResolver):
         host: str,
         port: int = 0,
         family: socket.AddressFamily = socket.AF_INET,
-    ) -> list[dict[str, Any]]:
+    ) -> list[ResolveResult]:
         addresses = await resolve_public_addresses(host, port)
         return [
             {
@@ -86,8 +85,18 @@ class HttpFetcher:
         self._semaphore = asyncio.Semaphore(concurrency)
 
     async def fetch(self, request: ExtractInput) -> FetchResult:
-        async with self._semaphore:
+        if self._semaphore.locked():
+            raise ExtractError(
+                code="extract_capacity_exceeded",
+                message="Static extraction capacity is temporarily exhausted.",
+                status_code=503,
+                retryable=True,
+            )
+        await self._semaphore.acquire()
+        try:
             return await self._fetch(request)
+        finally:
+            self._semaphore.release()
 
     async def _fetch(self, request: ExtractInput) -> FetchResult:
         requested_url = request.url

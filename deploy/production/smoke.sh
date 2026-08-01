@@ -62,6 +62,9 @@ LOCAL_EDGE_RESOLVE="${SCHOLIGHT_EDGE_DOMAIN}:80:127.0.0.1"
 
 retry "API readiness" compose exec -T api \
   curl --fail --silent --show-error http://127.0.0.1:8000/readyz
+retry "Web Extract readiness" compose exec -T extract \
+  /app/.venv/bin/python -c \
+  "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/readyz', timeout=3)"
 retry "frontend health" compose exec -T frontend \
   wget -q -O /dev/null http://127.0.0.1:8080/healthz
 retry "metadata-sync running" service_running metadata-sync

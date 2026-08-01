@@ -141,13 +141,55 @@ jobs:
           DIGEST: ${{ steps.build.outputs.digest }}
         run: echo "reference=${REGISTRY}/${REPOSITORY}@${DIGEST}" >> "$GITHUB_OUTPUT"
 
+  publish-extract:
+    if: inputs.operation != 'rollback'
+    needs: [prepare, quality]
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.image.outputs.reference }}
+    steps:
+      - name: Check out release revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.prepare.outputs.release_sha }}
+          persist-credentials: false
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          role-to-assume: ${{ vars.AWS_PUBLISH_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Log in to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Build and push Web Extract
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: docker/scholight-extract/Dockerfile
+          platforms: ${{ vars.PRODUCTION_PLATFORM }}
+          push: true
+          tags: ${{ steps.ecr.outputs.registry }}/${{ vars.ECR_EXTRACT_REPOSITORY }}:git-${{ needs.prepare.outputs.release_sha }}
+          provenance: mode=max
+          sbom: true
+      - name: Export digest-qualified Web Extract reference
+        id: image
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          REPOSITORY: ${{ vars.ECR_EXTRACT_REPOSITORY }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: echo "reference=${REGISTRY}/${REPOSITORY}@${DIGEST}" >> "$GITHUB_OUTPUT"
+
   release-manifest:
     if: inputs.operation != 'rollback'
-    needs: [prepare, publish-backend, publish-frontend]
+    needs: [prepare, publish-backend, publish-frontend, publish-extract]
     runs-on: ubuntu-latest
     outputs:
       backend_image: ${{ needs.publish-backend.outputs.image }}
       frontend_image: ${{ needs.publish-frontend.outputs.image }}
+      extract_image: ${{ needs.publish-extract.outputs.image }}
     steps:
       - name: Create release manifest
         env:
@@ -155,13 +197,15 @@ jobs:
           PACKAGE_SHA: ${{ needs.prepare.outputs.package_sha }}
           BACKEND_IMAGE: ${{ needs.publish-backend.outputs.image }}
           FRONTEND_IMAGE: ${{ needs.publish-frontend.outputs.image }}
+          EXTRACT_IMAGE: ${{ needs.publish-extract.outputs.image }}
         run: |
           {
-            echo 'SCHOLIGHT_RELEASE_CONTRACT_VERSION=1'
+            echo 'SCHOLIGHT_RELEASE_CONTRACT_VERSION=2'
             echo "SCHOLIGHT_PACKAGE_SHA=${PACKAGE_SHA}"
             echo "SCHOLIGHT_RELEASE_SHA=${RELEASE_SHA}"
             echo "SCHOLIGHT_BACKEND_IMAGE=${BACKEND_IMAGE}"
             echo "SCHOLIGHT_FRONTEND_IMAGE=${FRONTEND_IMAGE}"
+            echo "SCHOLIGHT_EXTRACT_IMAGE=${EXTRACT_IMAGE}"
           } > release.env
       - name: Upload release manifest
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -195,6 +239,7 @@ jobs:
           PACKAGE_SHA: ${{ needs.prepare.outputs.package_sha }}
           BACKEND_IMAGE: ${{ needs.release-manifest.outputs.backend_image }}
           FRONTEND_IMAGE: ${{ needs.release-manifest.outputs.frontend_image }}
+          EXTRACT_IMAGE: ${{ needs.release-manifest.outputs.extract_image }}
         run: |
           parameters=$(jq -cn \
             --arg region "$AWS_REGION" \
@@ -202,13 +247,15 @@ jobs:
             --arg package "$PACKAGE_SHA" \
             --arg backend "$BACKEND_IMAGE" \
             --arg frontend "$FRONTEND_IMAGE" \
+            --arg extract "$EXTRACT_IMAGE" \
             '{
               Operation: ["deploy"],
               AwsRegion: [$region],
               ReleaseSha: [$release],
               PackageSha: [$package],
               BackendImage: [$backend],
-              FrontendImage: [$frontend]
+              FrontendImage: [$frontend],
+              ExtractImage: [$extract]
             }')
           command_id=$(aws ssm send-command \
             --instance-ids "$INSTANCE_ID" \

@@ -80,7 +80,7 @@ def deploy_arguments(release_sha: str = "a" * 40) -> tuple[str, ...]:
     return (
         "deploy",
         "--contract-version",
-        "1",
+        "2",
         "--package-sha",
         production_package_sha(),
         "--release-sha",
@@ -89,6 +89,8 @@ def deploy_arguments(release_sha: str = "a" * 40) -> tuple[str, ...]:
         f"registry.example/scholight/backend@{DIGEST}",
         "--frontend-image",
         f"registry.example/scholight/frontend@{DIGEST}",
+        "--extract-image",
+        f"registry.example/scholight/extract@{DIGEST}",
     )
 
 
@@ -96,7 +98,7 @@ def test_deploy_rejects_tag_only_image_before_external_commands(tmp_path: Path) 
     result = run_release(
         "deploy",
         "--contract-version",
-        "1",
+        "2",
         "--release-sha",
         "a" * 40,
         "--backend-image",
@@ -133,11 +135,12 @@ def test_rollback_logs_in_and_pulls_previous_images_before_activation(tmp_path: 
     state = Path(env["SCHOLIGHT_STATE_DIR"])
     state.mkdir()
     manifest = (
-        "SCHOLIGHT_RELEASE_CONTRACT_VERSION=1\n"
+        "SCHOLIGHT_RELEASE_CONTRACT_VERSION=2\n"
         f"SCHOLIGHT_PACKAGE_SHA={production_package_sha()}\n"
         f"SCHOLIGHT_RELEASE_SHA={'b' * 40}\n"
         f"SCHOLIGHT_BACKEND_IMAGE=registry.example/scholight/backend@{DIGEST}\n"
         f"SCHOLIGHT_FRONTEND_IMAGE=registry.example/scholight/frontend@{DIGEST}\n"
+        f"SCHOLIGHT_EXTRACT_IMAGE=registry.example/scholight/extract@{DIGEST}\n"
     )
     (state / "current.env").write_text(manifest.replace("b" * 40, "c" * 40), encoding="utf-8")
     (state / "previous.env").write_text(manifest, encoding="utf-8")
@@ -146,7 +149,7 @@ def test_rollback_logs_in_and_pulls_previous_images_before_activation(tmp_path: 
 
     commands = Path(env["FAKE_COMMAND_LOG"]).read_text(encoding="utf-8")
     login_position = commands.index("docker login --username AWS --password-stdin")
-    pull_position = commands.index(" pull api frontend")
+    pull_position = commands.index(" pull api frontend extract")
     activate_position = commands.index(" up -d ")
     assert result.returncode == 0 and login_position < pull_position < activate_position
 

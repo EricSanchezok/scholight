@@ -1,7 +1,7 @@
 # Scholight production deployment package
 
-This package deploys one coordinated Scholight frontend, API, metadata-sync, and
-paper-ingest release to a single Docker Compose host. Caddy is the only public
+This package deploys one coordinated Scholight frontend, API, Web Extract sidecar,
+metadata-sync, and paper-ingest release to a single Docker Compose host. Caddy is the only public
 service. Both ingestion services use the immutable backend digest; migrations
 run explicitly before activation, and application rollback never reverses
 database migrations.
@@ -39,10 +39,11 @@ canonical `SCHOLIGHT_PUBLIC_WEB_URL` may remain on `SCHOLIGHT_DOMAIN`.
 
 ## One-time AWS and GitHub setup
 
-Create two private ECR repositories with immutable tags, scan-on-push, and a lifecycle policy that retains the current and several previous releases:
+Create three private ECR repositories with immutable tags, scan-on-push, and a lifecycle policy that retains the current and several previous releases:
 
 - `scholight/backend`
 - `scholight/frontend`
+- `scholight/extract`
 
 Configure GitHub OIDC roles instead of static AWS access keys. Repository or environment variables required by `.github/workflows/release.yml` are:
 
@@ -51,6 +52,7 @@ Configure GitHub OIDC roles instead of static AWS access keys. Repository or env
 - `AWS_DEPLOY_ROLE_ARN`
 - `ECR_BACKEND_REPOSITORY`
 - `ECR_FRONTEND_REPOSITORY`
+- `ECR_EXTRACT_REPOSITORY`
 - `PRODUCTION_PLATFORM` (`linux/amd64`)
 - `PRODUCTION_INSTANCE_ID`
 - `PRODUCTION_DOMAIN` (for example, `scholight.example.com`)
@@ -199,8 +201,8 @@ an external HTTPS smoke test. Running the same release twice is supported.
 
 The transaction converges Docker and the host package, validates runtime-file
 ownership and mode, validates Compose, logs into ECR with the instance role,
-pulls both images, validates the independently managed auth schema, runs only the
-Scholight migration, activates the coordinated web and ingestion services, and runs bounded container and local
+pulls all three images, validates the independently managed auth schema, runs only the
+Scholight migration, activates the coordinated web, extraction, and ingestion services, and runs bounded container and local
 TLS-ingress smoke checks. Pull, package, configuration, or migration failure
 leaves the running application untouched. Candidate host-smoke failure restores
 the complete previous pair.
@@ -233,7 +235,7 @@ First record the journal and running state:
 ```bash
 sudo /opt/scholight/release.sh status || true
 sudo cat /var/lib/scholight/transition.env
-docker inspect scholight-api-1 scholight-frontend-1 \
+docker inspect scholight-api-1 scholight-frontend-1 scholight-extract-1 \
   --format '{{.Name}} {{.Config.Image}} {{.Image}}'
 ```
 

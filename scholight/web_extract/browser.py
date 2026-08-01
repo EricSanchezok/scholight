@@ -88,6 +88,10 @@ class PlaywrightBrowserRenderer:
             await self._playwright.stop()
             self._playwright = None
 
+    async def warmup(self) -> None:
+        """Start Chromium so sidecar readiness proves the renderer is installed."""
+        await self._ensure_browser()
+
     async def _configure_context(
         self,
         context: BrowserContext,
@@ -133,7 +137,15 @@ class PlaywrightBrowserRenderer:
         await context.route("**/*", enforce_policy)
 
     async def render(self, request: ExtractInput) -> FetchResult:
-        async with self._semaphore:
+        if self._semaphore.locked():
+            raise ExtractError(
+                code="extract_capacity_exceeded",
+                message="Browser extraction capacity is temporarily exhausted.",
+                status_code=503,
+                retryable=True,
+            )
+        await self._semaphore.acquire()
+        try:
             await validate_public_target(request.url)
             browser = await self._ensure_browser()
             context = await browser.new_context(ignore_https_errors=False)
@@ -201,6 +213,8 @@ class PlaywrightBrowserRenderer:
                 ) from exc
             finally:
                 await context.close()
+        finally:
+            self._semaphore.release()
 
 
 __all__ = ["PlaywrightBrowserRenderer"]

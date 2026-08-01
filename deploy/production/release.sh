@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly CONTRACT_VERSION=1
+readonly CONTRACT_VERSION=2
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 COMPOSE_FILE=${SCHOLIGHT_COMPOSE_FILE:-"${SCRIPT_DIR}/compose.yaml"}
 SMOKE_SCRIPT=${SCHOLIGHT_SMOKE_SCRIPT:-"${SCRIPT_DIR}/smoke.sh"}
@@ -170,6 +170,7 @@ write_manifest() {
   local release_sha=$3
   local backend_image=$4
   local frontend_image=$5
+  local extract_image=$6
   umask 077
   {
     printf 'SCHOLIGHT_RELEASE_CONTRACT_VERSION=%s\n' "${CONTRACT_VERSION}"
@@ -177,6 +178,7 @@ write_manifest() {
     printf 'SCHOLIGHT_RELEASE_SHA=%s\n' "${release_sha}"
     printf 'SCHOLIGHT_BACKEND_IMAGE=%s\n' "${backend_image}"
     printf 'SCHOLIGHT_FRONTEND_IMAGE=%s\n' "${frontend_image}"
+    printf 'SCHOLIGHT_EXTRACT_IMAGE=%s\n' "${extract_image}"
   } >"${destination}"
 }
 
@@ -187,10 +189,13 @@ registry_from_image() {
 ecr_login() {
   local backend_image=$1
   local frontend_image=$2
+  local extract_image=$3
   local backend_registry
   local frontend_registry
+  local extract_registry
   backend_registry=$(registry_from_image "${backend_image}")
   frontend_registry=$(registry_from_image "${frontend_image}")
+  extract_registry=$(registry_from_image "${extract_image}")
   local aws_region
   local ecr_registry
   aws_region=$(read_env_value SCHOLIGHT_AWS_REGION)
@@ -199,6 +204,8 @@ ecr_login() {
     fail "backend image is not hosted in SCHOLIGHT_ECR_REGISTRY"
   [[ ${frontend_registry} == "${ecr_registry}" ]] || \
     fail "frontend image is not hosted in SCHOLIGHT_ECR_REGISTRY"
+  [[ ${extract_registry} == "${ecr_registry}" ]] || \
+    fail "extract image is not hosted in SCHOLIGHT_ECR_REGISTRY"
   aws ecr get-login-password --region "${aws_region}" | \
     docker login --username AWS --password-stdin "${ecr_registry}"
 }
@@ -228,6 +235,7 @@ deploy() {
   local release_sha=""
   local backend_image=""
   local frontend_image=""
+  local extract_image=""
   while (($#)); do
     case $1 in
       --contract-version) contract_version=${2:-}; shift 2 ;;
@@ -235,6 +243,7 @@ deploy() {
       --release-sha) release_sha=${2:-}; shift 2 ;;
       --backend-image) backend_image=${2:-}; shift 2 ;;
       --frontend-image) frontend_image=${2:-}; shift 2 ;;
+      --extract-image) extract_image=${2:-}; shift 2 ;;
       *) fail "unknown deploy argument: $1" ;;
     esac
   done
@@ -244,6 +253,7 @@ deploy() {
   validate_release_sha "${release_sha}"
   validate_digest_reference "${backend_image}"
   validate_digest_reference "${frontend_image}"
+  validate_digest_reference "${extract_image}"
   [[ ${expected_package_sha} =~ ^[0-9a-f]{64}$ ]] || \
     fail "package SHA must contain 64 lowercase hex characters"
   local installed_package_sha
@@ -258,19 +268,22 @@ deploy() {
 
   local candidate
   candidate=$(mktemp "${STATE_DIR}/candidate.XXXXXX.env")
-  write_manifest "${candidate}" "${installed_package_sha}" "${release_sha}" "${backend_image}" "${frontend_image}"
+  write_manifest "${candidate}" "${installed_package_sha}" "${release_sha}" "${backend_image}" "${frontend_image}" "${extract_image}"
   CANDIDATE_ENV=${candidate}
   trap cleanup_candidate EXIT
 
   compose "${candidate}" config --quiet
-  ecr_login "${backend_image}" "${frontend_image}"
-  compose "${candidate}" pull api frontend
+  ecr_login "${backend_image}" "${frontend_image}" "${extract_image}"
+  compose "${candidate}" pull api frontend extract
   compose "${candidate}" --profile migrate run --rm migrate
 
   local current_snapshot=""
   if [[ -f ${CURRENT_ENV} ]]; then
     current_snapshot=$(mktemp "${STATE_DIR}/current-snapshot.XXXXXX.env")
     cp "${CURRENT_ENV}" "${current_snapshot}"
+    if ! grep -q '^SCHOLIGHT_EXTRACT_IMAGE=' "${current_snapshot}"; then
+      printf 'SCHOLIGHT_EXTRACT_IMAGE=%s\n' "${extract_image}" >>"${current_snapshot}"
+    fi
   fi
 
   write_transition deploy activating "${candidate}"
@@ -310,12 +323,15 @@ rollback() {
   require_command aws
   local previous_backend_image
   local previous_frontend_image
+  local previous_extract_image
   previous_backend_image=$(read_file_value "${PREVIOUS_ENV}" SCHOLIGHT_BACKEND_IMAGE)
   previous_frontend_image=$(read_file_value "${PREVIOUS_ENV}" SCHOLIGHT_FRONTEND_IMAGE)
+  previous_extract_image=$(read_file_value "${PREVIOUS_ENV}" SCHOLIGHT_EXTRACT_IMAGE)
   validate_digest_reference "${previous_backend_image}"
   validate_digest_reference "${previous_frontend_image}"
-  ecr_login "${previous_backend_image}" "${previous_frontend_image}"
-  compose "${PREVIOUS_ENV}" pull api frontend
+  validate_digest_reference "${previous_extract_image}"
+  ecr_login "${previous_backend_image}" "${previous_frontend_image}" "${previous_extract_image}"
+  compose "${PREVIOUS_ENV}" pull api frontend extract
 
   local old_current="${STATE_DIR}/rollback-current.env"
   cp "${CURRENT_ENV}" "${old_current}"
@@ -355,5 +371,5 @@ case ${1:-} in
   rollback) shift; rollback "$@" ;;
   status) status ;;
   package-sha) package_sha ;;
-  *) fail "usage: release.sh deploy --contract-version ${CONTRACT_VERSION} --package-sha SHA256 --release-sha SHA --backend-image IMAGE@DIGEST --frontend-image IMAGE@DIGEST | rollback | status | package-sha" ;;
+  *) fail "usage: release.sh deploy --contract-version ${CONTRACT_VERSION} --package-sha SHA256 --release-sha SHA --backend-image IMAGE@DIGEST --frontend-image IMAGE@DIGEST --extract-image IMAGE@DIGEST | rollback | status | package-sha" ;;
 esac

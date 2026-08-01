@@ -119,3 +119,14 @@ async def test_http_fetcher_rejects_oversized_response() -> None:
             await fetcher.fetch(_request(base_url))
 
     assert exc_info.value.code == "response_too_large"
+
+
+@pytest.mark.asyncio
+async def test_http_fetcher_rejects_saturation_instead_of_queueing() -> None:
+    fetcher = HttpFetcher(validator=_allow_test_target, concurrency=1)
+    await fetcher._semaphore.acquire()
+
+    with pytest.raises(ExtractError) as exc_info:
+        await fetcher.fetch(_request("https://example.com"))
+
+    assert exc_info.value.code == "extract_capacity_exceeded"

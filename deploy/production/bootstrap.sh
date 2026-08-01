@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly CONTRACT_VERSION=1
+readonly CONTRACT_VERSION=2
 readonly COMPOSE_VERSION=2.40.3
 readonly COMPOSE_SHA256=dba9d98e1ba5bfe11d88c99b9bd32fc4a0624a30fafe68eea34d61a3e42fd372
 readonly COMPOSE_URL="https://github.com/docker/compose/releases/download/v${COMPOSE_VERSION}/docker-compose-linux-x86_64"
@@ -11,6 +11,7 @@ readonly AWS_REGION=ap-southeast-1
 readonly ECR_REGISTRY=683390797772.dkr.ecr.ap-southeast-1.amazonaws.com
 readonly BACKEND_IMAGE_REGEX='^683390797772\.dkr\.ecr\.ap-southeast-1\.amazonaws\.com/scholight/backend@sha256:[0-9a-f]{64}$'
 readonly FRONTEND_IMAGE_REGEX='^683390797772\.dkr\.ecr\.ap-southeast-1\.amazonaws\.com/scholight/frontend@sha256:[0-9a-f]{64}$'
+readonly EXTRACT_IMAGE_REGEX='^683390797772\.dkr\.ecr\.ap-southeast-1\.amazonaws\.com/scholight/extract@sha256:[0-9a-f]{64}$'
 readonly SWAP_BYTES=2147483648
 
 ROOT_PREFIX=${SCHOLIGHT_BOOTSTRAP_ROOT:-}
@@ -57,6 +58,7 @@ readonly REQUIRED_RUNTIME_KEYS=(
   SCHOLIGHT_CADDY_IP
   SCHOLIGHT_FRONTEND_IP
   SCHOLIGHT_API_IP
+  SCHOLIGHT_EXTRACT_IP
   SCHOLIGHT_METADATA_SYNC_IP
   SCHOLIGHT_PAPER_INGEST_IP
   SCHOLIGHT_PG_HOST
@@ -73,6 +75,7 @@ readonly REQUIRED_RUNTIME_KEYS=(
   SCHOLIGHT_AUTH_JWT_SECRET
   SCHOLIGHT_ANONYMOUS_QUOTA_HMAC_SECRET
   SCHOLIGHT_ACCESS_KEY_HMAC_SECRET
+  SCHOLIGHT_EXTRACT_INTERNAL_TOKEN
   SCHOLIGHT_PUBLIC_WEB_URL
   SCHOLIGHT_CORS_ALLOW_ORIGINS
 )
@@ -348,12 +351,14 @@ write_release_manifest() {
   local release_sha=$3
   local backend_image=$4
   local frontend_image=$5
+  local extract_image=$6
   {
     printf 'SCHOLIGHT_RELEASE_CONTRACT_VERSION=%s\n' "${CONTRACT_VERSION}"
     printf 'SCHOLIGHT_PACKAGE_SHA=%s\n' "${package_digest}"
     printf 'SCHOLIGHT_RELEASE_SHA=%s\n' "${release_sha}"
     printf 'SCHOLIGHT_BACKEND_IMAGE=%s\n' "${backend_image}"
     printf 'SCHOLIGHT_FRONTEND_IMAGE=%s\n' "${frontend_image}"
+    printf 'SCHOLIGHT_EXTRACT_IMAGE=%s\n' "${extract_image}"
   } >"${path}"
 }
 
@@ -364,11 +369,12 @@ validate_compose_config() {
   local release_sha=$4
   local backend_image=$5
   local frontend_image=$6
+  local extract_image=$7
   local release_env
   release_env=$(mktemp "${STATE_DIR}/release.XXXXXX.env")
   TEMP_PATHS+=("${release_env}")
   write_release_manifest \
-    "${release_env}" "${package_digest}" "${release_sha}" "${backend_image}" "${frontend_image}"
+    "${release_env}" "${package_digest}" "${release_sha}" "${backend_image}" "${frontend_image}" "${extract_image}"
   docker compose --env-file "${runtime_candidate}" --env-file "${release_env}" \
     -f "${package_directory}/compose.yaml" config --quiet
   rm -f "${release_env}"
@@ -380,6 +386,7 @@ refresh_runtime_env() {
   local release_sha=$3
   local backend_image=$4
   local frontend_image=$5
+  local extract_image=$6
   if [[ -e ${RUNTIME_ENV} || -L ${RUNTIME_ENV} ]]; then
     validate_existing_runtime
   fi
@@ -401,7 +408,7 @@ refresh_runtime_env() {
   validate_runtime_contents "${candidate}"
   validate_compose_config \
     "${candidate}" "${package_directory}" "${package_digest}" \
-    "${release_sha}" "${backend_image}" "${frontend_image}"
+    "${release_sha}" "${backend_image}" "${frontend_image}" "${extract_image}"
 
   local destination_tmp="${RUNTIME_ENV}.new.$$"
   TEMP_PATHS+=("${destination_tmp}")
@@ -454,6 +461,7 @@ deploy() {
   local release_sha=""
   local backend_image=""
   local frontend_image=""
+  local extract_image=""
   while (($#)); do
     case $1 in
       --contract-version) contract_version=${2:-}; shift 2 ;;
@@ -461,6 +469,7 @@ deploy() {
       --release-sha) release_sha=${2:-}; shift 2 ;;
       --backend-image) backend_image=${2:-}; shift 2 ;;
       --frontend-image) frontend_image=${2:-}; shift 2 ;;
+      --extract-image) extract_image=${2:-}; shift 2 ;;
       *) fail "unknown deploy argument: $1" ;;
     esac
   done
@@ -475,6 +484,8 @@ deploy() {
     fail "backend image is outside the production ECR repository"
   [[ ${frontend_image} =~ ${FRONTEND_IMAGE_REGEX} ]] || \
     fail "frontend image is outside the production ECR repository"
+  [[ ${extract_image} =~ ${EXTRACT_IMAGE_REGEX} ]] || \
+    fail "extract image is outside the production ECR repository"
 
   validate_platform
   acquire_lock
@@ -491,7 +502,7 @@ deploy() {
   ensure_observability
   refresh_runtime_env \
     "${HOST_PACKAGE_DIR}" "${source_digest}" "${release_sha}" \
-    "${backend_image}" "${frontend_image}"
+    "${backend_image}" "${frontend_image}" "${extract_image}"
 
   SCHOLIGHT_RUNTIME_ENV="${RUNTIME_ENV}" SCHOLIGHT_STATE_DIR="${STATE_DIR}" \
     "${HOST_PACKAGE_DIR}/release.sh" deploy \
@@ -499,10 +510,11 @@ deploy() {
       --package-sha "${source_digest}" \
       --release-sha "${release_sha}" \
       --backend-image "${backend_image}" \
-      --frontend-image "${frontend_image}"
+      --frontend-image "${frontend_image}" \
+      --extract-image "${extract_image}"
 }
 
 case ${1:-} in
   deploy) shift; deploy "$@" ;;
-  *) fail "usage: bootstrap.sh deploy --contract-version 1 --package-sha SHA --release-sha SHA --backend-image IMAGE@DIGEST --frontend-image IMAGE@DIGEST" ;;
+  *) fail "usage: bootstrap.sh deploy --contract-version 2 --package-sha SHA --release-sha SHA --backend-image IMAGE@DIGEST --frontend-image IMAGE@DIGEST --extract-image IMAGE@DIGEST" ;;
 esac
