@@ -35,3 +35,25 @@ def test_workflows_use_the_scoped_dependency_reader_app() -> None:
     assert "secrets.IDENTITY_READER_PRIVATE_KEY" in workflows
     assert "permission-contents: read" in workflows
     assert "CLOUD_AUTH_READ_TOKEN" not in workflows
+
+
+def test_candidate_identity_compatibility_workflow_is_standardized() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "sanchezcloud-identity-compat.yml").read_text(
+        encoding="utf-8"
+    )
+
+    for input_name in (
+        "identity_ref",
+        "version",
+        "schema_version",
+        "correlation_id",
+    ):
+        assert f"{input_name}:" in workflow
+    assert "actions/create-github-app-token@" in workflow
+    assert "permission-contents: read" in workflow
+    assert "secrets.IDENTITY_READER_PRIVATE_KEY" in workflow
+    assert "uv pip install" in workflow
+    assert "AUTH_SCHEMA_VERSION" in workflow
+    assert "sanchezcloud-identity migrate" in workflow
+    assert "SANCHEZCLOUD_IDENTITY_REVISION" in workflow
+    assert "CLOUD_AUTH_READ_TOKEN" not in workflow
