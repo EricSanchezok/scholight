@@ -196,6 +196,12 @@ def test_access_key_request_defaults_to_all_tools_scope() -> None:
     assert request.scopes == ["all"]
 
 
+def test_legacy_search_scope_is_normalized_to_all_tools() -> None:
+    request = CreateAccessKeyRequest.model_validate({"name": "legacy-client", "scopes": ["search"]})
+
+    assert request.scopes == ["all"]
+
+
 def test_access_key_list_schema_never_contains_secret_or_digest(api_app: FastAPI) -> None:
     schema = api_app.openapi()
     operation = schema["paths"]["/user/access-keys"]["get"]

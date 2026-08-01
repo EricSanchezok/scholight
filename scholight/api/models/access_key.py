@@ -37,6 +37,11 @@ class CreateAccessKeyRequest(BaseModel):
             raise ValueError("access keys always authorize all Scholight tools")
         return value
 
+    @field_validator("scopes", mode="before")
+    @staticmethod
+    def _normalize_legacy_scope(value: object) -> object:
+        return ["all"] if value == ["search"] else value
+
     @field_validator("expires_at")
     @staticmethod
     def _future_expiry(value: datetime | None) -> datetime | None:
