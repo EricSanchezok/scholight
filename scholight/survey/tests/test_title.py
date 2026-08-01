@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 
 import httpx
@@ -21,9 +20,7 @@ async def test_generate_survey_title_normalizes_model_text(
     transport = httpx.MockTransport(
         lambda request: httpx.Response(
             200,
-            json={
-                "choices": [{"message": {"content": "# \u201c思维链压缩的推理与训练策略\u201d\n"}}]
-            },
+            json={"choices": [{"message": {"content": "思维链压缩的推理与训练策略"}}]},
             request=request,
         )
     )
@@ -77,21 +74,32 @@ async def test_generate_survey_title_calls_provider_for_short_input(
     assert captured["content"] == "RAG"
 
 
-async def test_generate_survey_title_has_total_time_limit(
+async def test_generate_survey_title_prompt_requires_direct_bounded_output(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(settings, "deepseek_api_key", "test-key")
-    monkeypatch.setattr(title_module, "_REQUEST_TIMEOUT_SECONDS", 0.01)
+    captured: dict[str, object] = {}
 
-    async def respond(request: httpx.Request) -> httpx.Response:
-        await asyncio.sleep(0.05)
+    def respond(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        captured["system"] = payload["messages"][0]["content"]
         return httpx.Response(
             200,
-            json={"choices": [{"message": {"content": "Late title"}}]},
+            json={"choices": [{"message": {"content": "Reasoning compression strategies"}}]},
             request=request,
         )
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
-        title = await title_module.generate_survey_title("RAG", client=client)
+        await title_module.generate_survey_title("RAG", client=client)
 
-    assert title is None
+    assert "Output exactly the title text and nothing else" in str(captured["system"])
+
+
+async def test_normalize_title_preserves_the_complete_response() -> None:
+    assert title_module._normalize_title("Reasoning compression\nacross training") == (
+        "Reasoning compression across training"
+    )
+
+
+async def test_normalize_title_rejects_only_storage_overflow() -> None:
+    assert title_module._normalize_title("x" * 161) is None

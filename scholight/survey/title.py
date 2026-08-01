@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
 import httpx
@@ -13,25 +12,27 @@ from scholight.config import settings
 logger = structlog.get_logger(__name__)
 
 _MODEL = "deepseek-v4-flash"
-_TITLE_MAX_CHARACTERS = 80
-_REQUEST_TIMEOUT_SECONDS = 3.0
+_TITLE_STORAGE_MAX_CHARACTERS = 160
 _SYSTEM_PROMPT = """SCHOLIGHT_SURVEY_NAVIGATION_TITLE
-Generate exactly one concise navigation title for the research request.
-Preserve the user's primary language. Capture the research subject and comparison when present.
-Return plain text only: no Markdown, labels, quotation marks, explanation, or final punctuation.
-Do not answer the research request. Keep the title under 80 characters."""
+Write a concise navigation title for the user's research request.
+
+Output exactly the title text and nothing else.
+- Use the same primary language as the user.
+- Capture the research subject and the central comparison when one exists.
+- For Chinese, use between 12 and 32 Chinese characters when possible.
+- For alphabetic languages, use between 4 and 10 words when possible.
+- Never exceed 60 Unicode characters in total.
+- Do not use Markdown, labels, prefixes, quotation marks, explanations, or a trailing period.
+- Do not answer the research request.
+- Do not insert a line break."""
 
 
 def _normalize_title(value: object) -> str | None:
     if not isinstance(value, str):
         return None
-    title = next((line.strip() for line in value.splitlines() if line.strip()), "")
-    title = title.removeprefix("#").strip().strip("`\"'“”\u2018\u2019")
-    title = " ".join(title.split())
-    if not title:
+    title = " ".join(value.split())
+    if not title or len(title) > _TITLE_STORAGE_MAX_CHARACTERS:
         return None
-    if len(title) > _TITLE_MAX_CHARACTERS:
-        title = f"{title[: _TITLE_MAX_CHARACTERS - 1].rstrip()}…"
     return title
 
 
@@ -63,27 +64,26 @@ async def generate_survey_title(
             {"role": "user", "content": initial_request},
         ],
         "temperature": 0.2,
-        "max_tokens": 64,
+        "max_tokens": 96,
         "stream": False,
     }
     owns_client = client is None
     http_client = client or httpx.AsyncClient(
-        timeout=httpx.Timeout(connect=1.0, read=3.0, write=2.0, pool=1.0),
+        timeout=httpx.Timeout(settings.survey_title_timeout_seconds),
         follow_redirects=False,
     )
     try:
-        async with asyncio.timeout(_REQUEST_TIMEOUT_SECONDS):
-            response = await http_client.post(
-                settings.survey_title_api_url,
-                headers={"Authorization": f"Bearer {settings.deepseek_api_key}"},
-                json=request,
-            )
+        response = await http_client.post(
+            settings.survey_title_api_url,
+            headers={"Authorization": f"Bearer {settings.deepseek_api_key}"},
+            json=request,
+        )
         response.raise_for_status()
         title = _response_title(response.json())
         if title is None:
             logger.warning("survey_title_invalid_response")
         return title
-    except (TimeoutError, httpx.HTTPError, ValueError) as exc:
+    except (httpx.HTTPError, ValueError) as exc:
         status_code = exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None
         logger.warning(
             "survey_title_generation_failed",
