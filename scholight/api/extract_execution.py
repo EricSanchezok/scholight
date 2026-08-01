@@ -194,7 +194,7 @@ async def execute_public_extract(
         return _page_response(page)
 
     document = await _request_document(request)
-    metadata = document.model_dump(mode="json", exclude={"content"})
+    metadata = document.model_dump(mode="json", exclude={"content", "source_bytes"})
     if len(document.content) <= request.max_chars:
         return ExtractResponse.model_validate(
             {

@@ -47,6 +47,7 @@ def _document(*, content: str = "abcdefgh") -> InternalExtractResponse:
         warnings=[],
         content_hash="a" * 64,
         fetched_at=datetime(2026, 8, 1, tzinfo=UTC),
+        source_bytes=1024,
     )
 
 

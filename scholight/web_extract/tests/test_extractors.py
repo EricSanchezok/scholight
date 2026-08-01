@@ -67,3 +67,21 @@ def test_normalize_json_is_readable() -> None:
     result = normalize_text(b'{"answer":42}', "application/json", charset="utf-8")
 
     assert result == '{\n  "answer": 42\n}'
+
+
+def test_full_markdown_preserves_chinese_code_and_table() -> None:
+    html = """
+    <html><body><main>
+      <h1>中文标题</h1>
+      <pre><code class="language-python">print("你好")</code></pre>
+      <table><tr><th>名称</th><th>值</th></tr><tr><td>答案</td><td>42</td></tr></table>
+    </main></body></html>
+    """
+
+    result = extract_html(
+        html,
+        source_url="https://example.com/chinese",
+        output=ExtractResponseFormat.FULL_MARKDOWN,
+    )
+
+    assert all(value in result.content for value in ("中文标题", 'print("你好")', "名称", "42"))

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -130,3 +131,21 @@ async def test_http_fetcher_rejects_saturation_instead_of_queueing() -> None:
         await fetcher.fetch(_request("https://example.com"))
 
     assert exc_info.value.code == "extract_capacity_exceeded"
+
+
+@pytest.mark.asyncio
+async def test_http_fetcher_returns_stable_timeout_error() -> None:
+    async def handler(_request: web.Request) -> web.Response:
+        await asyncio.sleep(0.1)
+        return web.Response(text="late")
+
+    async with _server(handler) as base_url:
+        fetcher = HttpFetcher(
+            validator=_allow_test_target,
+            resolver=aiohttp.DefaultResolver(),
+            timeout_seconds=0.01,
+        )
+        with pytest.raises(ExtractError) as exc_info:
+            await fetcher.fetch(_request(base_url))
+
+    assert exc_info.value.code == "fetch_timeout"

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import time
 from collections import OrderedDict
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
@@ -15,6 +16,7 @@ from fastapi import FastAPI, Header
 from fastapi.responses import JSONResponse
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field
 
+from scholight.logging.emf import MetricUnit, emit_emf
 from scholight.models.web_extract import ExtractResponseFormat, RenderMode
 from scholight.web_extract.engine import ExtractDocument, ExtractInput
 from scholight.web_extract.errors import ExtractError
@@ -50,6 +52,7 @@ class InternalExtractResponse(BaseModel):
     warnings: list[str]
     content_hash: str
     fetched_at: datetime
+    source_bytes: int = Field(ge=0)
 
     @classmethod
     def from_document(cls, document: ExtractDocument) -> InternalExtractResponse:
@@ -67,6 +70,7 @@ class InternalExtractResponse(BaseModel):
             warnings=list(document.warnings),
             content_hash=document.content_hash,
             fetched_at=document.fetched_at,
+            source_bytes=document.source_bytes,
         )
 
 
@@ -123,6 +127,28 @@ def _cache_key(request: InternalExtractRequest) -> str:
     return hashlib.sha256(payload.encode()).hexdigest()
 
 
+def _emit_extract_metrics(
+    *,
+    started_at: float,
+    outcome: str,
+    response: InternalExtractResponse | None = None,
+    cache_hit: bool = False,
+) -> None:
+    metrics: dict[str, tuple[float | int, MetricUnit]] = {
+        "RequestCount": (1, "Count"),
+        "Latency": ((time.perf_counter() - started_at) * 1000, "Milliseconds"),
+        "CacheHit": (int(cache_hit), "Count"),
+    }
+    if response is not None:
+        metrics["DownloadBytes"] = (response.source_bytes, "Bytes")
+        metrics["OutputBytes"] = (len(response.content.encode("utf-8")), "Bytes")
+    emit_emf(
+        service="extract",
+        outcome=outcome,
+        metrics=metrics,
+    )
+
+
 def create_extract_service(
     *,
     engine: _Engine,
@@ -156,9 +182,16 @@ def create_extract_service(
             x_scholight_internal_token, internal_token
         ):
             return JSONResponse(status_code=401, content={"detail": {"code": "unauthorized"}})
+        started_at = time.perf_counter()
         key = _cache_key(request)
         cacheable = not request.headers and not request.cookies
         if cacheable and (cached := cache.get(key)) is not None:
+            _emit_extract_metrics(
+                started_at=started_at,
+                outcome="cache_hit",
+                response=cached,
+                cache_hit=True,
+            )
             return cached
         try:
             document = await engine.extract(
@@ -171,6 +204,7 @@ def create_extract_service(
                 )
             )
         except ExtractError as exc:
+            _emit_extract_metrics(started_at=started_at, outcome=f"error_{exc.code}")
             return JSONResponse(
                 status_code=exc.status_code,
                 content={
@@ -184,6 +218,11 @@ def create_extract_service(
         response = InternalExtractResponse.from_document(document)
         if cacheable:
             cache.put(key, response)
+        _emit_extract_metrics(
+            started_at=started_at,
+            outcome="browser_success" if response.rendered else "static_success",
+            response=response,
+        )
         return response
 
     return app

@@ -51,6 +51,7 @@ class ExtractDocument:
     warnings: tuple[str, ...]
     content_hash: str
     fetched_at: datetime
+    source_bytes: int
 
 
 class Fetcher(Protocol):
@@ -177,6 +178,7 @@ class ExtractEngine:
             warnings=tuple(warnings),
             content_hash=content_hash,
             fetched_at=datetime.now(UTC),
+            source_bytes=len(fetched.body),
         )
 
 

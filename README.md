@@ -54,6 +54,8 @@ uv run scholight search -q "attention mechanism"   # 测试搜索
 
 Web Extract 要求 Access Key，但不消耗搜索日额度。带目标请求头或 Cookie 的调用不进入共享缓存。v1 暂不支持目标 POST、用户代理、自定义 JavaScript 与非 HTTP(S) URL。
 
+抽取 sidecar 仅记录静态/浏览器路径、稳定错误码、耗时、下载/输出字节数与缓存命中指标；目标 URL、Authorization、Cookie 和响应正文不会进入日志或指标。
+
 ---
 
 ## 配置

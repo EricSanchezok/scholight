@@ -175,7 +175,35 @@ class PlaywrightBrowserRenderer:
                     await page.wait_for_load_state(
                         "networkidle", timeout=min(2500, self._timeout_ms)
                     )
-                await page.wait_for_timeout(400)
+                await page.evaluate(
+                    """
+                    () => new Promise((resolve) => {
+                      const quietMs = 250;
+                      const maximumMs = 1000;
+                      let quietTimer;
+                      let maximumTimer;
+                      const observer = new MutationObserver(() => schedule());
+                      const finish = () => {
+                        observer.disconnect();
+                        clearTimeout(quietTimer);
+                        clearTimeout(maximumTimer);
+                        resolve();
+                      };
+                      const schedule = () => {
+                        clearTimeout(quietTimer);
+                        quietTimer = setTimeout(finish, quietMs);
+                      };
+                      observer.observe(document.documentElement, {
+                        childList: true,
+                        subtree: true,
+                        attributes: true,
+                        characterData: true,
+                      });
+                      maximumTimer = setTimeout(finish, maximumMs);
+                      schedule();
+                    })
+                    """
+                )
                 final_url = page.url
                 await validate_public_target(final_url)
                 html = await page.content()
