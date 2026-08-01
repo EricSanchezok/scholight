@@ -143,7 +143,7 @@ class Settings(BaseSettings):
     )
     extract_static_concurrency: int = Field(default=16, ge=1, le=256)
     extract_browser_concurrency: int = Field(default=2, ge=1, le=32)
-    extract_server_host: str = "0.0.0.0"
+    extract_server_host: str = "127.0.0.1"
     extract_server_port: int = Field(default=8001, ge=1, le=65535)
 
     # ── Survey ──
