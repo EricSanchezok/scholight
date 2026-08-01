@@ -109,7 +109,7 @@ jobs:
         run: |
           resolved_ref=$(git -C .ci/sanchezcloud-identity rev-parse HEAD)
           test "$resolved_ref" = "$EXPECTED_REF"
-          uv run python - <<'PY'
+          .venv/bin/python - <<'PY'
           import os
           import sanchezcloud_identity
 
@@ -121,7 +121,7 @@ jobs:
           PY
       - name: Verify Scholight identity integration
         run: >-
-          uv run pytest -q
+          .venv/bin/pytest -q
           scholight/api/tests/test_auth_config.py
           scholight/api/tests/test_search_auth.py
           scholight/api/tests/test_sessions.py
@@ -132,10 +132,10 @@ jobs:
         run: |
           psql -h 127.0.0.1 -U postgres -d sanchezcloud \
             -v ON_ERROR_STOP=1 -c "CREATE SCHEMA auth AUTHORIZATION postgres"
-          uv run sanchezcloud-identity migrate
-          uv run sanchezcloud-identity migrate
-          uv run sanchezcloud-identity check-schema
-          test "$(uv run sanchezcloud-identity schema-version)" = "${{ inputs.schema_version }}"
+          .venv/bin/sanchezcloud-identity migrate
+          .venv/bin/sanchezcloud-identity migrate
+          .venv/bin/sanchezcloud-identity check-schema
+          test "$(.venv/bin/sanchezcloud-identity schema-version)" = "${{ inputs.schema_version }}"
       - name: Build Scholight with the candidate SDK
         env:
           DOCKER_BUILDKIT: "1"
