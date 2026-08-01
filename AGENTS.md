@@ -229,6 +229,25 @@ configure_logging(log_level="INFO", use_json=True, file_handler=("app.log", 50_0
 - **依赖管理**：全部依赖声明在 `pyproject.toml`，`uv.lock` 锁定版本，不单独使用 `requirements.txt`。
 - **环境变量**：配置通过 `SCHOLIGHT_` 前缀的环境变量注入，模板在 `.env.example`。
 
+## 本地混合集成环境
+
+开发和验收 Survey、认证、Quota、Usage、History 或其他 PostgreSQL 业务功能时，默认使用以下隔离拓扑：
+
+```text
+本地 Frontend → 本地 Scholight API
+                    ├── 本地 PostgreSQL 16（auth + scholight Schema）
+                    ├── 本地 MinIO（S3-compatible Survey Artifact）
+                    └── 远端 Zilliz（仅论文搜索，只读）
+```
+
+- **PostgreSQL 必须本地隔离**：使用临时 Docker PostgreSQL 16，依次运行 cloud-auth 和 Scholight migrations；不得读取项目中指向生产 RDS 的 `.env`，不得复制生产用户数据。
+- **Artifact 必须本地隔离**：本地使用 MinIO，而不是生产 AWS S3。通过 `SCHOLIGHT_SURVEY_S3_ENDPOINT_URL` 指向 MinIO，并使用专用本地 Bucket 和测试凭据。MinIO 实现 S3 API，因此报告、Manifest、presigned URL、SHA 校验与 cleanup 流程仍使用真实对象存储协议。
+- **Zilliz 仅限只读搜索**：本地可连接远端 Zilliz 以获得真实论文搜索结果；优先使用 collection-scoped/read-only Key。不得在该环境启动 `metadata-sync`、`paper-ingest`、backfill、scheduler sync、store 维护或任何可能写入/删除 Zilliz 的命令。
+- **允许启动的服务**：Frontend、API、Survey Draft worker、Survey worker，以及本地 PostgreSQL/MinIO。论文摄入服务默认保持停止。
+- **模型按测试层级选择**：日常和 CI 使用固定假模型，不消耗真实 Token；最终人工验收可显式注入真实 `DEEPSEEK_API_KEY` 和 `IMAGE_GEN_API_KEY`。Secret 不得写入 Compose、测试产物、日志或 Git。
+- **生产边界不混用**：本地环境不得连接生产 RDS 或生产 Survey S3 Bucket；生产运行时不得配置 MinIO endpoint。任何需要远端写操作的测试必须另行获得明确授权。
+- **环境可重建**：本地 PostgreSQL、MinIO Bucket 和测试账户都视为可丢弃状态；测试结果不得依赖手工修改后的持久容器。
+
 ## 测试规范（TDD）
 
 项目遵循 **测试驱动开发**：先写测试 → 确认测试失败 → 实现代码 → 测试通过。
