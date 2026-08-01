@@ -24,6 +24,16 @@ import type {
   AdminAuditEvent,
   QuotaOverrideRequest,
   QuotaOverrideUpdate,
+  Survey,
+  SurveyActionRequest,
+  SurveyArtifacts,
+  SurveyCreateRequest,
+  SurveyDraft,
+  SurveyDraftRequest,
+  SurveyList,
+  SurveyManualDraftRequest,
+  SurveyProgress,
+  SurveyView,
 } from "./types";
 import { productConfig } from "../config/product";
 
@@ -186,6 +196,122 @@ export const historyApi = {
     unwrap(
       withAuthRetry(
         () => apiClient.POST("/search/history/bulk-delete", { body: { ids } }),
+        "protected",
+      ),
+    ),
+};
+
+export const surveyApi = {
+  list: (view: SurveyView, cursor?: string) =>
+    unwrap<SurveyList>(
+      withAuthRetry(
+        () =>
+          apiClient.GET("/surveys", {
+            params: { query: { view, limit: 20, ...(cursor ? { cursor } : {}) } },
+          }),
+        "protected",
+      ),
+    ),
+  create: (body: SurveyCreateRequest) =>
+    unwrap<Survey>(withAuthRetry(() => apiClient.POST("/surveys", { body }), "protected")),
+  get: (surveyId: string) =>
+    unwrap<Survey>(
+      withAuthRetry(
+        () => apiClient.GET("/surveys/{survey_id}", { params: { path: { survey_id: surveyId } } }),
+        "protected",
+      ),
+    ),
+  progress: (surveyId: string) =>
+    unwrap<SurveyProgress>(
+      withAuthRetry(
+        () =>
+          apiClient.GET("/surveys/{survey_id}/progress", {
+            params: { path: { survey_id: surveyId } },
+          }),
+        "protected",
+      ),
+    ),
+  drafts: (surveyId: string) =>
+    unwrap<SurveyDraft[]>(
+      withAuthRetry(
+        () =>
+          apiClient.GET("/surveys/{survey_id}/drafts", {
+            params: { path: { survey_id: surveyId } },
+          }),
+        "protected",
+      ),
+    ),
+  reviseDraft: (surveyId: string, body: SurveyDraftRequest) =>
+    unwrap<SurveyDraft>(
+      withAuthRetry(
+        () =>
+          apiClient.POST("/surveys/{survey_id}/drafts", {
+            params: { path: { survey_id: surveyId } },
+            body,
+          }),
+        "protected",
+      ),
+    ),
+  saveManualDraft: (surveyId: string, body: SurveyManualDraftRequest) =>
+    unwrap<SurveyDraft>(
+      withAuthRetry(
+        () =>
+          apiClient.POST("/surveys/{survey_id}/drafts/manual", {
+            params: { path: { survey_id: surveyId } },
+            body,
+          }),
+        "protected",
+      ),
+    ),
+  start: (surveyId: string, body: SurveyActionRequest) =>
+    unwrap<Survey>(
+      withAuthRetry(
+        () =>
+          apiClient.POST("/surveys/{survey_id}/start", {
+            params: { path: { survey_id: surveyId } },
+            body,
+          }),
+        "protected",
+      ),
+    ),
+  cancel: (surveyId: string) =>
+    unwrap<Survey>(
+      withAuthRetry(
+        () =>
+          apiClient.POST("/surveys/{survey_id}/cancel", {
+            params: { path: { survey_id: surveyId } },
+          }),
+        "protected",
+      ),
+    ),
+  remove: (surveyId: string) =>
+    unwrapEmpty(
+      withAuthRetry(
+        () =>
+          apiClient.DELETE("/surveys/{survey_id}", {
+            params: { path: { survey_id: surveyId } },
+          }),
+        "protected",
+      ),
+    ),
+  report: (surveyId: string) =>
+    unwrap<string>(
+      withAuthRetry(
+        () =>
+          apiClient.GET("/surveys/{survey_id}/report", {
+            params: { path: { survey_id: surveyId } },
+            parseAs: "text",
+          }),
+        "protected",
+      ),
+    ),
+  artifacts: (surveyId: string) =>
+    unwrap<SurveyArtifacts>(
+      withAuthRetry(
+        () =>
+          apiClient.GET("/surveys/{survey_id}/artifacts", {
+            params: { path: { survey_id: surveyId } },
+          }),
         "protected",
       ),
     ),

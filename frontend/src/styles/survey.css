@@ -1,0 +1,834 @@
+.surveyPage {
+  width: min(var(--container), calc(100% - 64px));
+  min-height: calc(100vh - 88px);
+  margin: 0 auto;
+  padding: 56px 0 120px;
+}
+
+.surveyPageHeading {
+  margin-bottom: 26px;
+}
+
+.surveyPageHeading .eyebrow {
+  display: block;
+  margin-bottom: 18px;
+}
+
+.surveyPageHeading h1,
+.surveyDraftHeader h1,
+.surveyReportHeader h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.surveyPageHeading h1 {
+  font-size: 36px;
+  line-height: 46px;
+}
+
+.surveyPageHeading p,
+.surveyDraftHeader p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.surveyStartForm {
+  display: grid;
+  min-height: 72px;
+  padding: 7px;
+  border: 1px solid var(--line-field);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  grid-template-columns: minmax(0, 1fr) 150px;
+  gap: 10px;
+}
+
+.surveyStartForm textarea {
+  width: 100%;
+  min-height: 56px;
+  padding: 16px 14px;
+  resize: none;
+  border: 0;
+  outline: 0;
+  color: var(--ink);
+  background: transparent;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.surveyStartForm textarea::placeholder {
+  color: var(--text-placeholder);
+}
+
+.surveyStartForm textarea:focus-visible {
+  border-radius: var(--radius-sm);
+  outline: 3px solid var(--focus-ring);
+  outline-offset: -1px;
+}
+
+.surveyStartForm button,
+.surveySignInEmpty button,
+.surveyErrorState button,
+.surveyRefineSection > button,
+.surveyDraftFailure button {
+  border: 1px solid var(--brand);
+  border-radius: 7px;
+  color: var(--on-brand);
+  background: var(--brand);
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.surveyStartForm button:disabled,
+.surveyRefineSection > button:disabled,
+.surveyDraftFailure button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.surveyInlineError {
+  margin: 10px 0 0;
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.surveyTabs {
+  display: flex;
+  min-height: 66px;
+  margin-top: 16px;
+  border-bottom: 1px solid var(--line-soft);
+  align-items: center;
+  justify-content: space-between;
+}
+
+.surveyTabs [role="tablist"] {
+  display: flex;
+  height: 66px;
+  align-items: stretch;
+  gap: 34px;
+}
+
+.surveyTabs [role="tab"] {
+  position: relative;
+  padding: 4px 0 0;
+  border: 0;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.surveyTabs [role="tab"][aria-selected="true"] {
+  color: var(--brand);
+}
+
+.surveyTabs [role="tab"][aria-selected="true"]::after {
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  background: var(--brand);
+  content: "";
+}
+
+.surveyActiveList {
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.surveyActiveRow {
+  padding: 28px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.surveyActiveRowProgress {
+  padding-bottom: 30px;
+}
+
+.surveyActiveRow:last-child {
+  border-bottom: 0;
+}
+
+.surveyRowPrimary {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 40px;
+}
+
+.surveyIdentity {
+  min-width: 0;
+  flex: 1;
+}
+
+.surveyIdentity h2 {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.surveyIdentity p {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.surveyRowActions {
+  display: flex;
+  min-width: 260px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 20px;
+  white-space: nowrap;
+}
+
+.surveyRowActions a,
+.surveyRowActions strong,
+.surveyStageLabel {
+  color: var(--brand);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.surveyRowActions button,
+.surveyTerminalList button {
+  padding: 7px 0;
+  border: 0;
+  color: var(--danger);
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.surveyProgress {
+  width: 100%;
+  height: 4px;
+  margin-top: 18px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--surface-muted);
+}
+
+.surveyProgress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--brand);
+  transition: width 180ms ease;
+}
+
+.surveyEmpty,
+.surveySignInEmpty,
+.surveyErrorState {
+  display: grid;
+  min-height: 260px;
+  border-bottom: 1px solid var(--line-soft);
+  align-content: center;
+  justify-items: start;
+  gap: 8px;
+}
+
+.surveyEmpty h2,
+.surveySignInEmpty h2,
+.surveyErrorState h1,
+.surveyErrorState h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 25px;
+  font-weight: 600;
+}
+
+.surveyEmpty p,
+.surveySignInEmpty p,
+.surveyErrorState p {
+  max-width: 620px;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.surveySignInEmpty button,
+.surveyErrorState button,
+.surveyDraftFailure button {
+  min-height: 40px;
+  margin-top: 12px;
+  padding: 0 18px;
+}
+
+.surveyCompletedContent {
+  padding-top: 34px;
+}
+
+.surveyCompletedHeading {
+  display: flex;
+  margin-bottom: 26px;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.surveyCompletedHeading h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 24px;
+}
+
+.surveyCompletedHeading p,
+.surveyCompletedHeading > span {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.surveyReportGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 40px;
+}
+
+.surveyReportCard {
+  overflow: hidden;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.surveyReportCard:focus-visible,
+.surveyReportCard:hover {
+  border-color: var(--brand);
+}
+
+.surveyReportThumbnail {
+  display: grid;
+  min-height: 228px;
+  background: var(--surface-muted);
+  place-items: center;
+}
+
+.surveyReportPaper {
+  display: flex;
+  width: 222px;
+  height: 180px;
+  padding: 25px 21px;
+  border: 1px solid var(--line-soft);
+  border-radius: 2px;
+  background: var(--surface);
+  flex-direction: column;
+}
+
+.surveyReportPaper > span {
+  width: 42px;
+  height: 3px;
+  margin-bottom: 12px;
+  border-radius: 2px;
+  background: var(--brand);
+}
+
+.surveyReportPaper small {
+  color: var(--brand);
+  font-size: 8px;
+  font-weight: 600;
+}
+
+.surveyReportPaper strong {
+  display: -webkit-box;
+  min-height: 70px;
+  margin-top: 8px;
+  overflow: hidden;
+  font-family: var(--font-display);
+  font-size: 15px;
+  line-height: 1.25;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}
+
+.surveyReportPaper i {
+  width: 75%;
+  height: 2px;
+  margin-top: 6px;
+  border-radius: 1px;
+  background: var(--line);
+}
+
+.surveyReportPaper i:last-child {
+  width: 58%;
+}
+
+.surveyReportCardBody {
+  padding: 18px;
+}
+
+.surveyReportCardBody h3 {
+  min-height: 54px;
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 17px;
+  line-height: 1.35;
+}
+
+.surveyReportCardBody div {
+  display: flex;
+  margin: 12px 0 17px;
+  color: var(--muted);
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 11px;
+}
+
+.surveyReportCardBody > strong {
+  color: var(--brand);
+  font-size: 12px;
+}
+
+.surveyTerminalList {
+  margin-top: 54px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.surveyTerminalList > h2 {
+  margin: 28px 0 8px;
+  font-family: var(--font-display);
+  font-size: 22px;
+}
+
+.surveyTerminalList article {
+  display: flex;
+  padding: 20px 0;
+  border-bottom: 1px solid var(--line-soft);
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.surveyTerminalList h3,
+.surveyTerminalList p {
+  margin: 0;
+}
+
+.surveyTerminalList h3 {
+  font-family: var(--font-display);
+  font-size: 17px;
+}
+
+.surveyTerminalList p {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.surveyLoadMore {
+  display: flex;
+  padding: 30px 0;
+  justify-content: center;
+}
+
+.surveyLoadMore button {
+  padding: 10px 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.surveyBackLink {
+  display: inline-flex;
+  margin-bottom: 28px;
+  color: var(--brand-link);
+  font-size: 14px;
+}
+
+.surveyDraftHeader {
+  padding-bottom: 28px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.surveyDraftHeader h1 {
+  max-width: 1060px;
+  font-size: 34px;
+  line-height: 46px;
+}
+
+.surveyDraftLayout {
+  display: grid;
+  padding-top: 32px;
+  grid-template-columns: minmax(0, 760px) minmax(260px, 320px);
+  gap: 40px;
+}
+
+.surveyDraftMain {
+  min-width: 0;
+}
+
+.surveyDraftSectionHeading {
+  display: flex;
+  margin-bottom: 20px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.surveyDraftSectionHeading h2,
+.surveyRefineSection h2,
+.surveyDraftHistory h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 38px;
+  letter-spacing: -0.01em;
+}
+
+.surveyDraftSectionHeading span {
+  color: var(--brand);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.surveyDraftPreview,
+.surveyDraftEditor,
+.surveyDraftLoading,
+.surveyDraftFailure {
+  width: 100%;
+  min-height: 300px;
+  padding: 18px;
+  border: 1px solid var(--line-field);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.surveyDraftEditor {
+  resize: vertical;
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.surveyDraftActions {
+  display: flex;
+  margin-top: 18px;
+  justify-content: flex-end;
+  gap: 16px;
+}
+
+.surveyDraftActions .secondaryButton,
+.surveyDraftActions .primaryButton {
+  min-width: 160px;
+  min-height: 44px;
+}
+
+.surveyDraftLoading {
+  display: grid;
+  align-content: center;
+  gap: 14px;
+}
+
+.surveyDraftLoading span {
+  display: block;
+  width: 72%;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--surface-skeleton);
+}
+
+.surveyDraftLoading span:nth-child(2) {
+  width: 92%;
+}
+
+.surveyDraftLoading span:nth-child(3) {
+  width: 48%;
+}
+
+.surveyDraftLoading p {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.surveyDraftFailure {
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  gap: 8px;
+}
+
+.surveyDraftFailure h3,
+.surveyDraftFailure p {
+  margin: 0;
+}
+
+.surveyDraftFailure h3 {
+  font-family: var(--font-display);
+  font-size: 22px;
+}
+
+.surveyDraftFailure p {
+  color: var(--muted);
+}
+
+.surveyRefineSection {
+  position: relative;
+  margin-top: 66px;
+}
+
+.surveyRefineSection > p {
+  margin: 2px 0 20px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.surveyRefineSection textarea {
+  width: 100%;
+  min-height: 92px;
+  padding: 16px;
+  resize: vertical;
+  border: 1px solid var(--line-field);
+  border-radius: var(--radius-md);
+  color: var(--ink);
+  background: var(--surface);
+  line-height: 1.55;
+}
+
+.surveyRefineSection > button {
+  display: block;
+  min-height: 40px;
+  margin: 16px 0 0 auto;
+  padding: 0 22px;
+}
+
+.surveyRevisionLimit {
+  margin: 42px 0 0;
+  padding: 16px 0;
+  border-top: 1px solid var(--line-soft);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.surveyDraftHistory > p {
+  margin: 2px 0 30px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.surveyDraftHistory ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.surveyDraftHistory li {
+  position: relative;
+  padding: 0 0 28px 18px;
+  border-bottom: 1px solid var(--line-soft);
+  margin-bottom: 28px;
+}
+
+.surveyDraftHistory li::before {
+  position: absolute;
+  top: 0;
+  bottom: 28px;
+  left: 0;
+  width: 4px;
+  border-radius: 2px;
+  background: var(--surface-muted);
+  content: "";
+}
+
+.surveyDraftHistory .surveyDraftHistorySelected::before {
+  background: var(--brand);
+}
+
+.surveyDraftHistory li > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 12px;
+}
+
+.surveyDraftHistory li > div span,
+.surveyDraftHistorySelected > div strong {
+  color: var(--brand);
+}
+
+.surveyDraftHistory blockquote {
+  margin: 16px 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.surveyDraftHistory button {
+  padding: 0;
+  border: 0;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  text-align: left;
+}
+
+.surveyDraftHistory > small,
+.surveyDraftHistoryEmpty {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.surveyDraftHistoryEmpty {
+  min-height: 140px;
+  padding: 24px 0;
+  border-top: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.surveySkeleton,
+.surveyDetailSkeleton {
+  display: grid;
+  margin-top: 42px;
+  gap: 28px;
+}
+
+.surveySkeleton span,
+.surveyDetailSkeleton span {
+  display: block;
+  height: 84px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-skeleton);
+}
+
+.surveyDetailSkeleton span:first-child {
+  width: 68%;
+  height: 44px;
+}
+
+.surveyDetailSkeleton span:nth-child(2) {
+  height: 1px;
+}
+
+.surveyDetailSkeleton span:nth-child(3) {
+  height: 300px;
+}
+
+@media (max-width: 900px) {
+  .surveyReportGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .surveyDraftLayout,
+  .surveyReportLayout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 54px;
+  }
+
+  .surveyDraftHistory {
+    padding-top: 34px;
+    border-top: 1px solid var(--line-soft);
+  }
+
+  .surveyReportDetails {
+    position: static;
+    padding-top: 30px;
+    border-top: 1px solid var(--line-soft);
+  }
+}
+
+@media (max-width: 700px) {
+  .surveyPage {
+    width: min(100% - 36px, var(--container));
+    padding-top: 38px;
+  }
+
+  .surveyStartForm {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .surveyStartForm button {
+    min-height: 48px;
+  }
+
+  .surveyRowPrimary,
+  .surveyReportHeader,
+  .surveyCompletedHeading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .surveyRowActions {
+    width: 100%;
+    min-width: 0;
+    justify-content: space-between;
+  }
+
+  .surveyReportGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .surveyReportCardBody h3 {
+    min-height: 0;
+  }
+
+  .surveyDraftSectionHeading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .surveyDraftActions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .surveyDraftActions .secondaryButton,
+  .surveyDraftActions .primaryButton {
+    min-width: 0;
+  }
+}
+
+@media (max-width: 460px) {
+  .surveyPageHeading h1,
+  .surveyDraftHeader h1,
+  .surveyReportHeader h1 {
+    font-size: 29px;
+    line-height: 1.25;
+  }
+
+  .surveyTabs {
+    align-items: flex-end;
+  }
+
+  .surveyTabs .pageRefreshButton {
+    min-width: 40px;
+    padding: 0 10px;
+  }
+
+  .surveyReportThumbnail {
+    min-height: 200px;
+  }
+
+  .surveyReportHeader > div {
+    width: 100%;
+  }
+
+  .surveyReportHeader .secondaryButton,
+  .surveyReportHeader .dangerButton {
+    flex: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .surveyProgress span {
+    transition: none;
+  }
+}

@@ -4,6 +4,9 @@ export const routes = {
   home: { path: "/", segment: "" },
   search: { path: "/search", segment: "search" },
   docs: { path: "/docs", segment: "docs" },
+  survey: { path: "/survey", segment: "survey" },
+  surveyDraft: { path: "/survey/:surveyId/draft", segment: "survey/:surveyId/draft" },
+  surveyReport: { path: "/survey/:surveyId/report", segment: "survey/:surveyId/report" },
   login: { path: "/login", segment: "login" },
   register: { path: "/register", segment: "register" },
   checkEmail: { path: "/check-email", segment: "check-email" },
@@ -19,6 +22,9 @@ export const routes = {
   adminOperations: { path: "/admin/operations", segment: "admin/operations" },
   notFound: { path: "*", segment: "*" },
 } as const;
+
+export const surveyDraftPath = (surveyId: string) => `/survey/${surveyId}/draft`;
+export const surveyReportPath = (surveyId: string) => `/survey/${surveyId}/report`;
 
 export const accountRoutes = [
   { id: "usage", ...routes.usage },

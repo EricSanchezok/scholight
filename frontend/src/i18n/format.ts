@@ -93,3 +93,48 @@ export function formatResearchDate(
     day: "numeric",
   }).format(new Date(value));
 }
+
+export function formatRelativeTime(
+  value: string | number | Date,
+  locale: AppLocale = defaultLocale,
+  now = Date.now(),
+): string {
+  const seconds = Math.round((new Date(value).getTime() - now) / 1000);
+  const absolute = Math.abs(seconds);
+  const [amount, unit]: [number, Intl.RelativeTimeFormatUnit] =
+    absolute < 60
+      ? [seconds, "second"]
+      : absolute < 3600
+        ? [Math.round(seconds / 60), "minute"]
+        : absolute < 86400
+          ? [Math.round(seconds / 3600), "hour"]
+          : [Math.round(seconds / 86400), "day"];
+  return new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(amount, unit);
+}
+
+export function formatElapsed(seconds: number): string {
+  const safe = Math.max(0, Math.round(seconds));
+  const hours = Math.floor(safe / 3600);
+  const minutes = Math.floor((safe % 3600) / 60);
+  if (hours > 0) return `${hours}h ${String(minutes).padStart(2, "0")}m`;
+  if (minutes > 0) return `${minutes}m`;
+  return `${safe}s`;
+}
+
+export function formatDurationBetween(
+  startedAt?: string | null,
+  finishedAt?: string | null,
+): string {
+  if (!startedAt || !finishedAt) return "—";
+  return formatElapsed((new Date(finishedAt).getTime() - new Date(startedAt).getTime()) / 1000);
+}
+
+export function formatReportDate(
+  value: string | number | Date,
+  locale: AppLocale = defaultLocale,
+): string {
+  const date = new Date(value);
+  const today = new Date();
+  if (date.toDateString() === today.toDateString()) return `Today, ${formatTime(date, locale)}`;
+  return formatUtcDay(date, locale);
+}

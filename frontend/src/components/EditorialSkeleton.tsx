@@ -118,7 +118,39 @@ function LedgerSkeleton({ pathname }: { pathname: string }) {
   );
 }
 
+export function SurveyHubSkeleton() {
+  return (
+    <main className={styles.surveyPage}>
+      <div className={styles.surveyPageHeading}>
+        <span className={styles.eyebrow}>SURVEY</span>
+        <h1>Research surveys</h1>
+        <p>Start a survey, refine its research brief, and return to completed reports.</p>
+      </div>
+      <SkeletonPulse label="Loading research surveys" className={styles.surveySkeleton}>
+        <span />
+        <span />
+        <span />
+      </SkeletonPulse>
+    </main>
+  );
+}
+
+export function SurveyDetailSkeleton() {
+  return (
+    <main className={styles.surveyPage}>
+      <SkeletonPulse label="Loading survey" className={styles.surveyDetailSkeleton}>
+        <span />
+        <span />
+        <span />
+        <span />
+      </SkeletonPulse>
+    </main>
+  );
+}
+
 export function RouteSkeleton({ pathname }: { pathname: string }) {
+  if (pathname === routes.survey.path) return <SurveyHubSkeleton />;
+  if (pathname.startsWith(`${routes.survey.path}/`)) return <SurveyDetailSkeleton />;
   return pathname === routes.usage.path ? (
     <UsageSkeleton />
   ) : (

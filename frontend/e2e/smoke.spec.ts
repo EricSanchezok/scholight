@@ -297,6 +297,32 @@ test("anonymous search reaches the continuous results view", async ({ page }) =>
   ).toEqual([]);
 });
 
+test("anonymous survey hub prompts for sign-in without hiding the public shell", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 800 });
+  await page.goto("/survey");
+
+  await expect(page.getByRole("heading", { name: "Research surveys" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Running" })).toBeVisible();
+  await expect(page.getByText("Sign in to view your surveys")).toBeVisible();
+
+  await page.getByRole("textbox", { name: "Describe the survey you want to start" }).focus();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Sign in to start a survey" })).toBeVisible();
+
+  const pageWidth = await page.locator("html").evaluate((element) => ({
+    client: element.clientWidth,
+    scroll: element.scrollWidth,
+  }));
+  expect(pageWidth.scroll).toBe(pageWidth.client);
+  expect(
+    (await new AxeBuilder({ page }).analyze()).violations.filter((item) =>
+      ["serious", "critical"].includes(item.impact ?? ""),
+    ),
+  ).toEqual([]);
+});
+
 test("a delayed search immediately shows a stable editorial skeleton", async ({ page }) => {
   await page.route("**/api/search", async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 500));
