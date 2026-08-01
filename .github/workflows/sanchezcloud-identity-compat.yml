@@ -1,4 +1,5 @@
 name: SanchezCloud Identity compatibility
+run-name: Identity compat ${{ inputs.correlation_id }}
 
 on:
   workflow_dispatch:
