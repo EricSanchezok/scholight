@@ -12,8 +12,8 @@ import httpx
 import jwt
 import pytest
 import pytest_asyncio
-from cloud_auth.models.user import UserRecord
 from pydantic import AnyHttpUrl
+from sanchezcloud_identity.models.user import UserRecord
 
 from scholight.api.access_keys import AccessKeyError
 from scholight.api.app import create_app

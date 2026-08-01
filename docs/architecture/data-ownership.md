@@ -4,7 +4,7 @@
 
 | 仓库 | 管理内容 | PostgreSQL 所有权 | 明确不管理 |
 | --- | --- | --- | --- |
-| `cloud-auth` | 共享邮箱身份、密码、验证、全局账号状态、登录锁定、按产品隔离的 Refresh Session、JWT 签发与校验 | `auth.users`、`auth.refresh_tokens`、`auth.schema_migrations` | 产品角色、产品封禁、订阅、额度、Usage、Access Key、业务历史 |
+| `sanchezcloud-identity` | 共享邮箱身份、密码、验证、全局账号状态、登录锁定、按产品隔离的 Refresh Session、JWT 签发与校验 | `auth.users`、`auth.refresh_tokens`、`auth.schema_migrations` | 产品角色、产品封禁、订阅、额度、Usage、Access Key、业务历史 |
 | `scholight` | 学术搜索、Scholight 产品准入/封禁、搜索额度、Access Key、Usage、搜索历史；arXiv/Zilliz 数据管线 | `scholight.*`、`scholight.schema_migrations` | auth migration、其他产品数据；任何身份外键以外的跨 schema 写入 |
 | `scholens` | Scholens 文档与协作业务、产品角色/管理员、产品准入/封禁、产品订阅与 Usage | `scholens.*`、`scholens.schema_migrations` | auth migration、Scholight 数据 |
 
@@ -29,19 +29,19 @@
 - `scholight_migrator` 只拥有 `scholight`；
 - `scholight_app` 对运行所需的 `auth`、`scholight` 表拥有 DML，但不能执行 DDL。
 
-cloud-auth 的受保护工作流独立迁移 `auth.*`。Scholight migration 先调用
+sanchezcloud-identity 的受保护工作流独立迁移 `auth.*`。Scholight migration 先调用
 `assert_schema_compatible()`，只读 `auth.schema_migrations`，然后迁移自己的 schema。
 两个 migrator 都没有数据库级 `CREATE`，runner 会拒绝缺失或不归自己所有的 schema。
 
 初始顺序：
 
 1. 数据库 owner 创建角色，并运行 `deploy/production/bootstrap-db.sql` 预置 schema。
-2. cloud-auth workflow 运行 `cloud-auth migrate`。
+2. sanchezcloud-identity workflow 运行 `sanchezcloud-identity migrate`。
 3. 数据库 owner 再运行 bootstrap，授予产品 migrator 对 `auth.users` 的 `REFERENCES` 和 schema ledger 的只读权限。
 4. Scholight 运行 `scholight store migrate`。
 5. 数据库 owner最后运行 bootstrap，授予应用运行时 DML。
 
-产品部署永远不携带或执行 cloud-auth migration。
+产品部署永远不携带或执行 sanchezcloud-identity migration。
 
 ## 新产品接入
 
@@ -52,10 +52,10 @@ cloud-auth 的受保护工作流独立迁移 `auth.*`。Scholight migration 先�
 3. 产品仓库提供自己的 `example.schema_migrations` 与干净 baseline。
 4. 产品表通过 `user_id REFERENCES auth.users(id)` 关联共享身份；产品 profile、角色、管理员、封禁、订阅、额度和 Usage 全部留在 `example.*`。
 5. 产品启动和 migration 只校验 `auth.schema_migrations`；不得导入、复制或执行 auth SQL。
-6. 为 Web 登录配置产品命名 HttpOnly Refresh Cookie；通过 cloud-auth `UserManager` 管理 Session，不直接查询 `auth.refresh_tokens`。
+6. 为 Web 登录配置产品命名 HttpOnly Refresh Cookie；通过 sanchezcloud-identity `UserManager` 管理 Session，不直接查询 `auth.refresh_tokens`。
 7. CI 从空 PostgreSQL 验证 schema owner、ledger、跨 schema 最小权限及 `public` 无应用表。
 
-如果某项能力只影响一个产品，它默认属于产品 schema；只有跨所有产品都必须一致的身份或全局安全语义，才允许进入 cloud-auth。
+如果某项能力只影响一个产品，它默认属于产品 schema；只有跨所有产品都必须一致的身份或全局安全语义，才允许进入 sanchezcloud-identity。
 
 ## Zilliz 边界
 

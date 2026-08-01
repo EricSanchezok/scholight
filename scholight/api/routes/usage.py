@@ -8,9 +8,9 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from cloud_auth.models.user import UserRecord
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
+from sanchezcloud_identity.models.user import UserRecord
 
 from scholight.api.deps import get_current_user
 from scholight.api.http_errors import http_error

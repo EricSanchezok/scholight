@@ -1,4 +1,4 @@
-"""Scholight presentation tests for cloud-auth sessions."""
+"""Scholight presentation tests for sanchezcloud-identity sessions."""
 
 from __future__ import annotations
 
@@ -7,10 +7,10 @@ from unittest.mock import AsyncMock, Mock
 
 import httpx
 import pytest
-from cloud_auth.exceptions import DBError
-from cloud_auth.manager import UserManager
-from cloud_auth.models.user import SessionRecord, UserRecord
 from fastapi import FastAPI
+from sanchezcloud_identity.exceptions import DBError
+from sanchezcloud_identity.manager import UserManager
+from sanchezcloud_identity.models.user import SessionRecord, UserRecord
 
 from scholight.api.deps import get_current_user, get_user_manager
 from scholight.api.sessions import list_user_sessions

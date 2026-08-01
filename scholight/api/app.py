@@ -156,11 +156,11 @@ def create_app() -> FastAPI:
     app.add_middleware(RequestContextMiddleware)
 
     # ── Route routers ──
-    from cloud_auth.config import AuthConfig
-    from cloud_auth.db.asyncpg import AsyncpgUserDatabase
-    from cloud_auth.manager import UserManager
-    from cloud_auth.ratelimit import RegisterRateLimiter
-    from cloud_auth.routers import RefreshCookieConfig, get_auth_router, get_user_router
+    from sanchezcloud_identity.config import AuthConfig
+    from sanchezcloud_identity.db.asyncpg import AsyncpgUserDatabase
+    from sanchezcloud_identity.manager import UserManager
+    from sanchezcloud_identity.ratelimit import RegisterRateLimiter
+    from sanchezcloud_identity.routers import RefreshCookieConfig, get_auth_router, get_user_router
 
     from scholight.api.deps import get_current_user, wire_dependencies
     from scholight.api.routes.access_keys import router as access_key_router
@@ -185,7 +185,7 @@ def create_app() -> FastAPI:
 
     email_sender = None
     if settings.aliyun_dm_account_name:
-        from cloud_auth.email.aliyun import AliyunDirectMailSender
+        from sanchezcloud_identity.email.aliyun import AliyunDirectMailSender
 
         email_sender = AliyunDirectMailSender(
             access_key_id=settings.aliyun_dm_access_key_id,

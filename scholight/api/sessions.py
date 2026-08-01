@@ -1,9 +1,9 @@
-"""Scholight presentation models for cloud-auth product sessions."""
+"""Scholight presentation models for sanchezcloud-identity product sessions."""
 
 from __future__ import annotations
 
-from cloud_auth.manager import UserManager
-from cloud_auth.models.user import SessionRecord
+from sanchezcloud_identity.manager import UserManager
+from sanchezcloud_identity.models.user import SessionRecord
 
 
 class SessionResponse(SessionRecord):

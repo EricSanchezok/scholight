@@ -87,7 +87,7 @@ def test_email_sender_uses_scholight_action_urls(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(settings, "aliyun_dm_access_key_secret", "key-secret")
     monkeypatch.setattr(settings, "aliyun_dm_account_name", "sender@example.com")
     factory = Mock(return_value=Mock())
-    monkeypatch.setattr("cloud_auth.email.aliyun.AliyunDirectMailSender", factory)
+    monkeypatch.setattr("sanchezcloud_identity.email.aliyun.AliyunDirectMailSender", factory)
 
     create_app()
 

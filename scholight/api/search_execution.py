@@ -10,8 +10,8 @@ from uuid import UUID
 
 import grpc
 import structlog
-from cloud_auth.models.user import UserRecord
 from pymilvus.exceptions import MilvusException
+from sanchezcloud_identity.models.user import UserRecord
 
 from scholight.api.history_tasks import schedule_search_history_write
 from scholight.api.models.search import PublicSearchRequest, PublicSearchResponse

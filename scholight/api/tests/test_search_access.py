@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
@@ -50,8 +52,12 @@ def test_anonymous_limits_must_be_positive(field: str) -> None:
         Settings.model_validate({field: 0})
 
 
-def test_generic_settings_allow_missing_api_hmac_secret() -> None:
-    loaded = Settings(_env_file=None)  # type: ignore[call-arg]
+def test_generic_settings_allow_missing_api_hmac_secret(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("SCHOLIGHT_ANONYMOUS_QUOTA_HMAC_SECRET", raising=False)
+    loaded = Settings(_env_file=tmp_path / "missing.env")  # type: ignore[call-arg]
 
     assert loaded.anonymous_quota_hmac_secret == ""
 

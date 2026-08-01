@@ -10,8 +10,8 @@ from uuid import uuid4
 
 import httpx
 import pytest
-from cloud_auth.models.user import UserRecord
 from fastapi import FastAPI
+from sanchezcloud_identity.models.user import UserRecord
 
 from scholight.api.deps import SearchActor, get_current_user
 from scholight.api.routes.usage import usage_summary

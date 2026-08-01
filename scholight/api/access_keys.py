@@ -10,9 +10,9 @@ from datetime import UTC, datetime
 from typing import Literal
 from uuid import UUID, uuid4
 
-from cloud_auth.db.asyncpg import AsyncpgUserDatabase
-from cloud_auth.models.user import UserRecord
 from pydantic import BaseModel, ConfigDict
+from sanchezcloud_identity.db.asyncpg import AsyncpgUserDatabase
+from sanchezcloud_identity.models.user import UserRecord
 
 from scholight.config import settings
 from scholight.db.client import get_pool

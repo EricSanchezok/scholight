@@ -6,8 +6,8 @@ import asyncio
 from datetime import UTC, datetime
 
 import asyncpg
-from cloud_auth.models.user import UserRecord
 from fastapi import Header
+from sanchezcloud_identity.models.user import UserRecord
 
 from scholight.api.deps import get_current_user
 from scholight.config import settings

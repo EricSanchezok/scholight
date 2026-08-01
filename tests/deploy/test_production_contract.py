@@ -730,9 +730,9 @@ def test_ci_runs_built_backend_migrations_against_postgres() -> None:
     assert "WHERE schemaname = 'public'" in workflow
 
 
-def test_cloud_auth_checkout_path_is_not_a_tracked_symlink() -> None:
+def test_sanchezcloud_identity_checkout_path_is_not_a_tracked_symlink() -> None:
     tracked = subprocess.run(
-        ["git", "ls-files", "--stage", "cloud-auth"],
+        ["git", "ls-files", "--stage", "sanchezcloud-identity"],
         cwd=ROOT,
         capture_output=True,
         text=True,

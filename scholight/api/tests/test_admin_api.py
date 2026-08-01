@@ -8,8 +8,8 @@ from uuid import UUID
 
 import httpx
 import pytest
-from cloud_auth.models.user import UserRecord
 from fastapi import FastAPI
+from sanchezcloud_identity.models.user import UserRecord
 
 from scholight.api.deps import get_current_user, get_scholight_admin
 from scholight.db.queries_admin import AdminAuditEvent, AdminTarget

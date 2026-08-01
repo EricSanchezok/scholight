@@ -8,7 +8,7 @@ from pathlib import Path
 
 import asyncpg
 import structlog
-from cloud_auth.migrate import assert_schema_compatible
+from sanchezcloud_identity.migrate import assert_schema_compatible
 
 from scholight.db.migration_policy import migration_checksum, validate_expand_only_sql
 

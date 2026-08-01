@@ -1,12 +1,12 @@
 # Scholight — reproducible shared API and scheduler image.
-# cloud-auth is fetched from an immutable reviewed Git revision; local ignored
+# sanchezcloud-identity is fetched from an immutable reviewed Git revision; local ignored
 # working trees never enter the production image.
 
 ARG PYTHON_IMAGE=python:3.11-slim-bookworm@sha256:b18992999dbe963a45a8a4da40ac2b1975be1a776d939d098c647482bcad5cba
 FROM ${PYTHON_IMAGE} AS builder
 
-ARG PRIVATE_DEP_ARCHIVE=https://api.github.com/repos/EricSanchezok/cloud-auth/tarball
-ARG PRIVATE_DEP_REVISION=9e82bb25f38a33aaa309933bfb0affb6d47c1df2
+ARG SANCHEZCLOUD_IDENTITY_ARCHIVE=https://api.github.com/repos/EricSanchezok/sanchezcloud-identity/tarball
+ARG SANCHEZCLOUD_IDENTITY_REVISION=68b341b0e8d839210ebe8e3001378c43f41aadfc
 ARG RCM_VERSION=v0.2.6
 ARG RCM_LINUX_X86_64_SHA256=edfc1d996a1a76dad127e98256e70a94dade95ab9c79d9b170f9ef25c150147a
 ARG TARGETARCH
@@ -18,14 +18,14 @@ RUN apt-get update \
 
 WORKDIR /app
 RUN --mount=type=secret,id=github_token \
-    mkdir -p /app/cloud-auth \
+    mkdir -p /app/sanchezcloud-identity \
     && curl --fail --location --silent --show-error \
         --header "Authorization: Bearer $(tr -d '\n' </run/secrets/github_token)" \
         --header "X-GitHub-Api-Version: 2022-11-28" \
-        --output /tmp/cloud-auth.tar.gz \
-        "${PRIVATE_DEP_ARCHIVE}/${PRIVATE_DEP_REVISION}" \
-    && tar -xzf /tmp/cloud-auth.tar.gz --strip-components=1 -C /app/cloud-auth \
-    && rm /tmp/cloud-auth.tar.gz
+        --output /tmp/sanchezcloud-identity.tar.gz \
+        "${SANCHEZCLOUD_IDENTITY_ARCHIVE}/${SANCHEZCLOUD_IDENTITY_REVISION}" \
+    && tar -xzf /tmp/sanchezcloud-identity.tar.gz --strip-components=1 -C /app/sanchezcloud-identity \
+    && rm /tmp/sanchezcloud-identity.tar.gz
 
 RUN test "${TARGETARCH}" = amd64 \
     && mkdir -p /app/bin /tmp/rcm \
@@ -41,8 +41,8 @@ RUN test "${TARGETARCH}" = amd64 \
     && rm -rf /tmp/rcm /tmp/accelerate.tar.gz
 
 COPY pyproject.toml uv.lock /app/
-RUN uv sync --frozen --no-dev --no-install-project --no-install-package cloud-auth \
-    && uv pip install /app/cloud-auth/
+RUN uv sync --frozen --no-dev --no-install-project --no-install-package sanchezcloud-identity \
+    && uv pip install /app/sanchezcloud-identity/
 
 COPY scholight/ /app/scholight/
 COPY migrations/ /app/migrations/

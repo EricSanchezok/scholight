@@ -1,4 +1,4 @@
-"""Keep every production cloud-auth consumer on the locked dependency revision."""
+"""Keep every production Identity SDK consumer on the locked revision."""
 
 import tomllib
 from pathlib import Path
@@ -9,16 +9,16 @@ ROOT = Path(__file__).resolve().parents[1]
 def _locked_revision() -> str:
     with (ROOT / "pyproject.toml").open("rb") as file:
         project = tomllib.load(file)
-    return str(project["tool"]["uv"]["sources"]["cloud-auth"]["rev"])
+    return str(project["tool"]["uv"]["sources"]["sanchezcloud-identity"]["rev"])
 
 
-def test_backend_image_uses_locked_cloud_auth_revision() -> None:
+def test_backend_image_uses_locked_identity_revision() -> None:
     dockerfile = (ROOT / "docker/scholight-api/Dockerfile").read_text()
 
-    assert f"ARG PRIVATE_DEP_REVISION={_locked_revision()}" in dockerfile
+    assert f"ARG SANCHEZCLOUD_IDENTITY_REVISION={_locked_revision()}" in dockerfile
 
 
-def test_migration_contract_uses_locked_cloud_auth_revision() -> None:
+def test_migration_contract_uses_locked_identity_revision() -> None:
     workflow = (ROOT / ".github/workflows/ci.yml").read_text()
 
     assert f"ref: {_locked_revision()}" in workflow

@@ -63,8 +63,8 @@ receives only runtime DML. Neither migrator receives database-level `CREATE`;
 each migration runner refuses a schema that is missing or owned by another role.
 Never use the RDS master or `postgres` identity for the public API.
 
-Run `bootstrap-db.sql` as the database owner before cloud-auth migration, after
-cloud-auth migration, and after Scholight migration:
+Run `bootstrap-db.sql` as the database owner before sanchezcloud-identity migration, after
+sanchezcloud-identity migration, and after Scholight migration:
 
 ```bash
 psql "$DATABASE_ADMIN_URL" \
@@ -75,7 +75,7 @@ psql "$DATABASE_ADMIN_URL" \
 ```
 
 The roles and passwords remain infrastructure-managed. The script never creates
-login roles or stores credentials. `auth.*` is migrated only by cloud-auth's
+login roles or stores credentials. `auth.*` is migrated only by sanchezcloud-identity's
 protected workflow. A Scholight release merely checks the installed auth schema
 version and migrates `scholight.*`.
 

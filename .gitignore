@@ -84,7 +84,7 @@ rdc/
 RCM/
 !scholight/survey/workflow/rcm/
 # Independent repos (under academic-compass directory but tracked separately)
-cloud-auth/
+sanchezcloud-identity/
 
 # SSL certs
 *.pem

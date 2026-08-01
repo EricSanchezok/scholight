@@ -9,10 +9,10 @@ from typing import Annotated
 from uuid import UUID, uuid4
 
 from botocore.exceptions import BotoCoreError, ClientError
-from cloud_auth.models.user import UserRecord
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, field_validator
+from sanchezcloud_identity.models.user import UserRecord
 
 from scholight.api.deps import get_current_user
 from scholight.api.http_errors import http_error

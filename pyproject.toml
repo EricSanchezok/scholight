@@ -9,7 +9,7 @@ description = "AI-focused academic paper search engine — arXiv as single data 
 requires-python = ">=3.11"
 dependencies = [
     "boto3>=1.35,<2",
-    "cloud-auth[aliyun]",
+    "sanchezcloud-identity[aliyun]",
     "click>=8",
     "httpx>=0.27",
     "grpcio>=1.60,<2",
@@ -180,4 +180,4 @@ dev = [
 
 [tool.uv.sources]
 # Immutable identity/session SDK revision; products never depend on a moving branch.
-cloud-auth = { git = "https://github.com/EricSanchezok/cloud-auth.git", rev = "9e82bb25f38a33aaa309933bfb0affb6d47c1df2" }
+sanchezcloud-identity = { git = "https://github.com/EricSanchezok/sanchezcloud-identity.git", rev = "68b341b0e8d839210ebe8e3001378c43f41aadfc" }

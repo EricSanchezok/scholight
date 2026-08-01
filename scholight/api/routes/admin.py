@@ -6,9 +6,9 @@ from datetime import datetime
 from typing import Annotated, Any
 from uuid import UUID, uuid4
 
-from cloud_auth.models.user import UserRecord
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, EmailStr, Field
+from sanchezcloud_identity.models.user import UserRecord
 
 from scholight.api.deps import get_current_user, get_scholight_admin
 from scholight.api.http_errors import http_error

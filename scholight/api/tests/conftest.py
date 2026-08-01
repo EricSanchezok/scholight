@@ -7,8 +7,8 @@ from collections.abc import AsyncIterator, Iterator
 import httpx
 import pytest
 import pytest_asyncio
-from cloud_auth.models.user import UserRecord
 from fastapi import FastAPI
+from sanchezcloud_identity.models.user import UserRecord
 
 from scholight.api.app import create_app
 from scholight.api.search_access import reset_anonymous_minute_limits
