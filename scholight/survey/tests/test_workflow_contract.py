@@ -57,7 +57,8 @@ def test_draft_prompt_is_concise_positive_and_approval_ready() -> None:
     normalized = " ".join(source.split())
 
     assert "Use qualitative depth by default" in normalized
-    assert "Place any material working assumption next to" in normalized
+    assert "instead of collecting them in a separate section" in normalized
+    assert "Leave language and numeric targets open unless the user sets them" in normalized
     assert "ready to approve and execute, not a questionnaire" in normalized
     assert source.count("Do not") <= 1
 

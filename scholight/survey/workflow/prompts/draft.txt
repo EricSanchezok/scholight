@@ -18,7 +18,9 @@ constraints the user supplied; otherwise let later evidence determine coverage, 
 works. Prefer method families, comparison dimensions, and evidence standards, using verified named
 examples only when they clarify scope or seed search.
 
-Place any material working assumption next to the scope boundary, research question, or evidence rule
-it affects. Frame observations that need verification as hypotheses to test. When several readings are
-possible, choose the most defensible bounded interpretation. The result should be ready to approve and
-execute, not a questionnaire; the user can refine the interpretation in the next Draft.
+Weave material working assumptions and uncertainties into the scope boundary, research question, or
+evidence rule they affect instead of collecting them in a separate section. Frame observations that
+need verification as hypotheses to test. Leave language and numeric targets open unless the user sets
+them. When several readings are possible, choose the most defensible bounded interpretation. The result
+should be ready to approve and execute, not a questionnaire; the user can refine the interpretation in
+the next Draft.
