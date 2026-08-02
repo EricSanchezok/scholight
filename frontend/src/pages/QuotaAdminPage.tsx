@@ -26,11 +26,17 @@ function changeSummary(current: AdminUserLookup, next: QuotaOverrideRequest): st
     next.standard,
   )}. Thorough: ${limitLabel(current.quotas.thorough.override_limit)} → ${limitLabel(
     next.thorough,
-  )}.`;
+  )}. Survey: ${limitLabel(current.quotas.survey.override_limit)} → ${limitLabel(next.survey)}.`;
 }
 
 function auditValue(value: unknown): string {
   return typeof value === "number" ? value.toLocaleString("en-US") : "Deployment default";
+}
+
+function restoresDefaults(value: QuotaOverrideRequest | null): boolean {
+  return (
+    value !== null && value.standard === null && value.thorough === null && value.survey === null
+  );
 }
 
 function AuditChange({ event }: { event: AdminAuditEvent }) {
@@ -39,7 +45,8 @@ function AuditChange({ event }: { event: AdminAuditEvent }) {
       <span>
         Standard {auditValue(event.before_state.standard)} →{" "}
         {auditValue(event.after_state.standard)}; Thorough {auditValue(event.before_state.thorough)}{" "}
-        → {auditValue(event.after_state.thorough)}
+        → {auditValue(event.after_state.thorough)}; Survey {auditValue(event.before_state.survey)} →{" "}
+        {auditValue(event.after_state.survey)}
       </span>
     );
   }
@@ -55,6 +62,7 @@ export function QuotaAdminPage() {
   const [email, setEmail] = useState("");
   const [standard, setStandard] = useState("");
   const [thorough, setThorough] = useState("");
+  const [survey, setSurvey] = useState("");
   const [pending, setPending] = useState<QuotaOverrideRequest | null>(null);
   const [feedback, setFeedback] = useState("");
   const audit = useQuery({
@@ -66,6 +74,7 @@ export function QuotaAdminPage() {
     onSuccess: (data) => {
       setStandard(data.quotas.standard.override_limit?.toString() ?? "");
       setThorough(data.quotas.thorough.override_limit?.toString() ?? "");
+      setSurvey(data.quotas.survey.override_limit?.toString() ?? "");
       setFeedback("");
     },
   });
@@ -81,6 +90,7 @@ export function QuotaAdminPage() {
       await audit.refetch();
       setStandard(body.standard?.toString() ?? "");
       setThorough(body.thorough?.toString() ?? "");
+      setSurvey(body.survey?.toString() ?? "");
       setFeedback("Quota settings saved.");
     },
   });
@@ -97,13 +107,20 @@ export function QuotaAdminPage() {
       : update.error
         ? "Quota settings could not be saved."
         : undefined;
-  const valuesValid = [standard, thorough].every((value) => {
+  const valuesValid = [standard, thorough, survey].every((value) => {
     const parsed = optionalLimit(value);
     return parsed === null || (Number.isInteger(parsed) && parsed >= 0 && parsed <= MAX_LIMIT);
   });
   const proposed: QuotaOverrideRequest = {
     standard: optionalLimit(standard),
     thorough: optionalLimit(thorough),
+    survey: optionalLimit(survey),
+  };
+  const activityValues = { standard, thorough, survey };
+  const activitySetters = {
+    standard: setStandard,
+    thorough: setThorough,
+    survey: setSurvey,
   };
   const beginSave = (body: QuotaOverrideRequest) => {
     setFeedback("");
@@ -169,36 +186,38 @@ export function QuotaAdminPage() {
           </div>
 
           <div className={styles.adminQuotaHeader} aria-hidden="true">
-            <span>Strength</span>
+            <span>Activity</span>
             <span>Used today</span>
             <span>Default</span>
             <span>Effective</span>
             <span>Custom daily limit</span>
           </div>
           <div className={styles.adminQuotaRows}>
-            {(["standard", "thorough"] as const).map((strength) => {
-              const quota = lookup.data.quotas[strength];
-              const value = strength === "standard" ? standard : thorough;
-              const setter = strength === "standard" ? setStandard : setThorough;
+            {(["standard", "thorough", "survey"] as const).map((activity) => {
+              const quota = lookup.data.quotas[activity];
+              const label =
+                activity === "standard"
+                  ? "Standard"
+                  : activity === "thorough"
+                    ? "Thorough"
+                    : "Survey";
               return (
-                <div className={styles.adminQuotaRow} key={strength}>
-                  <strong>{strength === "standard" ? "Standard" : "Thorough"}</strong>
+                <div className={styles.adminQuotaRow} key={activity}>
+                  <strong>{label}</strong>
                   <span data-label="Used today">{quota.used.toLocaleString(locale)}</span>
                   <span data-label="Default">{quota.default_limit.toLocaleString(locale)}</span>
                   <span data-label="Effective">{quota.effective_limit.toLocaleString(locale)}</span>
                   <label>
-                    <span className="sr-only">
-                      {strength === "standard" ? "Standard" : "Thorough"} custom daily limit
-                    </span>
+                    <span className="sr-only">{label} custom daily limit</span>
                     <input
                       type="number"
                       min={0}
                       max={MAX_LIMIT}
                       step={1}
                       inputMode="numeric"
-                      value={value}
+                      value={activityValues[activity]}
                       placeholder={quota.default_limit.toString()}
-                      onChange={(event) => setter(event.target.value)}
+                      onChange={(event) => activitySetters[activity](event.target.value)}
                     />
                   </label>
                 </div>
@@ -206,8 +225,8 @@ export function QuotaAdminPage() {
             })}
           </div>
           <p className={styles.adminQuotaHint}>
-            Leave a field empty to use the deployment default. A value of 0 disables that search
-            strength. Today’s existing usage is not reset.
+            Leave a field empty to use the deployment default. A value of 0 disables that activity.
+            Today’s existing usage is not reset.
           </p>
           {!valuesValid && (
             <p className={styles.formMessageError} role="alert">
@@ -223,7 +242,7 @@ export function QuotaAdminPage() {
             <button
               className={styles.secondaryButton}
               type="button"
-              onClick={() => beginSave({ standard: null, thorough: null })}
+              onClick={() => beginSave({ standard: null, thorough: null, survey: null })}
             >
               Restore defaults
             </button>
@@ -286,21 +305,13 @@ export function QuotaAdminPage() {
 
       <ConfirmDialog
         open={pending !== null}
-        title={
-          pending?.standard === null && pending?.thorough === null
-            ? "Restore defaults?"
-            : "Save quota changes?"
-        }
+        title={restoresDefaults(pending) ? "Restore defaults?" : "Save quota changes?"}
         description={
           pending && lookup.data
             ? `${lookup.data.user.email}. ${changeSummary(lookup.data, pending)}`
             : ""
         }
-        confirmLabel={
-          pending?.standard === null && pending?.thorough === null
-            ? "Restore defaults"
-            : "Confirm changes"
-        }
+        confirmLabel={restoresDefaults(pending) ? "Restore defaults" : "Confirm changes"}
         busyLabel="Saving…"
         busy={update.isPending}
         error={updateError}

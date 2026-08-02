@@ -101,7 +101,9 @@ def _pool_with_connection(connection: MagicMock) -> MagicMock:
 @pytest.mark.asyncio
 async def test_survey_quota_snapshot_counts_reserved_and_succeeded() -> None:
     pool = MagicMock()
-    pool.fetchrow = AsyncMock(return_value={"reserved_count": 1, "succeeded_count": 1})
+    pool.fetchrow = AsyncMock(
+        return_value={"daily_limit": 2, "reserved_count": 1, "succeeded_count": 1}
+    )
 
     with patch("scholight.db.queries_survey_views.get_pool", return_value=pool):
         quota = await get_survey_quota_snapshot(
@@ -110,7 +112,7 @@ async def test_survey_quota_snapshot_counts_reserved_and_succeeded() -> None:
             daily_limit=3,
         )
 
-    assert quota == SurveyQuotaSnapshot(daily_limit=3, reserved=1, succeeded=1)
+    assert quota == SurveyQuotaSnapshot(daily_limit=2, reserved=1, succeeded=1)
 
 
 @pytest.mark.asyncio
@@ -126,6 +128,33 @@ async def test_survey_quota_snapshot_defaults_to_zero_without_usage_row() -> Non
         )
 
     assert quota == SurveyQuotaSnapshot(daily_limit=3, reserved=0, succeeded=0)
+
+
+@pytest.mark.asyncio
+async def test_create_survey_enforces_user_override() -> None:
+    connection = MagicMock()
+    connection.execute = AsyncMock()
+    connection.fetchrow = AsyncMock(
+        side_effect=[{"reserved_count": 1, "succeeded_count": 1, "daily_limit": 2}, None]
+    )
+
+    with (
+        patch(
+            "scholight.db.queries_survey.get_pool",
+            return_value=_pool_with_connection(connection),
+        ),
+        pytest.raises(SurveyQuotaExceededError),
+    ):
+        await create_survey(
+            survey_id=uuid4(),
+            draft_id=uuid4(),
+            user_id=42,
+            initial_request="retrieval augmented generation",
+            client_request_id=uuid4(),
+            request_hash="2" * 64,
+            quota_date=date(2026, 8, 2),
+            daily_limit=3,
+        )
 
 
 @pytest.mark.asyncio

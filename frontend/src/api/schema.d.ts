@@ -978,6 +978,7 @@ export interface components {
     /** AdminQuotasResponse */
     AdminQuotasResponse: {
       standard: components["schemas"]["AdminQuotaResponse"];
+      survey: components["schemas"]["AdminQuotaResponse"];
       thorough: components["schemas"]["AdminQuotaResponse"];
     };
     /** AdminSearchMetrics */
@@ -1367,6 +1368,8 @@ export interface components {
     QuotaOverrideRequest: {
       /** Standard */
       standard: number | null;
+      /** Survey */
+      survey: number | null;
       /** Thorough */
       thorough: number | null;
     };

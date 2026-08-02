@@ -119,10 +119,10 @@ describe("typed API client", () => {
     );
 
     const { adminApi } = await import("./domain");
-    await adminApi.updateQuotaOverrides(7, { standard: 5000, thorough: null });
+    await adminApi.updateQuotaOverrides(7, { standard: 5000, thorough: null, survey: 2 });
     const request = fetchMock.mock.calls[0]?.[0] as Request;
     expect(request.url).toContain("/api/admin/users/7/quota-overrides");
-    expect(await request.clone().json()).toEqual({ standard: 5000, thorough: null });
+    expect(await request.clone().json()).toEqual({ standard: 5000, thorough: null, survey: 2 });
     expect(request.headers.get("Authorization")).toBe("Bearer admin-access");
   });
 

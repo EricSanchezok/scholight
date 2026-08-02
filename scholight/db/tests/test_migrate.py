@@ -306,6 +306,14 @@ def test_survey_migration_is_product_scoped_and_expand_only() -> None:
     assert "delete from" not in sql
 
 
+def test_survey_quota_override_migration_expands_the_shared_strength_constraint() -> None:
+    migration = Path(__file__).parents[3] / "migrations/010_survey_quota_overrides.sql"
+
+    sql = " ".join(migration.read_text(encoding="utf-8").split()).lower()
+
+    assert "strength in ('standard', 'thorough', 'survey')" in sql
+
+
 def test_survey_aggregate_migration_fails_closed_before_replacing_legacy_table() -> None:
     migration = Path(__file__).parents[3] / "migrations/006_survey_aggregate.sql"
     raw_sql = migration.read_text(encoding="utf-8")

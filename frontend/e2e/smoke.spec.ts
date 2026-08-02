@@ -255,6 +255,13 @@ async function mockQuotaAdministration(page: Page) {
             used: 4,
             remaining: 996,
           },
+          survey: {
+            default_limit: 3,
+            override_limit: 2,
+            effective_limit: 2,
+            used: 1,
+            remaining: 1,
+          },
         },
       },
     }),
@@ -269,8 +276,8 @@ async function mockQuotaAdministration(page: Page) {
           target_user_id: 7,
           target_email: "reader@example.com",
           action: "quota_overrides_updated",
-          before_state: { standard: 1000, thorough: null },
-          after_state: { standard: 5000, thorough: null },
+          before_state: { standard: 1000, thorough: null, survey: null },
+          after_state: { standard: 5000, thorough: null, survey: 2 },
           created_at: "2026-07-22T18:42:00Z",
         },
       ],
@@ -552,6 +559,8 @@ test("quota administration stays exact, auditable, and within the viewport", asy
   await page.getByRole("button", { name: "Find user" }).click();
   await expect(page.getByRole("heading", { name: "Reader" })).toBeVisible();
   await expect(page.getByLabel("Standard custom daily limit")).toHaveValue("5000");
+  await expect(page.getByLabel("Thorough custom daily limit")).toHaveValue("");
+  await expect(page.getByLabel("Survey custom daily limit")).toHaveValue("2");
   await expect(page.getByText(/Standard 1,000 → 5,000/)).toBeVisible();
 
   const widths = await page.evaluate(() => ({

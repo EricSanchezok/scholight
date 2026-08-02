@@ -570,11 +570,14 @@
           "standard": {
             "$ref": "#/components/schemas/AdminQuotaResponse"
           },
+          "survey": {
+            "$ref": "#/components/schemas/AdminQuotaResponse"
+          },
           "thorough": {
             "$ref": "#/components/schemas/AdminQuotaResponse"
           }
         },
-        "required": ["standard", "thorough"],
+        "required": ["standard", "thorough", "survey"],
         "title": "AdminQuotasResponse",
         "type": "object"
       },
@@ -1517,6 +1520,19 @@
             ],
             "title": "Standard"
           },
+          "survey": {
+            "anyOf": [
+              {
+                "maximum": 1000000.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Survey"
+          },
           "thorough": {
             "anyOf": [
               {
@@ -1531,7 +1547,7 @@
             "title": "Thorough"
           }
         },
-        "required": ["standard", "thorough"],
+        "required": ["standard", "thorough", "survey"],
         "title": "QuotaOverrideRequest",
         "type": "object"
       },

@@ -128,6 +128,20 @@ async def test_six_concurrent_creates_reserve_exactly_five(survey_pool: asyncpg.
 
 
 @pytest.mark.asyncio
+async def test_create_survey_enforces_user_override(survey_pool: asyncpg.Pool) -> None:
+    await survey_pool.execute(
+        "INSERT INTO scholight.user_quota_overrides "
+        "(user_id, strength, daily_limit) VALUES (42, 'survey', 2)"
+    )
+    with patch("scholight.db.queries_survey.get_pool", return_value=survey_pool):
+        await _create()
+        await _create()
+
+        with pytest.raises(SurveyQuotaExceededError):
+            await _create()
+
+
+@pytest.mark.asyncio
 async def test_aggregate_migration_preserves_unexpected_legacy_rows() -> None:
     pool = await asyncpg.create_pool(isolated_database_url(), min_size=1, max_size=2)
     try:

@@ -188,10 +188,14 @@ async def create_survey(
                 quota_date,
             )
             usage = await connection.fetchrow(
-                "SELECT reserved_count, succeeded_count FROM scholight.survey_daily_usage "
-                "WHERE user_id = $1 AND usage_date = $2 FOR UPDATE",
+                "SELECT usage.reserved_count, usage.succeeded_count, "
+                "coalesce((SELECT daily_limit FROM scholight.user_quota_overrides "
+                "WHERE user_id = $1 AND strength = 'survey'), $3::integer) AS daily_limit "
+                "FROM scholight.survey_daily_usage AS usage "
+                "WHERE usage.user_id = $1 AND usage.usage_date = $2 FOR UPDATE",
                 user_id,
                 quota_date,
+                daily_limit,
             )
             existing = await connection.fetchrow(
                 "SELECT * FROM scholight.surveys WHERE user_id = $1 AND client_request_id = $2",
@@ -207,7 +211,8 @@ async def create_survey(
                 return _survey(existing)
             if usage is None:
                 raise DBError("Survey quota row was not created")
-            if int(usage["reserved_count"]) + int(usage["succeeded_count"]) >= daily_limit:
+            effective_limit = int(usage.get("daily_limit", daily_limit))
+            if int(usage["reserved_count"]) + int(usage["succeeded_count"]) >= effective_limit:
                 raise SurveyQuotaExceededError("Daily Survey quota reached")
             await connection.execute(
                 "UPDATE scholight.survey_daily_usage "
