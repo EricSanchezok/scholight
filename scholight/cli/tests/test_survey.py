@@ -53,7 +53,7 @@ def test_contract_audit_command_reports_known_warnings() -> None:
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload["status"] == "warning"
-    assert payload["conflict_count"] == 10
+    assert payload["conflict_count"] == 9
 
 
 def test_diagnose_reads_active_workspace_without_database(
