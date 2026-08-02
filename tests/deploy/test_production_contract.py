@@ -109,7 +109,7 @@ def test_workflows_do_not_persist_checkout_credentials_or_inherit_secrets() -> N
     assert "secrets: inherit" not in workflows
 
 
-def test_caddy_image_is_reviewed_and_not_runtime_overrideable() -> None:
+def test_caddy_image_is_reviewed_and_not_runtime_overridable() -> None:
     compose_text = (PRODUCTION / "compose.yaml").read_text(encoding="utf-8")
     compose = yaml.safe_load(compose_text)
     caddy_image = compose["services"]["caddy"]["image"]

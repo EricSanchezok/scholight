@@ -17,7 +17,7 @@ from scholight.pipeline.chunkers.md_chunker import (
 
 
 def test_preprocess_latex_strips_yaml_syntax_keeps_metadata() -> None:
-    """YAML delimiters and keys must be gone, but title/author are preprended."""
+    """YAML delimiters and keys must be gone, but title/author are prepended."""
     text = """---
 title: Test Title
 author:
