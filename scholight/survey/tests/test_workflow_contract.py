@@ -2,6 +2,9 @@
 
 from pathlib import Path
 
+import pytest
+
+from scholight.survey import workflow_audit
 from scholight.survey.workflow_audit import audit_workflow_contracts
 
 _WORKFLOW = Path(__file__).parents[1] / "workflow"
@@ -132,6 +135,21 @@ def test_contract_audit_classifies_every_known_definition_gap() -> None:
         "section_definition_conflict",
         "spawn_expectations_not_persisted",
     }
+
+
+def test_contract_audit_does_not_depend_on_test_sources(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    read_project_file = workflow_audit._read
+
+    def read_production_file(relative_path: str) -> str:
+        if relative_path.startswith("tests/"):
+            raise FileNotFoundError(relative_path)
+        return read_project_file(relative_path)
+
+    monkeypatch.setattr(workflow_audit, "_read", read_production_file)
+
+    assert audit_workflow_contracts()
 
 
 def test_e2e_uses_vendored_graph_and_only_redirects_model_transport() -> None:

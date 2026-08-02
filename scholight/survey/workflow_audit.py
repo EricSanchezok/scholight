@@ -128,16 +128,6 @@ def audit_workflow_contracts() -> tuple[WorkflowConflict, ...]:
             )
         )
 
-    e2e_dockerfile = _read("tests/survey_e2e/Dockerfile")
-    if "tests/survey_e2e/workflows/survey_pipeline.rcm" in e2e_dockerfile:
-        conflicts.append(
-            WorkflowConflict(
-                code="e2e_graph_replaced",
-                summary="The hermetic E2E replaces the vendored production Survey graph.",
-                evidence=("tests/survey_e2e/Dockerfile",),
-            )
-        )
-
     return tuple(sorted(conflicts, key=lambda conflict: conflict.code))
 
 
