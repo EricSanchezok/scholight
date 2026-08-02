@@ -26,6 +26,7 @@ from scholight.db.migration_policy import migration_checksum
 from scholight.db.queries_survey import get_survey_job_counts
 from scholight.db.queries_survey_cleanup import get_artifact_cleanup_status
 from scholight.logging import configure_logging
+from scholight.survey.process import classify_rcm_error
 from scholight.survey.worker import RCM_VERSION, serve_survey_worker
 from scholight.survey.workflow_audit import workflow_audit_payload
 
@@ -220,6 +221,10 @@ def _diagnostic_projection(
     nested = payload.get("diagnostics")
     diagnostics = nested if isinstance(nested, dict) else payload
     process = payload.get("process") if isinstance(payload.get("process"), dict) else None
+    stderr_classification = None
+    if process is not None and isinstance(process.get("stderr_tail"), str):
+        error_code, error_message = classify_rcm_error(process["stderr_tail"])
+        stderr_classification = {"code": error_code, "message": error_message}
     return {
         "schema_version": 1,
         "job_id": str(job_id),
@@ -231,8 +236,10 @@ def _diagnostic_projection(
         "process": process,
         "last_successful_component": diagnostics.get("last_successful_component"),
         "first_anomaly": diagnostics.get("first_anomaly"),
+        "affected_components": diagnostics.get("affected_components", []),
         "anomaly_count": diagnostics.get("anomaly_count", 0),
         "tool_counts": diagnostics.get("tool_counts", {}),
+        "stderr_classification": stderr_classification,
         "last_activity_at": diagnostics.get("last_activity_at"),
         "trace_path": diagnostics.get("trace_path"),
         "manifest_key": (database or {}).get("manifest_key"),
@@ -314,6 +321,13 @@ def diagnose(job_id: str, json_output: bool) -> None:
     click.echo(f"Survey job: {payload['job_id']}")
     click.echo(f"Source: {payload['source']} ({payload['location']})")
     click.echo(f"Outcome: {payload['outcome'] or payload['status'] or 'running'}")
+    process = payload["process"]
+    if isinstance(process, dict):
+        click.echo(
+            "Process: "
+            f"return_code={process.get('return_code')} "
+            f"termination_reason={process.get('termination_reason') or 'unknown'}"
+        )
     click.echo(f"Last successful component: {payload['last_successful_component'] or 'unknown'}")
     first_anomaly = payload["first_anomaly"]
     if isinstance(first_anomaly, dict):
@@ -324,6 +338,31 @@ def diagnose(job_id: str, json_output: bool) -> None:
         )
     else:
         click.echo("First anomaly: none observed")
+    affected = payload["affected_components"]
+    affected_items = affected if isinstance(affected, list) else []
+    click.echo(
+        "Affected components: "
+        + (", ".join(str(component) for component in affected_items) if affected_items else "none")
+    )
+    tool_counts = payload["tool_counts"]
+    normalized_tool_counts = tool_counts if isinstance(tool_counts, dict) else {}
+    click.echo(
+        "Tool calls: "
+        f"started={normalized_tool_counts.get('started', 0)} "
+        f"finished={normalized_tool_counts.get('finished', 0)} "
+        f"failed={normalized_tool_counts.get('failed', 0)}"
+    )
+    stderr_classification = payload["stderr_classification"]
+    click.echo(
+        "Stderr classification: "
+        + (
+            str(stderr_classification.get("code", "unknown"))
+            if isinstance(stderr_classification, dict)
+            else "none"
+        )
+    )
+    click.echo(f"Trace: {payload['trace_path'] or 'unavailable'}")
+    click.echo(f"Archive: {payload['manifest_key'] or payload['location']}")
 
 
 @survey_group.command("smoke")

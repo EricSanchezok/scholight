@@ -165,6 +165,17 @@ async def execute_draft(
             payload = None
         message = payload.get("message") if isinstance(payload, dict) else None
         if not isinstance(message, str) or not message.strip():
+            stdout_keys = (
+                sorted(str(key) for key in payload)[:16] if isinstance(payload, dict) else []
+            )
+            logger.error(
+                "survey_draft_invalid_output",
+                draft_id=str(draft.id),
+                output_bytes=len(output),
+                stdout_json_type=type(payload).__name__,
+                stdout_keys=stdout_keys,
+                diagnostics=stderr_tail,
+            )
             return DraftExecutionResult(
                 None,
                 "survey_invalid_output",

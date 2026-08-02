@@ -8,6 +8,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from scholight.survey.diagnostics import (
+    ARTIFACT_CONTRACTS,
     SurveyDiagnostics,
     sanitize_diagnostic_value,
     sanitize_tool_arguments,
@@ -79,6 +80,16 @@ def test_completed_component_records_missing_primary_artifact(tmp_path: Path) ->
         "kind": "required_artifact_missing",
         "severity": "error",
     }
+    assert snapshot["affected_components"] == [
+        "expansion",
+        "rank_pool",
+        "card_plan",
+        "research_map",
+        "judge_panel",
+        "image_planner",
+        "survey_outline",
+        "survey_assembler",
+    ]
 
 
 def test_contract_observation_never_stops_later_components(tmp_path: Path) -> None:
@@ -115,6 +126,59 @@ def test_optional_image_is_a_warning_only_at_final_audit(tmp_path: Path) -> None
         "kind": "optional_artifact_missing",
         "severity": "warning",
     } in anomalies
+
+
+def test_final_audit_infers_last_component_from_artifacts_when_events_are_missing(
+    tmp_path: Path,
+) -> None:
+    for name in (
+        "00_survey_spec.md",
+        "01_query_plan.md",
+        "02_candidate_pool.md",
+        "03_expansion.md",
+        "04_ranked_pool.md",
+        "05_research_map.md",
+        "06_judge_panel.md",
+        "00_outline.md",
+    ):
+        (tmp_path / name).write_text("observed", encoding="utf-8")
+    diagnostics = SurveyDiagnostics(
+        run_root=tmp_path,
+        job_id=uuid4(),
+        survey_id=uuid4(),
+    )
+    diagnostics.component_finished("discovery_merger", status="completed")
+
+    diagnostics.finalize_contract_audit()
+
+    assert diagnostics.snapshot()["last_successful_component"] == "survey_outline"
+
+
+def test_required_anomaly_precedes_optional_warning(tmp_path: Path) -> None:
+    required = {
+        path
+        for contract in ARTIFACT_CONTRACTS
+        for path in contract.required
+        if path != "08_survey.md"
+    }
+    for relative_path in required:
+        path = tmp_path / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("observed", encoding="utf-8")
+    diagnostics = SurveyDiagnostics(
+        run_root=tmp_path,
+        job_id=uuid4(),
+        survey_id=uuid4(),
+    )
+
+    diagnostics.finalize_contract_audit()
+
+    assert diagnostics.snapshot()["first_anomaly"] == {
+        "component": "survey_assembler",
+        "expected_artifact": "08_survey.md",
+        "kind": "required_artifact_missing",
+        "severity": "error",
+    }
 
 
 def test_diagnostic_io_failure_is_best_effort(tmp_path: Path) -> None:

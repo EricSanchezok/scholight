@@ -125,6 +125,35 @@ async def test_empty_draft_message_is_a_failed_attempt(monkeypatch: pytest.Monke
 
 
 @pytest.mark.asyncio
+async def test_invalid_draft_output_logs_shape_without_model_content(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    draft = replace(_draft(), based_on_revision=None)
+    context = SurveyDraftContext(initial_request="Topic", history=())
+    monkeypatch.setattr(settings, "survey_draft_timeout_seconds", 1800)
+    monkeypatch.setattr(settings, "survey_mcp_jwt_secret", "s" * 32)
+    monkeypatch.setattr(settings, "deepseek_api_key", "deepseek")
+
+    with (
+        patch(
+            "scholight.survey.draft_worker.asyncio.create_subprocess_exec",
+            new_callable=AsyncMock,
+            return_value=_Process({"unexpected": "private model response"}),
+        ),
+        patch("scholight.survey.draft_worker.write_stdin", new_callable=AsyncMock),
+        patch("scholight.survey.draft_worker.logger.error") as log_error,
+    ):
+        result = await execute_draft(draft=draft, context=context)
+
+    assert result.error_code == "survey_invalid_output"
+    fields = log_error.call_args.kwargs
+    assert fields["stdout_json_type"] == "dict"
+    assert fields["stdout_keys"] == ["unexpected"]
+    assert fields["output_bytes"] > 0
+    assert "private model response" not in repr(fields)
+
+
+@pytest.mark.asyncio
 async def test_draft_timeout_covers_blocked_stdin_and_reaps_process(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

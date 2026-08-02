@@ -65,6 +65,49 @@ ARTIFACT_CONTRACTS = (
     ArtifactContract("survey_assembler", required=("08_survey.md", "index.md")),
 )
 _CONTRACT_BY_COMPONENT = {contract.component: contract for contract in ARTIFACT_CONTRACTS}
+_MILESTONE_COMPONENTS = (
+    "anchor",
+    "query_plan",
+    "discovery_merger",
+    "expansion_merger",
+    "rank_pool",
+    "research_map",
+    "judge_synthesizer",
+    "survey_outline",
+    "survey_assembler",
+)
+_PIPELINE_STAGES = (
+    "anchor",
+    "query_plan",
+    "discovery",
+    "expansion",
+    "rank_pool",
+    "card_plan",
+    "research_map",
+    "judge_panel",
+    "image_planner",
+    "survey_outline",
+    "survey_assembler",
+)
+_COMPONENT_STAGE = {
+    "method_scout": "discovery",
+    "benchmark_scout": "discovery",
+    "survey_scout": "discovery",
+    "frontier_scout": "discovery",
+    "discovery_merger": "discovery",
+    "citation_seed_selector": "expansion",
+    "reference_expander": "expansion",
+    "semantic_expander": "expansion",
+    "cross_domain_expander": "expansion",
+    "expansion_merger": "expansion",
+    "paper_card": "card_plan",
+    "coverage_judge": "judge_panel",
+    "scope_judge": "judge_panel",
+    "benchmark_judge": "judge_panel",
+    "gap_judge": "judge_panel",
+    "judge_synthesizer": "judge_panel",
+    "section_expander": "survey_outline",
+}
 
 
 def _sanitize_string(value: str, *, run_root: Path, key: str | None) -> str:
@@ -419,6 +462,12 @@ class SurveyDiagnostics:
     def finalize_contract_audit(self) -> None:
         """Take a final diagnostic snapshot after the existing workflow has stopped."""
         self.observe_artifacts()
+        for component in _MILESTONE_COMPONENTS:
+            contract = _CONTRACT_BY_COMPONENT[component]
+            if contract.required and all(
+                _valid_artifact(self.run_root, relative_path) for relative_path in contract.required
+            ):
+                self._last_successful_component = component
         for contract in ARTIFACT_CONTRACTS:
             for relative_path in contract.required:
                 if not _valid_artifact(self.run_root, relative_path):
@@ -428,6 +477,7 @@ class SurveyDiagnostics:
                         kind="required_artifact_missing",
                         severity="error",
                     )
+        for contract in ARTIFACT_CONTRACTS:
             for relative_path in contract.optional:
                 if not _valid_artifact(self.run_root, relative_path):
                     self._record_anomaly(
@@ -448,6 +498,13 @@ class SurveyDiagnostics:
 
     def snapshot(self) -> dict[str, Any]:
         """Return the bounded summary persisted during execution and copied into run.json."""
+        first_anomaly = self._anomalies[0] if self._anomalies else None
+        affected_components: list[str] = []
+        if first_anomaly is not None and first_anomaly.get("severity") == "error":
+            component = first_anomaly.get("component", "")
+            stage = _COMPONENT_STAGE.get(component, component)
+            if stage in _PIPELINE_STAGES:
+                affected_components = list(_PIPELINE_STAGES[_PIPELINE_STAGES.index(stage) + 1 :])
         return {
             "schema_version": 1,
             "job_id": str(self.job_id),
@@ -459,7 +516,8 @@ class SurveyDiagnostics:
             "last_successful_component": self._last_successful_component,
             "tool_counts": dict(self._tool_counts),
             "anomaly_count": len(self._anomalies),
-            "first_anomaly": self._anomalies[0] if self._anomalies else None,
+            "first_anomaly": first_anomaly,
+            "affected_components": affected_components,
             "anomalies": list(self._anomalies),
             "observed_artifacts": list(self._observed_artifacts.values()),
             "expected_dynamic_artifacts": sorted(self._dynamic_required),

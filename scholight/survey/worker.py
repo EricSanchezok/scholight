@@ -149,8 +149,10 @@ async def _collect_stage_timings(
             kind = event.get("kind")
             index = event.get("index")
             tool_status = {
+                "tool_call": "started",
                 "tool_start": "started",
                 "tool_started": "started",
+                "tool_result": "finished",
                 "tool_done": "finished",
                 "tool_finished": "finished",
                 "tool_error": "failed",
@@ -161,8 +163,10 @@ async def _collect_stage_timings(
                 diagnostic_fields: dict[str, object] = {}
                 for field in (
                     "call_id",
+                    "duration",
                     "duration_ms",
                     "error_code",
+                    "result_len",
                     "retryable",
                 ):
                     if field in event:

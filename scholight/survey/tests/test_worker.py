@@ -461,8 +461,29 @@ async def test_stage_collector_records_contract_breach_without_stopping(tmp_path
     records = await _collect_stage_timings(stream, diagnostics=diagnostics)
 
     assert len(records) == 1
-    assert diagnostics.snapshot()["first_anomaly"]["component"] == "discovery_merger"  # type: ignore[index]
-    assert diagnostics.snapshot()["last_event"]["component"] == "expansion"  # type: ignore[index]
+    assert diagnostics.snapshot()["first_anomaly"]["component"] == "discovery_merger"
+    assert diagnostics.snapshot()["last_event"]["component"] == "expansion"
+
+
+@pytest.mark.asyncio
+async def test_stage_collector_understands_native_rcm_tool_events(tmp_path: Path) -> None:
+    stream = asyncio.StreamReader()
+    stream.feed_data(
+        b'{"type":"tool_call","tool":"scholight__search_papers",'
+        b'"call_id":"call-1","arguments":{"query":"rag","limit":10}}\n'
+        b'{"type":"tool_result","tool":"scholight__search_papers",'
+        b'"call_id":"call-1","duration":0.25,"result_len":1}\n'
+    )
+    stream.feed_eof()
+    diagnostics = SurveyDiagnostics(
+        run_root=tmp_path,
+        job_id=uuid4(),
+        survey_id=uuid4(),
+    )
+
+    await _collect_stage_timings(stream, diagnostics=diagnostics)
+
+    assert diagnostics.snapshot()["tool_counts"] == {"started": 1, "finished": 1, "failed": 0}
 
 
 @pytest.mark.asyncio

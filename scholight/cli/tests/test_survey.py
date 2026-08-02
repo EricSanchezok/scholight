@@ -12,6 +12,7 @@ import pytest
 from click.testing import CliRunner
 
 from scholight.cli.survey import (
+    _diagnostic_projection,
     _installed_rcm_version,
     _verify_diagnostic_workspace,
     survey_group,
@@ -73,6 +74,7 @@ def test_diagnose_reads_active_workspace_without_database(
                     "expected_artifact": "02_candidate_pool.md",
                 },
                 "anomaly_count": 1,
+                "affected_components": ["expansion", "rank_pool"],
                 "tool_counts": {"started": 4, "finished": 4, "failed": 0},
                 "trace_path": "trajectory.jsonl",
             }
@@ -91,6 +93,30 @@ def test_diagnose_reads_active_workspace_without_database(
     assert payload["source"] == "workspace"
     assert payload["last_successful_component"] == "query_plan"
     assert payload["first_anomaly"]["expected_artifact"] == "02_candidate_pool.md"
+    assert payload["affected_components"] == ["expansion", "rank_pool"]
+
+
+def test_diagnostic_projection_classifies_bounded_stderr() -> None:
+    job_id = uuid4()
+
+    payload = _diagnostic_projection(
+        {
+            "process": {
+                "return_code": 1,
+                "termination_reason": "nonzero_exit",
+                "stderr_tail": "provider returned status 429 rate limit",
+            },
+            "diagnostics": {"tool_counts": {"started": 1, "finished": 0, "failed": 1}},
+        },
+        job_id=job_id,
+        source="workspace",
+        location="diagnostics.json",
+    )
+
+    assert payload["stderr_classification"] == {
+        "code": "survey_provider_rate_limited",
+        "message": "A Survey provider is temporarily rate limited.",
+    }
 
 
 def test_smoke_diagnostic_workspace_probe_cleans_up(tmp_path: Path) -> None:
