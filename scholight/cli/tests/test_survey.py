@@ -78,6 +78,8 @@ def test_diagnose_reads_active_workspace_without_database(
                 "anomaly_count": 1,
                 "affected_components": ["expansion", "rank_pool"],
                 "tool_counts": {"started": 4, "finished": 4, "failed": 0},
+                "model_counts": {"started": 2, "finished": 1, "failed": 1},
+                "last_model_error": {"error_code": "model_timeout", "timeout_seconds": 180},
                 "trace_path": "trajectory.jsonl",
             }
         ),
@@ -96,6 +98,11 @@ def test_diagnose_reads_active_workspace_without_database(
     assert payload["last_successful_component"] == "query_plan"
     assert payload["first_anomaly"]["expected_artifact"] == "02_candidate_pool.md"
     assert payload["affected_components"] == ["expansion", "rank_pool"]
+    assert payload["model_counts"] == {"started": 2, "finished": 1, "failed": 1}
+    assert payload["last_model_error"] == {
+        "error_code": "model_timeout",
+        "timeout_seconds": 180,
+    }
 
 
 def test_diagnostic_projection_classifies_bounded_stderr() -> None:

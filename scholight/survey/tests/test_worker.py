@@ -603,6 +603,39 @@ async def test_stage_collector_understands_native_rcm_tool_events(tmp_path: Path
 
 
 @pytest.mark.asyncio
+async def test_stage_collector_classifies_model_timeout_without_persisting_content(
+    tmp_path: Path,
+) -> None:
+    stream = asyncio.StreamReader()
+    stream.feed_data(
+        b'{"type":"completion_start"}\n'
+        b'{"type":"completion_end","fragments":1,"input_tokens":0,'
+        b'"output_tokens":0,"total_tokens":0}\n'
+        b'{"type":"appended","id":7,"step":4,"role":"assistant",'
+        b'"kind":"hitch","tag":"error",'
+        b'"preview":"request timed out after 180s bearer private-secret"}\n'
+    )
+    stream.feed_eof()
+    diagnostics = SurveyDiagnostics(
+        run_root=tmp_path,
+        job_id=uuid4(),
+        survey_id=uuid4(),
+    )
+
+    await _collect_stage_timings(stream, diagnostics=diagnostics)
+
+    snapshot = diagnostics.snapshot()
+    assert snapshot["model_counts"] == {"started": 1, "finished": 1, "failed": 1}
+    assert snapshot["last_model_error"] == {
+        "error_code": "model_timeout",
+        "timeout_seconds": 180,
+    }
+    trace = (tmp_path / "trajectory.jsonl").read_text(encoding="utf-8")
+    assert "private-secret" not in trace
+    assert "request timed out" not in trace
+
+
+@pytest.mark.asyncio
 async def test_stage_collector_persists_only_public_milestone_transitions() -> None:
     stream = asyncio.StreamReader()
     stream.feed_data(

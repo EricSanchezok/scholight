@@ -251,6 +251,8 @@ class SurveyDiagnostics:
         self._last_activity_at: str | None = None
         self._last_successful_component: str | None = None
         self._tool_counts = {"started": 0, "finished": 0, "failed": 0}
+        self._model_counts = {"started": 0, "finished": 0, "failed": 0}
+        self._last_model_error: dict[str, object] | None = None
         self._anomalies: list[dict[str, str]] = []
         self._anomaly_keys: set[tuple[str, str, str]] = set()
         self._observed_artifacts: dict[str, dict[str, object]] = {}
@@ -303,6 +305,16 @@ class SurveyDiagnostics:
             status = event_type.partition(".")[2]
             if status in self._tool_counts:
                 self._tool_counts[status] += 1
+        if event_type.startswith("model."):
+            status = event_type.partition(".")[2]
+            if status in self._model_counts:
+                self._model_counts[status] += 1
+            if status == "failed":
+                self._last_model_error = {
+                    key: sanitized[key]
+                    for key in ("error_code", "timeout_seconds", "http_status")
+                    if key in sanitized
+                }
         try:
             serialized = json.dumps(sanitized, ensure_ascii=False, separators=(",", ":"))
             with (self.run_root / TRACE_FILE).open("a", encoding="utf-8") as handle:
@@ -414,6 +426,10 @@ class SurveyDiagnostics:
                 tool=tool,
                 status=status,
             )
+
+    def model_event(self, *, status: str, **fields: object) -> None:
+        """Record completion metadata without retaining model input or output content."""
+        self.record(f"model.{status}", status=status, **fields)
 
     def _write_checkpoint_best_effort(self) -> None:
         try:
@@ -568,6 +584,8 @@ class SurveyDiagnostics:
             "last_event": self._last_event,
             "last_successful_component": self._last_successful_component,
             "tool_counts": dict(self._tool_counts),
+            "model_counts": dict(self._model_counts),
+            "last_model_error": self._last_model_error,
             "anomaly_count": len(self._anomalies),
             "first_anomaly": first_anomaly,
             "affected_components": affected_components,

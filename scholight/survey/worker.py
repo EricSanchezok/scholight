@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import shutil
 import stat
 import time
@@ -54,6 +55,33 @@ _EVENT_LINE_LIMIT = 1024 * 1024
 _STAGE_RECORD_LIMIT = 512
 _ARTIFACT_OBSERVE_SECONDS = 5
 _ACTIVITY_METRIC_SECONDS = 60
+_MODEL_TIMEOUT = re.compile(r"(?:timed out after|timeout(?: after)?)\s+(\d+)\s*s", re.I)
+
+
+def _classify_model_hitch(preview: object) -> dict[str, object] | None:
+    """Classify an RCM hitch in memory without persisting its model-provided text."""
+    if not isinstance(preview, str):
+        return None
+    normalized = preview.casefold()
+    timeout_match = _MODEL_TIMEOUT.search(preview)
+    if timeout_match is not None:
+        return {
+            "error_code": "model_timeout",
+            "timeout_seconds": int(timeout_match.group(1)),
+        }
+    status_match = re.search(r"(?:status|http)\D{0,8}([45]\d\d)", normalized)
+    http_status = int(status_match.group(1)) if status_match is not None else None
+    if http_status == 429 or "rate limit" in normalized:
+        result: dict[str, object] = {"error_code": "model_rate_limited"}
+    elif http_status in {401, 403} or any(
+        marker in normalized for marker in ("unauthorized", "authentication", "invalid api key")
+    ):
+        result = {"error_code": "model_authentication_failed"}
+    else:
+        result = {"error_code": "model_completion_failed"}
+    if http_status is not None:
+        result["http_status"] = http_status
+    return result
 
 
 @dataclass(frozen=True, slots=True)
@@ -158,6 +186,34 @@ async def _collect_stage_timings(
                 "tool_error": "failed",
                 "tool_failed": "failed",
             }.get(event_type if isinstance(event_type, str) else "")
+            if diagnostics is not None and event_type == "completion_start":
+                diagnostics.model_event(status="started")
+                continue
+            if diagnostics is not None and event_type == "completion_end":
+                completion_fields = {
+                    field: event[field]
+                    for field in (
+                        "fragments",
+                        "input_tokens",
+                        "output_tokens",
+                        "total_tokens",
+                        "cached_input_tokens",
+                        "cache_creation_input_tokens",
+                    )
+                    if isinstance(event.get(field), int)
+                }
+                diagnostics.model_event(status="finished", **completion_fields)
+                continue
+            if (
+                diagnostics is not None
+                and event_type in {"appended", "inserted", "replaced"}
+                and event.get("kind") == "hitch"
+                and event.get("role") in {"assistant", "system"}
+            ):
+                classification = _classify_model_hitch(event.get("preview"))
+                if classification is not None:
+                    diagnostics.model_event(status="failed", **classification)
+                    continue
             if tool_status is not None and diagnostics is not None:
                 tool_name = event.get("tool") or event.get("name")
                 diagnostic_fields: dict[str, object] = {}

@@ -249,6 +249,8 @@ def _diagnostic_projection(
         "affected_components": diagnostics.get("affected_components", []),
         "anomaly_count": diagnostics.get("anomaly_count", 0),
         "tool_counts": diagnostics.get("tool_counts", {}),
+        "model_counts": diagnostics.get("model_counts", {}),
+        "last_model_error": diagnostics.get("last_model_error"),
         "stderr_classification": stderr_classification,
         "last_activity_at": diagnostics.get("last_activity_at"),
         "trace_path": diagnostics.get("trace_path"),
@@ -361,6 +363,23 @@ def diagnose(job_id: str, json_output: bool) -> None:
         f"started={normalized_tool_counts.get('started', 0)} "
         f"finished={normalized_tool_counts.get('finished', 0)} "
         f"failed={normalized_tool_counts.get('failed', 0)}"
+    )
+    model_counts = payload["model_counts"]
+    normalized_model_counts = model_counts if isinstance(model_counts, dict) else {}
+    click.echo(
+        "Model calls: "
+        f"started={normalized_model_counts.get('started', 0)} "
+        f"finished={normalized_model_counts.get('finished', 0)} "
+        f"failed={normalized_model_counts.get('failed', 0)}"
+    )
+    last_model_error = payload["last_model_error"]
+    click.echo(
+        "Last model error: "
+        + (
+            str(last_model_error.get("error_code", "unknown"))
+            if isinstance(last_model_error, dict)
+            else "none"
+        )
     )
     stderr_classification = payload["stderr_classification"]
     click.echo(
