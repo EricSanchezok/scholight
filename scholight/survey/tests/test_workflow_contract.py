@@ -1,5 +1,6 @@
 """Static contracts for the vendored Scholight Survey RCM workflow."""
 
+import re
 from pathlib import Path
 
 import pytest
@@ -35,6 +36,22 @@ def test_discovery_and_expansion_use_authenticated_scholight_mcp() -> None:
         assert 'url = "http://api:8000/mcp"' in source
         assert 'env "SCHOLIGHT_SURVEY_MCP_AUTHORIZATION"' in source
         assert 'mcps = ["scholight"]' in source
+
+
+def test_every_survey_model_allows_at_least_thirty_minutes() -> None:
+    model_files = [
+        path
+        for path in sorted((_WORKFLOW / "rcm").glob("*.rcm"))
+        if re.search(r"(?m)^model\s+", path.read_text(encoding="utf-8"))
+    ]
+
+    assert model_files
+    for path in model_files:
+        source = path.read_text(encoding="utf-8")
+        timeouts = [int(value) for value in re.findall(r'(?m)^\s*timeout\s*=\s*"(\d+)"', source)]
+        model_count = len(re.findall(r"(?m)^model\s+", source))
+        assert len(timeouts) == model_count, f"{path.name} must set every model timeout"
+        assert min(timeouts) >= 1_800, f"{path.name} model timeout is below 30 minutes"
 
 
 def test_draft_workflow_is_single_node_mcp_only() -> None:
