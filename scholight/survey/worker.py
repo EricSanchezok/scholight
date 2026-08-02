@@ -10,7 +10,7 @@ import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID, uuid4
 
 import structlog
@@ -31,6 +31,7 @@ from scholight.db.queries_survey import (
 from scholight.survey.artifacts import SurveyArtifactStore
 from scholight.survey.cleanup_worker import serve_artifact_cleanup
 from scholight.survey.contracts import SurveyLeaseLostError
+from scholight.survey.diagnostics import SurveyDiagnostics
 from scholight.survey.process import (
     ProcessControl,
     classify_rcm_error,
@@ -50,6 +51,7 @@ _RECOVERY_SECONDS = 30
 _EVENT_READ_BYTES = 64 * 1024
 _EVENT_LINE_LIMIT = 1024 * 1024
 _STAGE_RECORD_LIMIT = 512
+_ARTIFACT_OBSERVE_SECONDS = 5
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +62,10 @@ class SurveyExecutionResult:
     started_at: datetime
     finished_at: datetime
     stage_timings: tuple[dict[str, object], ...] = ()
+    return_code: int | None = None
+    termination_reason: str | None = None
+    stderr_tail: str | None = None
+    diagnostics: dict[str, Any] | None = None
 
 
 def _workflow_file() -> Path:
@@ -99,6 +105,7 @@ async def _collect_stage_timings(
     *,
     job_id: UUID | None = None,
     worker_id: UUID | None = None,
+    diagnostics: SurveyDiagnostics | None = None,
 ) -> tuple[dict[str, object], ...]:
     """Drain RCM events while retaining only bounded, non-content stage metadata."""
     if not isinstance(stream, asyncio.StreamReader):
@@ -123,19 +130,73 @@ async def _collect_stage_timings(
             try:
                 event = json.loads(line)
             except (UnicodeDecodeError, json.JSONDecodeError):
+                if diagnostics is not None:
+                    diagnostics.record(
+                        "run.event_dropped",
+                        reason="invalid_json",
+                        size_bytes=len(line),
+                    )
                 continue
             if not isinstance(event, dict):
+                if diagnostics is not None:
+                    diagnostics.record("run.event_dropped", reason="non_object_json")
                 continue
             event_type = event.get("type")
             name = event.get("name")
             kind = event.get("kind")
             index = event.get("index")
+            tool_status = {
+                "tool_start": "started",
+                "tool_started": "started",
+                "tool_done": "finished",
+                "tool_finished": "finished",
+                "tool_error": "failed",
+                "tool_failed": "failed",
+            }.get(event_type if isinstance(event_type, str) else "")
+            if tool_status is not None and diagnostics is not None:
+                tool_name = event.get("tool") or event.get("name")
+                diagnostic_fields: dict[str, object] = {}
+                for field in (
+                    "call_id",
+                    "duration_ms",
+                    "error_code",
+                    "retryable",
+                ):
+                    if field in event:
+                        diagnostic_fields[field] = event[field]
+                diagnostics.tool_event(
+                    tool=str(tool_name or "unknown"),
+                    status=tool_status,
+                    component=event.get("component"),
+                    arguments=event.get("arguments", event.get("args")),
+                    **diagnostic_fields,
+                )
+                continue
             if not isinstance(name, str) or not isinstance(kind, str) or not isinstance(index, int):
+                if diagnostics is not None:
+                    safe_keys = sorted(
+                        str(key)
+                        for key in event
+                        if key not in {"content", "message", "preview", "response"}
+                    )
+                    diagnostics.record(
+                        "run.event_dropped",
+                        reason="unsupported_event",
+                        rcm_event_type=event_type,
+                        retained_keys=safe_keys,
+                    )
                 continue
             key = (name, kind, index)
             now = datetime.now(UTC)
             if event_type == "component_start":
                 active[key] = (now, time.monotonic())
+                if diagnostics is not None:
+                    diagnostics.record(
+                        "component.started",
+                        component=name,
+                        kind=kind,
+                        index=index,
+                    )
                 progress_stage = stage_for_component(name)
                 if (
                     progress_stage is not None
@@ -173,10 +234,55 @@ async def _collect_stage_timings(
                             ),
                         }
                     )
+                if diagnostics is not None:
+                    diagnostics.component_finished(
+                        name,
+                        status="completed" if event_type == "component_done" else "skipped",
+                    )
         if len(buffer) > _EVENT_LINE_LIMIT:
             buffer.clear()
             discard_until_newline = True
+            if diagnostics is not None:
+                diagnostics.record(
+                    "run.event_dropped",
+                    reason="line_too_large",
+                    size_bytes=_EVENT_LINE_LIMIT,
+                )
     return tuple(records)
+
+
+async def _observe_artifacts(
+    diagnostics: SurveyDiagnostics,
+    *,
+    stop: asyncio.Event,
+) -> None:
+    """Watch only artifact metadata; observer failures never affect RCM execution."""
+    while not stop.is_set():
+        diagnostics.observe_artifacts()
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=_ARTIFACT_OBSERVE_SECONDS)
+        except TimeoutError:
+            continue
+
+
+def _finish_diagnostics(
+    diagnostics: SurveyDiagnostics,
+    *,
+    outcome: str,
+    return_code: int | None,
+    termination_reason: str,
+    audit_contract: bool,
+) -> dict[str, Any]:
+    diagnostics.record(
+        "process.finished",
+        status=outcome,
+        return_code=return_code,
+        termination_reason=termination_reason,
+    )
+    if audit_contract:
+        diagnostics.finalize_contract_audit()
+    diagnostics.record("run.finished", outcome=outcome)
+    return diagnostics.snapshot()
 
 
 def _timeout_message(seconds: int) -> str:
@@ -192,20 +298,41 @@ async def execute_survey(
 ) -> SurveyExecutionResult:
     """Run the fixed RCM workflow without retaining unbounded subprocess output."""
     started_at = datetime.now(UTC)
-    process = await asyncio.create_subprocess_exec(
-        "accelerate",
-        "run",
-        str(_workflow_file()),
-        "--stream",
-        "--purpose-stdin",
-        "--run-dir",
-        str(run_root),
-        env=_child_environment(user_id=job.user_id),
-        stdin=asyncio.subprocess.PIPE,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        start_new_session=True,
+    diagnostics = SurveyDiagnostics(
+        run_root=run_root,
+        job_id=job.id,
+        survey_id=job.survey_id,
     )
+    diagnostics.record(
+        "run.started",
+        component="survey_pipeline",
+        rcm_version=RCM_VERSION,
+        workflow_version=WORKFLOW_VERSION,
+    )
+    try:
+        process = await asyncio.create_subprocess_exec(
+            "accelerate",
+            "run",
+            str(_workflow_file()),
+            "--stream",
+            "--purpose-stdin",
+            "--run-dir",
+            str(run_root),
+            env=_child_environment(user_id=job.user_id),
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            start_new_session=True,
+        )
+    except Exception as exc:
+        diagnostics.record(
+            "process.finished",
+            status="failed",
+            termination_reason="process_start_failed",
+            error_type=type(exc).__name__,
+        )
+        diagnostics.record("run.finished", outcome="failed")
+        raise
     control = control or ProcessControl()
     await control.attach(process)
     stage_collector = asyncio.create_task(
@@ -213,8 +340,11 @@ async def execute_survey(
             process.stdout,
             job_id=job.id,
             worker_id=job.lease_owner,
+            diagnostics=diagnostics,
         )
     )
+    artifact_stop = asyncio.Event()
+    artifact_observer = asyncio.create_task(_observe_artifacts(diagnostics, stop=artifact_stop))
     stderr_task = asyncio.create_task(read_sanitized_tail(process.stderr))
     wait_task = asyncio.create_task(process.wait())
     lost_task = asyncio.create_task(control.lease_lost.wait())
@@ -234,10 +364,25 @@ async def execute_survey(
         )
         if lost_task in done and control.lease_lost.is_set():
             await terminate_process_group(process)
+            _finish_diagnostics(
+                diagnostics,
+                outcome="failed",
+                return_code=process.returncode,
+                termination_reason="lease_lost",
+                audit_contract=False,
+            )
             raise SurveyLeaseLostError("Survey execution lease is no longer owned")
         if cancel_task in done and control.cancel_requested.is_set():
             await terminate_process_group(process)
             stage_timings = await stage_collector
+            stderr_tail = await stderr_task
+            diagnostic_summary = _finish_diagnostics(
+                diagnostics,
+                outcome="cancelled",
+                return_code=process.returncode,
+                termination_reason="cancelled",
+                audit_contract=False,
+            )
             return SurveyExecutionResult(
                 outcome="cancelled",
                 error_code=None,
@@ -245,10 +390,22 @@ async def execute_survey(
                 started_at=started_at,
                 finished_at=datetime.now(UTC),
                 stage_timings=stage_timings,
+                return_code=process.returncode,
+                termination_reason="cancelled",
+                stderr_tail=stderr_tail or None,
+                diagnostics=diagnostic_summary,
             )
         if not done:
             await terminate_process_group(process)
             stage_timings = await stage_collector
+            stderr_tail = await stderr_task
+            diagnostic_summary = _finish_diagnostics(
+                diagnostics,
+                outcome="failed",
+                return_code=process.returncode,
+                termination_reason="timed_out",
+                audit_contract=True,
+            )
             return SurveyExecutionResult(
                 outcome="failed",
                 error_code="survey_timed_out",
@@ -256,6 +413,10 @@ async def execute_survey(
                 started_at=started_at,
                 finished_at=datetime.now(UTC),
                 stage_timings=stage_timings,
+                return_code=process.returncode,
+                termination_reason="timed_out",
+                stderr_tail=stderr_tail or None,
+                diagnostics=diagnostic_summary,
             )
         try:
             return_code, stage_timings = await lifecycle_task
@@ -265,6 +426,13 @@ async def execute_survey(
         stderr_tail = await stderr_task
         if return_code != 0:
             error_code, error_message = classify_rcm_error(stderr_tail)
+            diagnostic_summary = _finish_diagnostics(
+                diagnostics,
+                outcome="failed",
+                return_code=return_code,
+                termination_reason="nonzero_exit",
+                audit_contract=True,
+            )
             logger.error(
                 "survey_rcm_failed",
                 job_id=str(job.id),
@@ -278,8 +446,26 @@ async def execute_survey(
                 started_at=started_at,
                 finished_at=datetime.now(UTC),
                 stage_timings=stage_timings,
+                return_code=return_code,
+                termination_reason="nonzero_exit",
+                stderr_tail=stderr_tail or None,
+                diagnostics=diagnostic_summary,
             )
         if not _valid_final_report(run_root):
+            diagnostic_summary = _finish_diagnostics(
+                diagnostics,
+                outcome="failed",
+                return_code=return_code,
+                termination_reason="report_missing",
+                audit_contract=True,
+            )
+            logger.error(
+                "survey_rcm_failed",
+                job_id=str(job.id),
+                return_code=return_code,
+                diagnostics=stderr_tail,
+                first_anomaly=diagnostic_summary.get("first_anomaly"),
+            )
             return SurveyExecutionResult(
                 outcome="failed",
                 error_code="survey_report_missing",
@@ -287,7 +473,18 @@ async def execute_survey(
                 started_at=started_at,
                 finished_at=datetime.now(UTC),
                 stage_timings=stage_timings,
+                return_code=return_code,
+                termination_reason="report_missing",
+                stderr_tail=stderr_tail or None,
+                diagnostics=diagnostic_summary,
             )
+        diagnostic_summary = _finish_diagnostics(
+            diagnostics,
+            outcome="succeeded",
+            return_code=return_code,
+            termination_reason="completed",
+            audit_contract=True,
+        )
         return SurveyExecutionResult(
             outcome="succeeded",
             error_code=None,
@@ -295,11 +492,18 @@ async def execute_survey(
             started_at=started_at,
             finished_at=datetime.now(UTC),
             stage_timings=stage_timings,
+            return_code=return_code,
+            termination_reason="completed",
+            stderr_tail=(
+                stderr_tail if stderr_tail and diagnostic_summary.get("anomaly_count", 0) else None
+            ),
+            diagnostics=diagnostic_summary,
         )
     except asyncio.CancelledError:
         await terminate_process_group(process)
         raise
     finally:
+        artifact_stop.set()
         lost_task.cancel()
         if process.returncode is None:
             await terminate_process_group(process)
@@ -310,6 +514,7 @@ async def execute_survey(
             stderr_task,
             lost_task,
             cancel_task,
+            artifact_observer,
         ):
             if not task.done():
                 task.cancel()
@@ -320,6 +525,7 @@ async def execute_survey(
             stderr_task,
             lost_task,
             cancel_task,
+            artifact_observer,
             return_exceptions=True,
         )
 
@@ -367,7 +573,7 @@ async def _heartbeat(
 
 def _run_metadata(job: SurveyJob, result: SurveyExecutionResult | None) -> dict[str, object]:
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "job_id": str(job.id),
         "survey_id": str(job.survey_id),
         "user_id": job.user_id,
@@ -384,6 +590,12 @@ def _run_metadata(job: SurveyJob, result: SurveyExecutionResult | None) -> dict[
         ),
         "finished_at": result.finished_at.isoformat() if result is not None else None,
         "stage_timings": list(result.stage_timings) if result is not None else [],
+        "process": {
+            "return_code": result.return_code if result is not None else None,
+            "termination_reason": result.termination_reason if result is not None else None,
+            "stderr_tail": result.stderr_tail if result is not None else None,
+        },
+        "diagnostics": result.diagnostics if result is not None else None,
     }
 
 

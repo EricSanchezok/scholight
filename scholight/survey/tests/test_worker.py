@@ -13,6 +13,7 @@ import pytest
 from scholight.config import settings
 from scholight.db.queries_survey import SurveyJob
 from scholight.survey.artifacts import SurveyArchive
+from scholight.survey.diagnostics import SurveyDiagnostics
 from scholight.survey.process import ProcessControl
 from scholight.survey.worker import (
     RCM_VERSION,
@@ -21,6 +22,7 @@ from scholight.survey.worker import (
     _collect_stage_timings,
     _heartbeat,
     _run_claimed_job,
+    _run_metadata,
     execute_survey,
     process_survey_job,
     serve_survey_worker,
@@ -93,10 +95,11 @@ class _TimeoutProcess:
 
 
 class _CompletedProcess:
-    def __init__(self, *, returncode: int = 0) -> None:
+    def __init__(self, *, returncode: int = 0, stderr: bytes = b"") -> None:
         self.stdout = asyncio.StreamReader()
         self.stdout.feed_eof()
         self.stderr = asyncio.StreamReader()
+        self.stderr.feed_data(stderr)
         self.stderr.feed_eof()
         self.stdin = None
         self.returncode = returncode
@@ -246,6 +249,73 @@ async def test_success_requires_nonempty_regular_final_report(
 
 
 @pytest.mark.asyncio
+async def test_zero_exit_missing_report_retains_runtime_diagnostics(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job_id = uuid4()
+    worker_id = uuid4()
+    monkeypatch.setattr(settings, "survey_job_timeout_seconds", 60)
+    monkeypatch.setattr(settings, "survey_mcp_jwt_secret", "s" * 32)
+    monkeypatch.setattr(settings, "deepseek_api_key", "deepseek")
+    monkeypatch.setattr(settings, "image_gen_api_key", "image")
+    process = _CompletedProcess(stderr=b"rank_pool completed without its output\n")
+    with (
+        patch(
+            "scholight.survey.worker.asyncio.create_subprocess_exec",
+            new_callable=AsyncMock,
+            return_value=process,
+        ),
+        patch("scholight.survey.worker.write_stdin", new_callable=AsyncMock),
+    ):
+        result = await execute_survey(
+            _job(job_id=job_id, worker_id=worker_id, status="running"),
+            tmp_path,
+        )
+
+    assert result.error_code == "survey_report_missing"
+    assert result.return_code == 0
+    assert result.stderr_tail == "rank_pool completed without its output\n"
+    assert result.diagnostics is not None
+    assert result.diagnostics["first_anomaly"] is not None
+
+
+def test_run_metadata_v2_contains_process_and_diagnostic_summary(tmp_path: Path) -> None:
+    job_id = uuid4()
+    worker_id = uuid4()
+    diagnostics = SurveyDiagnostics(
+        run_root=tmp_path,
+        job_id=job_id,
+        survey_id=uuid4(),
+    )
+    diagnostics.record("run.started")
+    result = SurveyExecutionResult(
+        outcome="failed",
+        error_code="survey_report_missing",
+        error_message="Survey generation did not produce a final report.",
+        started_at=datetime.now(UTC),
+        finished_at=datetime.now(UTC),
+        return_code=0,
+        termination_reason="report_missing",
+        stderr_tail="bounded diagnostics",
+        diagnostics=diagnostics.snapshot(),
+    )
+
+    metadata = _run_metadata(
+        _job(job_id=job_id, worker_id=worker_id, status="archiving", outcome="failed"),
+        result,
+    )
+
+    assert metadata["schema_version"] == 2
+    assert metadata["process"] == {
+        "return_code": 0,
+        "termination_reason": "report_missing",
+        "stderr_tail": "bounded diagnostics",
+    }
+    assert metadata["diagnostics"]["trace_path"] == "trajectory.jsonl"  # type: ignore[index]
+
+
+@pytest.mark.asyncio
 async def test_running_execution_settles_before_artifact_upload(tmp_path: Path) -> None:
     job_id = uuid4()
     worker_id = uuid4()
@@ -369,6 +439,28 @@ async def test_stage_collector_keeps_only_safe_bounded_metadata() -> None:
     assert records[0]["name"] == "discovery"
     assert records[0]["status"] == "completed"
     assert "preview" not in records[0]
+
+
+@pytest.mark.asyncio
+async def test_stage_collector_records_contract_breach_without_stopping(tmp_path: Path) -> None:
+    stream = asyncio.StreamReader()
+    stream.feed_data(
+        b'{"type":"component_start","name":"discovery_merger","kind":"accelerator","index":1}\n'
+        b'{"type":"component_done","name":"discovery_merger","kind":"accelerator","index":1}\n'
+        b'{"type":"component_start","name":"expansion","kind":"accelerator","index":2}\n'
+    )
+    stream.feed_eof()
+    diagnostics = SurveyDiagnostics(
+        run_root=tmp_path,
+        job_id=uuid4(),
+        survey_id=uuid4(),
+    )
+
+    records = await _collect_stage_timings(stream, diagnostics=diagnostics)
+
+    assert len(records) == 1
+    assert diagnostics.snapshot()["first_anomaly"]["component"] == "discovery_merger"  # type: ignore[index]
+    assert diagnostics.snapshot()["last_event"]["component"] == "expansion"  # type: ignore[index]
 
 
 @pytest.mark.asyncio
