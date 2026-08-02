@@ -131,7 +131,7 @@ function usePreviewVisibility() {
   return { container, visible };
 }
 
-function ReportPreview({ surveyId, title }: { surveyId: string; title: string }) {
+function ReportPreview({ surveyId }: { surveyId: string }) {
   const { container, visible } = usePreviewVisibility();
   const report = useQuery({
     queryKey: queryKeys.surveyReport(surveyId),
@@ -143,10 +143,6 @@ function ReportPreview({ surveyId, title }: { surveyId: string; title: string })
   return (
     <div ref={container} className={styles.surveyReportThumbnail} aria-hidden="true">
       <div className={styles.surveyReportPaper}>
-        <div className={styles.surveyReportPreviewHeader}>
-          <span />
-          <strong>{title}</strong>
-        </div>
         <div className={styles.surveyReportPreviewBody}>
           {report.data ? (
             <SurveyMarkdown markdown={previewMarkdown(report.data)} compact preview />
@@ -202,7 +198,7 @@ export function CompletedSurveyList({
               to={surveyReportPath(survey.id)}
               key={survey.id}
             >
-              <ReportPreview surveyId={survey.id} title={survey.title} />
+              <ReportPreview surveyId={survey.id} />
               <div className={styles.surveyReportCardBody}>
                 <h3>{survey.title}</h3>
                 <div>

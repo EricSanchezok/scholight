@@ -189,36 +189,9 @@
   line-height: 22px;
 }
 
-.surveyReportPreviewHeader {
-  display: flex;
-  height: 42px;
-  padding: 0 13px;
-  border-bottom: 1px solid var(--line-soft);
-  align-items: center;
-  gap: 9px;
-}
-
-.surveyReportPreviewHeader > span {
-  width: 5px;
-  height: 17px;
-  flex: 0 0 auto;
-  border-radius: 1px;
-  background: var(--brand);
-}
-
-.surveyReportPreviewHeader strong {
-  overflow: hidden;
-  color: var(--ink-soft);
-  font-size: 8px;
-  font-weight: 600;
-  line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .surveyReportPreviewBody {
-  height: 137px;
-  padding: 12px 14px 14px;
+  height: 100%;
+  padding: 24px 26px;
   overflow: hidden;
 }
 

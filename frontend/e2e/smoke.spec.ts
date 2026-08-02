@@ -428,8 +428,11 @@ test("completed survey cards render a stable live Markdown preview", async ({ pa
   const loadingBox = await preview.boundingBox();
   await expect(page.getByText("This survey maps where reasoning tokens are saved")).toBeVisible();
   const renderedBox = await preview.boundingBox();
+  const paperBox = await page.locator(".surveyReportPaper").boundingBox();
 
   expect(renderedBox).toEqual(loadingBox);
+  expect(paperBox).toEqual(renderedBox);
+  await expect(page.getByText("Chain-of-thought compression and evaluation")).toHaveCount(1);
 });
 
 test("a delayed search immediately shows a stable editorial skeleton", async ({ page }) => {

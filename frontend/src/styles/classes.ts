@@ -293,7 +293,6 @@ export const styles: Readonly<Record<string, string>> = Object.freeze({
   surveyReportPage: "surveyReportPage",
   surveyReportPaper: "surveyReportPaper",
   surveyReportPreviewBody: "surveyReportPreviewBody",
-  surveyReportPreviewHeader: "surveyReportPreviewHeader",
   surveyReportPreviewLoading: "surveyReportPreviewLoading",
   surveyReportPreviewUnavailable: "surveyReportPreviewUnavailable",
   surveyReportThumbnail: "surveyReportThumbnail",
