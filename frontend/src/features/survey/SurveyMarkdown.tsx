@@ -4,6 +4,8 @@ import remarkGfm from "remark-gfm";
 import { styles } from "../../styles/classes";
 import { resolveReportImage } from "./survey";
 
+const HTML_COMMENT_PATTERN = /<!--[\s\S]*?-->/g;
+
 export function SurveyMarkdown({
   markdown,
   imageArtifacts,
@@ -41,7 +43,7 @@ export function SurveyMarkdown({
           return defaultUrlTransform(url);
         }}
       >
-        {markdown}
+        {markdown.replace(HTML_COMMENT_PATTERN, "")}
       </ReactMarkdown>
     </div>
   );

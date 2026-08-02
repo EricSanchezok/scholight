@@ -43,4 +43,9 @@ describe("SurveyMarkdown", () => {
     );
     expect(screen.getByText("Read the study").closest("a")).toBeNull();
   });
+
+  it("does not expose internal assembly markers", () => {
+    render(<SurveyMarkdown markdown={"# Report\n\nFinal paragraph.\n\n<!--M4-->"} />);
+    expect(screen.queryByText("<!--M4-->")).not.toBeInTheDocument();
+  });
 });
