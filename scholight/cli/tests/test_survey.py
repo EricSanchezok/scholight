@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import subprocess
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
@@ -15,6 +16,7 @@ from scholight.cli.survey import (
     _diagnostic_projection,
     _installed_rcm_version,
     _verify_diagnostic_workspace,
+    _verify_survey_runtime_schema,
     survey_group,
 )
 from scholight.config import settings
@@ -123,3 +125,23 @@ def test_smoke_diagnostic_workspace_probe_cleans_up(tmp_path: Path) -> None:
     _verify_diagnostic_workspace(tmp_path)
 
     assert list(tmp_path.iterdir()) == []
+
+
+def _runtime_schema_query() -> str:
+    pool = AsyncMock()
+    with patch("scholight.cli.survey.get_pool", return_value=pool):
+        asyncio.run(_verify_survey_runtime_schema())
+    return str(pool.fetch.await_args.args[0])
+
+
+def test_smoke_runtime_schema_probe_avoids_migration_table() -> None:
+    assert "schema_migrations" not in _runtime_schema_query()
+
+
+def test_smoke_runtime_schema_probe_checks_latest_survey_columns() -> None:
+    query = _runtime_schema_query()
+
+    assert all(
+        column in query
+        for column in ("surveys.title", "drafts.request_hash", "jobs.cancel_requested_at")
+    )

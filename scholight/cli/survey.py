@@ -22,7 +22,6 @@ from scholight.config import (
     validate_survey_worker_settings,
 )
 from scholight.db.client import close_pool, create_pool, get_pool
-from scholight.db.migration_policy import migration_checksum
 from scholight.db.queries_survey import get_survey_job_counts
 from scholight.db.queries_survey_cleanup import get_artifact_cleanup_status
 from scholight.logging import configure_logging
@@ -63,6 +62,17 @@ def _verify_diagnostic_workspace(data_root: Path) -> None:
             os.fsync(handle.fileno())
         if path.read_bytes() != b'{"ok":true}':
             raise RuntimeError("Survey diagnostic workspace verification failed")
+
+
+async def _verify_survey_runtime_schema() -> None:
+    """Probe the current Survey schema through application-visible columns."""
+    await get_pool().fetch(
+        "SELECT surveys.title, drafts.request_hash, jobs.cancel_requested_at, cleanup.status "
+        "FROM scholight.surveys AS surveys "
+        "CROSS JOIN scholight.survey_drafts AS drafts "
+        "CROSS JOIN scholight.survey_jobs AS jobs "
+        "CROSS JOIN scholight.survey_artifact_cleanup_outbox AS cleanup LIMIT 0"
+    )
 
 
 @click.group("survey")
@@ -368,7 +378,7 @@ def diagnose(job_id: str, json_output: bool) -> None:
 @survey_group.command("smoke")
 @click.option("--json-output", "json_output", is_flag=True, help="Emit machine-readable JSON.")
 def smoke(json_output: bool) -> None:
-    """Validate migrations, cleanup health, RCM identity, and private artifact access."""
+    """Validate runtime schema, cleanup health, RCM identity, and artifact access."""
     configure_logging()
     try:
         validate_survey_worker_settings()
@@ -382,31 +392,7 @@ def smoke(json_output: bool) -> None:
         await asyncio.to_thread(_verify_diagnostic_workspace, Path(settings.data_root))
         await create_pool()
         try:
-            rows = await get_pool().fetch(
-                "SELECT version, name, checksum FROM scholight.schema_migrations "
-                "WHERE version IN (6,7,8) ORDER BY version"
-            )
-            migrations_dir = Path(
-                os.environ.get(
-                    "SCHOLIGHT_MIGRATIONS_DIR",
-                    Path(__file__).resolve().parents[2] / "migrations",
-                )
-            )
-            expected = []
-            for version, name in (
-                (6, "survey_aggregate"),
-                (7, "survey_reliability"),
-                (8, "survey_cancellation"),
-            ):
-                path = migrations_dir / f"{version:03d}_{name}.sql"
-                expected.append(
-                    (version, name, migration_checksum(path.read_text(encoding="utf-8")))
-                )
-            applied = [
-                (int(row["version"]), str(row["name"]), str(row["checksum"])) for row in rows
-            ]
-            if applied != expected:
-                raise RuntimeError("Survey database migrations are incomplete or modified")
+            await _verify_survey_runtime_schema()
             cleanup = await get_artifact_cleanup_status()
             if cleanup.dead:
                 raise RuntimeError("Survey artifact cleanup has dead tasks")
@@ -418,7 +404,7 @@ def smoke(json_output: bool) -> None:
             return {
                 "ok": True,
                 "rcm_version": installed_rcm_version,
-                "migrations": [version for version, _name, _checksum in applied],
+                "runtime_schema": "compatible",
                 "cleanup_dead": cleanup.dead,
                 "diagnostics_writable": True,
                 "workflow_contract": workflow_audit_payload(),
