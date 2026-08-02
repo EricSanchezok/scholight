@@ -366,6 +366,72 @@ test("signed-in survey controls follow the shared page geometry", async ({ page 
     .toBeGreaterThan(formBox!.height);
 });
 
+test("completed survey cards render a stable live Markdown preview", async ({ page }) => {
+  await mockAuthenticated(page);
+  await page.route("**/api/surveys?*", (route) =>
+    route.fulfill({
+      json: {
+        items: [
+          {
+            id: "00000000-0000-0000-0000-000000000001",
+            title: "Chain-of-thought compression and evaluation",
+            status: "succeeded",
+            created_at: "2026-08-02T06:00:00Z",
+            updated_at: "2026-08-02T07:37:00Z",
+            started_at: "2026-08-02T06:10:00Z",
+            finished_at: "2026-08-02T07:37:00Z",
+            latest_draft_revision: 1,
+            progress: {
+              survey_id: "00000000-0000-0000-0000-000000000001",
+              status: "succeeded",
+              stage: "completed",
+              percent: 100,
+              step: 8,
+              total_steps: 8,
+              queue: null,
+              elapsed_seconds: 5220,
+              started_at: "2026-08-02T06:10:00Z",
+              finished_at: "2026-08-02T07:37:00Z",
+              last_activity_at: "2026-08-02T07:37:00Z",
+            },
+            report_available: true,
+            artifacts_available: true,
+          },
+        ],
+        quota: { daily_limit: 3, reserved: 0, succeeded: 1, remaining: 2 },
+        next_cursor: null,
+      },
+    }),
+  );
+  await page.route("**/api/surveys/*/report", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    await route.fulfill({
+      contentType: "text/markdown",
+      body: [
+        "# Chain-of-thought compression and evaluation",
+        "",
+        "## Abstract",
+        "",
+        "This survey maps where reasoning tokens are saved and what accuracy trade-offs remain.",
+        "",
+        "## Evidence",
+        "",
+        "- Inference-time compression reduces generated tokens without retraining.",
+        "- Post-training methods trade training cost for shorter reasoning traces.",
+      ].join("\n"),
+    });
+  });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/survey?view=completed");
+
+  const preview = page.locator(".surveyReportThumbnail");
+  const loadingBox = await preview.boundingBox();
+  await expect(page.getByText("This survey maps where reasoning tokens are saved")).toBeVisible();
+  const renderedBox = await preview.boundingBox();
+
+  expect(renderedBox).toEqual(loadingBox);
+});
+
 test("a delayed search immediately shows a stable editorial skeleton", async ({ page }) => {
   await page.route("**/api/search", async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 500));

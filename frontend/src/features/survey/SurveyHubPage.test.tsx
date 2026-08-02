@@ -16,6 +16,7 @@ vi.mock("../../api/domain", () => ({
     create: vi.fn(),
     cancel: vi.fn(),
     remove: vi.fn(),
+    report: vi.fn(),
   },
 }));
 
@@ -94,6 +95,11 @@ function renderHub(auth: AuthContextValue = anonymous) {
 describe("SurveyHubPage", () => {
   beforeEach(() => {
     vi.mocked(surveyApi.list).mockReset().mockResolvedValue(emptyList);
+    vi.mocked(surveyApi.report)
+      .mockReset()
+      .mockResolvedValue(
+        "# Reasoning model evaluation\n\n## Abstract\n\nPreview evidence about token efficiency.",
+      );
   });
 
   it("shows the public Survey shell and a signed-out list state", () => {
@@ -148,5 +154,17 @@ describe("SurveyHubPage", () => {
     await user.click(screen.getByRole("tab", { name: "Running" }));
 
     expect(await screen.findByText("No surveys are running")).toBeVisible();
+  });
+
+  it("renders report markdown inside a completed survey preview", async () => {
+    vi.mocked(surveyApi.list).mockImplementation((view) =>
+      Promise.resolve(
+        view === "completed" ? { ...emptyList, items: [completedSurvey] } : emptyList,
+      ),
+    );
+
+    renderHub(authenticated);
+
+    expect(await screen.findByText("Preview evidence about token efficiency.")).toBeVisible();
   });
 });

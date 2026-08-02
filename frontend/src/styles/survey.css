@@ -325,57 +325,18 @@
 .surveyReportThumbnail {
   display: grid;
   min-height: 228px;
+  padding: 24px;
   background: var(--surface-muted);
   place-items: center;
 }
 
 .surveyReportPaper {
-  display: flex;
-  width: 222px;
+  width: 100%;
   height: 180px;
-  padding: 25px 21px;
+  overflow: hidden;
   border: 1px solid var(--line-soft);
   border-radius: 2px;
   background: var(--surface);
-  flex-direction: column;
-}
-
-.surveyReportPaper > span {
-  width: 42px;
-  height: 3px;
-  margin-bottom: 12px;
-  border-radius: 2px;
-  background: var(--brand);
-}
-
-.surveyReportPaper small {
-  color: var(--brand);
-  font-size: 8px;
-  font-weight: 600;
-}
-
-.surveyReportPaper strong {
-  display: -webkit-box;
-  min-height: 70px;
-  margin-top: 8px;
-  overflow: hidden;
-  font-family: var(--font-display);
-  font-size: 15px;
-  line-height: 1.25;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 4;
-}
-
-.surveyReportPaper i {
-  width: 75%;
-  height: 2px;
-  margin-top: 6px;
-  border-radius: 1px;
-  background: var(--line);
-}
-
-.surveyReportPaper i:last-child {
-  width: 58%;
 }
 
 .surveyReportCardBody {

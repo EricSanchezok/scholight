@@ -36,4 +36,11 @@ describe("SurveyMarkdown", () => {
     render(<SurveyMarkdown markdown={"[Unsafe](javascript:alert(1))"} />);
     expect(screen.getByText("Unsafe").closest("a")).toHaveAttribute("href", "");
   });
+
+  it("renders links as non-interactive text in a card preview", () => {
+    render(
+      <SurveyMarkdown markdown={"[Read the study](https://arxiv.org/abs/2401.12345)"} preview />,
+    );
+    expect(screen.getByText("Read the study").closest("a")).toBeNull();
+  });
 });

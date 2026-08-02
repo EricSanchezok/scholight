@@ -8,17 +8,22 @@ export function SurveyMarkdown({
   markdown,
   imageArtifacts,
   compact = false,
+  preview = false,
 }: {
   markdown: string;
   imageArtifacts?: Map<string, string>;
   compact?: boolean;
+  preview?: boolean;
 }) {
   const components: Components = {
-    a: ({ children, href }) => (
-      <a href={href} target="_blank" rel="noreferrer noopener">
-        {children}
-      </a>
-    ),
+    a: ({ children, href }) =>
+      preview ? (
+        <span>{children}</span>
+      ) : (
+        <a href={href} target="_blank" rel="noreferrer noopener">
+          {children}
+        </a>
+      ),
     img: ({ alt, src }) => {
       if (!src || !imageArtifacts) return null;
       const resolved = resolveReportImage(src, imageArtifacts);

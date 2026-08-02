@@ -1,11 +1,18 @@
+import { useQuery } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
+import { surveyApi } from "../../api/domain";
 import type { SurveySummary } from "../../api/types";
+import { queryKeys } from "../../app/queryKeys";
 import { surveyDraftPath, surveyReportPath } from "../../app/routes";
 import { formatDurationBetween, formatRelativeTime, formatReportDate } from "../../i18n/format";
 import type { AppLocale } from "../../i18n/I18nProvider";
 import { styles } from "../../styles/classes";
+import { SurveyMarkdown } from "./SurveyMarkdown";
 import { queueDescription, runningDescription, surveyStageLabel } from "./survey";
+
+const REPORT_PREVIEW_CHARACTER_LIMIT = 2400;
 
 export function ActiveSurveyList({
   items,
@@ -86,15 +93,74 @@ export function ActiveSurveyList({
   );
 }
 
-function ReportPreview({ title }: { title: string }) {
+function previewMarkdown(markdown: string): string {
+  const content = markdown.trimStart().replace(/^#\s+[^\n]*(?:\r?\n)+/, "");
+  if (content.length <= REPORT_PREVIEW_CHARACTER_LIMIT) return content;
+  const candidate = content.slice(0, REPORT_PREVIEW_CHARACTER_LIMIT);
+  const paragraphEnd = candidate.lastIndexOf("\n\n");
+  return candidate.slice(
+    0,
+    paragraphEnd >= REPORT_PREVIEW_CHARACTER_LIMIT / 2 ? paragraphEnd : candidate.length,
+  );
+}
+
+function usePreviewVisibility() {
+  const container = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const element = container.current;
+    if (!element) return;
+    if (typeof IntersectionObserver === "undefined") {
+      setVisible(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry?.isIntersecting) {
+          setVisible(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "180px" },
+    );
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  return { container, visible };
+}
+
+function ReportPreview({ surveyId, title }: { surveyId: string; title: string }) {
+  const { container, visible } = usePreviewVisibility();
+  const report = useQuery({
+    queryKey: queryKeys.surveyReport(surveyId),
+    queryFn: () => surveyApi.report(surveyId),
+    enabled: visible,
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+
   return (
-    <div className={styles.surveyReportThumbnail} aria-hidden="true">
+    <div ref={container} className={styles.surveyReportThumbnail} aria-hidden="true">
       <div className={styles.surveyReportPaper}>
-        <span />
-        <small>SCHOLIGHT SURVEY</small>
-        <strong>{title}</strong>
-        <i />
-        <i />
+        <div className={styles.surveyReportPreviewHeader}>
+          <span />
+          <strong>{title}</strong>
+        </div>
+        <div className={styles.surveyReportPreviewBody}>
+          {report.data ? (
+            <SurveyMarkdown markdown={previewMarkdown(report.data)} compact preview />
+          ) : report.error ? (
+            <p className={styles.surveyReportPreviewUnavailable}>Preview unavailable</p>
+          ) : (
+            <div className={styles.surveyReportPreviewLoading}>
+              <span />
+              <span />
+              <span />
+              <span />
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -136,7 +202,7 @@ export function CompletedSurveyList({
               to={surveyReportPath(survey.id)}
               key={survey.id}
             >
-              <ReportPreview title={survey.title} />
+              <ReportPreview surveyId={survey.id} title={survey.title} />
               <div className={styles.surveyReportCardBody}>
                 <h3>{survey.title}</h3>
                 <div>
