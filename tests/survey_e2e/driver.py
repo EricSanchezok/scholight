@@ -59,7 +59,12 @@ async def _poll_draft(
     raise AssertionError("Draft did not become ready")
 
 
-async def _poll_survey(client: httpx.AsyncClient, survey_id: str) -> dict[str, Any]:
+async def _poll_survey(
+    client: httpx.AsyncClient,
+    survey_id: str,
+    *,
+    expected_status: str = "succeeded",
+) -> dict[str, Any]:
     observed: set[str] = set()
     for _ in range(240):
         progress = await client.get(f"{API}/surveys/{survey_id}/progress")
@@ -68,12 +73,11 @@ async def _poll_survey(client: httpx.AsyncClient, survey_id: str) -> dict[str, A
         response = await client.get(f"{API}/surveys/{survey_id}")
         response.raise_for_status()
         survey = response.json()
-        if survey["status"] == "failed":
+        if survey["status"] == expected_status:
             if not ({"waiting_for_execution", "finalizing", "completed"} & observed):
                 raise AssertionError(f"no public progress stages were observed: {observed}")
-            assert survey["error_code"] == "survey_report_missing"
             return survey
-        if survey["status"] in {"succeeded", "cancelled"}:
+        if survey["status"] in {"succeeded", "failed", "cancelled"}:
             raise AssertionError(f"Survey entered {survey['status']}: {survey}")
         await asyncio.sleep(1)
     raise AssertionError("Survey did not finish")
@@ -112,7 +116,7 @@ async def _assert_database_and_archive(s3: Any, survey_id: str) -> tuple[str, st
             survey_id,
         )
         assert job is not None
-        assert job["terminal_outcome"] == "failed"
+        assert job["terminal_outcome"] == "succeeded"
         manifest = json.loads(_read_object(s3, job["manifest_key"]))
         paths = {item["path"] for item in manifest["files"]}
         assert {
@@ -126,12 +130,12 @@ async def _assert_database_and_archive(s3: Any, survey_id: str) -> tuple[str, st
             "run/06_judge_panel.md",
             "run/00_outline.md",
             "run/sections/01_introduction.md",
+            "run/08_survey.md",
+            "run/index.md",
             "run/trajectory.jsonl",
             "run/diagnostics.json",
             "run.json",
         }.issubset(paths)
-        assert "run/08_survey.md" not in paths
-        assert "run/index.md" not in paths
         run_record = json.loads(
             _read_object(
                 s3, next(item["key"] for item in manifest["files"] if item["path"] == "run.json")
@@ -139,17 +143,21 @@ async def _assert_database_and_archive(s3: Any, survey_id: str) -> tuple[str, st
         )
         assert run_record["schema_version"] == 2
         assert run_record["process"]["return_code"] == 0
-        assert run_record["process"]["termination_reason"] == "report_missing"
-        assert run_record["diagnostics"]["last_successful_component"] == "survey_outline"
+        assert run_record["process"]["termination_reason"] == "completed"
+        assert run_record["diagnostics"]["last_successful_component"] in {
+            "survey_outline",
+            "survey_assembler",
+        }
         assert run_record["diagnostics"]["tool_counts"]["started"] > 0
         assert run_record["diagnostics"]["tool_counts"]["finished"] > 0
         assert run_record["diagnostics"]["tool_counts"]["failed"] == 0
-        missing = {
+        missing_errors = {
             anomaly["expected_artifact"]
             for anomaly in run_record["diagnostics"]["anomalies"]
             if anomaly["severity"] == "error"
         }
-        assert {"08_survey.md", "index.md"}.issubset(missing)
+        assert "08_survey.md" not in missing_errors
+        assert "index.md" not in missing_errors
         diagnostics_artifact = next(
             item for item in manifest["files"] if item["path"] == "run/diagnostics.json"
         )
@@ -175,7 +183,7 @@ async def _assert_database_and_archive(s3: Any, survey_id: str) -> tuple[str, st
         assert delegated >= 2
         assert quota is not None
         assert quota["reserved_count"] == 0
-        assert quota["succeeded_count"] == 0
+        assert quota["succeeded_count"] == 1
         return str(job["id"]), str(job["manifest_key"])
     finally:
         await connection.close()
@@ -188,13 +196,13 @@ async def _assert_public_report_and_artifacts(
     listing = await client.get(f"{API}/surveys", params={"view": "all"})
     listing.raise_for_status()
     listed = next(item for item in listing.json()["items"] if item["id"] == survey_id)
-    assert listed["report_available"] is False
+    assert listed["report_available"] is True
     assert listed["artifacts_available"] is True
-    assert listing.json()["quota"]["succeeded"] == 0
+    assert listing.json()["quota"]["succeeded"] == 1
 
     report = await client.get(f"{API}/surveys/{survey_id}/report")
-    assert report.status_code == 409
-    assert report.json()["detail"]["code"] == "survey_report_not_available"
+    report.raise_for_status()
+    assert "real Survey graph" in report.text
 
     artifacts = await client.get(f"{API}/surveys/{survey_id}/artifacts")
     artifacts.raise_for_status()
@@ -206,7 +214,7 @@ async def _assert_public_report_and_artifacts(
     assert hashlib.sha256(download.content).hexdigest() == diagnostics_artifact["sha256"]
 
 
-async def _assert_real_graph_runtime_gap(client: httpx.AsyncClient) -> None:
+async def _assert_real_graph_reaches_assembler(client: httpx.AsyncClient) -> None:
     response = await client.get("http://model:8080/stats")
     response.raise_for_status()
     counts = response.json()["request_counts"]
@@ -220,7 +228,7 @@ async def _assert_real_graph_runtime_gap(client: httpx.AsyncClient) -> None:
         "section_expander",
     ):
         assert counts.get(component, 0) > 0
-    assert counts.get("survey_assembler", 0) == 0
+    assert counts.get("survey_assembler", 0) > 0
 
 
 async def _assert_missing_candidate_pool_diagnostics(
@@ -267,24 +275,30 @@ async def _assert_missing_candidate_pool_diagnostics(
             survey_id,
         )
         assert job is not None
-        assert job["terminal_outcome"] == "failed"
+        assert job["terminal_outcome"] == "succeeded"
         manifest = json.loads(_read_object(s3, job["manifest_key"]))
         paths = {item["path"] for item in manifest["files"]}
         assert "run/02_candidate_pool.md" not in paths
         assert "run/03_expansion.md" in paths
+        assert "run/08_survey.md" in paths
+        assert "run/index.md" in paths
         run_record = json.loads(
             _read_object(
                 s3, next(item["key"] for item in manifest["files"] if item["path"] == "run.json")
             )
         )
         assert run_record["process"]["return_code"] == 0
+        assert run_record["process"]["termination_reason"] == "completed"
         assert run_record["diagnostics"]["first_anomaly"] == {
             "component": "discovery_merger",
             "expected_artifact": "02_candidate_pool.md",
             "kind": "required_artifact_missing",
             "severity": "error",
         }
-        assert run_record["diagnostics"]["last_successful_component"] == "survey_outline"
+        assert run_record["diagnostics"]["last_successful_component"] in {
+            "survey_outline",
+            "survey_assembler",
+        }
         assert run_record["diagnostics"]["affected_components"] == [
             "expansion",
             "rank_pool",
@@ -616,7 +630,7 @@ async def main() -> None:
             client,
             s3,
         )
-        await _assert_real_graph_runtime_gap(client)
+        await _assert_real_graph_reaches_assembler(client)
         cancelled_survey_id = await _assert_running_cancel(client)
         cancelled_artifacts = await client.get(f"{API}/surveys/{cancelled_survey_id}/artifacts")
         cancelled_artifacts.raise_for_status()

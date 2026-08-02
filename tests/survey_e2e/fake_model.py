@@ -135,16 +135,20 @@ def _response(message: dict[str, Any], *, finish_reason: str) -> dict[str, Any]:
     }
 
 
-def _stage(serialized: str, tool_names: list[str], called_names: list[str]) -> str | None:
-    del tool_names
-    stage = next((stage for marker, stage in _STAGE_MARKERS.items() if marker in serialized), None)
-    if stage == "section_expander" and (
-        _tool_with_suffix(called_names, "spawn_SectionExpander") is not None
-    ):
-        return "survey_outline"
-    if stage == "paper_card" and _tool_with_suffix(called_names, "spawn_PaperCard") is not None:
-        return "card_plan"
-    return stage
+def _stage(body: dict[str, Any]) -> str | None:
+    messages = body.get("messages", [])
+    current_system_prompt = json.dumps(
+        [
+            message
+            for message in messages
+            if isinstance(message, dict) and message.get("role") == "system"
+        ],
+        ensure_ascii=False,
+    )
+    return next(
+        (stage for marker, stage in _STAGE_MARKERS.items() if marker in current_system_prompt),
+        None,
+    )
 
 
 def _tool_with_suffix(names: list[str], suffix: str) -> str | None:
@@ -234,7 +238,7 @@ async def completion(request: Request, path: str) -> dict[str, Any]:
         for message in messages
         if isinstance(message, dict) and message.get("role") == "tool"
     ]
-    stage = _stage(serialized, names, called_names)
+    stage = _stage(body)
     if stage is None:
         _REQUEST_COUNTS["draft"] += 1
         if "SLOW_E2E_DRAFT" in serialized and not tool_results:

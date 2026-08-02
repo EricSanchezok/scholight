@@ -128,19 +128,6 @@ def audit_workflow_contracts() -> tuple[WorkflowConflict, ...]:
             )
         )
 
-    production_dockerfile = _read("docker/scholight-api/Dockerfile")
-    if pipeline.count("spawns =") >= 2 and "ARG RCM_VERSION=v0.2.6" in production_dockerfile:
-        conflicts.append(
-            WorkflowConflict(
-                code="sequential_spawn_runtime_gap",
-                summary=(
-                    "RCM 0.2.6 exits the real graph after its second spawn-capable stage, "
-                    "before SurveyAssembler runs."
-                ),
-                evidence=("rcm/survey_pipeline.rcm", "docker/scholight-api/Dockerfile"),
-            )
-        )
-
     e2e_dockerfile = _read("tests/survey_e2e/Dockerfile")
     if "tests/survey_e2e/workflows/survey_pipeline.rcm" in e2e_dockerfile:
         conflicts.append(

@@ -129,7 +129,6 @@ def test_contract_audit_classifies_every_known_definition_gap() -> None:
         "image_status_enum_conflict",
         "judge_verdict_unvalidated",
         "progress_stream_dependency",
-        "sequential_spawn_runtime_gap",
         "section_definition_conflict",
         "spawn_expectations_not_persisted",
     }
