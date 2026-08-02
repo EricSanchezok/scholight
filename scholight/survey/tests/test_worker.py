@@ -14,7 +14,7 @@ import pytest
 from scholight.config import settings
 from scholight.db.queries_survey import SurveyJob
 from scholight.survey.artifacts import SurveyArchive
-from scholight.survey.diagnostics import SurveyDiagnostics
+from scholight.survey.diagnostics import ARTIFACT_CONTRACTS, SurveyDiagnostics
 from scholight.survey.process import ProcessControl
 from scholight.survey.worker import (
     RCM_VERSION,
@@ -108,6 +108,22 @@ class _CompletedProcess:
 
     async def wait(self) -> int:
         return self.returncode
+
+
+def _write_complete_workflow_artifacts(run_root: Path) -> None:
+    for relative_path in {
+        relative_path for contract in ARTIFACT_CONTRACTS for relative_path in contract.required
+    }:
+        path = run_root / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("observed", encoding="utf-8")
+    sections = run_root / "sections"
+    sections.mkdir(exist_ok=True)
+    (sections / "01_introduction.md").write_text("## 1. Introduction", encoding="utf-8")
+    (run_root / "08_survey.md").write_text(
+        "# Survey\n\n## 1. Introduction\n\nBody.\n\n## References\n\n1. Paper.\n",
+        encoding="utf-8",
+    )
 
 
 @pytest.mark.asyncio
@@ -222,13 +238,13 @@ async def test_archive_failure_is_exposed_as_retrying_not_terminal(tmp_path: Pat
 
 
 @pytest.mark.asyncio
-async def test_success_requires_nonempty_regular_final_report(
+async def test_success_requires_complete_final_artifacts(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     job_id = uuid4()
     worker_id = uuid4()
-    (tmp_path / "08_survey.md").write_bytes(b"x" * (11 * 1024 * 1024))
+    _write_complete_workflow_artifacts(tmp_path)
     monkeypatch.setattr(settings, "survey_job_timeout_seconds", 60)
     monkeypatch.setattr(settings, "survey_mcp_jwt_secret", "s" * 32)
     monkeypatch.setattr(settings, "deepseek_api_key", "deepseek")
@@ -248,6 +264,106 @@ async def test_success_requires_nonempty_regular_final_report(
         )
 
     assert result.outcome == "succeeded"
+
+
+@pytest.mark.asyncio
+async def test_zero_exit_missing_index_is_contract_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job_id = uuid4()
+    worker_id = uuid4()
+    _write_complete_workflow_artifacts(tmp_path)
+    (tmp_path / "index.md").unlink()
+    monkeypatch.setattr(settings, "survey_job_timeout_seconds", 60)
+    monkeypatch.setattr(settings, "survey_mcp_jwt_secret", "s" * 32)
+    monkeypatch.setattr(settings, "deepseek_api_key", "deepseek")
+    monkeypatch.setattr(settings, "image_gen_api_key", "image")
+    process = _CompletedProcess()
+    with (
+        patch(
+            "scholight.survey.worker.asyncio.create_subprocess_exec",
+            new_callable=AsyncMock,
+            return_value=process,
+        ),
+        patch("scholight.survey.worker.write_stdin", new_callable=AsyncMock),
+    ):
+        result = await execute_survey(
+            _job(job_id=job_id, worker_id=worker_id, status="running"),
+            tmp_path,
+        )
+
+    assert result.error_code == "survey_contract_violation"
+
+
+@pytest.mark.asyncio
+async def test_zero_exit_report_omitting_generated_section_is_contract_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job_id = uuid4()
+    worker_id = uuid4()
+    _write_complete_workflow_artifacts(tmp_path)
+    (tmp_path / "sections" / "02_research_arc.md").write_text(
+        "## 2. Research Arc",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(settings, "survey_job_timeout_seconds", 60)
+    monkeypatch.setattr(settings, "survey_mcp_jwt_secret", "s" * 32)
+    monkeypatch.setattr(settings, "deepseek_api_key", "deepseek")
+    monkeypatch.setattr(settings, "image_gen_api_key", "image")
+    process = _CompletedProcess()
+    with (
+        patch(
+            "scholight.survey.worker.asyncio.create_subprocess_exec",
+            new_callable=AsyncMock,
+            return_value=process,
+        ),
+        patch("scholight.survey.worker.write_stdin", new_callable=AsyncMock),
+    ):
+        result = await execute_survey(
+            _job(job_id=job_id, worker_id=worker_id, status="running"),
+            tmp_path,
+        )
+
+    assert result.error_code == "survey_contract_violation"
+    assert result.diagnostics is not None
+    assert {anomaly["expected_artifact"] for anomaly in result.diagnostics["anomalies"]} >= {
+        "08_survey.md#section-02"
+    }
+
+
+@pytest.mark.asyncio
+async def test_zero_exit_report_without_references_is_contract_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job_id = uuid4()
+    worker_id = uuid4()
+    _write_complete_workflow_artifacts(tmp_path)
+    (tmp_path / "08_survey.md").write_text(
+        "# Survey\n\n## 1. Introduction\n\nBody.\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(settings, "survey_job_timeout_seconds", 60)
+    monkeypatch.setattr(settings, "survey_mcp_jwt_secret", "s" * 32)
+    monkeypatch.setattr(settings, "deepseek_api_key", "deepseek")
+    monkeypatch.setattr(settings, "image_gen_api_key", "image")
+    process = _CompletedProcess()
+    with (
+        patch(
+            "scholight.survey.worker.asyncio.create_subprocess_exec",
+            new_callable=AsyncMock,
+            return_value=process,
+        ),
+        patch("scholight.survey.worker.write_stdin", new_callable=AsyncMock),
+    ):
+        result = await execute_survey(
+            _job(job_id=job_id, worker_id=worker_id, status="running"),
+            tmp_path,
+        )
+
+    assert result.error_code == "survey_contract_violation"
 
 
 @pytest.mark.asyncio

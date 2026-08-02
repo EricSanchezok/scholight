@@ -107,15 +107,18 @@ def audit_workflow_contracts() -> tuple[WorkflowConflict, ...]:
         )
 
     worker = _read("scholight/survey/worker.py")
-    final_validator = worker.split("def _valid_final_report", maxsplit=1)[1].split(
-        "async def _collect_stage_timings", maxsplit=1
-    )[0]
-    if "08_survey.md" in final_validator and "index.md" not in final_validator:
+    diagnostics = _read("scholight/survey/diagnostics.py")
+    if not (
+        'ArtifactContract("survey_assembler", required=("08_survey.md", "index.md"))' in diagnostics
+        and "survey_contract_violation" in worker
+        and "section_missing_from_final_report" in diagnostics
+        and "references_missing_from_final_report" in diagnostics
+    ):
         conflicts.append(
             WorkflowConflict(
                 code="final_report_validation_incomplete",
-                summary="Worker success validation checks the report but not the required index.",
-                evidence=("worker.py", "prompts/survey_assembler.txt"),
+                summary="Worker success validation does not prove that final output is complete.",
+                evidence=("worker.py", "diagnostics.py", "prompts/survey_assembler.txt"),
             )
         )
 

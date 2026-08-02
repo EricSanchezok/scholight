@@ -26,6 +26,12 @@ _SECRET_VALUE = re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._~-]+|sk_(?:live|test)_[A
 _ABSOLUTE_PATH = re.compile(r"(?<![A-Za-z0-9._~-])/(?:[^\s:'\"]+/)+[^\s:'\"]+")
 _SAFE_ARXIV_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 _SAFE_SECTION_PART = re.compile(r"^[A-Za-z0-9-]{1,64}$")
+_SECTION_FILE = re.compile(r"^(\d+)_.*\.md$")
+_REPORT_SECTION_HEADING = re.compile(r"^##\s+0*(\d+)(?:\s*[.:—-]\s*|\s+)")
+_REPORT_REFERENCES_HEADING = re.compile(
+    r"^##\s+(?:\d+\s*[.:—-]\s*)?references\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -459,6 +465,52 @@ class SurveyDiagnostics:
             self._observed_artifacts[relative_path] = metadata
             self.record("artifact.observed", **metadata)
 
+    def _audit_final_report_content(self) -> None:
+        report = self.run_root / "08_survey.md"
+        if not _valid_artifact(self.run_root, "08_survey.md"):
+            return
+        expected_sections: set[int] = set()
+        try:
+            for path in (self.run_root / "sections").glob("*.md"):
+                match = _SECTION_FILE.fullmatch(path.name)
+                if match is not None and _valid_artifact(
+                    self.run_root,
+                    str(path.relative_to(self.run_root)),
+                ):
+                    expected_sections.add(int(match.group(1)))
+            observed_sections: set[int] = set()
+            has_references = False
+            with report.open(encoding="utf-8") as handle:
+                for line in handle:
+                    stripped = line.strip()
+                    section_match = _REPORT_SECTION_HEADING.match(stripped)
+                    if section_match is not None:
+                        observed_sections.add(int(section_match.group(1)))
+                    if _REPORT_REFERENCES_HEADING.match(stripped):
+                        has_references = True
+        except (OSError, UnicodeError):
+            self._record_anomaly(
+                component="survey_assembler",
+                expected_artifact="08_survey.md",
+                kind="final_report_unreadable",
+                severity="error",
+            )
+            return
+        for section_number in sorted(expected_sections - observed_sections):
+            self._record_anomaly(
+                component="survey_assembler",
+                expected_artifact=f"08_survey.md#section-{section_number:02d}",
+                kind="section_missing_from_final_report",
+                severity="error",
+            )
+        if expected_sections and not has_references:
+            self._record_anomaly(
+                component="survey_assembler",
+                expected_artifact="08_survey.md#references",
+                kind="references_missing_from_final_report",
+                severity="error",
+            )
+
     def finalize_contract_audit(self) -> None:
         """Take a final diagnostic snapshot after the existing workflow has stopped."""
         self.observe_artifacts()
@@ -477,6 +529,7 @@ class SurveyDiagnostics:
                         kind="required_artifact_missing",
                         severity="error",
                     )
+        self._audit_final_report_content()
         for contract in ARTIFACT_CONTRACTS:
             for relative_path in contract.optional:
                 if not _valid_artifact(self.run_root, relative_path):

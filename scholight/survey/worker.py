@@ -540,12 +540,49 @@ async def execute_survey(
                 stderr_tail=stderr_tail or None,
                 diagnostics=diagnostic_summary,
             )
+        diagnostics.finalize_contract_audit()
+        audited_diagnostics = diagnostics.snapshot()
+        raw_anomalies = audited_diagnostics.get("anomalies")
+        anomalies = raw_anomalies if isinstance(raw_anomalies, list) else []
+        contract_errors = [
+            anomaly
+            for anomaly in anomalies
+            if isinstance(anomaly, dict) and anomaly.get("severity") == "error"
+        ]
+        if contract_errors:
+            diagnostic_summary = _finish_diagnostics(
+                diagnostics,
+                outcome="failed",
+                return_code=return_code,
+                termination_reason="contract_violation",
+                audit_contract=False,
+            )
+            logger.error(
+                "survey_rcm_failed",
+                job_id=str(job.id),
+                return_code=return_code,
+                diagnostics=stderr_tail,
+                first_anomaly=diagnostic_summary.get("first_anomaly"),
+                contract_error_count=len(contract_errors),
+            )
+            return SurveyExecutionResult(
+                outcome="failed",
+                error_code="survey_contract_violation",
+                error_message="Survey generation produced incomplete required artifacts.",
+                started_at=started_at,
+                finished_at=datetime.now(UTC),
+                stage_timings=stage_timings,
+                return_code=return_code,
+                termination_reason="contract_violation",
+                stderr_tail=stderr_tail or None,
+                diagnostics=diagnostic_summary,
+            )
         diagnostic_summary = _finish_diagnostics(
             diagnostics,
             outcome="succeeded",
             return_code=return_code,
             termination_reason="completed",
-            audit_contract=True,
+            audit_contract=False,
         )
         return SurveyExecutionResult(
             outcome="succeeded",

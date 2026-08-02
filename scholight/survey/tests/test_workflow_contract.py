@@ -145,7 +145,6 @@ def test_contract_audit_classifies_every_known_definition_gap() -> None:
         "card_plan_definition_conflict",
         "completion_artifact_gap",
         "empty_artifact_undefined",
-        "final_report_validation_incomplete",
         "image_status_enum_conflict",
         "judge_verdict_unvalidated",
         "progress_stream_dependency",
