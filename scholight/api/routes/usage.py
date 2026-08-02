@@ -37,6 +37,7 @@ from scholight.api.usage import (
 from scholight.config import settings
 from scholight.db.client import DBError
 from scholight.db.queries_quota import get_user_quota_status
+from scholight.db.queries_survey_views import get_survey_quota_snapshot
 from scholight.db.queries_usage import (
     query_latency,
     query_usage_records,
@@ -81,11 +82,17 @@ def _quota(value: QuotaStatus | None) -> DailyQuotaUsage:
 async def usage_summary(
     current_user: UserRecord = Depends(get_current_user),
 ) -> UsageSummaryResponse:
+    now = datetime.now(UTC)
     try:
         quotas = await get_user_quota_status(
             current_user.id,
             standard_default_limit=settings.authenticated_standard_daily_limit,
             thorough_default_limit=settings.authenticated_thorough_daily_limit,
+        )
+        survey_quota = await get_survey_quota_snapshot(
+            user_id=current_user.id,
+            quota_date=now.date(),
+            daily_limit=settings.survey_daily_limit,
         )
         stats = await query_usage_summary(current_user.id)
     except Exception as exc:
@@ -99,14 +106,19 @@ async def usage_summary(
     by_strength = {quota.strength: quota for quota in quotas}
     standard = _quota(by_strength.get("standard"))
     thorough = _quota(by_strength.get("thorough"))
+    survey = DailyQuotaUsage(
+        used=survey_quota.reserved + survey_quota.succeeded,
+        daily_limit=survey_quota.daily_limit,
+        remaining=survey_quota.remaining,
+    )
     success = int(stats["success_count"])
     degraded = int(stats["degraded_count"])
     failed = int(stats["failed_count"])
     attempts = success + degraded + failed
-    tomorrow = datetime.now(UTC).date() + timedelta(days=1)
+    tomorrow = now.date() + timedelta(days=1)
     return UsageSummaryResponse(
         reset_at=datetime.combine(tomorrow, datetime.min.time(), tzinfo=UTC),
-        today=TodayUsage(standard=standard, thorough=thorough),
+        today=TodayUsage(standard=standard, thorough=thorough, survey=survey),
         searches_today=standard.used + thorough.used,
         searches_this_month=int(stats["searches_this_month"]),
         typical_response_ms=(

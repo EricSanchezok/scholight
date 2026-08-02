@@ -2208,11 +2208,14 @@
           "standard": {
             "$ref": "#/components/schemas/DailyQuotaUsage"
           },
+          "survey": {
+            "$ref": "#/components/schemas/DailyQuotaUsage"
+          },
           "thorough": {
             "$ref": "#/components/schemas/DailyQuotaUsage"
           }
         },
-        "required": ["standard", "thorough"],
+        "required": ["standard", "thorough", "survey"],
         "title": "TodayUsage",
         "type": "object"
       },

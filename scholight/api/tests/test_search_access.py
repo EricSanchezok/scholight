@@ -72,6 +72,14 @@ def test_server_concurrency_limit_defaults_to_last_resort_guard(
     assert loaded.server_limit_concurrency == 96
 
 
+def test_survey_daily_limit_defaults_to_three(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("SCHOLIGHT_SURVEY_DAILY_LIMIT", raising=False)
+
+    loaded = Settings(_env_file=None)  # type: ignore[call-arg]
+
+    assert loaded.survey_daily_limit == 3
+
+
 def test_server_concurrency_limit_can_be_enabled_explicitly(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

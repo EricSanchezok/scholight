@@ -137,7 +137,7 @@ class Settings(BaseSettings):
     survey_s3_bucket: str = ""
     survey_s3_endpoint_url: str | None = None
     survey_enabled: bool = False
-    survey_daily_limit: int = Field(default=5, ge=1, le=100)
+    survey_daily_limit: int = Field(default=3, ge=1, le=100)
     survey_draft_timeout_seconds: int = Field(default=1800, ge=60, le=3600)
     survey_job_timeout_seconds: int = Field(default=86400, ge=60, le=172800)
     survey_draft_concurrency: int = Field(default=8, ge=1, le=64)

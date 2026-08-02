@@ -77,6 +77,7 @@ async function mockAccountCenter(page: Page) {
         today: {
           standard: { used: 18, daily_limit: 100, remaining: 82 },
           thorough: { used: 4, daily_limit: 30, remaining: 26 },
+          survey: { used: 1, daily_limit: 3, remaining: 2 },
         },
         reset_at: "2026-07-23T00:00:00Z",
         timezone: "UTC",
@@ -329,7 +330,7 @@ test("signed-in survey controls follow the shared page geometry", async ({ page 
     route.fulfill({
       json: {
         items: [],
-        quota: { daily_limit: 5, reserved: 0, succeeded: 0, remaining: 5 },
+        quota: { daily_limit: 3, reserved: 0, succeeded: 0, remaining: 3 },
         next_cursor: null,
       },
     }),

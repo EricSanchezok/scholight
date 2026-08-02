@@ -228,6 +228,27 @@ async def list_survey_summaries(
     )
 
 
+async def get_survey_quota_snapshot(
+    *, user_id: int, quota_date: date, daily_limit: int
+) -> SurveyQuotaSnapshot:
+    """Read today's lightweight Survey quota projection for account usage views."""
+    try:
+        row = await get_pool().fetchrow(
+            "SELECT reserved_count, succeeded_count FROM scholight.survey_daily_usage "
+            "WHERE user_id = $1 AND usage_date = $2",
+            user_id,
+            quota_date,
+        )
+    except asyncpg.PostgresError as exc:
+        logger.error("survey_quota_read_failed", error_type=type(exc).__name__)
+        raise DBError("Failed to read Survey quota") from exc
+    return SurveyQuotaSnapshot(
+        daily_limit=daily_limit,
+        reserved=int(row["reserved_count"]) if row is not None else 0,
+        succeeded=int(row["succeeded_count"]) if row is not None else 0,
+    )
+
+
 async def get_survey_artifact_reference(
     *, survey_id: UUID, user_id: int
 ) -> SurveyArtifactReference | None:
@@ -266,5 +287,6 @@ __all__ = [
     "SurveySummary",
     "SurveySummaryPage",
     "get_survey_artifact_reference",
+    "get_survey_quota_snapshot",
     "list_survey_summaries",
 ]

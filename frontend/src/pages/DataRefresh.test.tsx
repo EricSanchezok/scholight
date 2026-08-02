@@ -89,6 +89,7 @@ describe("private data refresh controls", () => {
         today: {
           standard: { used: 0, daily_limit: 10, remaining: 10 },
           thorough: { used: 0, daily_limit: 2, remaining: 2 },
+          survey: { used: 1, daily_limit: 3, remaining: 2 },
         },
         reset_at: "2026-07-24T00:00:00Z",
         timezone: "UTC",
@@ -151,6 +152,15 @@ describe("private data refresh controls", () => {
       expect(usageApi.latency).toHaveBeenCalledTimes(2);
       expect(usageApi.records).toHaveBeenCalledTimes(2);
     });
+  });
+
+  it("shows today's Survey allowance with the search quotas", async () => {
+    renderPage(<UsagePage />);
+
+    expect(await screen.findByRole("progressbar", { name: "survey quota used" })).toHaveAttribute(
+      "aria-valuemax",
+      "3",
+    );
   });
 
   it("refreshes active sessions independently", async () => {

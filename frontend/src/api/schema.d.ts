@@ -1655,6 +1655,7 @@ export interface components {
     /** TodayUsage */
     TodayUsage: {
       standard: components["schemas"]["DailyQuotaUsage"];
+      survey: components["schemas"]["DailyQuotaUsage"];
       thorough: components["schemas"]["DailyQuotaUsage"];
     };
     /** UpdateAccessKeyRequest */

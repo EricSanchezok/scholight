@@ -120,18 +120,18 @@ export function UsagePage() {
           ) : summary.data ? (
             <Reveal name="quota-content">
               <div className={styles.quotaMetrics}>
-                {(["standard", "thorough"] as const).map((strength) => {
-                  const quota = summary.data.today[strength];
+                {(["standard", "thorough", "survey"] as const).map((kind) => {
+                  const quota = summary.data.today[kind];
+                  const label = kind === "survey" ? "SURVEY" : `${kind.toUpperCase()} SEARCH`;
+                  const unit = kind === "survey" ? "surveys" : "searches";
                   const percent =
                     quota.daily_limit > 0
                       ? Math.min(100, (quota.used / quota.daily_limit) * 100)
                       : 0;
                   return (
-                    <div className={styles.quotaMetric} key={strength}>
-                      <span
-                        className={strength === "standard" ? styles.brandLabel : styles.mutedLabel}
-                      >
-                        {strength.toUpperCase()} SEARCH
+                    <div className={styles.quotaMetric} key={kind}>
+                      <span className={kind === "thorough" ? styles.mutedLabel : styles.brandLabel}>
+                        {label}
                       </span>
                       <strong>
                         {quota.daily_limit > 0
@@ -140,7 +140,7 @@ export function UsagePage() {
                       </strong>
                       <p>
                         {quota.daily_limit > 0
-                          ? `${quota.remaining} searches remaining today`
+                          ? `${quota.remaining} ${unit} remaining today`
                           : "No daily allowance is configured."}
                       </p>
                       <div
@@ -149,7 +149,7 @@ export function UsagePage() {
                         aria-valuenow={quota.used}
                         aria-valuemin={0}
                         aria-valuemax={quota.daily_limit}
-                        aria-label={`${strength} quota used`}
+                        aria-label={`${kind} quota used`}
                       >
                         <m.span {...quotaProgressMotion} animate={{ width: `${percent}%` }} />
                       </div>
@@ -161,6 +161,7 @@ export function UsagePage() {
           ) : (
             <SkeletonPulse label="Loading today’s usage">
               <div className={styles.skeletonQuota}>
+                <span />
                 <span />
                 <span />
               </div>
