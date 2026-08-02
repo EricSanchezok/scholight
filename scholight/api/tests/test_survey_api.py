@@ -629,6 +629,58 @@ async def test_report_streams_manifest_authorized_markdown_for_owner(
     )
 
 
+async def test_report_download_streams_owner_scoped_zip_package(
+    api_app: FastAPI,
+    api_client: httpx.AsyncClient,
+    active_user: UserRecord,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _authenticate(api_app, active_user)
+    monkeypatch.setattr(settings, "survey_enabled", True)
+    survey_id = uuid4()
+    job_id = uuid4()
+    storage_prefix = f"surveys/v1/{active_user.id}/{job_id}"
+    reference = SurveyArtifactReference(
+        survey_id=survey_id,
+        user_id=active_user.id,
+        job_id=job_id,
+        survey_status="succeeded",
+        job_status="finished",
+        terminal_outcome="succeeded",
+        storage_bucket="private-bucket",
+        storage_prefix=storage_prefix,
+        manifest_key=f"{storage_prefix}/manifest.json",
+    )
+    stream = SurveyArtifactStream(
+        path="scholight-survey.zip",
+        size=7,
+        sha256="b" * 64,
+        content_type="application/zip",
+        _body=io.BytesIO(b"package"),
+    )
+    store = AsyncMock()
+    store.build_report_package.return_value = stream
+    with (
+        patch(
+            "scholight.api.routes.survey.get_survey_artifact_reference",
+            new_callable=AsyncMock,
+            return_value=reference,
+        ),
+        patch("scholight.api.routes.survey._artifact_store", return_value=store),
+    ):
+        response = await api_client.get(f"/surveys/{survey_id}/download")
+
+    assert response.status_code == 200
+    assert response.content == b"package"
+    assert response.headers["content-type"] == "application/zip"
+    assert response.headers["content-disposition"] == (
+        f'attachment; filename="scholight-survey-{survey_id}.zip"'
+    )
+    store.build_report_package.assert_awaited_once_with(
+        manifest_key=f"{storage_prefix}/manifest.json"
+    )
+
+
 async def test_artifacts_hide_storage_keys_and_use_short_lived_urls(
     api_app: FastAPI,
     api_client: httpx.AsyncClient,

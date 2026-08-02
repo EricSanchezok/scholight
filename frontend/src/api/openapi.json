@@ -3958,6 +3958,48 @@
         "tags": ["survey"]
       }
     },
+    "/surveys/{survey_id}/download": {
+      "get": {
+        "operationId": "survey_report_download_surveys__survey_id__download_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "survey_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Survey Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/zip": {}
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Survey Report Download",
+        "tags": ["survey"]
+      }
+    },
     "/surveys/{survey_id}/drafts": {
       "get": {
         "operationId": "survey_drafts_surveys__survey_id__drafts_get",

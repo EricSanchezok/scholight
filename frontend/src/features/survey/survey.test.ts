@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { SurveyArtifact, SurveyProgress } from "../../api/types";
 import {
+  archiveFilename,
   artifactUrlMap,
   markdownFilename,
   queueAhead,
@@ -55,6 +56,10 @@ describe("Survey presentation helpers", () => {
 
   it("creates a filesystem-safe Markdown filename", () => {
     expect(markdownFilename("AI & scientific work: 2026")).toBe("AI-scientific-work-2026.md");
+  });
+
+  it("creates a filesystem-safe report package filename", () => {
+    expect(archiveFilename("AI & scientific work: 2026")).toBe("AI-scientific-work-2026.zip");
   });
 
   it("prefers the generated survey title", () => {

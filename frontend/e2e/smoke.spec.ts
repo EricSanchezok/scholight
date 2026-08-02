@@ -435,6 +435,60 @@ test("completed survey cards render a stable live Markdown preview", async ({ pa
   await expect(page.getByText("Chain-of-thought compression and evaluation")).toHaveCount(1);
 });
 
+test("a completed report downloads as a Markdown and image package", async ({ page }) => {
+  await mockAuthenticated(page);
+  const surveyId = "00000000-0000-0000-0000-000000000001";
+  await page.route(`**/api/surveys/${surveyId}`, (route) =>
+    route.fulfill({
+      json: {
+        id: surveyId,
+        title: "Chain-of-thought compression and evaluation",
+        initial_request: "Survey reasoning compression.",
+        status: "succeeded",
+        quota_state: "consumed",
+        error_code: null,
+        error_message: null,
+        created_at: "2026-08-02T06:00:00Z",
+        updated_at: "2026-08-02T07:37:00Z",
+        started_at: "2026-08-02T06:10:00Z",
+        finished_at: "2026-08-02T07:37:00Z",
+      },
+    }),
+  );
+  await page.route(`**/api/surveys/${surveyId}/report`, (route) =>
+    route.fulfill({
+      contentType: "text/markdown",
+      body: "# Report\n\nFinal paragraph.\n\n<!--M4-->",
+    }),
+  );
+  await page.route(`**/api/surveys/${surveyId}/artifacts`, (route) =>
+    route.fulfill({
+      json: {
+        survey_id: surveyId,
+        expires_at: "2026-08-02T07:42:00Z",
+        items: [],
+      },
+    }),
+  );
+  await page.route(`**/api/surveys/${surveyId}/download`, (route) =>
+    route.fulfill({
+      contentType: "application/zip",
+      headers: {
+        "Content-Disposition": `attachment; filename="scholight-survey-${surveyId}.zip"`,
+      },
+      body: "package",
+    }),
+  );
+  await page.goto(`/survey/${surveyId}/report`);
+
+  await expect(page.getByText("<!--M4-->")).not.toBeVisible();
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download ZIP" }).click();
+  const download = await downloadPromise;
+
+  expect(download.suggestedFilename()).toBe("Chain-of-thought-compression-and-evaluation.zip");
+});
+
 test("a delayed search immediately shows a stable editorial skeleton", async ({ page }) => {
   await page.route("**/api/search", async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 500));

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import zipfile
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -250,6 +251,75 @@ async def test_open_artifact_rejects_path_not_in_manifest(tmp_path: Path) -> Non
             manifest_key=archive.manifest_key,
             path="run/../secret.txt",
         )
+
+
+@pytest.mark.asyncio
+async def test_report_package_contains_final_markdown_and_images(tmp_path: Path) -> None:
+    (tmp_path / "08_survey.md").write_text("# Survey", encoding="utf-8")
+    (tmp_path / "08_global_picture.png").write_bytes(b"image")
+    fake = _FakeS3()
+    store = SurveyArtifactStore(bucket="survey-test", client=fake)
+    archive = await store.archive_run(
+        user_id=42,
+        job_id=uuid4(),
+        run_root=tmp_path,
+        run_metadata={"outcome": "succeeded"},
+    )
+
+    package = await store.build_report_package(manifest_key=archive.manifest_key)
+    body = b"".join([chunk async for chunk in package.chunks()])
+
+    with zipfile.ZipFile(io.BytesIO(body)) as report_zip:
+        assert sorted(report_zip.namelist()) == [
+            "08_global_picture.png",
+            "08_survey.md",
+            "manifest.json",
+        ]
+
+
+@pytest.mark.asyncio
+async def test_report_package_excludes_internal_workflow_artifacts(tmp_path: Path) -> None:
+    (tmp_path / "08_survey.md").write_text("# Survey", encoding="utf-8")
+    (tmp_path / "paper.pdf").write_bytes(b"pdf")
+    (tmp_path / "cards").mkdir()
+    (tmp_path / "cards" / "paper.md").write_text("Evidence", encoding="utf-8")
+    fake = _FakeS3()
+    store = SurveyArtifactStore(bucket="survey-test", client=fake)
+    archive = await store.archive_run(
+        user_id=42,
+        job_id=uuid4(),
+        run_root=tmp_path,
+        run_metadata={"outcome": "succeeded"},
+    )
+
+    package = await store.build_report_package(manifest_key=archive.manifest_key)
+    body = b"".join([chunk async for chunk in package.chunks()])
+
+    with zipfile.ZipFile(io.BytesIO(body)) as report_zip:
+        assert "paper.pdf" not in report_zip.namelist()
+        assert "cards/paper.md" not in report_zip.namelist()
+
+
+@pytest.mark.asyncio
+async def test_report_package_removes_internal_assembly_markers(tmp_path: Path) -> None:
+    (tmp_path / "08_survey.md").write_text(
+        "# Survey\n\nFinal paragraph.\n\n<!--M4-->\n",
+        encoding="utf-8",
+    )
+    fake = _FakeS3()
+    store = SurveyArtifactStore(bucket="survey-test", client=fake)
+    archive = await store.archive_run(
+        user_id=42,
+        job_id=uuid4(),
+        run_root=tmp_path,
+        run_metadata={"outcome": "succeeded"},
+    )
+
+    package = await store.build_report_package(manifest_key=archive.manifest_key)
+    body = b"".join([chunk async for chunk in package.chunks()])
+
+    with zipfile.ZipFile(io.BytesIO(body)) as report_zip:
+        assert b"<!--M4-->" not in report_zip.read("08_survey.md")
 
 
 @pytest.mark.asyncio
