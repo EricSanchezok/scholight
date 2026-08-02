@@ -11,7 +11,11 @@ from uuid import uuid4
 import pytest
 from click.testing import CliRunner
 
-from scholight.cli.survey import _installed_rcm_version, survey_group
+from scholight.cli.survey import (
+    _installed_rcm_version,
+    _verify_diagnostic_workspace,
+    survey_group,
+)
 from scholight.config import settings
 
 
@@ -87,3 +91,9 @@ def test_diagnose_reads_active_workspace_without_database(
     assert payload["source"] == "workspace"
     assert payload["last_successful_component"] == "query_plan"
     assert payload["first_anomaly"]["expected_artifact"] == "02_candidate_pool.md"
+
+
+def test_smoke_diagnostic_workspace_probe_cleans_up(tmp_path: Path) -> None:
+    _verify_diagnostic_workspace(tmp_path)
+
+    assert list(tmp_path.iterdir()) == []

@@ -295,6 +295,75 @@ Resources:
       TreatMissingData: notBreaching
       AlarmActions: [!Ref AlertTopic]
 
+  SurveyContractAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: Scholight-Survey-Contract-Anomaly
+      Namespace: Scholight/Production
+      MetricName: SurveyContractAnomaly
+      Dimensions:
+        - Name: service
+          Value: survey-worker
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+  SurveyRuntimeFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: Scholight-Survey-Runtime-Failure
+      Namespace: Scholight/Production
+      MetricName: SurveyRuntimeFailure
+      Dimensions:
+        - Name: service
+          Value: survey-worker
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+  SurveyDiagnosticsFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: Scholight-Survey-Diagnostics-Failure
+      Namespace: Scholight/Production
+      MetricName: SurveyDiagnosticsWriteFailure
+      Dimensions:
+        - Name: service
+          Value: survey-worker
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+  SurveyStalledAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: Scholight-Survey-No-Activity
+      Namespace: Scholight/Production
+      MetricName: SurveyLastActivityAge
+      Dimensions:
+        - Name: service
+          Value: survey-worker
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+      Threshold: 1800
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
   Dashboard:
     Type: AWS::CloudWatch::Dashboard
     Properties:
@@ -409,6 +478,38 @@ Resources:
                   [".", "UsageQueueDropped", ".", ".", ".", ".", {"stat": "Sum"}]
                 ],
                 "period": 60
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0, "y": 24, "width": 12, "height": 6,
+              "properties": {
+                "region": "${AWS::Region}",
+                "title": "Survey outcomes and duration",
+                "metrics": [
+                  ["Scholight/Production", "SurveyJobCount", "service", "survey-worker", "outcome", "succeeded", {"stat": "Sum"}],
+                  [".", ".", ".", ".", ".", "failed", {"stat": "Sum"}],
+                  [".", ".", ".", ".", ".", "cancelled", {"stat": "Sum"}],
+                  [".", "SurveyJobDuration", ".", ".", "outcome", "succeeded", {"stat": "p95", "yAxis": "right"}],
+                  [".", ".", ".", ".", ".", "failed", {"stat": "p95", "yAxis": "right"}]
+                ],
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12, "y": 24, "width": 12, "height": 6,
+              "properties": {
+                "region": "${AWS::Region}",
+                "title": "Survey failures and activity",
+                "metrics": [
+                  ["Scholight/Production", "SurveyContractAnomaly", "service", "survey-worker", {"stat": "Sum"}],
+                  [".", "SurveyRuntimeFailure", ".", ".", {"stat": "Sum"}],
+                  [".", "SurveyToolFailure", ".", ".", {"stat": "Sum"}],
+                  [".", "SurveyDiagnosticsWriteFailure", ".", ".", {"stat": "Sum"}],
+                  [".", "SurveyLastActivityAge", ".", ".", {"stat": "Maximum", "yAxis": "right"}]
+                ],
+                "period": 300
               }
             }
           ]

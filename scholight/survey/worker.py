@@ -309,6 +309,11 @@ def _emit_result_metrics(result: SurveyExecutionResult) -> None:
         metrics={
             "SurveyJobCount": (1, "Count"),
             "SurveyJobDuration": (duration_ms, "Milliseconds"),
+        },
+    )
+    emit_emf(
+        service="survey-worker",
+        metrics={
             "SurveyContractAnomaly": (contract_errors, "Count"),
             "SurveyRuntimeFailure": (1 if result.outcome == "failed" else 0, "Count"),
             "SurveyToolFailure": (tool_failures, "Count"),
@@ -663,6 +668,7 @@ async def _archive(
     if not run_root.is_dir():
         job = await mark_survey_workspace_missing(job_id=job.id, worker_id=worker_id)
         run_root.mkdir(parents=True, exist_ok=True)
+    logger.info("survey_archive_started", job_id=str(job.id))
     try:
         archive = await artifact_store.archive_run(
             user_id=job.user_id,
@@ -675,6 +681,11 @@ async def _archive(
             worker_id=worker_id,
             storage_bucket=settings.survey_s3_bucket,
             storage_prefix=archive.storage_prefix,
+            manifest_key=archive.manifest_key,
+        )
+        logger.info(
+            "survey_archive_finished",
+            job_id=str(job.id),
             manifest_key=archive.manifest_key,
         )
     except SurveyLeaseLostError:

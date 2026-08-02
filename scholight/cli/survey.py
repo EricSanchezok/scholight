@@ -8,6 +8,7 @@ import os
 
 # Only a fixed, image-owned executable is invoked below.
 import subprocess  # nosec B404
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -45,6 +46,22 @@ def _installed_rcm_version() -> str:
     if version != RCM_VERSION:
         raise RuntimeError("Installed RCM version does not match the reviewed release")
     return version
+
+
+def _verify_diagnostic_workspace(data_root: Path) -> None:
+    """Confirm the worker can atomically persist private diagnostics on its data volume."""
+    with tempfile.TemporaryDirectory(
+        prefix=".survey-diagnostics-smoke-", dir=data_root
+    ) as directory:
+        root = Path(directory)
+        path = root / "diagnostics.json"
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(b'{"ok":true}')
+            handle.flush()
+            os.fsync(handle.fileno())
+        if path.read_bytes() != b'{"ok":true}':
+            raise RuntimeError("Survey diagnostic workspace verification failed")
 
 
 @click.group("survey")
@@ -323,6 +340,7 @@ def smoke(json_output: bool) -> None:
         from scholight.survey.artifacts import SurveyArtifactStore
 
         installed_rcm_version = await asyncio.to_thread(_installed_rcm_version)
+        await asyncio.to_thread(_verify_diagnostic_workspace, Path(settings.data_root))
         await create_pool()
         try:
             rows = await get_pool().fetch(
@@ -363,6 +381,8 @@ def smoke(json_output: bool) -> None:
                 "rcm_version": installed_rcm_version,
                 "migrations": [version for version, _name, _checksum in applied],
                 "cleanup_dead": cleanup.dead,
+                "diagnostics_writable": True,
+                "workflow_contract": workflow_audit_payload(),
                 "concurrency": {
                     "draft": settings.survey_draft_concurrency,
                     "draft_per_user": settings.survey_draft_per_user_concurrency,

@@ -576,6 +576,10 @@ def test_observability_template_has_bounded_retention_and_required_alarms() -> N
         "StandardLatencyAlarm",
         "ThoroughLatencyAlarm",
         "DeadIngestionAlarm",
+        "SurveyContractAlarm",
+        "SurveyRuntimeFailureAlarm",
+        "SurveyDiagnosticsFailureAlarm",
+        "SurveyStalledAlarm",
         "Proxy502Metric",
         "Proxy504Metric",
         "ProxyConnectionResetMetric",
@@ -590,10 +594,20 @@ def test_observability_template_has_bounded_retention_and_required_alarms() -> N
     assert "HTTPX and thread-pool wait p95" in dashboard
     assert "Proxy and application errors" in dashboard
     assert "Background analytics queues" in dashboard
+    assert "Survey outcomes and duration" in dashboard
+    assert "Survey failures and activity" in dashboard
     assert (
         resources["HostOomMetric"]["Properties"]["FilterPattern"]
         == '?"Out of memory" ?"Killed process" ?"oom-kill"'
     )
+
+
+def test_survey_smoke_checks_diagnostics_and_contract_audit() -> None:
+    source = (ROOT / "scholight" / "cli" / "survey.py").read_text(encoding="utf-8")
+
+    assert "_verify_diagnostic_workspace" in source
+    assert '"diagnostics_writable": True' in source
+    assert '"workflow_contract": workflow_audit_payload()' in source
 
 
 def test_production_has_no_unreviewed_capacity_enforcement_settings() -> None:

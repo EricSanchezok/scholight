@@ -539,13 +539,20 @@ def test_result_metrics_use_only_low_cardinality_dimensions() -> None:
     with patch("scholight.survey.worker.emit_emf") as emit:
         _emit_result_metrics(result)
 
-    emit.assert_called_once()
-    assert emit.call_args.kwargs["service"] == "survey-worker"
-    assert emit.call_args.kwargs["outcome"] == "failed"
-    assert "job_id" not in emit.call_args.kwargs
-    assert emit.call_args.kwargs["metrics"] == {
-        "SurveyJobCount": (1, "Count"),
-        "SurveyJobDuration": (0, "Milliseconds"),
+    assert emit.call_count == 2
+    outcome_call, failure_call = emit.call_args_list
+    assert outcome_call.kwargs == {
+        "service": "survey-worker",
+        "outcome": "failed",
+        "metrics": {
+            "SurveyJobCount": (1, "Count"),
+            "SurveyJobDuration": (0, "Milliseconds"),
+        },
+    }
+    assert failure_call.kwargs["service"] == "survey-worker"
+    assert "outcome" not in failure_call.kwargs
+    assert "job_id" not in failure_call.kwargs
+    assert failure_call.kwargs["metrics"] == {
         "SurveyContractAnomaly": (1, "Count"),
         "SurveyRuntimeFailure": (1, "Count"),
         "SurveyToolFailure": (2, "Count"),

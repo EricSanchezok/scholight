@@ -189,6 +189,23 @@ Do not grant access to any other bucket or prefix. Updating this policy and the
 SecureString does not itself activate Survey; activation also requires the
 reviewed release after the EC2 resize and local E2E gate.
 
+Each execution archives a private `run/trajectory.jsonl`, `run/diagnostics.json`,
+and schema-v2 `run.json` under the existing owner-scoped Survey prefix. These
+files contain bounded, redacted runtime metadata; they never contain provider
+credentials, PDF bodies, or model reasoning. Diagnose an active or archived job
+from the worker container without rerunning it:
+
+```bash
+./deploy/production/compose-command.sh exec -T survey-worker \
+  /app/.venv/bin/scholight survey diagnose JOB_UUID --json-output
+./deploy/production/compose-command.sh exec -T survey-worker \
+  /app/.venv/bin/scholight survey contract-audit --json-output
+```
+
+CloudWatch service logs carry the same `survey_job_id` across the worker and its
+delegated MCP searches. Search queries remain only in the private per-run trace,
+not in centralized logs or metric dimensions.
+
 ## One-time observability stack
 
 After the P0 runtime release has completed its observation window, deploy the
@@ -212,6 +229,11 @@ Confirm the SNS subscription from the operations mailbox before relying on
 notifications. Bootstrap installs and starts rsyslog and the CloudWatch Agent
 idempotently from the package configuration. The policy cannot read Parameter
 Store, access RDS or Zilliz, or modify application data.
+
+The dashboard includes Survey outcome, duration, contract, tool, runtime, and
+last-activity panels. Contract violations, runtime failures, diagnostic write
+failures, and two consecutive periods above 30 minutes without Survey activity
+raise alerts; cancellation does not.
 
 ## Runtime and release state
 
