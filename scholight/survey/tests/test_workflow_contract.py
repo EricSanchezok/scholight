@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+from scholight.survey.workflow_audit import audit_workflow_contracts
+
 _WORKFLOW = Path(__file__).parents[1] / "workflow"
 
 
@@ -114,3 +116,20 @@ def test_english_report_is_the_only_final_assembly_output() -> None:
     assert writers == ["survey_assembler.txt"]
     assert "sole final report" in " ".join(assembler.split())
     assert "status degraded" in (prompts / "image_planner.txt").read_text(encoding="utf-8")
+
+
+def test_contract_audit_classifies_every_known_definition_gap() -> None:
+    codes = {conflict.code for conflict in audit_workflow_contracts()}
+
+    assert codes == {
+        "card_plan_definition_conflict",
+        "completion_artifact_gap",
+        "e2e_graph_replaced",
+        "empty_artifact_undefined",
+        "final_report_validation_incomplete",
+        "image_status_enum_conflict",
+        "judge_verdict_unvalidated",
+        "progress_stream_dependency",
+        "section_definition_conflict",
+        "spawn_expectations_not_persisted",
+    }

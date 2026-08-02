@@ -10,6 +10,8 @@ import os
 import subprocess  # nosec B404
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
+from uuid import UUID
 
 import click
 
@@ -24,6 +26,9 @@ from scholight.db.queries_survey import get_survey_job_counts
 from scholight.db.queries_survey_cleanup import get_artifact_cleanup_status
 from scholight.logging import configure_logging
 from scholight.survey.worker import RCM_VERSION, serve_survey_worker
+from scholight.survey.workflow_audit import workflow_audit_payload
+
+_DIAGNOSTIC_JSON_MAX_BYTES = 2 * 1024 * 1024
 
 
 def _installed_rcm_version() -> str:
@@ -134,6 +139,174 @@ def status(json_output: bool) -> None:
         raise click.ClickException("Survey status response is invalid")
     for state, count in jobs.items():
         click.echo(f"{state}: {count}")
+
+
+@survey_group.command("contract-audit")
+@click.option("--json-output", "json_output", is_flag=True, help="Emit machine-readable JSON.")
+def contract_audit(json_output: bool) -> None:
+    """Report known workflow definition conflicts without changing the workflow."""
+    payload = workflow_audit_payload()
+    if json_output:
+        click.echo(json.dumps(payload, separators=(",", ":"), sort_keys=True))
+        return
+    click.echo(f"Workflow contract status: {payload['status']}")
+    conflicts = payload["conflicts"]
+    if not isinstance(conflicts, list):
+        raise click.ClickException("Workflow contract audit response is invalid")
+    for conflict in conflicts:
+        if isinstance(conflict, dict):
+            click.echo(f"- {conflict.get('code')}: {conflict.get('summary')}")
+
+
+def _read_local_diagnostics(job_id: UUID) -> tuple[dict[str, Any], Path] | None:
+    run_root = Path(settings.data_root) / "surveys" / str(job_id) / "run"
+    for name in ("diagnostics.json", "run.json"):
+        path = run_root / name
+        try:
+            if (
+                not path.is_file()
+                or path.is_symlink()
+                or path.stat().st_size > _DIAGNOSTIC_JSON_MAX_BYTES
+            ):
+                continue
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            continue
+        if isinstance(payload, dict) and str(payload.get("job_id")) == str(job_id):
+            return payload, path
+    return None
+
+
+async def _read_stream_json(stream: Any) -> dict[str, Any]:
+    body = bytearray()
+    async for chunk in stream.chunks():
+        body.extend(chunk)
+        if len(body) > _DIAGNOSTIC_JSON_MAX_BYTES:
+            raise RuntimeError("Survey diagnostic artifact is too large")
+    try:
+        payload = json.loads(body)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError("Survey diagnostic artifact is invalid") from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError("Survey diagnostic artifact is invalid")
+    return payload
+
+
+def _diagnostic_projection(
+    payload: dict[str, Any],
+    *,
+    job_id: UUID,
+    source: str,
+    location: str,
+    database: dict[str, object] | None = None,
+) -> dict[str, object]:
+    nested = payload.get("diagnostics")
+    diagnostics = nested if isinstance(nested, dict) else payload
+    process = payload.get("process") if isinstance(payload.get("process"), dict) else None
+    return {
+        "schema_version": 1,
+        "job_id": str(job_id),
+        "source": source,
+        "location": location,
+        "status": (database or {}).get("status"),
+        "outcome": payload.get("outcome") or (database or {}).get("terminal_outcome"),
+        "error_code": payload.get("error_code") or (database or {}).get("error_code"),
+        "process": process,
+        "last_successful_component": diagnostics.get("last_successful_component"),
+        "first_anomaly": diagnostics.get("first_anomaly"),
+        "anomaly_count": diagnostics.get("anomaly_count", 0),
+        "tool_counts": diagnostics.get("tool_counts", {}),
+        "last_activity_at": diagnostics.get("last_activity_at"),
+        "trace_path": diagnostics.get("trace_path"),
+        "manifest_key": (database or {}).get("manifest_key"),
+    }
+
+
+async def _diagnose_archived(job_id: UUID) -> dict[str, object]:
+    from scholight.survey.artifacts import SurveyArtifactStore
+
+    await create_pool()
+    try:
+        row = await get_pool().fetchrow(
+            "SELECT j.status, j.terminal_outcome, j.error_code, j.storage_bucket, "
+            "j.manifest_key FROM scholight.survey_jobs j WHERE j.id = $1",
+            job_id,
+        )
+        if row is None:
+            raise RuntimeError("Survey job was not found")
+        database = {
+            "status": str(row["status"]),
+            "terminal_outcome": row["terminal_outcome"],
+            "error_code": row["error_code"],
+            "manifest_key": row["manifest_key"],
+        }
+        manifest_key = row["manifest_key"]
+        if not isinstance(manifest_key, str) or not manifest_key:
+            return _diagnostic_projection(
+                {},
+                job_id=job_id,
+                source="database",
+                location="survey_jobs",
+                database=database,
+            )
+        bucket = str(row["storage_bucket"] or settings.survey_s3_bucket)
+        store = SurveyArtifactStore(
+            bucket=bucket,
+            endpoint_url=settings.survey_s3_endpoint_url,
+        )
+        stream = await store.open_artifact(manifest_key=manifest_key, path="run.json")
+        payload = await _read_stream_json(stream)
+        return _diagnostic_projection(
+            payload,
+            job_id=job_id,
+            source="archive",
+            location=f"s3://{bucket}/{manifest_key}",
+            database=database,
+        )
+    finally:
+        await close_pool()
+
+
+@survey_group.command("diagnose")
+@click.argument("job_id", type=str)
+@click.option("--json-output", "json_output", is_flag=True, help="Emit machine-readable JSON.")
+def diagnose(job_id: str, json_output: bool) -> None:
+    """Read one active or archived Survey diagnostic summary without rerunning it."""
+    configure_logging()
+    try:
+        parsed_job_id = UUID(job_id)
+    except ValueError as exc:
+        raise click.ClickException("Survey job id must be a UUID") from exc
+    local = _read_local_diagnostics(parsed_job_id)
+    try:
+        payload = (
+            _diagnostic_projection(
+                local[0],
+                job_id=parsed_job_id,
+                source="workspace",
+                location=str(local[1]),
+            )
+            if local is not None
+            else asyncio.run(_diagnose_archived(parsed_job_id))
+        )
+    except Exception as exc:
+        raise click.ClickException("Survey diagnostics could not be read") from exc
+    if json_output:
+        click.echo(json.dumps(payload, separators=(",", ":"), sort_keys=True))
+        return
+    click.echo(f"Survey job: {payload['job_id']}")
+    click.echo(f"Source: {payload['source']} ({payload['location']})")
+    click.echo(f"Outcome: {payload['outcome'] or payload['status'] or 'running'}")
+    click.echo(f"Last successful component: {payload['last_successful_component'] or 'unknown'}")
+    first_anomaly = payload["first_anomaly"]
+    if isinstance(first_anomaly, dict):
+        click.echo(
+            "First anomaly: "
+            f"{first_anomaly.get('component')} missing "
+            f"{first_anomaly.get('expected_artifact')}"
+        )
+    else:
+        click.echo("First anomaly: none observed")
 
 
 @survey_group.command("smoke")
