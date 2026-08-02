@@ -124,12 +124,34 @@ def test_contract_audit_classifies_every_known_definition_gap() -> None:
     assert codes == {
         "card_plan_definition_conflict",
         "completion_artifact_gap",
-        "e2e_graph_replaced",
         "empty_artifact_undefined",
         "final_report_validation_incomplete",
         "image_status_enum_conflict",
         "judge_verdict_unvalidated",
         "progress_stream_dependency",
+        "sequential_spawn_runtime_gap",
         "section_definition_conflict",
         "spawn_expectations_not_persisted",
     }
+
+
+def test_e2e_uses_vendored_graph_and_only_redirects_model_transport() -> None:
+    dockerfile = (Path(__file__).parents[3] / "tests/survey_e2e/Dockerfile").read_text(
+        encoding="utf-8"
+    )
+
+    assert "tests/survey_e2e/workflows" not in dockerfile
+    assert "ENV PYTHONPATH=/app" in dockerfile
+    assert "https://api.deepseek.com" in dockerfile
+    assert "http://model:8080/v1" in dockerfile
+
+
+def test_e2e_waits_for_fake_model_health_before_starting_api() -> None:
+    compose = (Path(__file__).parents[3] / "tests/survey_e2e/compose.yaml").read_text(
+        encoding="utf-8"
+    )
+
+    model_service = compose.split("\n  model:\n", 1)[1].split("\n  api:\n", 1)[0]
+    api_service = compose.split("\n  api:\n", 1)[1].split("\n  survey-draft-worker:\n", 1)[0]
+    assert "http://127.0.0.1:8080/health" in model_service
+    assert "condition: service_healthy" in api_service.split("model:", 1)[1]

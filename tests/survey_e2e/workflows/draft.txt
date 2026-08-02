@@ -1,1 +1,0 @@
-Use Scholight search once, then return a concise Markdown research requirement.
