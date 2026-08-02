@@ -13,7 +13,7 @@ from mcp.types import CallToolResult, TextContent, ToolAnnotations
 from pydantic import Field
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
-from structlog.contextvars import get_contextvars
+from structlog.contextvars import bound_contextvars, get_contextvars
 
 from scholight.api.access_keys import AccessKeyError, access_key_error_message
 from scholight.api.deps import (
@@ -156,8 +156,12 @@ class _MCPRequestBoundary:
                 transport="mcp",
             )
         )
+        survey_job_id = getattr(actor, "survey_job_id", None)
         try:
-            await self._app(scope, receive, send)
+            with bound_contextvars(
+                **({"survey_job_id": str(survey_job_id)} if survey_job_id is not None else {})
+            ):
+                await self._app(scope, receive, send)
         finally:
             _current_invocation.reset(context)
 

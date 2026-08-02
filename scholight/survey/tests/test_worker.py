@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 from uuid import UUID, uuid4
 
+import jwt
 import pytest
 
 from scholight.config import settings
@@ -20,6 +21,7 @@ from scholight.survey.worker import (
     SurveyExecutionResult,
     _child_environment,
     _collect_stage_timings,
+    _emit_result_metrics,
     _heartbeat,
     _run_claimed_job,
     _run_metadata,
@@ -499,7 +501,8 @@ def test_child_environment_exposes_only_required_provider_credentials(
     monkeypatch.setattr(settings, "deepseek_api_key", "deepseek")
     monkeypatch.setattr(settings, "image_gen_api_key", "image")
 
-    environment = _child_environment(user_id=42)
+    job_id = uuid4()
+    environment = _child_environment(user_id=42, job_id=job_id)
 
     assert environment["DEEPSEEK_API_KEY"] == "deepseek"
     assert environment["IMAGE_GEN_API_KEY"] == "image"
@@ -507,6 +510,48 @@ def test_child_environment_exposes_only_required_provider_credentials(
     assert "SCHOLIGHT_PG_PASSWORD" not in environment
     assert "SCHOLIGHT_ZILLIZ_TOKEN" not in environment
     assert "AWS_SECRET_ACCESS_KEY" not in environment
+    claims = jwt.decode(
+        environment["SCHOLIGHT_SURVEY_MCP_AUTHORIZATION"].removeprefix("Bearer "),
+        "s" * 32,
+        algorithms=["HS256"],
+        audience="scholight-mcp",
+        issuer="scholight-survey",
+    )
+    assert claims["survey_job_id"] == str(job_id)
+
+
+def test_result_metrics_use_only_low_cardinality_dimensions() -> None:
+    now = datetime.now(UTC)
+    result = SurveyExecutionResult(
+        outcome="failed",
+        error_code="survey_report_missing",
+        error_message="missing",
+        started_at=now,
+        finished_at=now,
+        diagnostics={
+            "anomalies": [{"severity": "error"}, {"severity": "warning"}],
+            "tool_counts": {"failed": 2},
+            "write_failure_count": 1,
+            "last_activity_at": now.isoformat(),
+        },
+    )
+
+    with patch("scholight.survey.worker.emit_emf") as emit:
+        _emit_result_metrics(result)
+
+    emit.assert_called_once()
+    assert emit.call_args.kwargs["service"] == "survey-worker"
+    assert emit.call_args.kwargs["outcome"] == "failed"
+    assert "job_id" not in emit.call_args.kwargs
+    assert emit.call_args.kwargs["metrics"] == {
+        "SurveyJobCount": (1, "Count"),
+        "SurveyJobDuration": (0, "Milliseconds"),
+        "SurveyContractAnomaly": (1, "Count"),
+        "SurveyRuntimeFailure": (1, "Count"),
+        "SurveyToolFailure": (2, "Count"),
+        "SurveyDiagnosticsWriteFailure": (1, "Count"),
+        "SurveyLastActivityAge": (0, "Seconds"),
+    }
 
 
 @pytest.mark.asyncio

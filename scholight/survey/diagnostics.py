@@ -211,6 +211,17 @@ class SurveyDiagnostics:
     def write_failure_count(self) -> int:
         return self._write_failure_count
 
+    def last_activity_age_seconds(self, *, now: datetime | None = None) -> int:
+        """Return a low-cardinality staleness gauge without changing activity state."""
+        if self._last_activity_at is None:
+            return 0
+        try:
+            last_activity = datetime.fromisoformat(self._last_activity_at)
+        except ValueError:
+            return 0
+        current = now or datetime.now(UTC)
+        return max(0, round((current - last_activity).total_seconds()))
+
     def _write_checkpoint(self) -> None:
         temporary = self.run_root / f".{DIAGNOSTICS_FILE}.tmp"
         payload = json.dumps(self.snapshot(), ensure_ascii=False, separators=(",", ":"))

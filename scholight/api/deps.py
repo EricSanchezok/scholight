@@ -38,6 +38,7 @@ class SearchActor:
     user: UserRecord
     actor_type: Literal["web", "access_key", "delegated"]
     access_key_id: UUID | None = None
+    survey_job_id: UUID | None = None
 
 
 # ── 延迟绑定：sanchezcloud-identity SDK ──
@@ -271,6 +272,10 @@ async def resolve_delegated_search_actor(token: str) -> SearchActor:
         if claims.get("scope") != "search":
             raise DelegationError("invalid_delegation")
         user_id = int(claims["sub"])
+        raw_survey_job_id = claims.get("survey_job_id")
+        if raw_survey_job_id is not None and claims.get("iss") != "scholight-survey":
+            raise DelegationError("invalid_delegation")
+        survey_job_id = UUID(str(raw_survey_job_id)) if raw_survey_job_id is not None else None
     except DelegationError:
         raise
     except (TypeError, ValueError, KeyError) as exc:
@@ -287,4 +292,8 @@ async def resolve_delegated_search_actor(token: str) -> SearchActor:
         raise DelegationError("scholight_access_blocked", status_code=403) from exc
     except (AuthDBError, DBError) as exc:
         raise DelegationError("delegation_service_unavailable", status_code=503) from exc
-    return SearchActor(user=user, actor_type="delegated")
+    return SearchActor(
+        user=user,
+        actor_type="delegated",
+        survey_job_id=survey_job_id,
+    )

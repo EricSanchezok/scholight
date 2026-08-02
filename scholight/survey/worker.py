@@ -28,6 +28,7 @@ from scholight.db.queries_survey import (
     settle_survey_execution,
     update_survey_job_progress,
 )
+from scholight.logging.emf import emit_emf
 from scholight.survey.artifacts import SurveyArtifactStore
 from scholight.survey.cleanup_worker import serve_artifact_cleanup
 from scholight.survey.contracts import SurveyLeaseLostError
@@ -52,6 +53,7 @@ _EVENT_READ_BYTES = 64 * 1024
 _EVENT_LINE_LIMIT = 1024 * 1024
 _STAGE_RECORD_LIMIT = 512
 _ARTIFACT_OBSERVE_SECONDS = 5
+_ACTIVITY_METRIC_SECONDS = 60
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,11 +78,12 @@ def _job_root(job_id: UUID) -> Path:
     return Path(settings.data_root) / "surveys" / str(job_id)
 
 
-def _child_environment(*, user_id: int) -> dict[str, str]:
+def _child_environment(*, user_id: int, job_id: UUID) -> dict[str, str]:
     return survey_environment(
         user_id=user_id,
         lifetime_seconds=settings.survey_job_timeout_seconds,
         include_image=True,
+        survey_job_id=job_id,
     )
 
 
@@ -257,12 +260,62 @@ async def _observe_artifacts(
     stop: asyncio.Event,
 ) -> None:
     """Watch only artifact metadata; observer failures never affect RCM execution."""
+    next_metric_at = 0.0
     while not stop.is_set():
         diagnostics.observe_artifacts()
+        now = time.monotonic()
+        if now >= next_metric_at:
+            emit_emf(
+                service="survey-worker",
+                metrics={
+                    "SurveyLastActivityAge": (
+                        diagnostics.last_activity_age_seconds(),
+                        "Seconds",
+                    )
+                },
+            )
+            next_metric_at = now + _ACTIVITY_METRIC_SECONDS
         try:
             await asyncio.wait_for(stop.wait(), timeout=_ARTIFACT_OBSERVE_SECONDS)
         except TimeoutError:
             continue
+
+
+def _emit_result_metrics(result: SurveyExecutionResult) -> None:
+    diagnostics = result.diagnostics or {}
+    raw_anomalies = diagnostics.get("anomalies")
+    anomalies = raw_anomalies if isinstance(raw_anomalies, list) else []
+    contract_errors = sum(
+        1
+        for anomaly in anomalies
+        if isinstance(anomaly, dict) and anomaly.get("severity") == "error"
+    )
+    raw_tool_counts = diagnostics.get("tool_counts")
+    tool_counts = raw_tool_counts if isinstance(raw_tool_counts, dict) else {}
+    tool_failures = int(tool_counts.get("failed", 0))
+    write_failures = int(diagnostics.get("write_failure_count", 0))
+    duration_ms = max(0, round((result.finished_at - result.started_at).total_seconds() * 1000))
+    last_activity_age = 0
+    raw_last_activity = diagnostics.get("last_activity_at")
+    if isinstance(raw_last_activity, str):
+        try:
+            last_activity = datetime.fromisoformat(raw_last_activity)
+            last_activity_age = max(0, round((result.finished_at - last_activity).total_seconds()))
+        except ValueError:
+            pass
+    emit_emf(
+        service="survey-worker",
+        outcome=result.outcome,
+        metrics={
+            "SurveyJobCount": (1, "Count"),
+            "SurveyJobDuration": (duration_ms, "Milliseconds"),
+            "SurveyContractAnomaly": (contract_errors, "Count"),
+            "SurveyRuntimeFailure": (1 if result.outcome == "failed" else 0, "Count"),
+            "SurveyToolFailure": (tool_failures, "Count"),
+            "SurveyDiagnosticsWriteFailure": (write_failures, "Count"),
+            "SurveyLastActivityAge": (last_activity_age, "Seconds"),
+        },
+    )
 
 
 def _finish_diagnostics(
@@ -318,7 +371,7 @@ async def execute_survey(
             "--purpose-stdin",
             "--run-dir",
             str(run_root),
-            env=_child_environment(user_id=job.user_id),
+            env=_child_environment(user_id=job.user_id, job_id=job.id),
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
@@ -694,6 +747,15 @@ async def process_survey_job(
                 )
             if control.lease_lost.is_set():
                 return
+            _emit_result_metrics(result)
+            logger.info(
+                "survey_process_finished",
+                job_id=str(job.id),
+                outcome=result.outcome,
+                error_code=result.error_code,
+                return_code=result.return_code,
+                termination_reason=result.termination_reason,
+            )
             job = await settle_survey_execution(
                 job_id=job.id,
                 worker_id=worker_id,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -58,6 +59,8 @@ def test_trace_persists_events_and_crash_safe_snapshot(tmp_path: Path) -> None:
     assert snapshot["schema_version"] == 1
     assert snapshot["event_count"] == 2
     assert snapshot["tool_counts"] == {"failed": 0, "finished": 1, "started": 0}
+    last_activity = datetime.fromisoformat(snapshot["last_activity_at"])
+    assert diagnostics.last_activity_age_seconds(now=last_activity + timedelta(seconds=75)) == 75
 
 
 def test_completed_component_records_missing_primary_artifact(tmp_path: Path) -> None:
