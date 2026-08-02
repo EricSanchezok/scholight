@@ -548,6 +548,7 @@ def _artifact_store(reference: SurveyArtifactReference) -> SurveyArtifactStore:
     return SurveyArtifactStore(
         bucket=settings.survey_s3_bucket,
         endpoint_url=settings.survey_s3_endpoint_url,
+        public_endpoint_url=settings.survey_s3_public_endpoint_url,
     )
 
 

@@ -15,10 +15,11 @@ from scholight.survey.artifacts import SurveyArtifactError, SurveyArtifactStore
 
 
 class _FakeS3:
-    def __init__(self) -> None:
+    def __init__(self, *, url_origin: str = "https://signed.invalid") -> None:
         self.objects: dict[str, bytes] = {}
         self.operations: list[tuple[str, str]] = []
         self.corrupt_get_key: str | None = None
+        self.url_origin = url_origin
 
     def upload_fileobj(
         self,
@@ -51,7 +52,7 @@ class _FakeS3:
         **kwargs: Any,
     ) -> str:
         del operation
-        return f"https://signed.invalid/{kwargs['Params']['Key']}?expires={kwargs['ExpiresIn']}"
+        return f"{self.url_origin}/{kwargs['Params']['Key']}?expires={kwargs['ExpiresIn']}"
 
     def delete_objects(self, **kwargs: Any) -> dict[str, list[object]]:
         for item in kwargs["Delete"]["Objects"]:
@@ -168,6 +169,28 @@ async def test_manifest_cannot_presign_another_owner_key(tmp_path: Path) -> None
 
     with pytest.raises(SurveyArtifactError, match="entry"):
         await store.presigned_artifacts(manifest_key=archive.manifest_key)
+
+
+@pytest.mark.asyncio
+async def test_presigned_artifacts_use_browser_facing_client(tmp_path: Path) -> None:
+    (tmp_path / "08_global_picture.png").write_bytes(b"image")
+    storage = _FakeS3(url_origin="http://minio:9000")
+    browser = _FakeS3(url_origin="http://127.0.0.1:9000")
+    store = SurveyArtifactStore(
+        bucket="survey-test",
+        client=storage,
+        presign_client=browser,
+    )
+    archive = await store.archive_run(
+        user_id=42,
+        job_id=uuid4(),
+        run_root=tmp_path,
+        run_metadata={"outcome": "succeeded"},
+    )
+
+    artifacts = await store.presigned_artifacts(manifest_key=archive.manifest_key)
+
+    assert artifacts[0]["url"].startswith("http://127.0.0.1:9000/")
 
 
 @pytest.mark.asyncio

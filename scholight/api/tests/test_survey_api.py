@@ -14,6 +14,7 @@ from fastapi import FastAPI
 from sanchezcloud_identity.models.user import UserRecord
 
 from scholight.api.deps import get_current_user
+from scholight.api.routes.survey import _artifact_store
 from scholight.config import settings
 from scholight.db.queries_survey import (
     Survey,
@@ -686,6 +687,46 @@ async def test_artifacts_hide_storage_keys_and_use_short_lived_urls(
     store.presigned_artifacts.assert_awaited_once_with(
         manifest_key=f"{storage_prefix}/manifest.json",
         expires_seconds=300,
+    )
+
+
+async def test_artifacts_sign_with_browser_facing_storage_endpoint(
+    active_user: UserRecord,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "survey_s3_bucket", "private-bucket")
+    monkeypatch.setattr(settings, "survey_s3_endpoint_url", "http://minio:9000")
+    monkeypatch.setattr(
+        settings,
+        "survey_s3_public_endpoint_url",
+        "http://127.0.0.1:9000",
+    )
+    survey_id = uuid4()
+    job_id = uuid4()
+    storage_prefix = f"surveys/v1/{active_user.id}/{job_id}"
+    reference = SurveyArtifactReference(
+        survey_id=survey_id,
+        user_id=active_user.id,
+        job_id=job_id,
+        survey_status="failed",
+        job_status="finished",
+        terminal_outcome="failed",
+        storage_bucket="private-bucket",
+        storage_prefix=storage_prefix,
+        manifest_key=f"{storage_prefix}/manifest.json",
+    )
+    store = AsyncMock()
+    with patch(
+        "scholight.api.routes.survey.SurveyArtifactStore",
+        return_value=store,
+    ) as artifact_store:
+        result = _artifact_store(reference)
+
+    assert result is store
+    artifact_store.assert_called_once_with(
+        bucket="private-bucket",
+        endpoint_url="http://minio:9000",
+        public_endpoint_url="http://127.0.0.1:9000",
     )
 
 

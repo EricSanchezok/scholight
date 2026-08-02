@@ -136,6 +136,7 @@ class Settings(BaseSettings):
     survey_mcp_jwt_secret: str = ""
     survey_s3_bucket: str = ""
     survey_s3_endpoint_url: str | None = None
+    survey_s3_public_endpoint_url: str | None = None
     survey_enabled: bool = False
     survey_daily_limit: int = Field(default=3, ge=1, le=100)
     survey_draft_timeout_seconds: int = Field(default=1800, ge=60, le=3600)

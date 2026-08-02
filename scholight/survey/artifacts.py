@@ -27,6 +27,19 @@ _MANIFEST_MAX_BYTES = 8 * 1024 * 1024
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 
+def _s3_client(endpoint_url: str | None) -> Any:
+    return boto3.client(
+        "s3",
+        endpoint_url=endpoint_url,
+        config=Config(
+            connect_timeout=3,
+            read_timeout=30,
+            retries={"max_attempts": 3, "mode": "standard"},
+            s3={"addressing_style": "path" if endpoint_url else "auto"},
+        ),
+    )
+
+
 class SurveyArtifactError(Exception):
     """A Survey run could not be safely archived or retrieved."""
 
@@ -170,20 +183,18 @@ class SurveyArtifactStore:
         *,
         bucket: str,
         endpoint_url: str | None = None,
+        public_endpoint_url: str | None = None,
         client: Any | None = None,
+        presign_client: Any | None = None,
     ) -> None:
         if not bucket.strip():
             raise ValueError("Survey artifact bucket is required")
         self._bucket = bucket
-        self._client = client or boto3.client(
-            "s3",
-            endpoint_url=endpoint_url,
-            config=Config(
-                connect_timeout=3,
-                read_timeout=30,
-                retries={"max_attempts": 3, "mode": "standard"},
-                s3={"addressing_style": "path" if endpoint_url else "auto"},
-            ),
+        self._client = client or _s3_client(endpoint_url)
+        self._presign_client = presign_client or (
+            _s3_client(public_endpoint_url)
+            if public_endpoint_url and public_endpoint_url != endpoint_url
+            else self._client
         )
 
     @staticmethod
@@ -408,7 +419,7 @@ class SurveyArtifactStore:
             artifacts.append(
                 {
                     **record,
-                    "url": self._client.generate_presigned_url(
+                    "url": self._presign_client.generate_presigned_url(
                         "get_object",
                         Params={"Bucket": self._bucket, "Key": record["key"]},
                         ExpiresIn=expires_seconds,
