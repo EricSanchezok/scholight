@@ -180,4 +180,4 @@ dev = [
 
 [tool.uv.sources]
 # Immutable identity/session SDK revision; products never depend on a moving branch.
-sanchezcloud-identity = { git = "https://github.com/EricSanchezok/sanchezcloud-identity.git", tag = "v0.5.1" }
+sanchezcloud-identity = { git = "https://github.com/EricSanchezok/sanchezcloud-identity.git", tag = "v0.5.2" }
