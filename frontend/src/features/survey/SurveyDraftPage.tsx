@@ -38,9 +38,12 @@ export function SurveyDraftPage() {
   const [source, setSource] = useState("");
   const [feedback, setFeedback] = useState("");
   const [startOpen, setStartOpen] = useState(false);
+  const [notifyOnCompletion, setNotifyOnCompletion] = useState(true);
   const revisionId = useRef<string | undefined>(undefined);
   const manualId = useRef<string | undefined>(undefined);
-  const startId = useRef<string | undefined>(undefined);
+  const startRequest = useRef<{ clientRequestId: string; notifyOnCompletion: boolean } | undefined>(
+    undefined,
+  );
 
   const survey = useQuery({
     queryKey: queryKeys.survey(surveyId),
@@ -88,6 +91,11 @@ export function SurveyDraftPage() {
       document.title = `${surveyTitle(survey.data.title, survey.data.initial_request)} — Scholight`;
   }, [survey.data]);
 
+  useEffect(() => {
+    setNotifyOnCompletion(true);
+    startRequest.current = undefined;
+  }, [surveyId]);
+
   const refresh = async () => {
     await Promise.all([survey.refetch(), drafts.refetch(), progress.refetch()]);
   };
@@ -127,16 +135,22 @@ export function SurveyDraftPage() {
   });
   const start = useMutation({
     mutationFn: () => {
-      startId.current ??= crypto.randomUUID();
-      return surveyApi.start(surveyId, { client_request_id: startId.current });
+      startRequest.current ??= {
+        clientRequestId: crypto.randomUUID(),
+        notifyOnCompletion,
+      };
+      return surveyApi.start(surveyId, {
+        client_request_id: startRequest.current.clientRequestId,
+        notify_on_completion: startRequest.current.notifyOnCompletion,
+      });
     },
     onSuccess: () => {
-      startId.current = undefined;
+      startRequest.current = undefined;
       void queryClient.invalidateQueries({ queryKey: queryKeys.surveyRoot });
       navigate(routes.survey.path);
     },
     onError: (error) => {
-      if (!(error instanceof ApiError) || !error.retryable) startId.current = undefined;
+      if (!(error instanceof ApiError) || !error.retryable) startRequest.current = undefined;
     },
   });
 
@@ -332,9 +346,14 @@ export function SurveyDraftPage() {
       <SurveyStartDialog
         open={startOpen}
         busy={start.isPending}
+        notifyOnCompletion={notifyOnCompletion}
         error={
           start.error ? mutationMessage(start.error, "Unable to start this survey.") : undefined
         }
+        onNotifyChange={(notify) => {
+          startRequest.current = undefined;
+          setNotifyOnCompletion(notify);
+        }}
         onOpenChange={setStartOpen}
         onConfirm={() => start.mutate()}
       />

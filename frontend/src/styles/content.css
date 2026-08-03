@@ -704,6 +704,43 @@
   font-size: 12px;
   line-height: 1.5;
 }
+.surveyNotificationChoice {
+  display: grid;
+  margin-top: 22px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line-soft);
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  cursor: pointer;
+}
+.surveyNotificationChoice input {
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  accent-color: var(--brand);
+  cursor: inherit;
+}
+.surveyNotificationChoice > span {
+  display: grid;
+  gap: 4px;
+}
+.surveyNotificationChoice strong {
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.4;
+}
+.surveyNotificationChoice small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.surveyNotificationChoice:focus-within strong {
+  color: var(--brand);
+}
+.surveyNotificationChoice input:disabled {
+  cursor: wait;
+}
 .dialogActions {
   display: flex;
   margin-top: 31px;
