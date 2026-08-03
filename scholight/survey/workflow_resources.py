@@ -22,7 +22,10 @@ def _default_workflow_root() -> Path:
 
 def referenced_schema_paths(workflow_root: Path | None = None) -> tuple[Path, ...]:
     """Return the safe schema paths referenced by packaged workflow prompts."""
-    root = (workflow_root or _default_workflow_root()).resolve(strict=True)
+    try:
+        root = (workflow_root or _default_workflow_root()).resolve(strict=True)
+    except OSError as exc:
+        raise WorkflowResourceError("Survey workflow resources are unavailable") from exc
     prompt_root = root / "prompts"
     if not prompt_root.is_dir() or prompt_root.is_symlink():
         raise WorkflowResourceError("Survey workflow prompts are unavailable")
@@ -31,6 +34,13 @@ def referenced_schema_paths(workflow_root: Path | None = None) -> tuple[Path, ..
     try:
         prompts = sorted(prompt_root.glob("*.txt"))
         for prompt in prompts:
+            prompt_stat = prompt.lstat()
+            if (
+                not stat.S_ISREG(prompt_stat.st_mode)
+                or prompt.is_symlink()
+                or not prompt.resolve(strict=True).is_relative_to(root)
+            ):
+                raise WorkflowResourceError(f"Survey workflow prompt is unsafe: {prompt.name}")
             source = prompt.read_text(encoding="utf-8")
             references.update(Path("schema") / name for name in _SCHEMA_REFERENCE.findall(source))
     except (OSError, UnicodeError) as exc:
@@ -64,8 +74,11 @@ def stage_workflow_schema(
     workflow_root: Path | None = None,
 ) -> tuple[Path, ...]:
     """Copy the exact referenced schemas into the sandboxed RCM run directory."""
-    root = (workflow_root or _default_workflow_root()).resolve(strict=True)
-    resolved_run_root = run_root.resolve(strict=True)
+    try:
+        root = (workflow_root or _default_workflow_root()).resolve(strict=True)
+        resolved_run_root = run_root.resolve(strict=True)
+    except OSError as exc:
+        raise WorkflowResourceError("Survey workflow resources are unavailable") from exc
     if not resolved_run_root.is_dir() or run_root.is_symlink():
         raise WorkflowResourceError("Survey run workspace is unavailable")
 

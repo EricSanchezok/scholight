@@ -58,3 +58,25 @@ def test_stage_fails_when_prompt_references_missing_schema(tmp_path: Path) -> No
 
     with pytest.raises(WorkflowResourceError, match=r"missing\.md"):
         stage_workflow_schema(run_root, workflow_root=workflow)
+
+
+def test_stage_wraps_a_missing_packaged_workflow(tmp_path: Path) -> None:
+    with pytest.raises(WorkflowResourceError, match="unavailable"):
+        stage_workflow_schema(tmp_path, workflow_root=tmp_path / "missing")
+
+
+def test_stage_rejects_symlinked_packaged_prompt(tmp_path: Path) -> None:
+    workflow = tmp_path / "workflow"
+    prompt_root = workflow / "prompts"
+    schema_root = workflow / "schema"
+    prompt_root.mkdir(parents=True)
+    schema_root.mkdir()
+    (schema_root / "paper.md").write_text("contract", encoding="utf-8")
+    outside_prompt = tmp_path / "outside.txt"
+    outside_prompt.write_text("Read schema/paper.md.", encoding="utf-8")
+    (prompt_root / "paper.txt").symlink_to(outside_prompt)
+    run_root = tmp_path / "run"
+    run_root.mkdir()
+
+    with pytest.raises(WorkflowResourceError, match="unsafe"):
+        stage_workflow_schema(run_root, workflow_root=workflow)
