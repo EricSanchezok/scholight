@@ -1451,6 +1451,11 @@ export interface components {
        * Format: uuid
        */
       client_request_id: string;
+      /**
+       * Notify On Completion
+       * @default false
+       */
+      notify_on_completion: boolean;
     };
     /** SurveyArtifactItemResponse */
     SurveyArtifactItemResponse: {

@@ -123,6 +123,7 @@ class ManualDraftCreateRequest(BaseModel):
 
 class SurveyActionRequest(BaseModel):
     client_request_id: UUID
+    notify_on_completion: bool = False
 
 
 class SurveyResponse(BaseModel):
@@ -807,8 +808,12 @@ async def start_survey_execution(
             client_request_id=body.client_request_id,
             request_hash=canonical_request_hash(
                 operation="start_survey",
-                payload={"survey_id": str(survey_id)},
+                payload={
+                    "survey_id": str(survey_id),
+                    "notify_on_completion": body.notify_on_completion,
+                },
             ),
+            notify_on_completion=body.notify_on_completion,
         )
     except SurveyStateError as exc:
         raise _state_error(exc) from exc

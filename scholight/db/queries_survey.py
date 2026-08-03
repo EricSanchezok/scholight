@@ -57,6 +57,7 @@ class Survey:
     updated_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
+    notify_on_completion: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,6 +124,7 @@ def _survey(row: asyncpg.Record | dict[str, Any]) -> Survey:
         updated_at=row["updated_at"],
         started_at=row["started_at"],
         finished_at=row["finished_at"],
+        notify_on_completion=bool(row.get("notify_on_completion", False)),
     )
 
 
@@ -379,6 +381,7 @@ async def start_survey(
     job_id: UUID,
     client_request_id: UUID,
     request_hash: str,
+    notify_on_completion: bool = False,
 ) -> Survey:
     """Bind the latest ready Draft and enqueue the only formal execution."""
     try:
@@ -441,9 +444,11 @@ async def start_survey(
                 request_hash,
             )
             updated = await connection.fetchrow(
-                "UPDATE scholight.surveys SET status = 'queued', updated_at = now() "
+                "UPDATE scholight.surveys SET status = 'queued', notify_on_completion = $2, "
+                "updated_at = now() "
                 "WHERE id = $1 RETURNING *",
                 survey_id,
+                notify_on_completion,
             )
             return _survey(updated)
     except SurveyStateError:
@@ -857,6 +862,16 @@ async def finish_survey_archive(
             await connection.execute(
                 "UPDATE scholight.surveys SET status = $2, updated_at = now(), finished_at = now() "
                 "WHERE id = $1 AND status = 'archiving'",
+                row["survey_id"],
+                row["terminal_outcome"],
+            )
+            await connection.execute(
+                "INSERT INTO scholight.survey_email_notifications "
+                "(id, survey_id, user_id, survey_outcome) "
+                "SELECT gen_random_uuid(), id, user_id, $2 FROM scholight.surveys "
+                "WHERE id = $1 AND notify_on_completion "
+                "AND $2::text IN ('succeeded', 'failed') "
+                "ON CONFLICT (survey_id) DO NOTHING",
                 row["survey_id"],
                 row["terminal_outcome"],
             )

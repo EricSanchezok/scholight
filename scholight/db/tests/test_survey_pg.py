@@ -412,6 +412,7 @@ async def test_formal_failure_keeps_one_failed_survey_and_releases_quota(
             job_id=uuid4(),
             client_request_id=uuid4(),
             request_hash="d" * 64,
+            notify_on_completion=True,
         )
         worker_id = uuid4()
         job = await claim_survey_job(worker_id=worker_id, lease_seconds=3600)
@@ -436,7 +437,57 @@ async def test_formal_failure_keeps_one_failed_survey_and_releases_quota(
     assert survey.status == "failed"
     assert survey.quota_state == "released"
     assert await survey_pool.fetchval("SELECT count(*) FROM scholight.surveys") == 1
+    notification = await survey_pool.fetchrow(
+        "SELECT * FROM scholight.survey_email_notifications WHERE survey_id = $1", survey_id
+    )
+    assert notification is not None
+    assert notification["survey_outcome"] == "failed"
+    assert notification["status"] == "pending"
     assert await _usage(survey_pool) == (0, 0)
+
+
+@pytest.mark.asyncio
+async def test_unchecked_success_does_not_enqueue_email_notification(
+    survey_pool: asyncpg.Pool,
+) -> None:
+    with (
+        patch("scholight.db.queries_survey.get_pool", return_value=survey_pool),
+        patch("scholight.db.queries_survey_drafts.get_pool", return_value=survey_pool),
+    ):
+        survey_id = await _create()
+        await _complete_next_draft(markdown="# Approved Draft")
+        await start_survey(
+            survey_id=survey_id,
+            user_id=42,
+            job_id=uuid4(),
+            client_request_id=uuid4(),
+            request_hash="e" * 64,
+        )
+        worker_id = uuid4()
+        job = await claim_survey_job(worker_id=worker_id, lease_seconds=3600)
+        assert job is not None
+        await settle_survey_execution(
+            job_id=job.id,
+            worker_id=worker_id,
+            outcome="succeeded",
+            error_code=None,
+            error_message=None,
+        )
+        await finish_survey_archive(
+            job_id=job.id,
+            worker_id=worker_id,
+            storage_bucket="test-surveys",
+            storage_prefix="surveys/v1/42/test",
+            manifest_key="surveys/v1/42/test/manifest.json",
+        )
+
+    assert (
+        await survey_pool.fetchval(
+            "SELECT count(*) FROM scholight.survey_email_notifications WHERE survey_id = $1",
+            survey_id,
+        )
+        == 0
+    )
 
 
 @pytest.mark.asyncio
@@ -643,10 +694,24 @@ async def test_running_cancel_is_observed_and_wins_before_success_settlement(
             error_code=None,
             error_message=None,
         )
+        await finish_survey_archive(
+            job_id=job.id,
+            worker_id=worker_id,
+            storage_bucket="test-surveys",
+            storage_prefix="surveys/v1/42/cancelled",
+            manifest_key="surveys/v1/42/cancelled/manifest.json",
+        )
 
     assert requested.status == "running"
     assert heartbeat == "cancel_requested"
     assert settled.terminal_outcome == "cancelled"
+    assert (
+        await survey_pool.fetchval(
+            "SELECT count(*) FROM scholight.survey_email_notifications WHERE survey_id = $1",
+            survey_id,
+        )
+        == 0
+    )
     assert await _usage(survey_pool) == (0, 0)
 
 

@@ -291,7 +291,7 @@ async def test_manual_draft_and_start_use_distinct_write_endpoints(
             "scholight.api.routes.survey.start_survey",
             new_callable=AsyncMock,
             return_value=_survey(survey_id=survey_id, status="queued"),
-        ),
+        ) as start,
     ):
         manual = await api_client.post(
             f"/surveys/{survey_id}/drafts/manual",
@@ -303,13 +303,48 @@ async def test_manual_draft_and_start_use_distinct_write_endpoints(
         )
         started = await api_client.post(
             f"/surveys/{survey_id}/start",
-            json={"client_request_id": str(uuid4())},
+            json={"client_request_id": str(uuid4()), "notify_on_completion": True},
         )
 
     assert manual.status_code == 201
     assert manual.json()["markdown"] == "# Approved scope"
     assert started.status_code == 200
     assert started.json()["status"] == "queued"
+    call = start.await_args
+    assert call is not None
+    assert call.kwargs["notify_on_completion"] is True
+
+
+async def test_start_survey_defaults_notification_preference_off_for_old_clients(
+    api_app: FastAPI,
+    api_client: httpx.AsyncClient,
+    active_user: UserRecord,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _authenticate(api_app, active_user)
+    monkeypatch.setattr(settings, "survey_enabled", True)
+    survey_id = uuid4()
+    with (
+        patch(
+            "scholight.api.routes.survey.get_survey",
+            new_callable=AsyncMock,
+            return_value=_survey(survey_id=survey_id),
+        ),
+        patch(
+            "scholight.api.routes.survey.start_survey",
+            new_callable=AsyncMock,
+            return_value=_survey(survey_id=survey_id, status="queued"),
+        ) as start,
+    ):
+        response = await api_client.post(
+            f"/surveys/{survey_id}/start",
+            json={"client_request_id": str(uuid4())},
+        )
+
+    assert response.status_code == 200
+    call = start.await_args
+    assert call is not None
+    assert call.kwargs["notify_on_completion"] is False
 
 
 async def test_manual_draft_accepts_full_one_mib_payload(

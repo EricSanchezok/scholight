@@ -1659,6 +1659,11 @@
             "format": "uuid",
             "title": "Client Request Id",
             "type": "string"
+          },
+          "notify_on_completion": {
+            "default": false,
+            "title": "Notify On Completion",
+            "type": "boolean"
           }
         },
         "required": ["client_request_id"],

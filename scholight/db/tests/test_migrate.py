@@ -372,6 +372,22 @@ def test_survey_cancellation_migration_only_widens_the_job_contract() -> None:
     assert "auth." not in sql
 
 
+def test_survey_email_notification_migration_is_expand_only() -> None:
+    migration = Path(__file__).parents[3] / "migrations/011_survey_email_notifications.sql"
+    raw_sql = migration.read_text(encoding="utf-8")
+    sql = " ".join(raw_sql.split()).lower()
+
+    validate_expand_only_sql(raw_sql)
+    assert "add column notify_on_completion boolean not null default false" in sql
+    assert "create table scholight.survey_email_notifications" in sql
+    assert "references scholight.surveys(id) on delete cascade" in sql
+    assert "references auth.users(id) on delete cascade" in sql
+    assert "unique (survey_id)" in sql
+    assert "drop " not in sql
+    assert "truncate " not in sql
+    assert "delete from" not in sql
+
+
 @pytest.mark.asyncio
 async def test_reviewed_survey_aggregate_contract_migration_is_applied(tmp_path: Path) -> None:
     source = Path(__file__).parents[3] / "migrations/006_survey_aggregate.sql"
