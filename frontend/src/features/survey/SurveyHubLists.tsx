@@ -10,12 +10,7 @@ import { formatDurationBetween, formatRelativeTime, formatReportDate } from "../
 import type { AppLocale } from "../../i18n/I18nProvider";
 import { styles } from "../../styles/classes";
 import { SurveyMarkdown } from "./SurveyMarkdown";
-import {
-  queueDescription,
-  runningDescription,
-  runningGuidance,
-  surveyStageLabel,
-} from "./survey";
+import { queueDescription, runningDescription, runningGuidance, surveyStageLabel } from "./survey";
 
 const REPORT_PREVIEW_CHARACTER_LIMIT = 2400;
 
