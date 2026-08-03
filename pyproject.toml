@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "scholight"
 version = "0.1.0"
-description = "AI-focused academic paper search engine — arXiv as single data source, passage-level vector search"
+description = "AI-focused academic research engine with paper search and general web extraction"
 requires-python = ">=3.11"
 dependencies = [
     "boto3>=1.35,<2",
@@ -21,6 +21,9 @@ dependencies = [
     "structlog>=24",
     "fastapi>=0.115",
     "mcp>=1.28,<2",
+    "markdownify>=0.13,<2",
+    "playwright>=1.52,<2",
+    "trafilatura>=2.0,<3",
     "uvicorn[standard]>=0.30",
     "tenacity>=8",
     "pylatexenc>=2",
@@ -124,7 +127,7 @@ ignore_missing_imports = true
 enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
 
 [[tool.mypy.overrides]]
-module = ["tests.*", "scholight.pipeline.tests.*", "scholight.search.*.tests.*", "scholight.store.tests.*"]
+module = ["tests.*", "scholight.pipeline.tests.*", "scholight.search.*.tests.*", "scholight.store.tests.*", "scholight.web_extract.tests.*"]
 ignore_errors = true
 
 [[tool.mypy.overrides]]
@@ -155,6 +158,7 @@ addopts = ["-rXs", "--strict-config", "--strict-markers", "-m", "not pg_integrat
 xfail_strict = true
 filterwarnings = ["error"]
 markers = [
+    "browser_integration: launches a real local Chromium instance",
     "pg_integration: requires SCHOLIGHT_TEST_DATABASE_URL pointing to an isolated PostgreSQL database",
 ]
 

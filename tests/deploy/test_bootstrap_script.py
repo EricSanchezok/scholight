@@ -29,6 +29,9 @@ BACKEND_IMAGE = (
 FRONTEND_IMAGE = (
     "683390797772.dkr.ecr.ap-southeast-1.amazonaws.com/scholight/frontend@sha256:" + "c" * 64
 )
+EXTRACT_IMAGE = (
+    "683390797772.dkr.ecr.ap-southeast-1.amazonaws.com/scholight/extract@sha256:" + "d" * 64
+)
 
 
 def make_executable(path: Path, content: str) -> None:
@@ -65,6 +68,7 @@ def runtime_contents() -> str:
             "SCHOLIGHT_AUTH_JWT_SECRET=fixture-secret-at-least-thirty-two-bytes",
             "SCHOLIGHT_ANONYMOUS_QUOTA_HMAC_SECRET=anonymous-secret-at-least-thirty-two-bytes",
             "SCHOLIGHT_ACCESS_KEY_HMAC_SECRET=access-secret-at-least-thirty-two-bytes",
+            "SCHOLIGHT_EXTRACT_INTERNAL_TOKEN=extract-secret-at-least-thirty-two-bytes",
             "SCHOLIGHT_PUBLIC_WEB_URL=https://scholight.example.invalid",
             'SCHOLIGHT_CORS_ALLOW_ORIGINS=["https://scholight.example.invalid"]',
             "",
@@ -176,7 +180,7 @@ def run_bootstrap(
             str(BOOTSTRAP),
             "deploy",
             "--contract-version",
-            "1",
+            "2",
             "--package-sha",
             expected_sha or package_sha(source),
             "--release-sha",
@@ -185,6 +189,8 @@ def run_bootstrap(
             BACKEND_IMAGE,
             "--frontend-image",
             FRONTEND_IMAGE,
+            "--extract-image",
+            EXTRACT_IMAGE,
         ],
         cwd=ROOT,
         env=env,
@@ -429,7 +435,7 @@ def test_similar_but_wrong_ecr_hostname_is_rejected(tmp_path: Path) -> None:
             str(BOOTSTRAP),
             "deploy",
             "--contract-version",
-            "1",
+            "2",
             "--package-sha",
             package_sha(source),
             "--release-sha",
@@ -438,6 +444,8 @@ def test_similar_but_wrong_ecr_hostname_is_rejected(tmp_path: Path) -> None:
             wrong_backend,
             "--frontend-image",
             FRONTEND_IMAGE,
+            "--extract-image",
+            EXTRACT_IMAGE,
         ],
         cwd=ROOT,
         env=env,

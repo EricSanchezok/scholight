@@ -1,8 +1,10 @@
 # Scholight
 
-AI 学术论文搜索引擎——arXiv 单一数据源，段落级向量检索 + 多阶段重排。
+AI 学术研究引擎——当前索引 arXiv 语料，提供段落级论文检索、多阶段重排与通用 Web Extract。
 
 前端产品原则以 [`PRODUCT.md`](PRODUCT.md) 为准，视觉与交互系统以 [`DESIGN.md`](DESIGN.md) 为准；新增界面前应先读取两者。
+共享身份接入、数据库角色、升级和排障的权威规范见
+[`sanchezcloud-identity` engineering handbook](https://github.com/EricSanchezok/sanchezcloud-identity/blob/main/docs/README.md)；本仓库只维护 Scholight 特有规则。
 
 ## 架构概览
 
@@ -14,6 +16,7 @@ scholight/
 │   ├── store/        Zilliz Cloud 交互层（论文、段落、索引管理）
 │   ├── pipeline/     PDF/LaTeX 解析、段落切分、embedding
 │   ├── sources/      arXiv 数据源连接器
+│   ├── web_extract/  通用网页/文档抓取、渲染与正文抽取
 │   ├── scheduler/    摄入编排与每日同步
 │   ├── cli/          Click CLI（search / scheduler / store）
 │   ├── models/       Pydantic 数据模型
@@ -47,6 +50,14 @@ uv run scholight search -q "attention mechanism"   # 测试搜索
 
 程序化接入与 MCP 配置请从站内 `/docs` 开始。
 
+### Web Extract
+
+`POST /extract` 与 MCP `extract_url` 提供同一套通用读取能力：HTTP/HTTPS GET、公开任意端口、自定义目标请求头、无状态 Cookie、静态/Chromium 自动切换，以及 HTML、JSON、XML、PDF 到 Markdown/文本/原始 HTML 的转换。长内容用短期、身份绑定的 `next_cursor` 延续，不会重新抓取源站。
+
+Web Extract 要求 Access Key，但不消耗搜索日额度。带目标请求头或 Cookie 的调用不进入共享缓存。v1 暂不支持目标 POST、用户代理、自定义 JavaScript 与非 HTTP(S) URL。
+
+抽取 sidecar 仅记录静态/浏览器路径、稳定错误码、耗时、下载/输出字节数与缓存命中指标；目标 URL、Authorization、Cookie 和响应正文不会进入日志或指标。
+
 ---
 
 ## 配置
@@ -64,6 +75,8 @@ uv run scholight search -q "attention mechanism"   # 测试搜索
 | `SCHOLIGHT_PUBLIC_WEB_URL`                                  | API ✅ | 邮箱验证和密码重置邮件返回的产品公开地址                                             |
 | `SCHOLIGHT_ANONYMOUS_QUOTA_HMAC_SECRET`                     | API ✅ | 匿名 IP 摘要密钥，至少 32 UTF-8 bytes，独立于 JWT 密钥并跨实例/重启保持一致         |
 | `SCHOLIGHT_ACCESS_KEY_HMAC_SECRET`                          | API ✅ | Access Key HMAC-SHA256 密钥，至少 32 UTF-8 bytes；必须独立生成并跨实例/重启保持一致 |
+| `SCHOLIGHT_EXTRACT_INTERNAL_TOKEN`                          | API/Extract ✅ | API 与内部抽取 sidecar 之间的共享随机令牌，至少 32 UTF-8 bytes                  |
+| `SCHOLIGHT_EXTRACT_SERVICE_URL`                             | API ✅ | 内部抽取 sidecar 地址，Compose 默认 `http://extract:8001`                         |
 | `SCHOLIGHT_ANONYMOUS_RATE_LIMIT_PER_MINUTE`                 |        | 匿名共享分钟桶，默认 30 attempts/IP                                                 |
 | `SCHOLIGHT_ANONYMOUS_STANDARD_DAILY_LIMIT`                  |        | 匿名 Standard UTC 日额度，默认 100/IP                                               |
 | `SCHOLIGHT_ANONYMOUS_THOROUGH_DAILY_LIMIT`                  |        | 匿名 Thorough UTC 日额度，默认 30/IP                                                |
@@ -170,7 +183,7 @@ uv run scholight search -q "your query" --json       # JSON 输出
 
 ### Access Key、Usage 与 Session API
 
-以下管理接口只接受登录 JWT。Access Key 仅拥有 `search` scope，不能访问账户、历史、Usage、Session 或 Key 管理接口。完整 Key 仅在创建响应中出现一次，服务端只保存 HMAC-SHA256 digest。
+以下管理接口只接受登录 JWT。Access Key 固定拥有 `all` 工具权限，不做逐工具 scope；它仍不能访问账户、历史、Usage、Session 或 Key 管理接口。完整 Key 仅在创建响应中出现一次，服务端只保存 HMAC-SHA256 digest。
 
 ```bash
 API=https://your-scholight.example/api
@@ -180,7 +193,7 @@ JWT=your-login-access-token
 curl -sS -X POST "$API/user/access-keys" \
   -H "Authorization: Bearer $JWT" \
   -H 'Content-Type: application/json' \
-  -d '{"name":"literature-review","scopes":["search"],"expires_at":null}'
+  -d '{"name":"literature-review","scopes":["all"],"expires_at":null}'
 
 # 列表不会返回 key 或 digest
 curl -sS "$API/user/access-keys" -H "Authorization: Bearer $JWT"

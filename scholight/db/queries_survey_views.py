@@ -131,20 +131,24 @@ async def list_survey_summaries(
             "LEFT JOIN scholight.survey_drafts d ON d.survey_id = s.id "
             "AND d.status IN ('queued','running') LEFT JOIN draft_ranked dr ON dr.id = d.id "
             "LEFT JOIN job_ranked jr ON jr.id = j.id), quota AS (SELECT "
+            "coalesce((SELECT daily_limit FROM scholight.user_quota_overrides "
+            "WHERE user_id = $1 AND strength = 'survey'), $7::integer) AS daily_limit, "
             "coalesce((SELECT reserved_count FROM scholight.survey_daily_usage "
             "WHERE user_id = $1 AND usage_date = $6), 0) AS reserved, "
             "coalesce((SELECT succeeded_count FROM scholight.survey_daily_usage "
             "WHERE user_id = $1 AND usage_date = $6), 0) AS succeeded) "
             "SELECT coalesce(jsonb_agg(to_jsonb(item_rows) ORDER BY created_at DESC, id DESC) "
             "FILTER (WHERE id IS NOT NULL), '[]'::jsonb) AS items, "
-            "quota.reserved, quota.succeeded FROM quota LEFT JOIN item_rows ON true "
-            "GROUP BY quota.reserved, quota.succeeded",
+            "quota.daily_limit, quota.reserved, quota.succeeded "
+            "FROM quota LEFT JOIN item_rows ON true "
+            "GROUP BY quota.daily_limit, quota.reserved, quota.succeeded",
             user_id,
             view,
             cursor_created_at,
             cursor_id,
             limit + 1,
             quota_date,
+            daily_limit,
         )
     except asyncpg.PostgresError as exc:
         logger.error("survey_summaries_read_failed", error_type=type(exc).__name__)
@@ -220,11 +224,39 @@ async def list_survey_summaries(
     return SurveySummaryPage(
         items=tuple(summaries),
         quota=SurveyQuotaSnapshot(
-            daily_limit=daily_limit,
+            daily_limit=int(row["daily_limit"]),
             reserved=int(row["reserved"]),
             succeeded=int(row["succeeded"]),
         ),
         has_more=has_more,
+    )
+
+
+async def get_survey_quota_snapshot(
+    *, user_id: int, quota_date: date, daily_limit: int
+) -> SurveyQuotaSnapshot:
+    """Read today's lightweight Survey quota projection for account usage views."""
+    try:
+        row = await get_pool().fetchrow(
+            "SELECT coalesce((SELECT daily_limit FROM scholight.user_quota_overrides "
+            "WHERE user_id = $1 AND strength = 'survey'), $3::integer) AS daily_limit, "
+            "coalesce((SELECT reserved_count FROM scholight.survey_daily_usage "
+            "WHERE user_id = $1 AND usage_date = $2), 0) AS reserved_count, "
+            "coalesce((SELECT succeeded_count FROM scholight.survey_daily_usage "
+            "WHERE user_id = $1 AND usage_date = $2), 0) AS succeeded_count",
+            user_id,
+            quota_date,
+            daily_limit,
+        )
+    except asyncpg.PostgresError as exc:
+        logger.error("survey_quota_read_failed", error_type=type(exc).__name__)
+        raise DBError("Failed to read Survey quota") from exc
+    if row is None:
+        return SurveyQuotaSnapshot(daily_limit=daily_limit, reserved=0, succeeded=0)
+    return SurveyQuotaSnapshot(
+        daily_limit=int(row["daily_limit"]),
+        reserved=int(row["reserved_count"]),
+        succeeded=int(row["succeeded_count"]),
     )
 
 
@@ -266,5 +298,6 @@ __all__ = [
     "SurveySummary",
     "SurveySummaryPage",
     "get_survey_artifact_reference",
+    "get_survey_quota_snapshot",
     "list_survey_summaries",
 ]

@@ -4,21 +4,28 @@ import remarkGfm from "remark-gfm";
 import { styles } from "../../styles/classes";
 import { resolveReportImage } from "./survey";
 
+const HTML_COMMENT_PATTERN = /<!--[\s\S]*?-->/g;
+
 export function SurveyMarkdown({
   markdown,
   imageArtifacts,
   compact = false,
+  preview = false,
 }: {
   markdown: string;
   imageArtifacts?: Map<string, string>;
   compact?: boolean;
+  preview?: boolean;
 }) {
   const components: Components = {
-    a: ({ children, href }) => (
-      <a href={href} target="_blank" rel="noreferrer noopener">
-        {children}
-      </a>
-    ),
+    a: ({ children, href }) =>
+      preview ? (
+        <span>{children}</span>
+      ) : (
+        <a href={href} target="_blank" rel="noreferrer noopener">
+          {children}
+        </a>
+      ),
     img: ({ alt, src }) => {
       if (!src || !imageArtifacts) return null;
       const resolved = resolveReportImage(src, imageArtifacts);
@@ -36,7 +43,7 @@ export function SurveyMarkdown({
           return defaultUrlTransform(url);
         }}
       >
-        {markdown}
+        {markdown.replace(HTML_COMMENT_PATTERN, "")}
       </ReactMarkdown>
     </div>
   );

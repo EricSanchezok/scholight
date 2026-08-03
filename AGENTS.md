@@ -11,7 +11,7 @@ Frontend product decisions are authoritative in [`PRODUCT.md`](PRODUCT.md); visu
 
 ## 项目概述
 
-Scholight 是面向人工智能领域的学术论文搜索引擎，**以 arXiv 为唯一数据源**，使用 **Zilliz Cloud** 作为唯一存储引擎。
+Scholight 是面向人工智能领域的学术研究引擎。当前唯一已索引的论文数据源是 arXiv；Zilliz Cloud 保存论文与向量检索数据，PostgreSQL 保存共享身份和 Scholight 产品数据。通用 Web Extract 是独立的读取能力，不等同于论文语料摄入；新增论文来源必须通过独立 connector 接入。
 
 ## 目录结构
 
@@ -123,8 +123,8 @@ scholight/
 
 ## 技术选型
 
-- **唯一数据库**：Zilliz Cloud（managed Milvus），不引入其他数据库
-- **唯一数据源**：arXiv（bulk PDF tar + OAI-PMH API），不引入其他数据源
+- **检索存储**：Zilliz Cloud（managed Milvus）只保存论文、段落、向量与索引；账户、额度、Usage 和历史保存在 PostgreSQL
+- **当前论文数据源**：arXiv（bulk PDF tar + OAI-PMH API）；新增来源通过独立 connector 接入，不把 Web Extract 当作摄入管线
 - **部署方式**：启智平台 notebook 容器，向量数据存于 Zilliz Cloud
 
 ## Zilliz Cloud 连接

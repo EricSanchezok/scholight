@@ -77,6 +77,7 @@ async function mockAccountCenter(page: Page) {
         today: {
           standard: { used: 18, daily_limit: 100, remaining: 82 },
           thorough: { used: 4, daily_limit: 30, remaining: 26 },
+          survey: { used: 1, daily_limit: 3, remaining: 2 },
         },
         reset_at: "2026-07-23T00:00:00Z",
         timezone: "UTC",
@@ -164,7 +165,7 @@ async function mockAccountCenter(page: Page) {
             name: "literature-review",
             prefix: "sk_live_",
             last4: "7K2P",
-            scopes: ["search"],
+            scopes: ["all"],
             created_at: "2026-07-22T18:42:00Z",
             last_used_at: null,
             expires_at: "2026-10-20T18:42:00Z",
@@ -178,7 +179,7 @@ async function mockAccountCenter(page: Page) {
               name: "literature-review",
               prefix: "sk_live_",
               last4: "7K2P",
-              scopes: ["search"],
+              scopes: ["all"],
               created_at: "2026-07-19T10:00:00Z",
               last_used_at: "2026-07-22T18:42:00Z",
               expires_at: null,
@@ -189,7 +190,7 @@ async function mockAccountCenter(page: Page) {
               name: "cursor-agent",
               prefix: "sk_live_",
               last4: "P9MX",
-              scopes: ["search"],
+              scopes: ["all"],
               created_at: "2026-07-03T10:00:00Z",
               last_used_at: "2026-07-21T09:15:00Z",
               expires_at: null,
@@ -254,6 +255,13 @@ async function mockQuotaAdministration(page: Page) {
             used: 4,
             remaining: 996,
           },
+          survey: {
+            default_limit: 3,
+            override_limit: 2,
+            effective_limit: 2,
+            used: 1,
+            remaining: 1,
+          },
         },
       },
     }),
@@ -268,8 +276,8 @@ async function mockQuotaAdministration(page: Page) {
           target_user_id: 7,
           target_email: "reader@example.com",
           action: "quota_overrides_updated",
-          before_state: { standard: 1000, thorough: null },
-          after_state: { standard: 5000, thorough: null },
+          before_state: { standard: 1000, thorough: null, survey: null },
+          after_state: { standard: 5000, thorough: null, survey: 2 },
           created_at: "2026-07-22T18:42:00Z",
         },
       ],
@@ -329,7 +337,7 @@ test("signed-in survey controls follow the shared page geometry", async ({ page 
     route.fulfill({
       json: {
         items: [],
-        quota: { daily_limit: 5, reserved: 0, succeeded: 0, remaining: 5 },
+        quota: { daily_limit: 3, reserved: 0, succeeded: 0, remaining: 3 },
         next_cursor: null,
       },
     }),
@@ -356,6 +364,129 @@ test("signed-in survey controls follow the shared page geometry", async ({ page 
   await expect
     .poll(async () => (await form.boundingBox())?.height ?? 0)
     .toBeGreaterThan(formBox!.height);
+});
+
+test("completed survey cards render a stable live Markdown preview", async ({ page }) => {
+  await mockAuthenticated(page);
+  await page.route("**/api/surveys?*", (route) =>
+    route.fulfill({
+      json: {
+        items: [
+          {
+            id: "00000000-0000-0000-0000-000000000001",
+            title: "Chain-of-thought compression and evaluation",
+            status: "succeeded",
+            created_at: "2026-08-02T06:00:00Z",
+            updated_at: "2026-08-02T07:37:00Z",
+            started_at: "2026-08-02T06:10:00Z",
+            finished_at: "2026-08-02T07:37:00Z",
+            latest_draft_revision: 1,
+            progress: {
+              survey_id: "00000000-0000-0000-0000-000000000001",
+              status: "succeeded",
+              stage: "completed",
+              percent: 100,
+              step: 8,
+              total_steps: 8,
+              queue: null,
+              elapsed_seconds: 5220,
+              started_at: "2026-08-02T06:10:00Z",
+              finished_at: "2026-08-02T07:37:00Z",
+              last_activity_at: "2026-08-02T07:37:00Z",
+            },
+            report_available: true,
+            artifacts_available: true,
+          },
+        ],
+        quota: { daily_limit: 3, reserved: 0, succeeded: 1, remaining: 2 },
+        next_cursor: null,
+      },
+    }),
+  );
+  await page.route("**/api/surveys/*/report", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    await route.fulfill({
+      contentType: "text/markdown",
+      body: [
+        "# Chain-of-thought compression and evaluation",
+        "",
+        "## Abstract",
+        "",
+        "This survey maps where reasoning tokens are saved and what accuracy trade-offs remain.",
+        "",
+        "## Evidence",
+        "",
+        "- Inference-time compression reduces generated tokens without retraining.",
+        "- Post-training methods trade training cost for shorter reasoning traces.",
+      ].join("\n"),
+    });
+  });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/survey?view=completed");
+
+  const preview = page.locator(".surveyReportThumbnail");
+  const loadingBox = await preview.boundingBox();
+  await expect(page.getByText("This survey maps where reasoning tokens are saved")).toBeVisible();
+  const renderedBox = await preview.boundingBox();
+  const paperBox = await page.locator(".surveyReportPaper").boundingBox();
+
+  expect(renderedBox).toEqual(loadingBox);
+  expect(paperBox).toEqual(renderedBox);
+  await expect(page.getByText("Chain-of-thought compression and evaluation")).toHaveCount(1);
+});
+
+test("a completed report downloads as a Markdown and image package", async ({ page }) => {
+  await mockAuthenticated(page);
+  const surveyId = "00000000-0000-0000-0000-000000000001";
+  await page.route(`**/api/surveys/${surveyId}`, (route) =>
+    route.fulfill({
+      json: {
+        id: surveyId,
+        title: "Chain-of-thought compression and evaluation",
+        initial_request: "Survey reasoning compression.",
+        status: "succeeded",
+        quota_state: "consumed",
+        error_code: null,
+        error_message: null,
+        created_at: "2026-08-02T06:00:00Z",
+        updated_at: "2026-08-02T07:37:00Z",
+        started_at: "2026-08-02T06:10:00Z",
+        finished_at: "2026-08-02T07:37:00Z",
+      },
+    }),
+  );
+  await page.route(`**/api/surveys/${surveyId}/report`, (route) =>
+    route.fulfill({
+      contentType: "text/markdown",
+      body: "# Report\n\nFinal paragraph.\n\n<!--M4-->",
+    }),
+  );
+  await page.route(`**/api/surveys/${surveyId}/artifacts`, (route) =>
+    route.fulfill({
+      json: {
+        survey_id: surveyId,
+        expires_at: "2026-08-02T07:42:00Z",
+        items: [],
+      },
+    }),
+  );
+  await page.route(`**/api/surveys/${surveyId}/download`, (route) =>
+    route.fulfill({
+      contentType: "application/zip",
+      headers: {
+        "Content-Disposition": `attachment; filename="scholight-survey-${surveyId}.zip"`,
+      },
+      body: "package",
+    }),
+  );
+  await page.goto(`/survey/${surveyId}/report`);
+
+  await expect(page.getByText("<!--M4-->")).not.toBeVisible();
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download ZIP" }).click();
+  const download = await downloadPromise;
+
+  expect(download.suggestedFilename()).toBe("Chain-of-thought-compression-and-evaluation.zip");
 });
 
 test("a delayed search immediately shows a stable editorial skeleton", async ({ page }) => {
@@ -551,6 +682,8 @@ test("quota administration stays exact, auditable, and within the viewport", asy
   await page.getByRole("button", { name: "Find user" }).click();
   await expect(page.getByRole("heading", { name: "Reader" })).toBeVisible();
   await expect(page.getByLabel("Standard custom daily limit")).toHaveValue("5000");
+  await expect(page.getByLabel("Thorough custom daily limit")).toHaveValue("");
+  await expect(page.getByLabel("Survey custom daily limit")).toHaveValue("2");
   await expect(page.getByText(/Standard 1,000 → 5,000/)).toBeVisible();
 
   const widths = await page.evaluate(() => ({

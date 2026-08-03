@@ -8,6 +8,7 @@ export function apiPath(path: `/${string}`): string {
 
 export type DeploymentUrls = {
   search: string;
+  extract: string;
   mcp: string;
 };
 
@@ -21,6 +22,7 @@ export function buildDeploymentUrls(
 
   return {
     search: `${api}/search`,
+    extract: `${api}/extract`,
     mcp: `${api}/mcp`,
   };
 }

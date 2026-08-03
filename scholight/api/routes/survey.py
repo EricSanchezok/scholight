@@ -123,6 +123,7 @@ class ManualDraftCreateRequest(BaseModel):
 
 class SurveyActionRequest(BaseModel):
     client_request_id: UUID
+    notify_on_completion: bool = False
 
 
 class SurveyResponse(BaseModel):
@@ -548,6 +549,7 @@ def _artifact_store(reference: SurveyArtifactReference) -> SurveyArtifactStore:
     return SurveyArtifactStore(
         bucket=settings.survey_s3_bucket,
         endpoint_url=settings.survey_s3_endpoint_url,
+        public_endpoint_url=settings.survey_s3_public_endpoint_url,
     )
 
 
@@ -640,6 +642,42 @@ async def survey_report(
         media_type="text/markdown; charset=utf-8",
         headers={
             "Cache-Control": "private, no-store",
+            "ETag": f'"{stream.sha256}"',
+            "Content-Length": str(stream.size),
+        },
+    )
+
+
+@router.get(
+    "/surveys/{survey_id}/download",
+    response_class=StreamingResponse,
+    responses={200: {"content": {"application/zip": {}}}},
+)
+async def survey_report_download(
+    survey_id: UUID,
+    current_user: UserRecord = Depends(get_current_user),
+) -> StreamingResponse:
+    _require_enabled()
+    reference = await _artifact_reference(survey_id=survey_id, user_id=current_user.id)
+    manifest_key = _require_archived(reference, report=True)
+    try:
+        stream = await _artifact_store(reference).build_report_package(manifest_key=manifest_key)
+    except SurveyArtifactNotFoundError as exc:
+        raise http_error(
+            409,
+            code="survey_report_not_available",
+            message="This Survey does not have a final report.",
+            retryable=False,
+            retry_after=None,
+        ) from exc
+    except (SurveyArtifactError, BotoCoreError, ClientError) as exc:
+        raise _artifact_unavailable() from exc
+    return StreamingResponse(
+        stream.chunks(),
+        media_type="application/zip",
+        headers={
+            "Cache-Control": "private, no-store",
+            "Content-Disposition": (f'attachment; filename="scholight-survey-{survey_id}.zip"'),
             "ETag": f'"{stream.sha256}"',
             "Content-Length": str(stream.size),
         },
@@ -770,8 +808,12 @@ async def start_survey_execution(
             client_request_id=body.client_request_id,
             request_hash=canonical_request_hash(
                 operation="start_survey",
-                payload={"survey_id": str(survey_id)},
+                payload={
+                    "survey_id": str(survey_id),
+                    "notify_on_completion": body.notify_on_completion,
+                },
             ),
+            notify_on_completion=body.notify_on_completion,
         )
     except SurveyStateError as exc:
         raise _state_error(exc) from exc

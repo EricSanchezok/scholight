@@ -14,6 +14,7 @@ from fastapi import FastAPI
 from sanchezcloud_identity.models.user import UserRecord
 
 from scholight.api.deps import get_current_user
+from scholight.api.routes.survey import _artifact_store
 from scholight.config import settings
 from scholight.db.queries_survey import (
     Survey,
@@ -290,7 +291,7 @@ async def test_manual_draft_and_start_use_distinct_write_endpoints(
             "scholight.api.routes.survey.start_survey",
             new_callable=AsyncMock,
             return_value=_survey(survey_id=survey_id, status="queued"),
-        ),
+        ) as start,
     ):
         manual = await api_client.post(
             f"/surveys/{survey_id}/drafts/manual",
@@ -302,13 +303,48 @@ async def test_manual_draft_and_start_use_distinct_write_endpoints(
         )
         started = await api_client.post(
             f"/surveys/{survey_id}/start",
-            json={"client_request_id": str(uuid4())},
+            json={"client_request_id": str(uuid4()), "notify_on_completion": True},
         )
 
     assert manual.status_code == 201
     assert manual.json()["markdown"] == "# Approved scope"
     assert started.status_code == 200
     assert started.json()["status"] == "queued"
+    call = start.await_args
+    assert call is not None
+    assert call.kwargs["notify_on_completion"] is True
+
+
+async def test_start_survey_defaults_notification_preference_off_for_old_clients(
+    api_app: FastAPI,
+    api_client: httpx.AsyncClient,
+    active_user: UserRecord,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _authenticate(api_app, active_user)
+    monkeypatch.setattr(settings, "survey_enabled", True)
+    survey_id = uuid4()
+    with (
+        patch(
+            "scholight.api.routes.survey.get_survey",
+            new_callable=AsyncMock,
+            return_value=_survey(survey_id=survey_id),
+        ),
+        patch(
+            "scholight.api.routes.survey.start_survey",
+            new_callable=AsyncMock,
+            return_value=_survey(survey_id=survey_id, status="queued"),
+        ) as start,
+    ):
+        response = await api_client.post(
+            f"/surveys/{survey_id}/start",
+            json={"client_request_id": str(uuid4())},
+        )
+
+    assert response.status_code == 200
+    call = start.await_args
+    assert call is not None
+    assert call.kwargs["notify_on_completion"] is False
 
 
 async def test_manual_draft_accepts_full_one_mib_payload(
@@ -628,6 +664,58 @@ async def test_report_streams_manifest_authorized_markdown_for_owner(
     )
 
 
+async def test_report_download_streams_owner_scoped_zip_package(
+    api_app: FastAPI,
+    api_client: httpx.AsyncClient,
+    active_user: UserRecord,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _authenticate(api_app, active_user)
+    monkeypatch.setattr(settings, "survey_enabled", True)
+    survey_id = uuid4()
+    job_id = uuid4()
+    storage_prefix = f"surveys/v1/{active_user.id}/{job_id}"
+    reference = SurveyArtifactReference(
+        survey_id=survey_id,
+        user_id=active_user.id,
+        job_id=job_id,
+        survey_status="succeeded",
+        job_status="finished",
+        terminal_outcome="succeeded",
+        storage_bucket="private-bucket",
+        storage_prefix=storage_prefix,
+        manifest_key=f"{storage_prefix}/manifest.json",
+    )
+    stream = SurveyArtifactStream(
+        path="scholight-survey.zip",
+        size=7,
+        sha256="b" * 64,
+        content_type="application/zip",
+        _body=io.BytesIO(b"package"),
+    )
+    store = AsyncMock()
+    store.build_report_package.return_value = stream
+    with (
+        patch(
+            "scholight.api.routes.survey.get_survey_artifact_reference",
+            new_callable=AsyncMock,
+            return_value=reference,
+        ),
+        patch("scholight.api.routes.survey._artifact_store", return_value=store),
+    ):
+        response = await api_client.get(f"/surveys/{survey_id}/download")
+
+    assert response.status_code == 200
+    assert response.content == b"package"
+    assert response.headers["content-type"] == "application/zip"
+    assert response.headers["content-disposition"] == (
+        f'attachment; filename="scholight-survey-{survey_id}.zip"'
+    )
+    store.build_report_package.assert_awaited_once_with(
+        manifest_key=f"{storage_prefix}/manifest.json"
+    )
+
+
 async def test_artifacts_hide_storage_keys_and_use_short_lived_urls(
     api_app: FastAPI,
     api_client: httpx.AsyncClient,
@@ -686,6 +774,46 @@ async def test_artifacts_hide_storage_keys_and_use_short_lived_urls(
     store.presigned_artifacts.assert_awaited_once_with(
         manifest_key=f"{storage_prefix}/manifest.json",
         expires_seconds=300,
+    )
+
+
+async def test_artifacts_sign_with_browser_facing_storage_endpoint(
+    active_user: UserRecord,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "survey_s3_bucket", "private-bucket")
+    monkeypatch.setattr(settings, "survey_s3_endpoint_url", "http://minio:9000")
+    monkeypatch.setattr(
+        settings,
+        "survey_s3_public_endpoint_url",
+        "http://127.0.0.1:9000",
+    )
+    survey_id = uuid4()
+    job_id = uuid4()
+    storage_prefix = f"surveys/v1/{active_user.id}/{job_id}"
+    reference = SurveyArtifactReference(
+        survey_id=survey_id,
+        user_id=active_user.id,
+        job_id=job_id,
+        survey_status="failed",
+        job_status="finished",
+        terminal_outcome="failed",
+        storage_bucket="private-bucket",
+        storage_prefix=storage_prefix,
+        manifest_key=f"{storage_prefix}/manifest.json",
+    )
+    store = AsyncMock()
+    with patch(
+        "scholight.api.routes.survey.SurveyArtifactStore",
+        return_value=store,
+    ) as artifact_store:
+        result = _artifact_store(reference)
+
+    assert result is store
+    artifact_store.assert_called_once_with(
+        bucket="private-bucket",
+        endpoint_url="http://minio:9000",
+        public_endpoint_url="http://127.0.0.1:9000",
     )
 
 

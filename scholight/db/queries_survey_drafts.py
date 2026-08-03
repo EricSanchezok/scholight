@@ -13,7 +13,10 @@ import structlog
 from scholight.db.client import DBError, get_pool
 from scholight.db.queries_survey import SurveyStateError
 from scholight.db.survey_locking import lock_survey_aggregate
-from scholight.survey.contracts import HeartbeatState, SurveyLeaseLostError
+from scholight.survey.contracts import (
+    HeartbeatState,
+    SurveyLeaseLostError,
+)
 
 logger = structlog.get_logger(__name__)
 

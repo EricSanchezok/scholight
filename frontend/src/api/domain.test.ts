@@ -69,6 +69,7 @@ describe("typed API client", () => {
           today: {
             standard: { used: 1, daily_limit: 10, remaining: 9 },
             thorough: { used: 0, daily_limit: 2, remaining: 2 },
+            survey: { used: 1, daily_limit: 3, remaining: 2 },
           },
           reset_at: "2026-07-23T00:00:00Z",
           timezone: "UTC",
@@ -118,10 +119,10 @@ describe("typed API client", () => {
     );
 
     const { adminApi } = await import("./domain");
-    await adminApi.updateQuotaOverrides(7, { standard: 5000, thorough: null });
+    await adminApi.updateQuotaOverrides(7, { standard: 5000, thorough: null, survey: 2 });
     const request = fetchMock.mock.calls[0]?.[0] as Request;
     expect(request.url).toContain("/api/admin/users/7/quota-overrides");
-    expect(await request.clone().json()).toEqual({ standard: 5000, thorough: null });
+    expect(await request.clone().json()).toEqual({ standard: 5000, thorough: null, survey: 2 });
     expect(request.headers.get("Authorization")).toBe("Bearer admin-access");
   });
 

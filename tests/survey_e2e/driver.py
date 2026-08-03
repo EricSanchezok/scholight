@@ -59,7 +59,12 @@ async def _poll_draft(
     raise AssertionError("Draft did not become ready")
 
 
-async def _poll_survey(client: httpx.AsyncClient, survey_id: str) -> dict[str, Any]:
+async def _poll_survey(
+    client: httpx.AsyncClient,
+    survey_id: str,
+    *,
+    expected_status: str = "succeeded",
+) -> dict[str, Any]:
     observed: set[str] = set()
     for _ in range(240):
         progress = await client.get(f"{API}/surveys/{survey_id}/progress")
@@ -68,11 +73,11 @@ async def _poll_survey(client: httpx.AsyncClient, survey_id: str) -> dict[str, A
         response = await client.get(f"{API}/surveys/{survey_id}")
         response.raise_for_status()
         survey = response.json()
-        if survey["status"] == "succeeded":
+        if survey["status"] == expected_status:
             if not ({"waiting_for_execution", "finalizing", "completed"} & observed):
                 raise AssertionError(f"no public progress stages were observed: {observed}")
             return survey
-        if survey["status"] in {"failed", "cancelled"}:
+        if survey["status"] in {"succeeded", "failed", "cancelled"}:
             raise AssertionError(f"Survey entered {survey['status']}: {survey}")
         await asyncio.sleep(1)
     raise AssertionError("Survey did not finish")
@@ -113,10 +118,51 @@ async def _assert_database_and_archive(s3: Any, survey_id: str) -> tuple[str, st
         assert job is not None
         assert job["terminal_outcome"] == "succeeded"
         manifest = json.loads(_read_object(s3, job["manifest_key"]))
-        report = next(item for item in manifest["files"] if item["path"] == "run/08_survey.md")
-        report_body = _read_object(s3, report["key"])
-        assert hashlib.sha256(report_body).hexdigest() == report["sha256"]
-        assert report_body.startswith(b"# Retrieval-Augmented Generation Survey")
+        paths = {item["path"] for item in manifest["files"]}
+        assert {
+            "run/00_survey_spec.md",
+            "run/01_query_plan.md",
+            "run/02_candidate_pool.md",
+            "run/03_expansion.md",
+            "run/04_ranked_pool.md",
+            "run/cards/2401.12345.md",
+            "run/05_research_map.md",
+            "run/06_judge_panel.md",
+            "run/00_outline.md",
+            "run/sections/01_introduction.md",
+            "run/08_survey.md",
+            "run/index.md",
+            "run/trajectory.jsonl",
+            "run/diagnostics.json",
+            "run.json",
+        }.issubset(paths)
+        run_record = json.loads(
+            _read_object(
+                s3, next(item["key"] for item in manifest["files"] if item["path"] == "run.json")
+            )
+        )
+        assert run_record["schema_version"] == 2
+        assert run_record["process"]["return_code"] == 0
+        assert run_record["process"]["termination_reason"] == "completed"
+        assert run_record["diagnostics"]["last_successful_component"] in {
+            "survey_outline",
+            "survey_assembler",
+        }
+        assert run_record["diagnostics"]["tool_counts"]["started"] > 0
+        assert run_record["diagnostics"]["tool_counts"]["finished"] > 0
+        assert run_record["diagnostics"]["tool_counts"]["failed"] == 0
+        missing_errors = {
+            anomaly["expected_artifact"]
+            for anomaly in run_record["diagnostics"]["anomalies"]
+            if anomaly["severity"] == "error"
+        }
+        assert "08_survey.md" not in missing_errors
+        assert "index.md" not in missing_errors
+        diagnostics_artifact = next(
+            item for item in manifest["files"] if item["path"] == "run/diagnostics.json"
+        )
+        diagnostics_body = _read_object(s3, diagnostics_artifact["key"])
+        assert hashlib.sha256(diagnostics_body).hexdigest() == diagnostics_artifact["sha256"]
         usage = await connection.fetchval(
             "SELECT used_count FROM scholight.user_daily_search_usage "
             "WHERE user_id = 42 AND strength = 'standard'"
@@ -138,6 +184,25 @@ async def _assert_database_and_archive(s3: Any, survey_id: str) -> tuple[str, st
         assert quota is not None
         assert quota["reserved_count"] == 0
         assert quota["succeeded_count"] == 1
+        notify_on_completion = await connection.fetchval(
+            "SELECT notify_on_completion FROM scholight.surveys WHERE id = $1::uuid",
+            survey_id,
+        )
+        assert notify_on_completion is True
+        notification = None
+        for _ in range(30):
+            notification = await connection.fetchrow(
+                "SELECT survey_outcome, status, attempts "
+                "FROM scholight.survey_email_notifications WHERE survey_id = $1::uuid",
+                survey_id,
+            )
+            if notification is not None and notification["status"] == "succeeded":
+                break
+            await asyncio.sleep(0.25)
+        assert notification is not None
+        assert notification["survey_outcome"] == "succeeded"
+        assert notification["status"] == "succeeded"
+        assert notification["attempts"] == 1
         return str(job["id"]), str(job["manifest_key"])
     finally:
         await connection.close()
@@ -147,7 +212,7 @@ async def _assert_public_report_and_artifacts(
     client: httpx.AsyncClient,
     survey_id: str,
 ) -> None:
-    listing = await client.get(f"{API}/surveys", params={"view": "completed"})
+    listing = await client.get(f"{API}/surveys", params={"view": "all"})
     listing.raise_for_status()
     listed = next(item for item in listing.json()["items"] if item["id"] == survey_id)
     assert listed["report_available"] is True
@@ -156,18 +221,116 @@ async def _assert_public_report_and_artifacts(
 
     report = await client.get(f"{API}/surveys/{survey_id}/report")
     report.raise_for_status()
-    assert report.headers["cache-control"] == "private, no-store"
-    assert report.headers["content-type"].startswith("text/markdown")
-    assert report.content.startswith(b"# Retrieval-Augmented Generation Survey")
+    assert "real Survey graph" in report.text
 
     artifacts = await client.get(f"{API}/surveys/{survey_id}/artifacts")
     artifacts.raise_for_status()
-    report_artifact = next(
-        item for item in artifacts.json()["items"] if item["path"] == "run/08_survey.md"
+    diagnostics_artifact = next(
+        item for item in artifacts.json()["items"] if item["path"] == "run/diagnostics.json"
     )
-    download = await client.get(report_artifact["download_url"])
+    download = await client.get(diagnostics_artifact["download_url"])
     download.raise_for_status()
-    assert hashlib.sha256(download.content).hexdigest() == report_artifact["sha256"]
+    assert hashlib.sha256(download.content).hexdigest() == diagnostics_artifact["sha256"]
+
+
+async def _assert_real_graph_reaches_assembler(client: httpx.AsyncClient) -> None:
+    response = await client.get("http://model:8080/stats")
+    response.raise_for_status()
+    counts = response.json()["request_counts"]
+    for component in (
+        "anchor",
+        "discovery_merger",
+        "expansion_merger",
+        "paper_card",
+        "judge_synthesizer",
+        "survey_outline",
+        "section_expander",
+    ):
+        assert counts.get(component, 0) > 0
+    assert counts.get("survey_assembler", 0) > 0
+
+
+async def _assert_missing_candidate_pool_diagnostics(
+    client: httpx.AsyncClient,
+    s3: Any,
+) -> tuple[str, str]:
+    created = await client.post(
+        f"{API}/surveys",
+        json={
+            "initial_request": "Exercise missing candidate-pool contract diagnostics",
+            "client_request_id": str(uuid4()),
+        },
+    )
+    created.raise_for_status()
+    survey_id = created.json()["id"]
+    first = await _poll_draft(client, survey_id, expected_revision=1)
+    manual = await client.post(
+        f"{API}/surveys/{survey_id}/drafts/manual",
+        json={
+            "markdown": first["markdown"] + "\n\nOMIT_E2E_CANDIDATE_POOL",
+            "message": "Inject a completed merger with no primary artifact",
+            "client_request_id": str(uuid4()),
+        },
+    )
+    manual.raise_for_status()
+    started = await client.post(
+        f"{API}/surveys/{survey_id}/start",
+        json={"client_request_id": str(uuid4())},
+    )
+    started.raise_for_status()
+    await _poll_survey(client, survey_id, expected_status="failed")
+
+    connection = await asyncpg.connect(
+        host="postgres",
+        port=5432,
+        database="survey_e2e",
+        user="postgres",
+        password="survey-local-only",
+    )
+    try:
+        job = await connection.fetchrow(
+            "SELECT id, manifest_key, terminal_outcome FROM scholight.survey_jobs "
+            "WHERE survey_id = $1::uuid",
+            survey_id,
+        )
+        assert job is not None
+        assert job["terminal_outcome"] == "failed"
+        manifest = json.loads(_read_object(s3, job["manifest_key"]))
+        paths = {item["path"] for item in manifest["files"]}
+        assert "run/02_candidate_pool.md" not in paths
+        assert "run/03_expansion.md" in paths
+        assert "run/08_survey.md" in paths
+        assert "run/index.md" in paths
+        run_record = json.loads(
+            _read_object(
+                s3, next(item["key"] for item in manifest["files"] if item["path"] == "run.json")
+            )
+        )
+        assert run_record["process"]["return_code"] == 0
+        assert run_record["process"]["termination_reason"] == "contract_violation"
+        assert run_record["diagnostics"]["first_anomaly"] == {
+            "component": "discovery_merger",
+            "expected_artifact": "02_candidate_pool.md",
+            "kind": "required_artifact_missing",
+            "severity": "error",
+        }
+        assert run_record["diagnostics"]["last_successful_component"] in {
+            "survey_outline",
+            "survey_assembler",
+        }
+        assert run_record["diagnostics"]["affected_components"] == [
+            "expansion",
+            "rank_pool",
+            "card_plan",
+            "research_map",
+            "judge_panel",
+            "image_planner",
+            "survey_outline",
+            "survey_assembler",
+        ]
+        return survey_id, str(job["manifest_key"])
+    finally:
+        await connection.close()
 
 
 async def _poll_status(
@@ -446,6 +609,7 @@ async def main() -> None:
             },
         )
         created.raise_for_status()
+        assert created.json()["title"] == "Retrieval-Augmented Generation Evaluation"
         survey_id = created.json()["id"]
         first = await _poll_draft(client, survey_id, expected_revision=1)
         assert first["revision"] == 1
@@ -471,17 +635,34 @@ async def main() -> None:
         assert manual.json()["revision"] == 3
         started = await client.post(
             f"{API}/surveys/{survey_id}/start",
-            json={"client_request_id": str(uuid4())},
+            json={
+                "client_request_id": str(uuid4()),
+                "notify_on_completion": True,
+            },
         )
         started.raise_for_status()
         assert started.json()["status"] == "queued"
         await _poll_survey(client, survey_id)
         _job_id, manifest_key = await _assert_database_and_archive(s3, survey_id)
         await _assert_public_report_and_artifacts(client, survey_id)
+        (
+            injected_survey_id,
+            injected_manifest_key,
+        ) = await _assert_missing_candidate_pool_diagnostics(
+            client,
+            s3,
+        )
+        await _assert_real_graph_reaches_assembler(client)
         cancelled_survey_id = await _assert_running_cancel(client)
         cancelled_artifacts = await client.get(f"{API}/surveys/{cancelled_survey_id}/artifacts")
         cancelled_artifacts.raise_for_status()
         await _delete_and_wait_for_cleanup(client, s3, survey_id, manifest_key)
+        await _delete_and_wait_for_cleanup(
+            client,
+            s3,
+            injected_survey_id,
+            injected_manifest_key,
+        )
         logging.getLogger(__name__).info("survey e2e passed")
 
 

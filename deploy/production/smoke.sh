@@ -64,6 +64,9 @@ LOCAL_EDGE_RESOLVE="${SCHOLIGHT_EDGE_DOMAIN}:80:127.0.0.1"
 
 retry "API readiness" compose exec -T api \
   curl --fail --silent --show-error http://127.0.0.1:8000/readyz
+retry "Web Extract readiness" compose exec -T extract \
+  /app/.venv/bin/python -c \
+  "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/readyz', timeout=3)"
 retry "frontend health" compose exec -T frontend \
   wget -q -O /dev/null http://127.0.0.1:8080/healthz
 retry "metadata-sync running" service_running metadata-sync
@@ -71,10 +74,16 @@ retry "paper-ingest running" service_running paper-ingest
 if [[ ${SCHOLIGHT_SURVEY_ENABLED} == true ]]; then
   retry "Survey Draft worker running" service_running survey-draft-worker
   retry "Survey execution worker running" service_running survey-worker
+  retry "Survey Draft worker API service discovery" compose exec -T survey-draft-worker \
+    curl --fail --silent --show-error http://api:8000/livez
+  retry "Survey execution worker API service discovery" compose exec -T survey-worker \
+    curl --fail --silent --show-error http://api:8000/livez
   retry "Survey cleanup sibling heartbeat" compose exec -T survey-worker \
     /bin/sh -ec 'find /tmp/scholight-survey-cleanup.heartbeat -mmin -2 -print -quit | grep -q .'
   retry "Survey migrations, configuration, cleanup, and S3 access" compose exec -T survey-worker \
     /app/.venv/bin/scholight survey smoke --json-output
+  retry "Survey email notification queue readable" compose exec -T survey-worker \
+    /app/.venv/bin/scholight survey status --json-output
 elif [[ ${SCHOLIGHT_SURVEY_ENABLED} != false ]]; then
   printf 'SCHOLIGHT_SURVEY_ENABLED must be exactly true or false\n' >&2
   exit 1

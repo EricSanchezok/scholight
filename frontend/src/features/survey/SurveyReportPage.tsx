@@ -12,7 +12,7 @@ import { formatDurationBetween, formatFullDateTime } from "../../i18n/format";
 import { useI18n } from "../../i18n/I18nProvider";
 import { styles } from "../../styles/classes";
 import { SurveyMarkdown } from "./SurveyMarkdown";
-import { artifactUrlMap, markdownFilename, surveyTitle } from "./survey";
+import { archiveFilename, artifactUrlMap, surveyTitle } from "./survey";
 
 export function SurveyReportPage() {
   const surveyId = useParams().surveyId ?? "";
@@ -47,6 +47,9 @@ export function SurveyReportPage() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.surveyRoot });
       navigate(withQuery(routes.survey.path, { view: "completed" }), { replace: true });
     },
+  });
+  const packageDownload = useMutation({
+    mutationFn: () => surveyApi.downloadPackage(surveyId),
   });
 
   useEffect(() => {
@@ -86,13 +89,18 @@ export function SurveyReportPage() {
 
   const title = surveyTitle(survey.data.title, survey.data.initial_request);
   const download = () => {
-    const blob = new Blob([report.data], { type: "text/markdown;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = markdownFilename(title);
-    anchor.click();
-    URL.revokeObjectURL(url);
+    packageDownload.mutate(undefined, {
+      onSuccess: (blob) => {
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = archiveFilename(title);
+        document.body.append(anchor);
+        anchor.click();
+        anchor.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      },
+    });
   };
 
   return (
@@ -106,8 +114,13 @@ export function SurveyReportPage() {
       <div className={styles.surveyReportHeader}>
         <h1>{title}</h1>
         <div>
-          <button className={styles.secondaryButton} type="button" onClick={download}>
-            Download
+          <button
+            className={styles.secondaryButton}
+            type="button"
+            disabled={packageDownload.isPending}
+            onClick={download}
+          >
+            {packageDownload.isPending ? "Preparing…" : "Download ZIP"}
           </button>
           <button className={styles.dangerButton} type="button" onClick={() => setDeleteOpen(true)}>
             Delete
@@ -139,9 +152,16 @@ export function SurveyReportPage() {
             </div>
             <div>
               <dt>Format</dt>
-              <dd>Markdown (.md)</dd>
+              <dd>Markdown + images (.zip)</dd>
             </div>
           </dl>
+          {packageDownload.error && (
+            <p className={styles.surveyInlineError} role="alert">
+              {packageDownload.error instanceof Error
+                ? packageDownload.error.message
+                : "The report package is temporarily unavailable."}
+            </p>
+          )}
           {artifacts.error && <p>Embedded images are temporarily unavailable.</p>}
         </aside>
       </div>

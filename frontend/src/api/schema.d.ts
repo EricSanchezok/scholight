@@ -310,6 +310,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/extract": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Extract */
+    post: operations["extract_extract_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/health": {
     parameters: {
       query?: never;
@@ -493,6 +510,23 @@ export interface paths {
     put?: never;
     /** Cancel Survey Request */
     post: operations["cancel_survey_request_surveys__survey_id__cancel_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/surveys/{survey_id}/download": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Survey Report Download */
+    get: operations["survey_report_download_surveys__survey_id__download_get"];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -754,7 +788,7 @@ export interface components {
       /** Revoked At */
       revoked_at: string | null;
       /** Scopes */
-      scopes: "search"[];
+      scopes: "all"[];
     };
     /**
      * AccessTokenResponse
@@ -978,6 +1012,7 @@ export interface components {
     /** AdminQuotasResponse */
     AdminQuotasResponse: {
       standard: components["schemas"]["AdminQuotaResponse"];
+      survey: components["schemas"]["AdminQuotaResponse"];
       thorough: components["schemas"]["AdminQuotaResponse"];
     };
     /** AdminSearchMetrics */
@@ -1069,7 +1104,7 @@ export interface components {
       /** Name */
       name: string;
       /** Scopes */
-      scopes?: "search"[];
+      scopes?: "all"[];
     };
     /** CreatedAccessKeyResponse */
     CreatedAccessKeyResponse: {
@@ -1098,7 +1133,7 @@ export interface components {
       /** Revoked At */
       revoked_at: string | null;
       /** Scopes */
-      scopes: "search"[];
+      scopes: "all"[];
     };
     /** DailyQuotaUsage */
     DailyQuotaUsage: {
@@ -1119,6 +1154,83 @@ export interface components {
       /** Message */
       message: string;
     };
+    /**
+     * ExtractRequest
+     * @description Start an extraction or continue one immutable cached result.
+     */
+    ExtractRequest: {
+      /** Cookies */
+      cookies?: {
+        [key: string]: string;
+      };
+      /** Cursor */
+      cursor?: string | null;
+      /** Headers */
+      headers?: {
+        [key: string]: string;
+      };
+      /**
+       * Max Chars
+       * @default 20000
+       */
+      max_chars: number;
+      /** @default main_markdown */
+      output: components["schemas"]["ExtractResponseFormat"];
+      /** @default auto */
+      render: components["schemas"]["RenderMode"];
+      /** Url */
+      url?: string | null;
+    };
+    /**
+     * ExtractResponse
+     * @description One bounded page of an immutable extracted document.
+     */
+    ExtractResponse: {
+      /** Author */
+      author: string | null;
+      /** Content */
+      content: string;
+      /** Content Hash */
+      content_hash: string;
+      /** Content Type */
+      content_type: string;
+      /** Extractor */
+      extractor: string;
+      /**
+       * Fetched At
+       * Format: date-time
+       */
+      fetched_at: string;
+      /**
+       * Final Url
+       * Format: uri
+       */
+      final_url: string;
+      /** Next Cursor */
+      next_cursor: string | null;
+      /** Published At */
+      published_at: string | null;
+      /** Rendered */
+      rendered: boolean;
+      /**
+       * Requested Url
+       * Format: uri
+       */
+      requested_url: string;
+      /** Status Code */
+      status_code: number;
+      /** Title */
+      title: string | null;
+      /** Truncated */
+      truncated: boolean;
+      /** Warnings */
+      warnings: string[];
+    };
+    /**
+     * ExtractResponseFormat
+     * @enum {string}
+     */
+    ExtractResponseFormat: "main_markdown" | "full_markdown" | "text" | "raw_html";
     /** ForgotPasswordRequest */
     ForgotPasswordRequest: {
       /**
@@ -1367,6 +1479,8 @@ export interface components {
     QuotaOverrideRequest: {
       /** Standard */
       standard: number | null;
+      /** Survey */
+      survey: number | null;
       /** Thorough */
       thorough: number | null;
     };
@@ -1387,6 +1501,11 @@ export interface components {
       /** Password */
       password: string;
     };
+    /**
+     * RenderMode
+     * @enum {string}
+     */
+    RenderMode: "auto" | "never" | "always";
     /** ResetPasswordRequest */
     ResetPasswordRequest: {
       /** New Password */
@@ -1431,6 +1550,11 @@ export interface components {
        * Format: uuid
        */
       client_request_id: string;
+      /**
+       * Notify On Completion
+       * @default false
+       */
+      notify_on_completion: boolean;
     };
     /** SurveyArtifactItemResponse */
     SurveyArtifactItemResponse: {
@@ -1655,6 +1779,7 @@ export interface components {
     /** TodayUsage */
     TodayUsage: {
       standard: components["schemas"]["DailyQuotaUsage"];
+      survey: components["schemas"]["DailyQuotaUsage"];
       thorough: components["schemas"]["DailyQuotaUsage"];
     };
     /** UpdateAccessKeyRequest */
@@ -2359,6 +2484,39 @@ export interface operations {
       };
     };
   };
+  extract_extract_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ExtractRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ExtractResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
   health_health_get: {
     parameters: {
       query?: never;
@@ -2728,6 +2886,37 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["SurveyResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  survey_report_download_surveys__survey_id__download_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        survey_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/zip": unknown;
         };
       };
       /** @description Validation Error */

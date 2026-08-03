@@ -38,6 +38,7 @@ class SearchActor:
     user: UserRecord
     actor_type: Literal["web", "access_key", "delegated"]
     access_key_id: UUID | None = None
+    survey_job_id: UUID | None = None
 
 
 # ── 延迟绑定：sanchezcloud-identity SDK ──
@@ -197,7 +198,7 @@ async def get_optional_search_actor(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(optional_security),
 ) -> SearchActor | None:
-    """Authenticate search with either a web JWT or a search-only access key."""
+    """Authenticate search with either a web JWT or an all-tools access key."""
     if "authorization" not in request.headers:
         return None
     if credentials is None or credentials.scheme.lower() != "bearer" or not credentials.credentials:
@@ -234,9 +235,59 @@ async def get_optional_search_actor(
 
 
 async def resolve_access_key_search_actor(token: str) -> SearchActor:
-    """Resolve a search-only access key without imposing a transport error model."""
+    """Resolve an all-tools access key without imposing a transport error model."""
     record, user = await resolve_access_key(token)
     return SearchActor(user=user, actor_type="access_key", access_key_id=record.id)
+
+
+async def get_extract_actor(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(optional_security),
+) -> SearchActor:
+    """Authenticate Web Extract with an all-tools Access Key or approved delegation."""
+    if "authorization" not in request.headers or credentials is None:
+        raise _bearer_error(
+            code="authentication_required",
+            message="Use a Scholight Access Key as a Bearer credential.",
+        )
+    token = credentials.credentials
+    if credentials.scheme.lower() != "bearer" or not token:
+        raise _bearer_error(
+            code="invalid_access_key",
+            message="Access key is invalid.",
+        )
+    try:
+        if token.startswith("sk_live_"):
+            return await resolve_access_key_search_actor(token)
+        return await resolve_delegated_search_actor(token)
+    except AccessKeyError as exc:
+        status_code = 403 if exc.code == "product_access_blocked" else 401
+        error = http_error(
+            status_code,
+            code=exc.code,
+            message=access_key_error_message(exc.code),
+            retryable=False,
+            retry_after=None,
+        )
+        if status_code == 401:
+            error.headers = {"WWW-Authenticate": "Bearer"}
+        raise error from exc
+    except DelegationError as exc:
+        raise http_error(
+            exc.status_code,
+            code=exc.code,
+            message="Delegated identity is invalid or unavailable.",
+            retryable=exc.status_code == 503,
+            retry_after=5 if exc.status_code == 503 else None,
+        ) from exc
+    except DBError as exc:
+        raise http_error(
+            503,
+            code="access_key_service_unavailable",
+            message="Access key authentication is temporarily unavailable.",
+            retryable=True,
+            retry_after=5,
+        ) from exc
 
 
 async def resolve_delegated_search_actor(token: str) -> SearchActor:
@@ -268,9 +319,13 @@ async def resolve_delegated_search_actor(token: str) -> SearchActor:
         raise DelegationError("invalid_delegation") from last_error
 
     try:
-        if claims.get("scope") != "search":
+        if claims.get("scope") not in {"mcp", "search"}:
             raise DelegationError("invalid_delegation")
         user_id = int(claims["sub"])
+        raw_survey_job_id = claims.get("survey_job_id")
+        if raw_survey_job_id is not None and claims.get("iss") != "scholight-survey":
+            raise DelegationError("invalid_delegation")
+        survey_job_id = UUID(str(raw_survey_job_id)) if raw_survey_job_id is not None else None
     except DelegationError:
         raise
     except (TypeError, ValueError, KeyError) as exc:
@@ -287,4 +342,8 @@ async def resolve_delegated_search_actor(token: str) -> SearchActor:
         raise DelegationError("scholight_access_blocked", status_code=403) from exc
     except (AuthDBError, DBError) as exc:
         raise DelegationError("delegation_service_unavailable", status_code=503) from exc
-    return SearchActor(user=user, actor_type="delegated")
+    return SearchActor(
+        user=user,
+        actor_type="delegated",
+        survey_job_id=survey_job_id,
+    )

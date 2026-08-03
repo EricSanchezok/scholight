@@ -99,7 +99,7 @@ async def test_target_lookup_is_exact_and_case_insensitive() -> None:
 
 
 @pytest.mark.asyncio
-async def test_quota_update_writes_both_strengths_and_audit_in_one_transaction() -> None:
+async def test_quota_update_writes_all_activities_and_audit_in_one_transaction() -> None:
     connection = MagicMock()
     connection.fetchrow = AsyncMock(
         side_effect=[
@@ -117,6 +117,7 @@ async def test_quota_update_writes_both_strengths_and_audit_in_one_transaction()
             [
                 {"strength": "standard", "daily_limit": 100},
                 {"strength": "thorough", "daily_limit": 20},
+                {"strength": "survey", "daily_limit": 2},
             ],
         ]
     )
@@ -129,6 +130,7 @@ async def test_quota_update_writes_both_strengths_and_audit_in_one_transaction()
             target_user_id=7,
             standard=5000,
             thorough=None,
+            survey=1,
             event_id=UUID("00000000-0000-0000-0000-000000000001"),
         )
 
@@ -167,6 +169,7 @@ async def test_unchanged_quota_update_is_idempotent_without_audit() -> None:
             target_user_id=7,
             standard=5000,
             thorough=None,
+            survey=None,
             event_id=UUID("00000000-0000-0000-0000-000000000001"),
         )
 
@@ -199,6 +202,7 @@ async def test_quota_update_rejects_inactive_target() -> None:
             target_user_id=7,
             standard=100,
             thorough=100,
+            survey=3,
             event_id=UUID("00000000-0000-0000-0000-000000000001"),
         )
 

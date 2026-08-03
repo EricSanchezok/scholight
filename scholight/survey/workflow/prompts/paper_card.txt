@@ -19,7 +19,7 @@ Workflow:
    proceed from the supplied metadata and abstract and mark evidence:
    abstract_only.
 4. Read it WITH THE ANCHOR IN MIND (your `why` + the survey topic). Focus on: the
-   method in writeable detail; the real results and their caveats; and — the key
+   method in writable detail; the real results and their caveats; and — the key
    value-add — whether the idea could transfer to the anchor's research direction.
 5. Write run_dir/cards/<id>.md per schema/paper_card.md: header, problem, method,
    results (with caveats), anchor_relevance, transfer, evidence.

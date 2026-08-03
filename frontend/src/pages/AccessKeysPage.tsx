@@ -55,7 +55,7 @@ export function AccessKeysPage() {
   const invalidateKeys = () => queryClient.invalidateQueries({ queryKey: queryKeys.accessKeys });
   const create = useMutation({
     mutationFn: ({ name, expiry }: { name: string; expiry: ExpiryPreset }) =>
-      accessKeyApi.create({ name, scopes: ["search"], expires_at: expiryValue(expiry) ?? null }),
+      accessKeyApi.create({ name, scopes: ["all"], expires_at: expiryValue(expiry) ?? null }),
     onSuccess: async (data) => {
       setCreateOpen(false);
       setSecret(data);
@@ -88,7 +88,7 @@ export function AccessKeysPage() {
       <header className={`${styles.ledgerHeading} ${styles.pageHeadingAction}`}>
         <div>
           <h1>Access keys</h1>
-          <p>Create keys for tools and agents that search Scholight on your behalf.</p>
+          <p>Create one key for every Scholight research tool used on your behalf.</p>
         </div>
         <PageRefreshButton
           label="access keys"

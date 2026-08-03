@@ -14,6 +14,15 @@ export function buildDocsExamples(urls: DeploymentUrls) {
   -H 'Authorization: Bearer sk_live_xxx' \\
   -H 'Content-Type: application/json' \\
   -d '{"query":"vision language models","strength":"thorough","limit":10}'`,
+    extractCurl: `curl -sS -X POST ${urls.extract} \\
+  -H 'Authorization: Bearer sk_live_xxx' \\
+  -H 'Content-Type: application/json' \\
+  -d '{
+    "url": "https://www.w3.org/TR/html/",
+    "render": "auto",
+    "output": "main_markdown",
+    "max_chars": 20000
+  }'`,
     mcp: `{
   "mcpServers": {
     "scholight": {

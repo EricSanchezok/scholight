@@ -1,6 +1,6 @@
 # Using Scholight
 
-Scholight provides academic paper search through the web, a REST API, and a stateless MCP server.
+Scholight provides academic paper search and readable web extraction through REST and a stateless MCP server.
 
 ## Service URLs
 
@@ -19,6 +19,7 @@ export SCHOLIGHT_BASE_URL=@@SCHOLIGHT_PUBLIC_WEB_URL@@
 The public integration endpoints are:
 
 - REST search: `@@SCHOLIGHT_PUBLIC_WEB_URL@@/api/search`
+- REST Web Extract: `@@SCHOLIGHT_PUBLIC_WEB_URL@@/api/extract`
 - MCP server: `@@SCHOLIGHT_PUBLIC_WEB_URL@@/api/mcp`
 - OpenAPI schema: `@@SCHOLIGHT_PUBLIC_WEB_URL@@/api/openapi.json`
 
@@ -62,7 +63,7 @@ curl -sS -X POST "$SCHOLIGHT_BASE_URL/api/search" \
   }'
 ```
 
-Never put an Access Key in browser code, source control, logs, or a URL. Web-login access tokens are not MCP credentials.
+Never put an Access Key in browser code, source control, logs, or a URL. One Access Key authorizes every Scholight research tool; there are no per-tool scopes. Web-login access tokens are not MCP credentials.
 
 ## REST search
 
@@ -80,6 +81,23 @@ The main request fields are:
 Use the OpenAPI schema at `@@SCHOLIGHT_PUBLIC_WEB_URL@@/api/openapi.json` as the authoritative source for field types, validation constraints, and response models.
 
 Preserve the returned `rank` order. A paper's `score` is an unnormalized ranking signal and should only be compared within the same response. A successful response with `degraded: true` means some metadata enrichment was unavailable; the ranked search itself still succeeded.
+
+## REST Web Extract
+
+Send authenticated `POST @@SCHOLIGHT_PUBLIC_WEB_URL@@/api/extract` with an HTTP or HTTPS URL:
+
+```bash
+curl -sS -X POST "$SCHOLIGHT_BASE_URL/api/extract" \
+  -H "Authorization: Bearer $SCHOLIGHT_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"url":"https://www.w3.org/TR/html/","render":"auto","output":"main_markdown","max_chars":20000}'
+```
+
+The endpoint supports public arbitrary ports, target request headers, stateless cookies, automatic JavaScript rendering, HTML, JSON, XML, PDF, Markdown, text, and raw HTML output. Target headers and cookies are sent to the target URL, not used as Scholight transport credentials. Responses with cookies or target headers are never placed in the shared extraction cache.
+
+If `truncated` is true, call the endpoint again with only `cursor` and an optional `max_chars`. The opaque cursor is short-lived, bound to the authenticated identity, and continues the same immutable extracted result without refetching the source.
+
+Version 1 deliberately does not support target POST requests, user-selected proxies, custom JavaScript, or non-HTTP(S) URLs.
 
 ## MCP server
 
@@ -100,7 +118,7 @@ Connect an MCP client to the stateless Streamable HTTP endpoint:
 
 The Authorization header may be omitted for anonymous searches.
 
-The server exposes `search_papers`. Obtain its current tool and input descriptions through the MCP `tools/list` operation rather than copying a second schema from this document. Tool initialization and listing do not consume search quota.
+The server exposes `search_papers` and `extract_url`. Anonymous clients may call `search_papers`; `extract_url` requires an Access Key. Obtain current tool descriptions through MCP `tools/list`. Tool initialization and listing do not consume search quota.
 
 ## Choosing search strength
 
@@ -117,3 +135,4 @@ Prefer a precise research question over disconnected keywords. Use author, categ
 - `503`: temporary service issue; retry with bounded exponential backoff.
 
 Anonymous and authenticated limits may differ. Web and Access Key searches associated with the same user consume that user's Scholight quota.
+Web Extract has no daily quota. It is bounded by response-size, deadline, cache, and concurrency limits; retry only errors whose structured `retryable` field is true.

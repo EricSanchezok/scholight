@@ -66,6 +66,9 @@ async def test_migrations_apply_once_and_replay_without_schema_changes(
         (7, "survey_reliability"),
         (8, "survey_cancellation"),
         (9, "survey_titles"),
+        (10, "survey_quota_overrides"),
+        (11, "survey_email_notifications"),
+        (12, "access_keys_all_tools"),
     ]
 
 

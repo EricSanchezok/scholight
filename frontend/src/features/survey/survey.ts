@@ -110,3 +110,7 @@ export function markdownFilename(title: string): string {
     .slice(0, 90);
   return `${safe || "scholight-survey"}.md`;
 }
+
+export function archiveFilename(title: string): string {
+  return markdownFilename(title).replace(/\.md$/, ".zip");
+}

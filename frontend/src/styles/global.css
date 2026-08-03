@@ -6,11 +6,16 @@
 
 html {
   min-width: 320px;
+  scrollbar-width: none;
   background: var(--canvas);
   font-family: var(--font-ui);
   color: var(--ink);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+html::-webkit-scrollbar {
+  display: none;
 }
 
 body {

@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import io
 import json
 import mimetypes
 import os
 import re
 import stat
+import zipfile
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -25,6 +27,20 @@ logger = structlog.get_logger(__name__)
 _READ_CHUNK_BYTES = 1024 * 1024
 _MANIFEST_MAX_BYTES = 8 * 1024 * 1024
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+_HTML_COMMENT_BYTES_PATTERN = re.compile(rb"<!--.*?-->", re.DOTALL)
+
+
+def _s3_client(endpoint_url: str | None) -> Any:
+    return boto3.client(
+        "s3",
+        endpoint_url=endpoint_url,
+        config=Config(
+            connect_timeout=3,
+            read_timeout=30,
+            retries={"max_attempts": 3, "mode": "standard"},
+            s3={"addressing_style": "path" if endpoint_url else "auto"},
+        ),
+    )
 
 
 class SurveyArtifactError(Exception):
@@ -170,20 +186,18 @@ class SurveyArtifactStore:
         *,
         bucket: str,
         endpoint_url: str | None = None,
+        public_endpoint_url: str | None = None,
         client: Any | None = None,
+        presign_client: Any | None = None,
     ) -> None:
         if not bucket.strip():
             raise ValueError("Survey artifact bucket is required")
         self._bucket = bucket
-        self._client = client or boto3.client(
-            "s3",
-            endpoint_url=endpoint_url,
-            config=Config(
-                connect_timeout=3,
-                read_timeout=30,
-                retries={"max_attempts": 3, "mode": "standard"},
-                s3={"addressing_style": "path" if endpoint_url else "auto"},
-            ),
+        self._client = client or _s3_client(endpoint_url)
+        self._presign_client = presign_client or (
+            _s3_client(public_endpoint_url)
+            if public_endpoint_url and public_endpoint_url != endpoint_url
+            else self._client
         )
 
     @staticmethod
@@ -408,7 +422,7 @@ class SurveyArtifactStore:
             artifacts.append(
                 {
                     **record,
-                    "url": self._client.generate_presigned_url(
+                    "url": self._presign_client.generate_presigned_url(
                         "get_object",
                         Params={"Bucket": self._bucket, "Key": record["key"]},
                         ExpiresIn=expires_seconds,
@@ -452,6 +466,89 @@ class SurveyArtifactStore:
             content_type=str(record["mime"]),
             _body=body,
         )
+
+    async def build_report_package(self, *, manifest_key: str) -> SurveyArtifactStream:
+        """Build a portable ZIP containing the final Markdown report and its images."""
+        return await asyncio.to_thread(self._build_report_package_sync, manifest_key)
+
+    def _build_report_package_sync(self, manifest_key: str) -> SurveyArtifactStream:
+        manifest = self._read_manifest_sync(manifest_key)
+        records = _validated_records(manifest, manifest_key=manifest_key)
+        report = next(
+            (record for record in records if record["path"] == "run/08_survey.md"),
+            None,
+        )
+        if report is None:
+            raise SurveyArtifactNotFoundError("Survey report is not present in the manifest")
+        images = sorted(
+            (
+                record
+                for record in records
+                if str(record["path"]).startswith("run/")
+                and str(record["mime"]).startswith("image/")
+            ),
+            key=lambda record: str(record["path"]),
+        )
+
+        package = io.BytesIO()
+        package_records: list[dict[str, Any]] = []
+        with zipfile.ZipFile(package, mode="w", compression=zipfile.ZIP_DEFLATED) as report_zip:
+            for record in [report, *images]:
+                content = self._read_record_bytes(record)
+                if record is report:
+                    content = _HTML_COMMENT_BYTES_PATTERN.sub(b"", content)
+                archive_path = PurePosixPath(str(record["path"])).relative_to("run").as_posix()
+                report_zip.writestr(archive_path, content)
+                package_records.append(
+                    {
+                        "path": archive_path,
+                        "size": len(content),
+                        "sha256": hashlib.sha256(content).hexdigest(),
+                        "mime": str(record["mime"]),
+                    }
+                )
+            package_manifest = json.dumps(
+                {"schema_version": 1, "files": package_records},
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            ).encode("utf-8")
+            report_zip.writestr("manifest.json", package_manifest)
+
+        size = package.tell()
+        package.seek(0)
+        sha256 = _sha256_stream(package)
+        package.seek(0)
+        return SurveyArtifactStream(
+            path="scholight-survey.zip",
+            size=size,
+            sha256=sha256,
+            content_type="application/zip",
+            _body=package,
+        )
+
+    def _read_record_bytes(self, record: dict[str, Any]) -> bytes:
+        response = self._client.get_object(Bucket=self._bucket, Key=record["key"])
+        body = response["Body"]
+        expected_size = int(record["size"])
+        digest = hashlib.sha256()
+        content = io.BytesIO()
+        try:
+            declared_size = int(response.get("ContentLength", -1))
+            while chunk := body.read(_READ_CHUNK_BYTES):
+                digest.update(chunk)
+                content.write(chunk)
+        finally:
+            close = getattr(body, "close", None)
+            if callable(close):
+                close()
+        if (
+            declared_size != expected_size
+            or content.tell() != expected_size
+            or digest.hexdigest() != record["sha256"]
+        ):
+            raise SurveyArtifactError("Survey artifact does not match the manifest")
+        return content.getvalue()
 
     async def delete_archive(self, *, manifest_key: str, preserve_manifest: bool = False) -> None:
         manifest = await self.read_manifest(manifest_key=manifest_key)

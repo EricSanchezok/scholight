@@ -8,6 +8,7 @@ describe("buildDeploymentUrls", () => {
   it("derives every public endpoint from the browser-visible deployment origin", () => {
     expect(buildDeploymentUrls("http://10.24.8.12:8080", "/api")).toEqual({
       search: "http://10.24.8.12:8080/api/search",
+      extract: "http://10.24.8.12:8080/api/extract",
       mcp: "http://10.24.8.12:8080/api/mcp",
     });
   });
@@ -28,7 +29,7 @@ describe("DocsPage", () => {
     expect(screen.getByRole("heading", { name: "Using Scholight" })).toBeInTheDocument();
     expect(
       screen.getByText(
-        "Search academic literature through Scholight on the web, from a REST client, or with an MCP-enabled agent.",
+        "Search academic literature and retrieve readable source content from REST or an MCP-enabled agent.",
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/arXiv index/i)).not.toBeInTheDocument();
@@ -39,6 +40,7 @@ describe("DocsPage", () => {
     );
     expect(screen.getAllByText(new RegExp(`${origin}/api/search`)).length).toBeGreaterThan(0);
     expect(screen.getAllByText(new RegExp(`${origin}/api/mcp`)).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(new RegExp(`${origin}/api/extract`)).length).toBeGreaterThan(0);
     expect(screen.queryByText(/https:\/\/example\.com\/api/)).not.toBeInTheDocument();
     expect(
       screen.queryByRole("link", { name: "Open interactive API docs" }),

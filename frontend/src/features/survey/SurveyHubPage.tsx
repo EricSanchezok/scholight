@@ -1,4 +1,4 @@
-import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
@@ -23,7 +23,9 @@ export function SurveyHubPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [params, setParams] = useSearchParams();
-  const view: SurveyView = params.get("view") === "completed" ? "completed" : "active";
+  const viewParam = params.get("view");
+  const explicitView = viewParam === "active" || viewParam === "completed" ? viewParam : undefined;
+  const view: SurveyView = explicitView ?? "active";
   const [request, setRequest] = useState("");
   const [requestError, setRequestError] = useState("");
   const requestId = useRef<string | undefined>(undefined);
@@ -61,6 +63,26 @@ export function SurveyHubPage() {
   });
   const items = list.data?.pages.flatMap((page) => page.items) ?? [];
   const quota = list.data?.pages[0]?.quota;
+  const shouldCheckCompleted =
+    status === "authenticated" &&
+    explicitView === undefined &&
+    !list.isPending &&
+    !list.error &&
+    items.length === 0;
+  const completedProbe = useQuery({
+    queryKey: [...queryKeys.surveyRoot, "default-completed"],
+    queryFn: () => surveyApi.list("completed"),
+    enabled: shouldCheckCompleted,
+  });
+  const resolvingDefaultView =
+    shouldCheckCompleted &&
+    (completedProbe.isFetching || Boolean(completedProbe.data?.items.length));
+
+  useEffect(() => {
+    if (shouldCheckCompleted && completedProbe.data?.items.length) {
+      setParams({ view: "completed" }, { replace: true });
+    }
+  }, [completedProbe.data, setParams, shouldCheckCompleted]);
 
   const createSurvey = useMutation({
     mutationFn: () => {
@@ -110,7 +132,7 @@ export function SurveyHubPage() {
     if (!createSurvey.isPending) createSurvey.mutate();
   };
   const setView = (next: SurveyView) => {
-    setParams(next === "completed" ? { view: "completed" } : {});
+    setParams({ view: next });
   };
   const refresh = () => list.refetch();
 
@@ -195,7 +217,7 @@ export function SurveyHubPage() {
             Sign in
           </button>
         </div>
-      ) : list.isPending ? (
+      ) : list.isPending || resolvingDefaultView ? (
         <SkeletonPulse label="Loading research surveys" className={styles.surveySkeleton}>
           <span />
           <span />

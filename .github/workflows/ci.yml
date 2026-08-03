@@ -89,6 +89,8 @@ jobs:
         run: uv run ruff format --check
       - name: Mypy
         run: uv run mypy scholight
+      - name: Install Web Extract Chromium
+        run: uv run playwright install --with-deps chromium
       - name: Full backend test suite
         run: uv run pytest -m "" -v --tb=short
       - name: Bandit
@@ -212,6 +214,7 @@ jobs:
         env:
           SCHOLIGHT_BACKEND_IMAGE: registry.example/scholight/backend@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
           SCHOLIGHT_FRONTEND_IMAGE: registry.example/scholight/frontend@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+          SCHOLIGHT_EXTRACT_IMAGE: registry.example/scholight/extract@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
           SCHOLIGHT_DOMAIN: scholight.example.invalid
           SCHOLIGHT_EDGE_DOMAIN: edge.example.invalid
           SCHOLIGHT_ACME_EMAIL: operator@example.invalid
@@ -236,6 +239,7 @@ jobs:
           SCHOLIGHT_ANONYMOUS_QUOTA_HMAC_SECRET: another-fixture-secret-at-least-32-bytes
           SCHOLIGHT_ACCESS_KEY_HMAC_SECRET: access-key-fixture-secret-at-least-32-bytes
           SCHOLIGHT_MCP_DELEGATION_JWT_SECRET: delegation-fixture-secret-at-least-32-bytes
+          SCHOLIGHT_EXTRACT_INTERNAL_TOKEN: extract-fixture-secret-at-least-32-bytes
           SCHOLIGHT_PUBLIC_WEB_URL: https://scholight.example.invalid
           SCHOLIGHT_CORS_ALLOW_ORIGINS: '["https://scholight.example.invalid","https://edge.example.invalid"]'
         run: docker compose -f deploy/production/compose.yaml config --quiet
@@ -265,6 +269,13 @@ jobs:
           tags: scholight-api:ci
           secrets: |
             github_token=${{ steps.identity-token.outputs.token }}
+      - name: Build Web Extract image
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: docker/scholight-extract/Dockerfile
+          push: false
       - name: Verify backend host package
         if: github.event_name != 'pull_request'
         run: |
@@ -370,11 +381,15 @@ jobs:
                    AND to_regclass('scholight.ingestion_jobs') IS NOT NULL
                    AND to_regclass('auth.users') IS NOT NULL
                    AND to_regclass('auth.refresh_tokens') IS NOT NULL
+                   AND to_regclass('auth.user_clients') IS NOT NULL
                    AND NOT has_table_privilege(
                      'scholight_app', 'auth.users', 'DELETE'
                    )
                    AND NOT has_table_privilege(
                      'scholight_app', 'auth.refresh_tokens', 'DELETE'
+                   )
+                   AND NOT has_table_privilege(
+                     'scholight_app', 'auth.user_clients', 'DELETE'
                    )
                    AND NOT EXISTS (
                      SELECT 1 FROM scholight.schema_migrations WHERE checksum IS NULL
@@ -455,6 +470,16 @@ jobs:
                END
                \$contract\$;
                ROLLBACK;"
+
+          docker run --rm --network host \
+            -e SCHOLIGHT_PG_HOST=127.0.0.1 \
+            -e SCHOLIGHT_PG_PORT=5432 \
+            -e SCHOLIGHT_PG_DATABASE=sanchezcloud \
+            -e SCHOLIGHT_PG_USER=scholight_app \
+            -e SCHOLIGHT_PG_PASSWORD="$APP_PASSWORD" \
+            -v "$PWD/tests/deploy/identity_runtime_smoke.py:/identity-runtime-smoke.py:ro" \
+            scholight-api:ci \
+            /app/.venv/bin/python /identity-runtime-smoke.py
 
           if docker run --rm --network host \
             -e PGPASSWORD="$APP_PASSWORD" \

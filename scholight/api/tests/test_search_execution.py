@@ -5,9 +5,12 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
+from uuid import uuid4
 
 import pytest
+from sanchezcloud_identity.models.user import UserRecord
 
+from scholight.api.deps import SearchActor
 from scholight.api.models.search import PublicSearchRequest
 from scholight.api.search_access import SearchQuotaReservation
 from scholight.api.search_execution import (
@@ -15,6 +18,7 @@ from scholight.api.search_execution import (
     _emit_phase_metrics,
     _failure_metric_name,
     _is_unexpected_5xx,
+    _log_survey_search_finished,
     execute_public_search,
 )
 from scholight.models.search import PhaseTiming, SearchResult, SearchStats
@@ -92,6 +96,36 @@ def test_expected_dependency_503_is_not_counted_as_unexpected() -> None:
     assert _is_unexpected_5xx(503, "search_unavailable") is False
     assert _is_unexpected_5xx(503, "thorough_search_unavailable") is False
     assert _is_unexpected_5xx(500, "search_cancelled") is True
+
+
+def test_survey_search_log_has_job_correlation_but_no_query(active_user: UserRecord) -> None:
+    job_id = uuid4()
+    invocation = SearchInvocation(
+        actor=SearchActor(
+            user=active_user,
+            actor_type="delegated",
+            survey_job_id=job_id,
+        ),
+        client_ip="192.0.2.20",
+        request_id="request-1",
+        transport="mcp",
+    )
+
+    with patch("scholight.api.search_execution.logger") as logger:
+        _log_survey_search_finished(
+            invocation,
+            strength="standard",
+            outcome="success",
+            status_code=200,
+            duration_ms=12.5,
+            result_count=5,
+            error_code=None,
+        )
+
+    fields = logger.info.call_args.kwargs
+    assert fields["survey_job_id"] == str(job_id)
+    assert fields["request_id"] == "request-1"
+    assert "query" not in fields
 
 
 @pytest.mark.asyncio

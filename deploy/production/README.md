@@ -1,7 +1,7 @@
 # Scholight production deployment package
 
-This package deploys one coordinated Scholight frontend, API, metadata-sync, and
-paper-ingest release to a single Docker Compose host. Caddy is the only public
+This package deploys one coordinated Scholight frontend, API, Web Extract sidecar,
+metadata-sync, and paper-ingest release to a single Docker Compose host. Caddy is the only public
 service. Both ingestion services use the immutable backend digest; migrations
 run explicitly before activation, and application rollback never reverses
 database migrations.
@@ -39,10 +39,11 @@ canonical `SCHOLIGHT_PUBLIC_WEB_URL` may remain on `SCHOLIGHT_DOMAIN`.
 
 ## One-time AWS and GitHub setup
 
-Create two private ECR repositories with immutable tags, scan-on-push, and a lifecycle policy that retains the current and several previous releases:
+Create three private ECR repositories with immutable tags, scan-on-push, and a lifecycle policy that retains the current and several previous releases:
 
 - `scholight/backend`
 - `scholight/frontend`
+- `scholight/extract`
 
 Configure GitHub OIDC roles instead of static AWS access keys. Repository or environment variables required by `.github/workflows/release.yml` are:
 
@@ -51,11 +52,18 @@ Configure GitHub OIDC roles instead of static AWS access keys. Repository or env
 - `AWS_DEPLOY_ROLE_ARN`
 - `ECR_BACKEND_REPOSITORY`
 - `ECR_FRONTEND_REPOSITORY`
+- `ECR_EXTRACT_REPOSITORY`
 - `PRODUCTION_PLATFORM` (`linux/amd64`)
 - `PRODUCTION_INSTANCE_ID`
 - `PRODUCTION_DOMAIN` (for example, `scholight.example.com`)
 
-Add the read-only `CLOUD_AUTH_READ_TOKEN` repository secret. Create a protected GitHub environment named `production` with required reviewers. The publish role may push only to the two ECR repositories; the deploy role may send and inspect SSM commands only for the production instance. The EC2 instance role needs ECR pull and SSM managed-instance permissions.
+Install the scoped Dependency Reader GitHub App on Scholight and
+`sanchezcloud-identity`, set repository variable `IDENTITY_READER_APP_ID`, and store its private
+key as `IDENTITY_READER_PRIVATE_KEY`. Workflows mint short-lived, contents-read tokens; do not
+create a long-lived dependency PAT. Create a protected GitHub environment named `production`
+with required reviewers. The publish role may push only to the two ECR repositories; the deploy
+role may send and inspect SSM commands only for the production instance. The EC2 instance role
+needs ECR pull and SSM managed-instance permissions.
 
 Use three distinct existing PostgreSQL login roles: `auth_migrator` owns only
 `auth`, `scholight_migrator` owns only `scholight`, and `scholight_app`
@@ -189,6 +197,35 @@ Do not grant access to any other bucket or prefix. Updating this policy and the
 SecureString does not itself activate Survey; activation also requires the
 reviewed release after the EC2 resize and local E2E gate.
 
+Each execution archives a private `run/trajectory.jsonl`, `run/diagnostics.json`,
+and schema-v2 `run.json` under the existing owner-scoped Survey prefix. These
+files contain bounded, redacted runtime metadata; they never contain provider
+credentials, PDF bodies, or model reasoning. Diagnose an active or archived job
+from the worker container without rerunning it:
+
+```bash
+./deploy/production/compose-command.sh exec -T survey-worker \
+  /app/.venv/bin/scholight survey diagnose JOB_UUID --json-output
+./deploy/production/compose-command.sh exec -T survey-worker \
+  /app/.venv/bin/scholight survey contract-audit --json-output
+./deploy/production/compose-command.sh exec -T survey-worker \
+  /app/.venv/bin/scholight survey status --json-output
+```
+
+CloudWatch service logs carry the same `survey_job_id` across the worker and its
+delegated MCP searches. Search queries remain only in the private per-run trace,
+not in centralized logs or metric dimensions.
+
+Survey completion email is opt-in per run. The terminal Survey update and its
+notification outbox row commit in one database transaction after report archival;
+failed runs are also eligible, while user cancellation is not. The existing
+Survey worker claims notifications independently, retries temporary DirectMail
+failures up to eight times, and never changes the Survey result when email delivery
+fails. It resolves the account's current verified email only when sending. Configure
+the existing `SCHOLIGHT_ALIYUN_DM_*` values and the canonical
+`SCHOLIGHT_PUBLIC_WEB_URL` before enabling Survey. `scholight survey status` reports
+pending, retrying, sent, and dead notification counts without exposing addresses.
+
 ## One-time observability stack
 
 After the P0 runtime release has completed its observation window, deploy the
@@ -213,6 +250,12 @@ notifications. Bootstrap installs and starts rsyslog and the CloudWatch Agent
 idempotently from the package configuration. The policy cannot read Parameter
 Store, access RDS or Zilliz, or modify application data.
 
+The dashboard includes Survey outcome, duration, contract, tool, runtime,
+last-activity, and email-delivery panels. Contract violations, runtime failures,
+diagnostic write failures, dead email notifications, email backlog older than 15
+minutes, and two consecutive periods above 30 minutes without Survey activity raise
+alerts; cancellation does not.
+
 ## Runtime and release state
 
 Stable secrets live only in `/etc/scholight/runtime.env`. A release manifest is secret-free and contains the production package SHA-256, a 40-character Git SHA, and backend/frontend image digest references. Host state is stored under `/var/lib/scholight`:
@@ -236,8 +279,8 @@ an external HTTPS smoke test. Running the same release twice is supported.
 
 The transaction converges Docker and the host package, validates runtime-file
 ownership and mode, validates Compose, logs into ECR with the instance role,
-pulls both images, validates the independently managed auth schema, runs only the
-Scholight migration, activates the coordinated web and ingestion services, and runs bounded container and local
+pulls all three images, validates the independently managed auth schema, runs only the
+Scholight migration, activates the coordinated web, extraction, and ingestion services, and runs bounded container and local
 TLS-ingress smoke checks. Pull, package, configuration, or migration failure
 leaves the running application untouched. Candidate host-smoke failure restores
 the complete previous pair.
@@ -270,7 +313,7 @@ First record the journal and running state:
 ```bash
 sudo /opt/scholight/release.sh status || true
 sudo cat /var/lib/scholight/transition.env
-docker inspect scholight-api-1 scholight-frontend-1 \
+docker inspect scholight-api-1 scholight-frontend-1 scholight-extract-1 \
   --format '{{.Name}} {{.Config.Image}} {{.Image}}'
 ```
 

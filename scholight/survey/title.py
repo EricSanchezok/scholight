@@ -63,6 +63,7 @@ async def generate_survey_title(
             {"role": "system", "content": _SYSTEM_PROMPT},
             {"role": "user", "content": initial_request},
         ],
+        "thinking": {"type": "disabled"},
         "temperature": 0.2,
         "max_tokens": 96,
         "stream": False,

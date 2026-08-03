@@ -57,6 +57,7 @@ class Survey:
     updated_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
+    notify_on_completion: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,6 +124,7 @@ def _survey(row: asyncpg.Record | dict[str, Any]) -> Survey:
         updated_at=row["updated_at"],
         started_at=row["started_at"],
         finished_at=row["finished_at"],
+        notify_on_completion=bool(row.get("notify_on_completion", False)),
     )
 
 
@@ -188,10 +190,14 @@ async def create_survey(
                 quota_date,
             )
             usage = await connection.fetchrow(
-                "SELECT reserved_count, succeeded_count FROM scholight.survey_daily_usage "
-                "WHERE user_id = $1 AND usage_date = $2 FOR UPDATE",
+                "SELECT usage.reserved_count, usage.succeeded_count, "
+                "coalesce((SELECT daily_limit FROM scholight.user_quota_overrides "
+                "WHERE user_id = $1 AND strength = 'survey'), $3::integer) AS daily_limit "
+                "FROM scholight.survey_daily_usage AS usage "
+                "WHERE usage.user_id = $1 AND usage.usage_date = $2 FOR UPDATE",
                 user_id,
                 quota_date,
+                daily_limit,
             )
             existing = await connection.fetchrow(
                 "SELECT * FROM scholight.surveys WHERE user_id = $1 AND client_request_id = $2",
@@ -207,7 +213,8 @@ async def create_survey(
                 return _survey(existing)
             if usage is None:
                 raise DBError("Survey quota row was not created")
-            if int(usage["reserved_count"]) + int(usage["succeeded_count"]) >= daily_limit:
+            effective_limit = int(usage.get("daily_limit", daily_limit))
+            if int(usage["reserved_count"]) + int(usage["succeeded_count"]) >= effective_limit:
                 raise SurveyQuotaExceededError("Daily Survey quota reached")
             await connection.execute(
                 "UPDATE scholight.survey_daily_usage "
@@ -374,6 +381,7 @@ async def start_survey(
     job_id: UUID,
     client_request_id: UUID,
     request_hash: str,
+    notify_on_completion: bool = False,
 ) -> Survey:
     """Bind the latest ready Draft and enqueue the only formal execution."""
     try:
@@ -436,9 +444,11 @@ async def start_survey(
                 request_hash,
             )
             updated = await connection.fetchrow(
-                "UPDATE scholight.surveys SET status = 'queued', updated_at = now() "
+                "UPDATE scholight.surveys SET status = 'queued', notify_on_completion = $2, "
+                "updated_at = now() "
                 "WHERE id = $1 RETURNING *",
                 survey_id,
+                notify_on_completion,
             )
             return _survey(updated)
     except SurveyStateError:
@@ -852,6 +862,16 @@ async def finish_survey_archive(
             await connection.execute(
                 "UPDATE scholight.surveys SET status = $2, updated_at = now(), finished_at = now() "
                 "WHERE id = $1 AND status = 'archiving'",
+                row["survey_id"],
+                row["terminal_outcome"],
+            )
+            await connection.execute(
+                "INSERT INTO scholight.survey_email_notifications "
+                "(id, survey_id, user_id, survey_outcome) "
+                "SELECT gen_random_uuid(), id, user_id, $2 FROM scholight.surveys "
+                "WHERE id = $1 AND notify_on_completion "
+                "AND $2::text IN ('succeeded', 'failed') "
+                "ON CONFLICT (survey_id) DO NOTHING",
                 row["survey_id"],
                 row["terminal_outcome"],
             )

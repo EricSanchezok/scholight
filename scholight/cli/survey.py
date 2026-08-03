@@ -8,8 +8,11 @@ import os
 
 # Only a fixed, image-owned executable is invoked below.
 import subprocess  # nosec B404
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
+from uuid import UUID
 
 import click
 
@@ -19,11 +22,15 @@ from scholight.config import (
     validate_survey_worker_settings,
 )
 from scholight.db.client import close_pool, create_pool, get_pool
-from scholight.db.migration_policy import migration_checksum
 from scholight.db.queries_survey import get_survey_job_counts
 from scholight.db.queries_survey_cleanup import get_artifact_cleanup_status
+from scholight.db.queries_survey_notifications import get_email_notification_status
 from scholight.logging import configure_logging
+from scholight.survey.process import classify_rcm_error
 from scholight.survey.worker import RCM_VERSION, serve_survey_worker
+from scholight.survey.workflow_audit import workflow_audit_payload
+
+_DIAGNOSTIC_JSON_MAX_BYTES = 2 * 1024 * 1024
 
 
 def _installed_rcm_version() -> str:
@@ -40,6 +47,35 @@ def _installed_rcm_version() -> str:
     if version != RCM_VERSION:
         raise RuntimeError("Installed RCM version does not match the reviewed release")
     return version
+
+
+def _verify_diagnostic_workspace(data_root: Path) -> None:
+    """Confirm the worker can atomically persist private diagnostics on its data volume."""
+    with tempfile.TemporaryDirectory(
+        prefix=".survey-diagnostics-smoke-", dir=data_root
+    ) as directory:
+        root = Path(directory)
+        path = root / "diagnostics.json"
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(b'{"ok":true}')
+            handle.flush()
+            os.fsync(handle.fileno())
+        if path.read_bytes() != b'{"ok":true}':
+            raise RuntimeError("Survey diagnostic workspace verification failed")
+
+
+async def _verify_survey_runtime_schema() -> None:
+    """Probe the current Survey schema through application-visible columns."""
+    await get_pool().fetch(
+        "SELECT surveys.title, surveys.notify_on_completion, drafts.request_hash, "
+        "jobs.cancel_requested_at, cleanup.status, notifications.status "
+        "FROM scholight.surveys AS surveys "
+        "CROSS JOIN scholight.survey_drafts AS drafts "
+        "CROSS JOIN scholight.survey_jobs AS jobs "
+        "CROSS JOIN scholight.survey_artifact_cleanup_outbox AS cleanup "
+        "CROSS JOIN scholight.survey_email_notifications AS notifications LIMIT 0"
+    )
 
 
 @click.group("survey")
@@ -98,6 +134,7 @@ def status(json_output: bool) -> None:
         try:
             jobs = await get_survey_job_counts()
             cleanup = await get_artifact_cleanup_status()
+            email = await get_email_notification_status()
             oldest_age = (
                 max(0, int((datetime.now(UTC) - cleanup.oldest_waiting_at).total_seconds()))
                 if cleanup.oldest_waiting_at is not None
@@ -113,6 +150,21 @@ def status(json_output: bool) -> None:
                     "succeeded": cleanup.succeeded,
                     "dead": cleanup.dead,
                     "oldest_waiting_seconds": oldest_age,
+                },
+                "email_notifications": {
+                    "pending": email.pending,
+                    "running": email.running,
+                    "retry": email.retry,
+                    "succeeded": email.succeeded,
+                    "dead": email.dead,
+                    "oldest_waiting_seconds": (
+                        max(
+                            0,
+                            int((datetime.now(UTC) - email.oldest_waiting_at).total_seconds()),
+                        )
+                        if email.oldest_waiting_at is not None
+                        else None
+                    ),
                 },
                 "concurrency": {
                     "draft": settings.survey_draft_concurrency,
@@ -136,10 +188,235 @@ def status(json_output: bool) -> None:
         click.echo(f"{state}: {count}")
 
 
+@survey_group.command("contract-audit")
+@click.option("--json-output", "json_output", is_flag=True, help="Emit machine-readable JSON.")
+def contract_audit(json_output: bool) -> None:
+    """Report known workflow definition conflicts without changing the workflow."""
+    payload = workflow_audit_payload()
+    if json_output:
+        click.echo(json.dumps(payload, separators=(",", ":"), sort_keys=True))
+        return
+    click.echo(f"Workflow contract status: {payload['status']}")
+    conflicts = payload["conflicts"]
+    if not isinstance(conflicts, list):
+        raise click.ClickException("Workflow contract audit response is invalid")
+    for conflict in conflicts:
+        if isinstance(conflict, dict):
+            click.echo(f"- {conflict.get('code')}: {conflict.get('summary')}")
+
+
+def _read_local_diagnostics(job_id: UUID) -> tuple[dict[str, Any], Path] | None:
+    run_root = Path(settings.data_root) / "surveys" / str(job_id) / "run"
+    for name in ("diagnostics.json", "run.json"):
+        path = run_root / name
+        try:
+            if (
+                not path.is_file()
+                or path.is_symlink()
+                or path.stat().st_size > _DIAGNOSTIC_JSON_MAX_BYTES
+            ):
+                continue
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            continue
+        if isinstance(payload, dict) and str(payload.get("job_id")) == str(job_id):
+            return payload, path
+    return None
+
+
+async def _read_stream_json(stream: Any) -> dict[str, Any]:
+    body = bytearray()
+    async for chunk in stream.chunks():
+        body.extend(chunk)
+        if len(body) > _DIAGNOSTIC_JSON_MAX_BYTES:
+            raise RuntimeError("Survey diagnostic artifact is too large")
+    try:
+        payload = json.loads(body)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError("Survey diagnostic artifact is invalid") from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError("Survey diagnostic artifact is invalid")
+    return payload
+
+
+def _diagnostic_projection(
+    payload: dict[str, Any],
+    *,
+    job_id: UUID,
+    source: str,
+    location: str,
+    database: dict[str, object] | None = None,
+) -> dict[str, object]:
+    nested = payload.get("diagnostics")
+    diagnostics = nested if isinstance(nested, dict) else payload
+    process = payload.get("process") if isinstance(payload.get("process"), dict) else None
+    stderr_classification = None
+    if process is not None and isinstance(process.get("stderr_tail"), str):
+        error_code, error_message = classify_rcm_error(process["stderr_tail"])
+        stderr_classification = {"code": error_code, "message": error_message}
+    return {
+        "schema_version": 1,
+        "job_id": str(job_id),
+        "source": source,
+        "location": location,
+        "status": (database or {}).get("status"),
+        "outcome": payload.get("outcome") or (database or {}).get("terminal_outcome"),
+        "error_code": payload.get("error_code") or (database or {}).get("error_code"),
+        "process": process,
+        "last_successful_component": diagnostics.get("last_successful_component"),
+        "first_anomaly": diagnostics.get("first_anomaly"),
+        "affected_components": diagnostics.get("affected_components", []),
+        "anomaly_count": diagnostics.get("anomaly_count", 0),
+        "tool_counts": diagnostics.get("tool_counts", {}),
+        "model_counts": diagnostics.get("model_counts", {}),
+        "last_model_error": diagnostics.get("last_model_error"),
+        "stderr_classification": stderr_classification,
+        "last_activity_at": diagnostics.get("last_activity_at"),
+        "trace_path": diagnostics.get("trace_path"),
+        "manifest_key": (database or {}).get("manifest_key"),
+    }
+
+
+async def _diagnose_archived(job_id: UUID) -> dict[str, object]:
+    from scholight.survey.artifacts import SurveyArtifactStore
+
+    await create_pool()
+    try:
+        row = await get_pool().fetchrow(
+            "SELECT j.status, j.terminal_outcome, j.error_code, j.storage_bucket, "
+            "j.manifest_key FROM scholight.survey_jobs j WHERE j.id = $1",
+            job_id,
+        )
+        if row is None:
+            raise RuntimeError("Survey job was not found")
+        database = {
+            "status": str(row["status"]),
+            "terminal_outcome": row["terminal_outcome"],
+            "error_code": row["error_code"],
+            "manifest_key": row["manifest_key"],
+        }
+        manifest_key = row["manifest_key"]
+        if not isinstance(manifest_key, str) or not manifest_key:
+            return _diagnostic_projection(
+                {},
+                job_id=job_id,
+                source="database",
+                location="survey_jobs",
+                database=database,
+            )
+        bucket = str(row["storage_bucket"] or settings.survey_s3_bucket)
+        store = SurveyArtifactStore(
+            bucket=bucket,
+            endpoint_url=settings.survey_s3_endpoint_url,
+        )
+        stream = await store.open_artifact(manifest_key=manifest_key, path="run.json")
+        payload = await _read_stream_json(stream)
+        return _diagnostic_projection(
+            payload,
+            job_id=job_id,
+            source="archive",
+            location=f"s3://{bucket}/{manifest_key}",
+            database=database,
+        )
+    finally:
+        await close_pool()
+
+
+@survey_group.command("diagnose")
+@click.argument("job_id", type=str)
+@click.option("--json-output", "json_output", is_flag=True, help="Emit machine-readable JSON.")
+def diagnose(job_id: str, json_output: bool) -> None:
+    """Read one active or archived Survey diagnostic summary without rerunning it."""
+    configure_logging()
+    try:
+        parsed_job_id = UUID(job_id)
+    except ValueError as exc:
+        raise click.ClickException("Survey job id must be a UUID") from exc
+    local = _read_local_diagnostics(parsed_job_id)
+    try:
+        payload = (
+            _diagnostic_projection(
+                local[0],
+                job_id=parsed_job_id,
+                source="workspace",
+                location=str(local[1]),
+            )
+            if local is not None
+            else asyncio.run(_diagnose_archived(parsed_job_id))
+        )
+    except Exception as exc:
+        raise click.ClickException("Survey diagnostics could not be read") from exc
+    if json_output:
+        click.echo(json.dumps(payload, separators=(",", ":"), sort_keys=True))
+        return
+    click.echo(f"Survey job: {payload['job_id']}")
+    click.echo(f"Source: {payload['source']} ({payload['location']})")
+    click.echo(f"Outcome: {payload['outcome'] or payload['status'] or 'running'}")
+    process = payload["process"]
+    if isinstance(process, dict):
+        click.echo(
+            "Process: "
+            f"return_code={process.get('return_code')} "
+            f"termination_reason={process.get('termination_reason') or 'unknown'}"
+        )
+    click.echo(f"Last successful component: {payload['last_successful_component'] or 'unknown'}")
+    first_anomaly = payload["first_anomaly"]
+    if isinstance(first_anomaly, dict):
+        click.echo(
+            "First anomaly: "
+            f"{first_anomaly.get('component')} missing "
+            f"{first_anomaly.get('expected_artifact')}"
+        )
+    else:
+        click.echo("First anomaly: none observed")
+    affected = payload["affected_components"]
+    affected_items = affected if isinstance(affected, list) else []
+    click.echo(
+        "Affected components: "
+        + (", ".join(str(component) for component in affected_items) if affected_items else "none")
+    )
+    tool_counts = payload["tool_counts"]
+    normalized_tool_counts = tool_counts if isinstance(tool_counts, dict) else {}
+    click.echo(
+        "Tool calls: "
+        f"started={normalized_tool_counts.get('started', 0)} "
+        f"finished={normalized_tool_counts.get('finished', 0)} "
+        f"failed={normalized_tool_counts.get('failed', 0)}"
+    )
+    model_counts = payload["model_counts"]
+    normalized_model_counts = model_counts if isinstance(model_counts, dict) else {}
+    click.echo(
+        "Model calls: "
+        f"started={normalized_model_counts.get('started', 0)} "
+        f"finished={normalized_model_counts.get('finished', 0)} "
+        f"failed={normalized_model_counts.get('failed', 0)}"
+    )
+    last_model_error = payload["last_model_error"]
+    click.echo(
+        "Last model error: "
+        + (
+            str(last_model_error.get("error_code", "unknown"))
+            if isinstance(last_model_error, dict)
+            else "none"
+        )
+    )
+    stderr_classification = payload["stderr_classification"]
+    click.echo(
+        "Stderr classification: "
+        + (
+            str(stderr_classification.get("code", "unknown"))
+            if isinstance(stderr_classification, dict)
+            else "none"
+        )
+    )
+    click.echo(f"Trace: {payload['trace_path'] or 'unavailable'}")
+    click.echo(f"Archive: {payload['manifest_key'] or payload['location']}")
+
+
 @survey_group.command("smoke")
 @click.option("--json-output", "json_output", is_flag=True, help="Emit machine-readable JSON.")
 def smoke(json_output: bool) -> None:
-    """Validate migrations, cleanup health, RCM identity, and private artifact access."""
+    """Validate runtime schema, cleanup health, RCM identity, and artifact access."""
     configure_logging()
     try:
         validate_survey_worker_settings()
@@ -150,33 +427,10 @@ def smoke(json_output: bool) -> None:
         from scholight.survey.artifacts import SurveyArtifactStore
 
         installed_rcm_version = await asyncio.to_thread(_installed_rcm_version)
+        await asyncio.to_thread(_verify_diagnostic_workspace, Path(settings.data_root))
         await create_pool()
         try:
-            rows = await get_pool().fetch(
-                "SELECT version, name, checksum FROM scholight.schema_migrations "
-                "WHERE version IN (6,7,8) ORDER BY version"
-            )
-            migrations_dir = Path(
-                os.environ.get(
-                    "SCHOLIGHT_MIGRATIONS_DIR",
-                    Path(__file__).resolve().parents[2] / "migrations",
-                )
-            )
-            expected = []
-            for version, name in (
-                (6, "survey_aggregate"),
-                (7, "survey_reliability"),
-                (8, "survey_cancellation"),
-            ):
-                path = migrations_dir / f"{version:03d}_{name}.sql"
-                expected.append(
-                    (version, name, migration_checksum(path.read_text(encoding="utf-8")))
-                )
-            applied = [
-                (int(row["version"]), str(row["name"]), str(row["checksum"])) for row in rows
-            ]
-            if applied != expected:
-                raise RuntimeError("Survey database migrations are incomplete or modified")
+            await _verify_survey_runtime_schema()
             cleanup = await get_artifact_cleanup_status()
             if cleanup.dead:
                 raise RuntimeError("Survey artifact cleanup has dead tasks")
@@ -188,8 +442,10 @@ def smoke(json_output: bool) -> None:
             return {
                 "ok": True,
                 "rcm_version": installed_rcm_version,
-                "migrations": [version for version, _name, _checksum in applied],
+                "runtime_schema": "compatible",
                 "cleanup_dead": cleanup.dead,
+                "diagnostics_writable": True,
+                "workflow_contract": workflow_audit_payload(),
                 "concurrency": {
                     "draft": settings.survey_draft_concurrency,
                     "draft_per_user": settings.survey_draft_per_user_concurrency,

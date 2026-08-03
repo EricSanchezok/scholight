@@ -38,6 +38,12 @@ parameters:
     default: ""
     allowedPattern: '^$|^683390797772\.dkr\.ecr\.ap-southeast-1\.amazonaws\.com/scholight/frontend@sha256:[0-9a-f]{64}$'
     interpolationType: ENV_VAR
+  ExtractImage:
+    type: String
+    description: Digest-qualified production Web Extract image.
+    default: ""
+    allowedPattern: '^$|^683390797772\.dkr\.ecr\.ap-southeast-1\.amazonaws\.com/scholight/extract@sha256:[0-9a-f]{64}$'
+    interpolationType: ENV_VAR
 mainSteps:
   - action: aws:runShellScript
     name: BootstrapAndRelease
@@ -74,6 +80,7 @@ mainSteps:
           [[ "${SSM_PackageSha}" =~ ^[0-9a-f]{64}$ ]]
           [[ "${SSM_BackendImage}" =~ ^683390797772\.dkr\.ecr\.ap-southeast-1\.amazonaws\.com/scholight/backend@sha256:[0-9a-f]{64}$ ]]
           [[ "${SSM_FrontendImage}" =~ ^683390797772\.dkr\.ecr\.ap-southeast-1\.amazonaws\.com/scholight/frontend@sha256:[0-9a-f]{64}$ ]]
+          [[ "${SSM_ExtractImage}" =~ ^683390797772\.dkr\.ecr\.ap-southeast-1\.amazonaws\.com/scholight/extract@sha256:[0-9a-f]{64}$ ]]
 
           if ! command -v docker >/dev/null 2>&1; then
             dnf install -y docker
@@ -102,8 +109,9 @@ mainSteps:
 
           SCHOLIGHT_SOURCE_PACKAGE_DIR="${workdir}" \
             "${workdir}/bootstrap.sh" deploy \
-              --contract-version 1 \
+              --contract-version 2 \
               --package-sha "${SSM_PackageSha}" \
               --release-sha "${SSM_ReleaseSha}" \
               --backend-image "${SSM_BackendImage}" \
-              --frontend-image "${SSM_FrontendImage}"
+              --frontend-image "${SSM_FrontendImage}" \
+              --extract-image "${SSM_ExtractImage}"

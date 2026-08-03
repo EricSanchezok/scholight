@@ -4,7 +4,7 @@
 # Run all:  uv run pre-commit run --all-files
 
 default_language_version:
-  python: python3.11
+  python: python3.13
 
 repos:
   # ═══════════════════════════════════════════════════════════
@@ -24,10 +24,13 @@ repos:
       - id: debug-statements
       - id: detect-private-key
       - id: end-of-file-fixer
+        exclude: ^migrations/
       - id: trailing-whitespace
         args: [--markdown-linebreak-ext=md]
+        exclude: ^migrations/
       - id: mixed-line-ending
         args: [--fix=lf]
+        exclude: ^migrations/
       - id: check-case-conflict
   # ═══════════════════════════════════════════════════════════
   # Spell check

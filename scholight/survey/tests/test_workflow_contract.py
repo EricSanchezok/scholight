@@ -1,6 +1,12 @@
 """Static contracts for the vendored Scholight Survey RCM workflow."""
 
+import re
 from pathlib import Path
+
+import pytest
+
+from scholight.survey import workflow_audit
+from scholight.survey.workflow_audit import audit_workflow_contracts
 
 _WORKFLOW = Path(__file__).parents[1] / "workflow"
 
@@ -32,6 +38,22 @@ def test_discovery_and_expansion_use_authenticated_scholight_mcp() -> None:
         assert 'mcps = ["scholight"]' in source
 
 
+def test_every_survey_model_allows_at_least_thirty_minutes() -> None:
+    model_files = [
+        path
+        for path in sorted((_WORKFLOW / "rcm").glob("*.rcm"))
+        if re.search(r"(?m)^model\s+", path.read_text(encoding="utf-8"))
+    ]
+
+    assert model_files
+    for path in model_files:
+        source = path.read_text(encoding="utf-8")
+        timeouts = [int(value) for value in re.findall(r'(?m)^\s*timeout\s*=\s*"(\d+)"', source)]
+        model_count = len(re.findall(r"(?m)^model\s+", source))
+        assert len(timeouts) == model_count, f"{path.name} must set every model timeout"
+        assert min(timeouts) >= 1_800, f"{path.name} model timeout is below 30 minutes"
+
+
 def test_draft_workflow_is_single_node_mcp_only() -> None:
     source = (_WORKFLOW / "rcm" / "draft.rcm").read_text(encoding="utf-8")
 
@@ -48,8 +70,19 @@ def test_draft_prompt_returns_markdown_without_artifact_files() -> None:
 
     assert "scholight__search_papers" in source
     assert "Markdown" in source
-    assert "final assistant message" in source
+    assert "Return only a concise Markdown Draft" in source
     assert "write" not in source.lower()
+
+
+def test_draft_prompt_is_concise_positive_and_approval_ready() -> None:
+    source = (_WORKFLOW / "prompts" / "draft.txt").read_text(encoding="utf-8")
+    normalized = " ".join(source.split())
+
+    assert "Use qualitative depth by default" in normalized
+    assert "instead of collecting them in a separate section" in normalized
+    assert "Leave language and numeric targets open unless the user sets them" in normalized
+    assert "ready to approve and execute, not a questionnaire" in normalized
+    assert source.count("Do not") <= 1
 
 
 def test_search_strengths_match_survey_retrieval_policy() -> None:
@@ -103,3 +136,55 @@ def test_english_report_is_the_only_final_assembly_output() -> None:
     assert writers == ["survey_assembler.txt"]
     assert "sole final report" in " ".join(assembler.split())
     assert "status degraded" in (prompts / "image_planner.txt").read_text(encoding="utf-8")
+
+
+def test_contract_audit_classifies_every_known_definition_gap() -> None:
+    codes = {conflict.code for conflict in audit_workflow_contracts()}
+
+    assert codes == {
+        "card_plan_definition_conflict",
+        "completion_artifact_gap",
+        "empty_artifact_undefined",
+        "image_status_enum_conflict",
+        "judge_verdict_unvalidated",
+        "progress_stream_dependency",
+        "section_definition_conflict",
+        "spawn_expectations_not_persisted",
+    }
+
+
+def test_contract_audit_does_not_depend_on_test_sources(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    read_project_file = workflow_audit._read
+
+    def read_production_file(relative_path: str) -> str:
+        if relative_path.startswith("tests/"):
+            raise FileNotFoundError(relative_path)
+        return read_project_file(relative_path)
+
+    monkeypatch.setattr(workflow_audit, "_read", read_production_file)
+
+    assert audit_workflow_contracts()
+
+
+def test_e2e_uses_vendored_graph_and_only_redirects_model_transport() -> None:
+    dockerfile = (Path(__file__).parents[3] / "tests/survey_e2e/Dockerfile").read_text(
+        encoding="utf-8"
+    )
+
+    assert "tests/survey_e2e/workflows" not in dockerfile
+    assert "ENV PYTHONPATH=/app" in dockerfile
+    assert "https://api.deepseek.com" in dockerfile
+    assert "http://model:8080/v1" in dockerfile
+
+
+def test_e2e_waits_for_fake_model_health_before_starting_api() -> None:
+    compose = (Path(__file__).parents[3] / "tests/survey_e2e/compose.yaml").read_text(
+        encoding="utf-8"
+    )
+
+    model_service = compose.split("\n  model:\n", 1)[1].split("\n  api:\n", 1)[0]
+    api_service = compose.split("\n  api:\n", 1)[1].split("\n  survey-draft-worker:\n", 1)[0]
+    assert "http://127.0.0.1:8080/health" in model_service
+    assert "condition: service_healthy" in api_service.split("model:", 1)[1]

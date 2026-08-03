@@ -1,7 +1,7 @@
 import { AnimatePresence, LazyMotion, MotionConfig } from "motion/react";
 import * as m from "motion/react-m";
 import { Suspense } from "react";
-import { Outlet, useLocation } from "react-router-dom";
+import { useLocation, useOutlet } from "react-router-dom";
 
 import { RouteSkeleton } from "../components/EditorialSkeleton";
 import { styles } from "../styles/classes";
@@ -60,10 +60,9 @@ export const sectionRevealMotion = {
 } as const;
 
 export const contentSwapMotion = {
-  initial: { opacity: 0.35, y: 4 },
+  initial: { opacity: 0.35 },
   animate: {
     opacity: 1,
-    y: 0,
     transition: { duration: motionDuration.reveal },
   },
   exit: { opacity: 0, transition: { duration: motionDuration.exit } },
@@ -202,6 +201,7 @@ export function ScholightMotionProvider({ children }: { children: React.ReactNod
 
 export function AnimatedOutlet() {
   const location = useLocation();
+  const outlet = useOutlet();
   return (
     <div className={styles.routeStage}>
       <AnimatePresence initial={false} mode="wait">
@@ -216,9 +216,7 @@ export function AnimatedOutlet() {
             transition: { duration: motionDuration.routeExit },
           }}
         >
-          <Suspense fallback={<RouteSkeleton pathname={location.pathname} />}>
-            <Outlet />
-          </Suspense>
+          <Suspense fallback={<RouteSkeleton pathname={location.pathname} />}>{outlet}</Suspense>
         </m.div>
       </AnimatePresence>
     </div>

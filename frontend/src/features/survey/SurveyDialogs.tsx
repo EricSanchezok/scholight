@@ -1,4 +1,5 @@
 import * as Dialog from "@radix-ui/react-dialog";
+import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 
 import type { SurveyQuota } from "../../api/types";
@@ -16,6 +17,7 @@ function SurveyDialog({
   danger = false,
   busy = false,
   error,
+  children,
   onOpenChange,
   onPrimary,
 }: {
@@ -28,6 +30,7 @@ function SurveyDialog({
   danger?: boolean;
   busy?: boolean;
   error?: string;
+  children?: ReactNode;
   onOpenChange: (open: boolean) => void;
   onPrimary: () => void;
 }) {
@@ -37,6 +40,7 @@ function SurveyDialog({
         <p className={styles.dialogEyebrow}>{eyebrow}</p>
         <Dialog.Title>{title}</Dialog.Title>
         <Dialog.Description>{description}</Dialog.Description>
+        {children}
         {error && <p className={styles.dialogError}>{error}</p>}
         <div className={styles.dialogActions}>
           <Dialog.Close className={styles.secondaryButton}>{secondaryLabel}</Dialog.Close>
@@ -137,12 +141,16 @@ export function SurveyStartDialog({
   open,
   busy,
   error,
+  notifyOnCompletion,
+  onNotifyChange,
   onOpenChange,
   onConfirm,
 }: {
   open: boolean;
   busy: boolean;
   error?: string;
+  notifyOnCompletion: boolean;
+  onNotifyChange: (notify: boolean) => void;
   onOpenChange: (open: boolean) => void;
   onConfirm: () => void;
 }) {
@@ -158,6 +166,23 @@ export function SurveyStartDialog({
       error={error}
       onOpenChange={onOpenChange}
       onPrimary={onConfirm}
-    />
+    >
+      <label className={styles.surveyNotificationChoice}>
+        <input
+          type="checkbox"
+          aria-labelledby="survey-notification-label"
+          aria-describedby="survey-notification-description"
+          checked={notifyOnCompletion}
+          disabled={busy}
+          onChange={(event) => onNotifyChange(event.target.checked)}
+        />
+        <span>
+          <strong id="survey-notification-label">Email me when this survey finishes</strong>
+          <small id="survey-notification-description">
+            Send one email to my Scholight account when the report is ready or if the survey fails.
+          </small>
+        </span>
+      </label>
+    </SurveyDialog>
   );
 }

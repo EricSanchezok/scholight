@@ -291,6 +291,15 @@ def test_delegated_actor_migration_requires_explicit_checksum_approval() -> None
         validate_expand_only_sql(sql)
 
 
+def test_access_key_all_tools_migration_rewrites_scope_atomically() -> None:
+    migration = Path(__file__).parents[3] / "migrations/012_access_keys_all_tools.sql"
+    sql = " ".join(migration.read_text(encoding="utf-8").split()).lower()
+
+    assert "update scholight.access_keys set scopes = array['all']::text[]" in sql
+    assert "default array['all']::text[]" in sql
+    assert "check (scopes = array['all']::text[])" in sql
+
+
 def test_survey_migration_is_product_scoped_and_expand_only() -> None:
     migration = Path(__file__).parents[3] / "migrations/005_survey_jobs.sql"
     raw_sql = migration.read_text(encoding="utf-8")
@@ -304,6 +313,14 @@ def test_survey_migration_is_product_scoped_and_expand_only() -> None:
     assert "drop " not in sql
     assert "truncate " not in sql
     assert "delete from" not in sql
+
+
+def test_survey_quota_override_migration_expands_the_shared_strength_constraint() -> None:
+    migration = Path(__file__).parents[3] / "migrations/010_survey_quota_overrides.sql"
+
+    sql = " ".join(migration.read_text(encoding="utf-8").split()).lower()
+
+    assert "strength in ('standard', 'thorough', 'survey')" in sql
 
 
 def test_survey_aggregate_migration_fails_closed_before_replacing_legacy_table() -> None:
@@ -362,6 +379,22 @@ def test_survey_cancellation_migration_only_widens_the_job_contract() -> None:
     assert "truncate" not in sql
     assert "delete from" not in sql
     assert "auth." not in sql
+
+
+def test_survey_email_notification_migration_is_expand_only() -> None:
+    migration = Path(__file__).parents[3] / "migrations/011_survey_email_notifications.sql"
+    raw_sql = migration.read_text(encoding="utf-8")
+    sql = " ".join(raw_sql.split()).lower()
+
+    validate_expand_only_sql(raw_sql)
+    assert "add column notify_on_completion boolean not null default false" in sql
+    assert "create table scholight.survey_email_notifications" in sql
+    assert "references scholight.surveys(id) on delete cascade" in sql
+    assert "references auth.users(id) on delete cascade" in sql
+    assert "unique (survey_id)" in sql
+    assert "drop " not in sql
+    assert "truncate " not in sql
+    assert "delete from" not in sql
 
 
 @pytest.mark.asyncio

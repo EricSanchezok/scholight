@@ -11,15 +11,15 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from scholight.api.access_keys import AccessKeyRecord
 
 
-def _default_search_scope() -> list[Literal["search"]]:
-    return ["search"]
+def _default_all_scope() -> list[Literal["all"]]:
+    return ["all"]
 
 
 class CreateAccessKeyRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(min_length=1, max_length=64)
-    scopes: list[Literal["search"]] = Field(default_factory=_default_search_scope)
+    scopes: list[Literal["all"]] = Field(default_factory=_default_all_scope)
     expires_at: datetime | None = None
 
     @field_validator("name")
@@ -32,10 +32,15 @@ class CreateAccessKeyRequest(BaseModel):
 
     @field_validator("scopes")
     @staticmethod
-    def _search_scope_only(value: list[str]) -> list[str]:
-        if value != ["search"]:
-            raise ValueError("only the search scope is supported")
+    def _all_scope_only(value: list[str]) -> list[str]:
+        if value != ["all"]:
+            raise ValueError("access keys always authorize all Scholight tools")
         return value
+
+    @field_validator("scopes", mode="before")
+    @staticmethod
+    def _normalize_legacy_scope(value: object) -> object:
+        return ["all"] if value == ["search"] else value
 
     @field_validator("expires_at")
     @staticmethod
@@ -82,7 +87,7 @@ class AccessKeyResponse(BaseModel):
     name: str
     prefix: str
     last4: str
-    scopes: list[Literal["search"]]
+    scopes: list[Literal["all"]]
     created_at: datetime
     last_used_at: datetime | None
     expires_at: datetime | None

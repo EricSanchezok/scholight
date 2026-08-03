@@ -32,7 +32,9 @@ async def reset_ingestion_database(pool: asyncpg.Pool) -> None:
     await pool.execute("DROP SCHEMA IF EXISTS scholight CASCADE")
     await pool.execute("DROP SCHEMA IF EXISTS auth CASCADE")
     await pool.execute("CREATE SCHEMA auth")
-    await pool.execute("CREATE TABLE auth.users (id BIGINT PRIMARY KEY)")
+    await pool.execute(
+        "CREATE TABLE auth.users (id BIGINT PRIMARY KEY, email TEXT, email_verified_at TIMESTAMPTZ)"
+    )
     await pool.execute("CREATE SCHEMA scholight")
     async with pool.acquire() as connection:
         with patch("scholight.db.migrate._MIGRATIONS_DIR", _MIGRATIONS):

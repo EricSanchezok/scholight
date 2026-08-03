@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -50,6 +51,59 @@ def test_production_compose_uses_digest_images_and_only_caddy_ports() -> None:
     assert "ports" not in services["api"]
     assert "ports" not in services["frontend"]
     assert services["caddy"]["ports"] == ["80:80", "443:443"]
+
+
+def test_extract_sidecar_is_internal_hardened_and_failure_isolated() -> None:
+    compose = yaml.safe_load((PRODUCTION / "compose.yaml").read_text(encoding="utf-8"))
+    services = compose["services"]
+    extract = services["extract"]
+
+    assert extract["image"].startswith("${SCHOLIGHT_EXTRACT_IMAGE:")
+    assert "ports" not in extract
+    assert extract["read_only"] is True
+    assert extract["cap_drop"] == ["ALL"]
+    assert "no-new-privileges:true" in extract["security_opt"]
+    assert "extract" not in services["api"].get("depends_on", {})
+    assert set(services["api"]["networks"]) == {"scholight", "extract-control"}
+    assert set(extract["networks"]) == {"extract-control", "extract-egress"}
+    assert "scholight" not in extract["networks"]
+    assert compose["networks"]["extract-control"]["internal"] is True
+    assert compose["networks"]["extract-egress"]["internal"] is False
+    assert services["api"]["environment"]["SCHOLIGHT_EXTRACT_SERVICE_URL"] == (
+        "http://extract:8001"
+    )
+    assert services["api"]["environment"]["SCHOLIGHT_EXTRACT_ENABLED"] == "true"
+
+
+def test_extract_runtime_contract_has_stable_token_without_shared_network_ip() -> None:
+    runtime = (PRODUCTION / "runtime.env.example").read_text(encoding="utf-8")
+
+    assert "SCHOLIGHT_EXTRACT_IP=" not in runtime
+    assert "SCHOLIGHT_EXTRACT_INTERNAL_TOKEN=" in runtime
+
+
+def test_extract_image_does_not_install_the_private_identity_sdk() -> None:
+    dockerfile = (ROOT / "docker/scholight-extract/Dockerfile").read_text(encoding="utf-8")
+
+    assert "--no-install-package sanchezcloud-identity" in dockerfile
+    assert "--no-install-package cloud-auth" not in dockerfile
+
+
+def test_local_extract_sidecar_has_matching_isolation_and_resource_limits() -> None:
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+    services = compose["services"]
+    extract = services["extract"]
+
+    assert "extract" not in services["api"].get("depends_on", {})
+    assert set(services["api"]["networks"]) == {"scholight", "extract-control"}
+    assert set(extract["networks"]) == {"extract-control", "extract-egress"}
+    assert "scholight" not in extract["networks"]
+    assert extract["mem_limit"] == "1536m"
+    assert extract["memswap_limit"] == "1536m"
+    assert str(extract["cpus"]) == "1.0"
+    assert extract["pids_limit"] == 256
+    assert compose["networks"]["extract-control"]["internal"] is True
+    assert compose["networks"]["extract-egress"]["internal"] is False
 
 
 def test_production_compose_separates_application_and_migration_database_roles() -> None:
@@ -109,7 +163,7 @@ def test_workflows_do_not_persist_checkout_credentials_or_inherit_secrets() -> N
     assert "secrets: inherit" not in workflows
 
 
-def test_caddy_image_is_reviewed_and_not_runtime_overrideable() -> None:
+def test_caddy_image_is_reviewed_and_not_runtime_overridable() -> None:
     compose_text = (PRODUCTION / "compose.yaml").read_text(encoding="utf-8")
     compose = yaml.safe_load(compose_text)
     caddy_image = compose["services"]["caddy"]["image"]
@@ -138,10 +192,11 @@ def test_release_manifest_examples_are_digest_qualified() -> None:
             key, value = line.split("=", 1)
             values[key] = value
 
-    assert values["SCHOLIGHT_RELEASE_CONTRACT_VERSION"] == "1"
+    assert values["SCHOLIGHT_RELEASE_CONTRACT_VERSION"] == "2"
     assert len(values["SCHOLIGHT_RELEASE_SHA"]) == 40
     assert DIGEST_REFERENCE.fullmatch(values["SCHOLIGHT_BACKEND_IMAGE"])
     assert DIGEST_REFERENCE.fullmatch(values["SCHOLIGHT_FRONTEND_IMAGE"])
+    assert DIGEST_REFERENCE.fullmatch(values["SCHOLIGHT_EXTRACT_IMAGE"])
 
 
 def test_caddy_blocks_internal_health_and_routes_api_directly() -> None:
@@ -186,6 +241,7 @@ def test_production_services_have_hard_resource_boundaries() -> None:
         "frontend": ("128m", "0.1", 64),
         "survey-draft-worker": ("768m", "0.5", 256),
         "survey-worker": ("2560m", "1.0", 512),
+        "extract": ("1536m", "1.0", 256),
     }
 
     for service_name, (memory, cpus, pids) in expected.items():
@@ -230,6 +286,19 @@ def test_survey_workers_are_opt_in_and_hardened_for_compatibility_release() -> N
         assert service["mem_limit"] == service["memswap_limit"]
     assert compose["services"]["survey-worker"]["volumes"] == ["scholight-data:/data"]
     assert "volumes" not in compose["services"]["survey-draft-worker"]
+
+
+def test_survey_workers_share_an_explicit_api_service_discovery_contract() -> None:
+    compose = yaml.safe_load((PRODUCTION / "compose.yaml").read_text(encoding="utf-8"))
+    smoke = (PRODUCTION / "smoke.sh").read_text(encoding="utf-8")
+
+    assert compose["services"]["api"]["networks"]["scholight"]["aliases"] == ["api"]
+    for worker in ("survey-draft-worker", "survey-worker"):
+        command = (
+            f"compose exec -T {worker} \\\n"
+            "    curl --fail --silent --show-error http://api:8000/livez"
+        )
+        assert command in smoke
 
 
 def test_uvicorn_has_explicit_tunable_connection_boundaries() -> None:
@@ -381,6 +450,7 @@ def test_release_workflow_uses_fixed_bootstrap_document() -> None:
     assert "PackageSha:" in workflow
     assert "BackendImage:" in workflow
     assert "FrontendImage:" in workflow
+    assert "ExtractImage:" in workflow
 
 
 def test_ssm_document_has_only_fixed_validated_release_parameters() -> None:
@@ -396,6 +466,7 @@ def test_ssm_document_has_only_fixed_validated_release_parameters() -> None:
         "PackageSha",
         "BackendImage",
         "FrontendImage",
+        "ExtractImage",
     }
     assert parameters["Operation"]["allowedValues"] == ["deploy", "rollback"]
     assert parameters["AwsRegion"]["allowedValues"] == ["ap-southeast-1"]
@@ -408,6 +479,10 @@ def test_ssm_document_has_only_fixed_validated_release_parameters() -> None:
     assert (
         r"683390797772\.dkr\.ecr\.ap-southeast-1\.amazonaws\.com/scholight/frontend"
         in (parameters["FrontendImage"]["allowedPattern"])
+    )
+    assert (
+        r"683390797772\.dkr\.ecr\.ap-southeast-1\.amazonaws\.com/scholight/extract"
+        in (parameters["ExtractImage"]["allowedPattern"])
     )
     assert all(value.get("interpolationType") == "ENV_VAR" for value in parameters.values())
 
@@ -456,10 +531,10 @@ def test_backend_image_pins_verified_rcm_release() -> None:
     dockerfile = (ROOT / "docker" / "scholight-api" / "Dockerfile").read_text(encoding="utf-8")
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 
-    assert "ARG RCM_VERSION=v0.2.6" in dockerfile
+    assert "ARG RCM_VERSION=v0.2.8" in dockerfile
     assert (
         "ARG RCM_LINUX_X86_64_SHA256="
-        "edfc1d996a1a76dad127e98256e70a94dade95ab9c79d9b170f9ef25c150147a"
+        "ef73a5d0866ec346a0df37839c697731d29f5a0f5c1a398bd0c0a636a5236684"
     ) in dockerfile
     assert (
         "https://github.com/EricSanchezok/rcm-dist/releases/download/"
@@ -563,6 +638,12 @@ def test_observability_template_has_bounded_retention_and_required_alarms() -> N
         "StandardLatencyAlarm",
         "ThoroughLatencyAlarm",
         "DeadIngestionAlarm",
+        "SurveyContractAlarm",
+        "SurveyRuntimeFailureAlarm",
+        "SurveyDiagnosticsFailureAlarm",
+        "SurveyStalledAlarm",
+        "SurveyEmailDeadAlarm",
+        "SurveyEmailBacklogAlarm",
         "Proxy502Metric",
         "Proxy504Metric",
         "ProxyConnectionResetMetric",
@@ -572,15 +653,45 @@ def test_observability_template_has_bounded_retention_and_required_alarms() -> N
     assert "CapacityAlarm" not in resources
 
     dashboard = resources["Dashboard"]["Properties"]["DashboardBody"]["Sub"]
+    parsed_dashboard = json.loads(dashboard)
+    assert isinstance(parsed_dashboard["widgets"], list)
     assert "Search in-flight and throughput" in dashboard
     assert "Search stage latency p95" in dashboard
     assert "HTTPX and thread-pool wait p95" in dashboard
     assert "Proxy and application errors" in dashboard
     assert "Background analytics queues" in dashboard
+    assert "Survey outcomes and duration" in dashboard
+    assert "Survey failures and activity" in dashboard
+    assert "Survey email delivery" in dashboard
     assert (
         resources["HostOomMetric"]["Properties"]["FilterPattern"]
         == '?"Out of memory" ?"Killed process" ?"oom-kill"'
     )
+
+
+def test_survey_smoke_checks_diagnostics_and_contract_audit() -> None:
+    source = (ROOT / "scholight" / "cli" / "survey.py").read_text(encoding="utf-8")
+
+    assert "_verify_diagnostic_workspace" in source
+    assert '"diagnostics_writable": True' in source
+    assert '"workflow_contract": workflow_audit_payload()' in source
+
+
+def test_survey_email_delivery_has_profile_safe_config_and_smoke_visibility() -> None:
+    compose = yaml.safe_load((PRODUCTION / "compose.yaml").read_text(encoding="utf-8"))
+    survey_environment = compose["x-survey-environment"]
+    smoke = (PRODUCTION / "smoke.sh").read_text(encoding="utf-8")
+    runtime = (PRODUCTION / "runtime.env.example").read_text(encoding="utf-8")
+
+    for name in (
+        "SCHOLIGHT_ALIYUN_DM_ACCESS_KEY_ID",
+        "SCHOLIGHT_ALIYUN_DM_ACCESS_KEY_SECRET",
+        "SCHOLIGHT_ALIYUN_DM_ACCOUNT_NAME",
+    ):
+        assert survey_environment[name] == f"${{{name}:-}}"
+        assert f"{name}=" in runtime
+    assert "scholight survey status --json-output" in smoke
+    assert "requested completion" in runtime
 
 
 def test_production_has_no_unreviewed_capacity_enforcement_settings() -> None:
@@ -753,11 +864,14 @@ def test_database_bootstrap_is_reviewed_and_ci_exercises_least_privilege_roles()
     assert "CREATE SCHEMA IF NOT EXISTS scholight AUTHORIZATION %I" in bootstrap
     assert "GRANT REFERENCES ON TABLE auth.users" in bootstrap
     assert "GRANT SELECT, INSERT, UPDATE ON TABLE auth.users" in bootstrap
+    assert "GRANT SELECT, INSERT, UPDATE ON TABLE auth.user_clients" in bootstrap
     assert "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE auth.users" not in bootstrap
+    assert "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE auth.user_clients" not in bootstrap
     assert 'FOR ROLE :"auth_migrator_role"' not in bootstrap
     assert "SCHOLIGHT_PG_USER=scholight_migrator" in workflow
     assert "AUTH_DATABASE_URL=" in workflow
     assert "-U scholight_app" in workflow
+    assert "identity_runtime_smoke.py" in workflow
     assert "REVOKE ALL ON TABLE auth.schema_migrations" in bootstrap
     assert "REVOKE ALL ON TABLE scholight.schema_migrations" in bootstrap
     assert "CREATE TABLE public.app_role_must_not_create" in workflow

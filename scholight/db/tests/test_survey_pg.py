@@ -39,6 +39,10 @@ from scholight.db.queries_survey_drafts import (
     list_survey_drafts,
     request_generated_draft,
 )
+from scholight.db.queries_survey_notifications import (
+    claim_email_notification,
+    complete_email_notification,
+)
 from scholight.db.queries_survey_views import (
     get_survey_artifact_reference,
     list_survey_summaries,
@@ -66,7 +70,10 @@ async def survey_pool() -> asyncpg.Pool:
         init=_set_short_lock_timeout,
     )
     await reset_ingestion_database(pool)
-    await pool.execute("INSERT INTO auth.users (id) VALUES (42), (43)")
+    await pool.execute(
+        "INSERT INTO auth.users (id, email, email_verified_at) VALUES "
+        "(42, 'reader@example.com', now()), (43, 'second@example.com', now())"
+    )
     try:
         yield pool
     finally:
@@ -125,6 +132,20 @@ async def test_six_concurrent_creates_reserve_exactly_five(survey_pool: asyncpg.
     assert results.count("created") == 5
     assert results.count("rejected") == 1
     assert await _usage(survey_pool) == (5, 0)
+
+
+@pytest.mark.asyncio
+async def test_create_survey_enforces_user_override(survey_pool: asyncpg.Pool) -> None:
+    await survey_pool.execute(
+        "INSERT INTO scholight.user_quota_overrides "
+        "(user_id, strength, daily_limit) VALUES (42, 'survey', 2)"
+    )
+    with patch("scholight.db.queries_survey.get_pool", return_value=survey_pool):
+        await _create()
+        await _create()
+
+        with pytest.raises(SurveyQuotaExceededError):
+            await _create()
 
 
 @pytest.mark.asyncio
@@ -398,6 +419,7 @@ async def test_formal_failure_keeps_one_failed_survey_and_releases_quota(
             job_id=uuid4(),
             client_request_id=uuid4(),
             request_hash="d" * 64,
+            notify_on_completion=True,
         )
         worker_id = uuid4()
         job = await claim_survey_job(worker_id=worker_id, lease_seconds=3600)
@@ -422,7 +444,101 @@ async def test_formal_failure_keeps_one_failed_survey_and_releases_quota(
     assert survey.status == "failed"
     assert survey.quota_state == "released"
     assert await survey_pool.fetchval("SELECT count(*) FROM scholight.surveys") == 1
+    notification = await survey_pool.fetchrow(
+        "SELECT * FROM scholight.survey_email_notifications WHERE survey_id = $1", survey_id
+    )
+    assert notification is not None
+    assert notification["survey_outcome"] == "failed"
+    assert notification["status"] == "pending"
     assert await _usage(survey_pool) == (0, 0)
+
+
+@pytest.mark.asyncio
+async def test_unchecked_success_does_not_enqueue_email_notification(
+    survey_pool: asyncpg.Pool,
+) -> None:
+    with (
+        patch("scholight.db.queries_survey.get_pool", return_value=survey_pool),
+        patch("scholight.db.queries_survey_drafts.get_pool", return_value=survey_pool),
+    ):
+        survey_id = await _create()
+        await _complete_next_draft(markdown="# Approved Draft")
+        await start_survey(
+            survey_id=survey_id,
+            user_id=42,
+            job_id=uuid4(),
+            client_request_id=uuid4(),
+            request_hash="e" * 64,
+        )
+        worker_id = uuid4()
+        job = await claim_survey_job(worker_id=worker_id, lease_seconds=3600)
+        assert job is not None
+        await settle_survey_execution(
+            job_id=job.id,
+            worker_id=worker_id,
+            outcome="succeeded",
+            error_code=None,
+            error_message=None,
+        )
+        await finish_survey_archive(
+            job_id=job.id,
+            worker_id=worker_id,
+            storage_bucket="test-surveys",
+            storage_prefix="surveys/v1/42/test",
+            manifest_key="surveys/v1/42/test/manifest.json",
+        )
+
+    assert (
+        await survey_pool.fetchval(
+            "SELECT count(*) FROM scholight.survey_email_notifications WHERE survey_id = $1",
+            survey_id,
+        )
+        == 0
+    )
+
+
+@pytest.mark.asyncio
+async def test_notification_claims_are_concurrent_and_use_current_account_email(
+    survey_pool: asyncpg.Pool,
+) -> None:
+    with (
+        patch("scholight.db.queries_survey.get_pool", return_value=survey_pool),
+        patch("scholight.db.queries_survey_notifications.get_pool", return_value=survey_pool),
+    ):
+        survey_ids = [await _create(user_id=42), await _create(user_id=43)]
+        await survey_pool.execute(
+            "UPDATE scholight.surveys SET status = 'failed', quota_state = 'released', "
+            "finished_at = now(), title = 'Notification contract' WHERE id = ANY($1::uuid[])",
+            survey_ids,
+        )
+        await survey_pool.executemany(
+            "INSERT INTO scholight.survey_email_notifications "
+            "(id, survey_id, user_id, survey_outcome) VALUES ($1, $2, $3, 'failed')",
+            [(uuid4(), survey_ids[0], 42), (uuid4(), survey_ids[1], 43)],
+        )
+        await survey_pool.execute(
+            "UPDATE auth.users SET email = 'current@example.com' WHERE id = 42"
+        )
+        first, second = await asyncio.gather(
+            claim_email_notification(worker_id=uuid4(), lease_seconds=120),
+            claim_email_notification(worker_id=uuid4(), lease_seconds=120),
+        )
+
+    assert first is not None and second is not None
+    assert first.id != second.id
+    assert {first.recipient_email, second.recipient_email} == {
+        "current@example.com",
+        "second@example.com",
+    }
+    assert first.lease_owner is not None
+    with patch("scholight.db.queries_survey_notifications.get_pool", return_value=survey_pool):
+        await complete_email_notification(notification_id=first.id, worker_id=first.lease_owner)
+    assert (
+        await survey_pool.fetchval(
+            "SELECT count(*) FROM scholight.survey_email_notifications WHERE status = 'succeeded'"
+        )
+        == 1
+    )
 
 
 @pytest.mark.asyncio
@@ -629,10 +745,24 @@ async def test_running_cancel_is_observed_and_wins_before_success_settlement(
             error_code=None,
             error_message=None,
         )
+        await finish_survey_archive(
+            job_id=job.id,
+            worker_id=worker_id,
+            storage_bucket="test-surveys",
+            storage_prefix="surveys/v1/42/cancelled",
+            manifest_key="surveys/v1/42/cancelled/manifest.json",
+        )
 
     assert requested.status == "running"
     assert heartbeat == "cancel_requested"
     assert settled.terminal_outcome == "cancelled"
+    assert (
+        await survey_pool.fetchval(
+            "SELECT count(*) FROM scholight.survey_email_notifications WHERE survey_id = $1",
+            survey_id,
+        )
+        == 0
+    )
     assert await _usage(survey_pool) == (0, 0)
 
 

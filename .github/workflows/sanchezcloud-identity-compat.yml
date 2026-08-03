@@ -127,15 +127,29 @@ jobs:
           scholight/api/tests/test_sessions.py
       - name: Verify candidate schema contract
         env:
-          AUTH_DATABASE_URL: postgresql://postgres:identity-compat-password@127.0.0.1:5432/sanchezcloud
+          AUTH_DATABASE_URL: postgresql://auth_migrator:auth-migrator-password@127.0.0.1:5432/sanchezcloud
           PGPASSWORD: identity-compat-password
         run: |
+          psql -h 127.0.0.1 -U postgres -d sanchezcloud -v ON_ERROR_STOP=1 -c \
+            "CREATE ROLE auth_migrator LOGIN PASSWORD 'auth-migrator-password';
+             CREATE ROLE scholight_migrator LOGIN PASSWORD 'scholight-migrator-password';
+             CREATE ROLE scholight_app LOGIN PASSWORD 'scholight-app-password';"
           psql -h 127.0.0.1 -U postgres -d sanchezcloud \
-            -v ON_ERROR_STOP=1 -c "CREATE SCHEMA auth AUTHORIZATION postgres"
+            -v app_role=scholight_app \
+            -v auth_migrator_role=auth_migrator \
+            -v product_migrator_role=scholight_migrator \
+            -f deploy/production/bootstrap-db.sql
           .venv/bin/sanchezcloud-identity migrate
           .venv/bin/sanchezcloud-identity migrate
           .venv/bin/sanchezcloud-identity check-schema
           test "$(.venv/bin/sanchezcloud-identity schema-version)" = "${{ inputs.schema_version }}"
+          psql -h 127.0.0.1 -U postgres -d sanchezcloud \
+            -v app_role=scholight_app \
+            -v auth_migrator_role=auth_migrator \
+            -v product_migrator_role=scholight_migrator \
+            -f deploy/production/bootstrap-db.sql
+          AUTH_DATABASE_URL=postgresql://scholight_app:scholight-app-password@127.0.0.1:5432/sanchezcloud \
+            .venv/bin/sanchezcloud-identity audit-database-role --profile product-runtime
       - name: Build Scholight with the candidate SDK
         env:
           DOCKER_BUILDKIT: "1"
