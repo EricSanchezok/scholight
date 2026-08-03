@@ -118,7 +118,7 @@ async def get_user_quota_overrides(user_id: int) -> dict[str, int | None]:
     except asyncpg.PostgresError as exc:
         logger.error("admin_quota_overrides_read_failed", error_type=type(exc).__name__)
         raise DBError("Failed to read user quota overrides") from exc
-    values: dict[str, int | None] = {"standard": None, "thorough": None}
+    values: dict[str, int | None] = {"standard": None, "thorough": None, "survey": None}
     for row in rows:
         values[str(row["strength"])] = int(row["daily_limit"])
     return values
@@ -189,10 +189,11 @@ async def update_user_quota_overrides(
     target_user_id: int,
     standard: int | None,
     thorough: int | None,
+    survey: int | None,
     event_id: UUID,
 ) -> bool:
-    """Atomically replace both overrides and append one immutable audit event."""
-    requested = {"standard": standard, "thorough": thorough}
+    """Atomically replace all overrides and append one immutable audit event."""
+    requested = {"standard": standard, "thorough": thorough, "survey": survey}
     try:
         async with get_pool().acquire() as connection, connection.transaction():
             row = _require_active_target(await _locked_target_by_id(connection, target_user_id))
@@ -206,7 +207,11 @@ async def update_user_quota_overrides(
                 "WHERE user_id = $1 FOR UPDATE",
                 target_user_id,
             )
-            before: dict[str, int | None] = {"standard": None, "thorough": None}
+            before: dict[str, int | None] = {
+                "standard": None,
+                "thorough": None,
+                "survey": None,
+            }
             for override in rows:
                 value = override["daily_limit"]
                 before[str(override["strength"])] = int(value) if value is not None else None

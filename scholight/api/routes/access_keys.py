@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from cloud_auth.models.user import UserRecord
 from fastapi import APIRouter, Depends, Response, status
+from sanchezcloud_identity.models.user import UserRecord
 
 from scholight.api.access_keys import issue_access_key
 from scholight.api.deps import get_current_user

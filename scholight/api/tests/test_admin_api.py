@@ -8,11 +8,12 @@ from uuid import UUID
 
 import httpx
 import pytest
-from cloud_auth.models.user import UserRecord
 from fastapi import FastAPI
+from sanchezcloud_identity.models.user import UserRecord
 
 from scholight.api.deps import get_current_user, get_scholight_admin
 from scholight.db.queries_admin import AdminAuditEvent, AdminTarget
+from scholight.db.queries_survey_views import SurveyQuotaSnapshot
 from scholight.models.quota import QuotaStatus
 
 
@@ -65,11 +66,15 @@ async def test_lookup_returns_defaults_overrides_effective_and_usage(api_app: Fa
         ),
         patch(
             "scholight.api.routes.admin.get_user_quota_overrides",
-            AsyncMock(return_value={"standard": 5000, "thorough": None}),
+            AsyncMock(return_value={"standard": 5000, "thorough": None, "survey": 2}),
         ),
         patch(
             "scholight.api.routes.admin.get_user_quota_status",
             AsyncMock(return_value=statuses),
+        ),
+        patch(
+            "scholight.api.routes.admin.get_survey_quota_snapshot",
+            AsyncMock(return_value=SurveyQuotaSnapshot(daily_limit=2, reserved=1, succeeded=0)),
         ),
     ):
         async with httpx.AsyncClient(
@@ -84,6 +89,13 @@ async def test_lookup_returns_defaults_overrides_effective_and_usage(api_app: Fa
         "effective_limit": 5000,
         "used": 20,
         "remaining": 4980,
+    }
+    assert response.json()["quotas"]["survey"] == {
+        "default_limit": 3,
+        "override_limit": 2,
+        "effective_limit": 2,
+        "used": 1,
+        "remaining": 1,
     }
 
 
@@ -120,7 +132,7 @@ async def test_lookup_missing_user_explains_exact_email_requirement(api_app: Fas
 
 
 @pytest.mark.asyncio
-async def test_update_requires_both_fields_and_enforces_upper_bound(api_app: FastAPI) -> None:
+async def test_update_requires_all_fields_and_enforces_upper_bound(api_app: FastAPI) -> None:
     api_app.dependency_overrides[get_scholight_admin] = _admin
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=api_app), base_url="http://test"
@@ -131,7 +143,7 @@ async def test_update_requires_both_fields_and_enforces_upper_bound(api_app: Fas
         )
         excessive = await client.put(
             "/admin/users/7/quota-overrides",
-            json={"standard": 1_000_001, "thorough": None},
+            json={"standard": 1_000_001, "thorough": None, "survey": None},
         )
 
     assert missing.status_code == 422

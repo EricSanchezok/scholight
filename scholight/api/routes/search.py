@@ -5,9 +5,9 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import uuid4
 
-from cloud_auth.models.auth import MessageResponse
-from cloud_auth.models.user import UserRecord
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sanchezcloud_identity.models.auth import MessageResponse
+from sanchezcloud_identity.models.user import UserRecord
 from structlog.contextvars import get_contextvars
 
 from scholight.api.deps import SearchActor, get_current_user, get_optional_search_actor

@@ -6,6 +6,7 @@ export const en = {
   navigation: {
     home: "Home",
     docs: "Docs",
+    survey: "Survey",
     signIn: "Sign in",
     signOut: "Sign out",
     menu: "Menu",
@@ -66,6 +67,7 @@ export const en = {
   titles: {
     search: (query?: string) => (query ? `${query} — Scholight` : "Search — Scholight"),
     docs: "Docs — Scholight",
+    survey: "Research surveys — Scholight",
     history: "Search history — Scholight",
     usage: "Usage & quota — Scholight",
     accessKeys: "Access keys — Scholight",

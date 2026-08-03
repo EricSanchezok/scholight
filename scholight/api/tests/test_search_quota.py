@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import asyncpg
 import pytest
-from cloud_auth.models.user import UserRecord
+from sanchezcloud_identity.models.user import UserRecord
 
 from scholight.api.search_access import (
     SearchAccessError,

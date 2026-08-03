@@ -22,8 +22,8 @@
   min-height: 180px;
   padding: 34px 0;
   border-block: 1px solid var(--line-soft);
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 64px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 48px;
 }
 .skeletonQuota > span,
 .skeletonCharts > span,
@@ -183,8 +183,8 @@
 .quotaMetrics {
   display: grid;
   margin-top: 22px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 64px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 48px;
 }
 .quotaMetric {
   display: flex;

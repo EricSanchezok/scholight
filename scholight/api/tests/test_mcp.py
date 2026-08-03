@@ -12,8 +12,8 @@ import httpx
 import jwt
 import pytest
 import pytest_asyncio
-from cloud_auth.models.user import UserRecord
 from pydantic import AnyHttpUrl
+from sanchezcloud_identity.models.user import UserRecord
 
 from scholight.api.access_keys import AccessKeyError
 from scholight.api.app import create_app
@@ -453,6 +453,7 @@ async def test_delegation_rejects_wrong_audience() -> None:
 
 
 async def test_survey_delegation_resolves_same_active_user(active_user: UserRecord) -> None:
+    job_id = uuid4()
     token = jwt.encode(
         {
             "iss": "scholight-survey",
@@ -462,6 +463,7 @@ async def test_survey_delegation_resolves_same_active_user(active_user: UserReco
             "iat": int(datetime.now(UTC).timestamp()),
             "exp": int(datetime.now(UTC).timestamp()) + 60,
             "jti": str(uuid4()),
+            "survey_job_id": str(job_id),
         },
         "s" * 32,
         algorithm="HS256",
@@ -476,6 +478,27 @@ async def test_survey_delegation_resolves_same_active_user(active_user: UserReco
 
     assert actor.user == active_user
     assert actor.actor_type == "delegated"
+    assert actor.survey_job_id == job_id
+
+
+async def test_survey_delegation_rejects_invalid_job_correlation(active_user: UserRecord) -> None:
+    token = jwt.encode(
+        {
+            "iss": "scholight-survey",
+            "aud": "scholight-mcp",
+            "sub": str(active_user.id),
+            "scope": "search",
+            "iat": int(datetime.now(UTC).timestamp()),
+            "exp": int(datetime.now(UTC).timestamp()) + 60,
+            "jti": str(uuid4()),
+            "survey_job_id": "not-a-uuid",
+        },
+        "s" * 32,
+        algorithm="HS256",
+    )
+
+    with pytest.raises(DelegationError, match="invalid_delegation"):
+        await resolve_delegated_search_actor(token)
 
 
 @pytest.mark.parametrize("authorization", ["Basic abc", "Bearer"])

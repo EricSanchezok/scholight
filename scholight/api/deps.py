@@ -1,4 +1,4 @@
-"""FastAPI 依赖注入 — 认证通过 cloud-auth SDK 实现。"""
+"""FastAPI 依赖注入 — 认证通过 sanchezcloud-identity SDK 实现。"""
 
 from __future__ import annotations
 
@@ -8,14 +8,14 @@ from typing import Any, Literal, cast
 from uuid import UUID
 
 import jwt
-from cloud_auth.config import AuthConfig
-from cloud_auth.db.asyncpg import AsyncpgUserDatabase
-from cloud_auth.dependencies import create_get_current_user as _create_get_current_user
-from cloud_auth.exceptions import AuthError, DBError as AuthDBError
-from cloud_auth.manager import UserManager
-from cloud_auth.models.user import UserRecord
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sanchezcloud_identity.config import AuthConfig
+from sanchezcloud_identity.db.asyncpg import AsyncpgUserDatabase
+from sanchezcloud_identity.dependencies import create_get_current_user as _create_get_current_user
+from sanchezcloud_identity.exceptions import AuthError, DBError as AuthDBError
+from sanchezcloud_identity.manager import UserManager
+from sanchezcloud_identity.models.user import UserRecord
 
 from scholight.api.access_keys import (
     AccessKeyError,
@@ -38,10 +38,11 @@ class SearchActor:
     user: UserRecord
     actor_type: Literal["web", "access_key", "delegated"]
     access_key_id: UUID | None = None
+    survey_job_id: UUID | None = None
 
 
-# ── 延迟绑定：cloud-auth SDK ──
-# cloud-auth's create_get_current_user returns an async callable that
+# ── 延迟绑定：sanchezcloud-identity SDK ──
+# sanchezcloud-identity's create_get_current_user returns an async callable that
 # resolves to a UserRecord; type the lazy-bound handle so ``await`` type-checks.
 _get_current_user_callable: Callable[..., Awaitable[UserRecord]] | None = None
 _user_manager: UserManager | None = None
@@ -61,9 +62,9 @@ def wire_dependencies(
     auth_config: AuthConfig,
     user_manager: UserManager,
 ) -> None:
-    """在 create_app() 中调用一次, 连接 cloud-auth SDK 的依赖。"""
+    """在 create_app() 中调用一次, 连接 sanchezcloud-identity SDK 的依赖。"""
     global _get_current_user_callable, _user_manager, _user_db
-    # cloud_auth declares the factory return as Callable[..., object];
+    # sanchezcloud_identity declares the factory return as Callable[..., object];
     # the actual closure is async and resolves to UserRecord.
     _get_current_user_callable = cast(
         "Callable[..., Awaitable[UserRecord]]",
@@ -321,6 +322,10 @@ async def resolve_delegated_search_actor(token: str) -> SearchActor:
         if claims.get("scope") not in {"mcp", "search"}:
             raise DelegationError("invalid_delegation")
         user_id = int(claims["sub"])
+        raw_survey_job_id = claims.get("survey_job_id")
+        if raw_survey_job_id is not None and claims.get("iss") != "scholight-survey":
+            raise DelegationError("invalid_delegation")
+        survey_job_id = UUID(str(raw_survey_job_id)) if raw_survey_job_id is not None else None
     except DelegationError:
         raise
     except (TypeError, ValueError, KeyError) as exc:
@@ -337,4 +342,8 @@ async def resolve_delegated_search_actor(token: str) -> SearchActor:
         raise DelegationError("scholight_access_blocked", status_code=403) from exc
     except (AuthDBError, DBError) as exc:
         raise DelegationError("delegation_service_unavailable", status_code=503) from exc
-    return SearchActor(user=user, actor_type="delegated")
+    return SearchActor(
+        user=user,
+        actor_type="delegated",
+        survey_job_id=survey_job_id,
+    )

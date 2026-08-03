@@ -1,6 +1,6 @@
 # Scholight remote deployment
 #
-# Build uses an immutable cloud-auth Git revision declared in the Dockerfile.
+# Build uses an immutable sanchezcloud-identity Git revision declared in the Dockerfile.
 # Cloud-auth and Scholight migrations are explicit, ordered, and never run by API startup:
 #   docker compose --env-file .env --profile migrate run --rm migrate
 #

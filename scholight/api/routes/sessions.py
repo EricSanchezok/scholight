@@ -1,13 +1,13 @@
-"""Client-scoped session management backed entirely by cloud-auth."""
+"""Client-scoped session management backed entirely by sanchezcloud-identity."""
 
 from __future__ import annotations
 
-from cloud_auth.exceptions import AuthError, DBError
-from cloud_auth.manager import UserManager
-from cloud_auth.models.auth import MessageResponse
-from cloud_auth.models.user import UserRecord
 from fastapi import APIRouter, Depends
 from fastapi.security import HTTPAuthorizationCredentials
+from sanchezcloud_identity.exceptions import AuthError, DBError
+from sanchezcloud_identity.manager import UserManager
+from sanchezcloud_identity.models.auth import MessageResponse
+from sanchezcloud_identity.models.user import UserRecord
 
 from scholight.api.deps import get_current_user, get_user_manager, security
 from scholight.api.http_errors import http_error

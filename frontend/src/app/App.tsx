@@ -17,6 +17,7 @@ import { DocsPage } from "../pages/DocsPage";
 import { HomePage } from "../pages/HomePage";
 import { NotFoundPage } from "../pages/NotFoundPage";
 import { SearchPage } from "../pages/SearchPage";
+import { SurveyHubPage } from "../features/survey/SurveyHubPage";
 
 import { AnimatedOutlet, ScholightMotionProvider } from "./motion";
 import { privateRouteLoaders } from "./privateRoutes";
@@ -30,6 +31,16 @@ const AccountPage = lazy(privateRouteLoaders[routes.account.path]);
 const AdminOverviewPage = lazy(privateRouteLoaders[routes.adminOverview.path]);
 const QuotaAdminPage = lazy(privateRouteLoaders[routes.quotaAdmin.path]);
 const AdminOperationsPage = lazy(privateRouteLoaders[routes.adminOperations.path]);
+const SurveyDraftPage = lazy(() =>
+  import("../features/survey/SurveyDraftPage").then((module) => ({
+    default: module.SurveyDraftPage,
+  })),
+);
+const SurveyReportPage = lazy(() =>
+  import("../features/survey/SurveyReportPage").then((module) => ({
+    default: module.SurveyReportPage,
+  })),
+);
 
 function SiteLayout() {
   return (
@@ -51,7 +62,10 @@ export function App() {
                 <Route index element={<HomePage />} />
                 <Route path={routes.search.segment} element={<SearchPage />} />
                 <Route path={routes.docs.segment} element={<DocsPage />} />
+                <Route path={routes.survey.segment} element={<SurveyHubPage />} />
                 <Route element={<ProtectedRoute />}>
+                  <Route path={routes.surveyDraft.segment} element={<SurveyDraftPage />} />
+                  <Route path={routes.surveyReport.segment} element={<SurveyReportPage />} />
                   <Route path={routes.history.segment} element={<HistoryPage />} />
                   <Route path={routes.usage.segment} element={<UsagePage />} />
                   <Route path={routes.accessKeys.segment} element={<AccessKeysPage />} />

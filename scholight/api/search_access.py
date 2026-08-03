@@ -11,7 +11,7 @@ from datetime import UTC, datetime, timedelta
 from typing import cast
 
 import structlog
-from cloud_auth.models.user import UserRecord
+from sanchezcloud_identity.models.user import UserRecord
 
 from scholight.config import settings
 from scholight.db.client import DBError

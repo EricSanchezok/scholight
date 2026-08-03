@@ -5,8 +5,8 @@ from __future__ import annotations
 from datetime import UTC, datetime, time, timedelta
 from typing import Annotated
 
-from cloud_auth.models.user import UserRecord
 from fastapi import APIRouter, Depends, Query
+from sanchezcloud_identity.models.user import UserRecord
 
 from scholight.api.deps import get_scholight_admin
 from scholight.api.http_errors import http_error

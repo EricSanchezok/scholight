@@ -18,6 +18,7 @@ class DailyQuotaUsage(BaseModel):
 class TodayUsage(BaseModel):
     standard: DailyQuotaUsage
     thorough: DailyQuotaUsage
+    survey: DailyQuotaUsage
 
 
 class UsageSummaryResponse(BaseModel):

@@ -10,8 +10,8 @@ from uuid import uuid4
 
 import httpx
 import pytest
-from cloud_auth.models.user import UserRecord
 from fastapi import FastAPI
+from sanchezcloud_identity.models.user import UserRecord
 
 from scholight.api.deps import SearchActor, get_current_user
 from scholight.api.routes.usage import usage_summary
@@ -25,6 +25,7 @@ from scholight.api.usage import (
     fill_volume_days,
     resolve_usage_range,
 )
+from scholight.db.queries_survey_views import SurveyQuotaSnapshot
 from scholight.db.queries_usage import UsageEvent
 from scholight.models.quota import QuotaStatus
 
@@ -207,11 +208,15 @@ async def test_summary_uses_daily_quota_and_monthly_event_statistics(
             "scholight.api.routes.usage.get_user_quota_status",
             AsyncMock(return_value=quotas),
         ),
+        patch(
+            "scholight.api.routes.usage.get_survey_quota_snapshot",
+            AsyncMock(return_value=SurveyQuotaSnapshot(daily_limit=3, reserved=1, succeeded=1)),
+        ),
         patch("scholight.api.routes.usage.query_usage_summary", AsyncMock(return_value=stats)),
     ):
         summary = await usage_summary(active_user)
 
-    assert summary.searches_today == 22
+    assert summary.today.survey.model_dump() == {"used": 2, "daily_limit": 3, "remaining": 1}
     assert summary.searches_this_month == 184
     assert summary.typical_response_ms == 840.0
     assert summary.success_rate == 125 / 128

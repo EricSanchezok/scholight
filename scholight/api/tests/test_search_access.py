@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
@@ -11,6 +13,7 @@ from scholight.config import (
     settings,
     validate_api_runtime_settings,
     validate_survey_draft_worker_settings,
+    validate_survey_worker_settings,
 )
 
 
@@ -50,8 +53,12 @@ def test_anonymous_limits_must_be_positive(field: str) -> None:
         Settings.model_validate({field: 0})
 
 
-def test_generic_settings_allow_missing_api_hmac_secret() -> None:
-    loaded = Settings(_env_file=None)  # type: ignore[call-arg]
+def test_generic_settings_allow_missing_api_hmac_secret(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("SCHOLIGHT_ANONYMOUS_QUOTA_HMAC_SECRET", raising=False)
+    loaded = Settings(_env_file=tmp_path / "missing.env")  # type: ignore[call-arg]
 
     assert loaded.anonymous_quota_hmac_secret == ""
 
@@ -64,6 +71,14 @@ def test_server_concurrency_limit_defaults_to_last_resort_guard(
     loaded = Settings(_env_file=None)  # type: ignore[call-arg]
 
     assert loaded.server_limit_concurrency == 96
+
+
+def test_survey_daily_limit_defaults_to_three(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("SCHOLIGHT_SURVEY_DAILY_LIMIT", raising=False)
+
+    loaded = Settings(_env_file=None)  # type: ignore[call-arg]
+
+    assert loaded.survey_daily_limit == 3
 
 
 def test_server_concurrency_limit_can_be_enabled_explicitly(
@@ -190,6 +205,7 @@ def test_runtime_validation_requires_survey_boundaries_only_when_enabled(
     monkeypatch.setattr(settings, "embedding_base_url", "https://embedding.example.invalid/v1")
     monkeypatch.setattr(settings, "cors_allow_origins", ["http://localhost:3000"])
     monkeypatch.setattr(settings, "survey_enabled", True)
+    monkeypatch.setattr(settings, "deepseek_api_key", "deepseek-secret")
     monkeypatch.setattr(settings, "survey_mcp_jwt_secret", "")
     monkeypatch.setattr(settings, "survey_s3_bucket", "")
 
@@ -207,3 +223,18 @@ def test_draft_worker_does_not_require_artifact_or_image_credentials(
     monkeypatch.setattr(settings, "image_gen_api_key", "")
 
     validate_survey_draft_worker_settings()
+
+
+def test_survey_worker_requires_directmail_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "survey_enabled", True)
+    monkeypatch.setattr(settings, "survey_mcp_jwt_secret", "s" * 32)
+    monkeypatch.setattr(settings, "deepseek_api_key", "deepseek-secret")
+    monkeypatch.setattr(settings, "survey_s3_bucket", "survey-artifacts")
+    monkeypatch.setattr(settings, "aliyun_dm_access_key_id", "")
+    monkeypatch.setattr(settings, "aliyun_dm_access_key_secret", "secret")
+    monkeypatch.setattr(settings, "aliyun_dm_account_name", "notifications@example.com")
+
+    with pytest.raises(ValueError, match="SCHOLIGHT_ALIYUN_DM_ACCESS_KEY_ID"):
+        validate_survey_worker_settings()

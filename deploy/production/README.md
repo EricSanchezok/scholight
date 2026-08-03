@@ -57,7 +57,13 @@ Configure GitHub OIDC roles instead of static AWS access keys. Repository or env
 - `PRODUCTION_INSTANCE_ID`
 - `PRODUCTION_DOMAIN` (for example, `scholight.example.com`)
 
-Add the read-only `CLOUD_AUTH_READ_TOKEN` repository secret. Create a protected GitHub environment named `production` with required reviewers. The publish role may push only to the two ECR repositories; the deploy role may send and inspect SSM commands only for the production instance. The EC2 instance role needs ECR pull and SSM managed-instance permissions.
+Install the scoped Dependency Reader GitHub App on Scholight and
+`sanchezcloud-identity`, set repository variable `IDENTITY_READER_APP_ID`, and store its private
+key as `IDENTITY_READER_PRIVATE_KEY`. Workflows mint short-lived, contents-read tokens; do not
+create a long-lived dependency PAT. Create a protected GitHub environment named `production`
+with required reviewers. The publish role may push only to the two ECR repositories; the deploy
+role may send and inspect SSM commands only for the production instance. The EC2 instance role
+needs ECR pull and SSM managed-instance permissions.
 
 Use three distinct existing PostgreSQL login roles: `auth_migrator` owns only
 `auth`, `scholight_migrator` owns only `scholight`, and `scholight_app`
@@ -65,8 +71,8 @@ receives only runtime DML. Neither migrator receives database-level `CREATE`;
 each migration runner refuses a schema that is missing or owned by another role.
 Never use the RDS master or `postgres` identity for the public API.
 
-Run `bootstrap-db.sql` as the database owner before cloud-auth migration, after
-cloud-auth migration, and after Scholight migration:
+Run `bootstrap-db.sql` as the database owner before sanchezcloud-identity migration, after
+sanchezcloud-identity migration, and after Scholight migration:
 
 ```bash
 psql "$DATABASE_ADMIN_URL" \
@@ -77,7 +83,7 @@ psql "$DATABASE_ADMIN_URL" \
 ```
 
 The roles and passwords remain infrastructure-managed. The script never creates
-login roles or stores credentials. `auth.*` is migrated only by cloud-auth's
+login roles or stores credentials. `auth.*` is migrated only by sanchezcloud-identity's
 protected workflow. A Scholight release merely checks the installed auth schema
 version and migrates `scholight.*`.
 
@@ -149,10 +155,76 @@ Remove any remaining permission to send `AWS-RunShellScript`. No new IAM role,
 S3 bucket, Secrets Manager secret, or custom KMS key is required.
 
 Each release carries a SHA-256 digest of `compose.yaml`, `Caddyfile`,
-`cloudwatch-agent.json`, `bootstrap-db.sql`, `bootstrap.sh`, `release.sh`, `smoke.sh`, and
-`wait-ssm.sh`. The backend image contains those exact files under
+`cloudwatch-agent.json`, `bootstrap-db.sql`, `bootstrap.sh`, `compose-command.sh`,
+`release.sh`, `smoke.sh`, and `wait-ssm.sh`. The backend image contains those exact files under
 `/opt/scholight-package`; bootstrap verifies their digest before changing the
 host package. GitHub Actions never sends or mutates host runtime secrets.
+
+## Survey activation and artifact permissions
+
+`SCHOLIGHT_SURVEY_ENABLED` must be present in `runtime.env` and must be exactly
+`true` or `false`. The reviewed `compose-command.sh` is the single Compose entry
+point used by deploy, rollback, smoke, and diagnostics; it adds the `survey`
+profile only when the setting is `true`. A compatibility release therefore keeps
+both Survey workers absent without requiring Survey provider credentials.
+
+When Survey is activated, the existing EC2 role may access only the dedicated
+Survey bucket. Object permissions remain limited to `surveys/v1/*`. Prefix listing
+is used only when a server-generated manifest is missing during cleanup:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+      "Resource": "arn:aws:s3:::scholight-surveys-683390797772-ap-southeast-1/surveys/v1/*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::scholight-surveys-683390797772-ap-southeast-1",
+      "Condition": {
+        "StringLike": {"s3:prefix": "surveys/v1/*"}
+      }
+    }
+  ]
+}
+```
+
+Do not grant access to any other bucket or prefix. Updating this policy and the
+SecureString does not itself activate Survey; activation also requires the
+reviewed release after the EC2 resize and local E2E gate.
+
+Each execution archives a private `run/trajectory.jsonl`, `run/diagnostics.json`,
+and schema-v2 `run.json` under the existing owner-scoped Survey prefix. These
+files contain bounded, redacted runtime metadata; they never contain provider
+credentials, PDF bodies, or model reasoning. Diagnose an active or archived job
+from the worker container without rerunning it:
+
+```bash
+./deploy/production/compose-command.sh exec -T survey-worker \
+  /app/.venv/bin/scholight survey diagnose JOB_UUID --json-output
+./deploy/production/compose-command.sh exec -T survey-worker \
+  /app/.venv/bin/scholight survey contract-audit --json-output
+./deploy/production/compose-command.sh exec -T survey-worker \
+  /app/.venv/bin/scholight survey status --json-output
+```
+
+CloudWatch service logs carry the same `survey_job_id` across the worker and its
+delegated MCP searches. Search queries remain only in the private per-run trace,
+not in centralized logs or metric dimensions.
+
+Survey completion email is opt-in per run. The terminal Survey update and its
+notification outbox row commit in one database transaction after report archival;
+failed runs are also eligible, while user cancellation is not. The existing
+Survey worker claims notifications independently, retries temporary DirectMail
+failures up to eight times, and never changes the Survey result when email delivery
+fails. It resolves the account's current verified email only when sending. Configure
+the existing `SCHOLIGHT_ALIYUN_DM_*` values and the canonical
+`SCHOLIGHT_PUBLIC_WEB_URL` before enabling Survey. `scholight survey status` reports
+pending, retrying, sent, and dead notification counts without exposing addresses.
 
 ## One-time observability stack
 
@@ -177,6 +249,12 @@ Confirm the SNS subscription from the operations mailbox before relying on
 notifications. Bootstrap installs and starts rsyslog and the CloudWatch Agent
 idempotently from the package configuration. The policy cannot read Parameter
 Store, access RDS or Zilliz, or modify application data.
+
+The dashboard includes Survey outcome, duration, contract, tool, runtime,
+last-activity, and email-delivery panels. Contract violations, runtime failures,
+diagnostic write failures, dead email notifications, email backlog older than 15
+minutes, and two consecutive periods above 30 minutes without Survey activity raise
+alerts; cancellation does not.
 
 ## Runtime and release state
 

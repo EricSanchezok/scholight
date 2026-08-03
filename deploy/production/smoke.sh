@@ -5,12 +5,13 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 COMPOSE_FILE=${SCHOLIGHT_COMPOSE_FILE:-"${SCRIPT_DIR}/compose.yaml"}
 RUNTIME_ENV=${SCHOLIGHT_RUNTIME_ENV:-/etc/scholight/runtime.env}
 RELEASE_ENV=${SCHOLIGHT_RELEASE_ENV:?SCHOLIGHT_RELEASE_ENV is required}
+COMPOSE_COMMAND=${SCHOLIGHT_COMPOSE_COMMAND:-"${SCRIPT_DIR}/compose-command.sh"}
 ATTEMPTS=${SCHOLIGHT_SMOKE_ATTEMPTS:-12}
 DELAY_SECONDS=${SCHOLIGHT_SMOKE_DELAY_SECONDS:-5}
 
 compose() {
-  docker compose --env-file "${RUNTIME_ENV}" --env-file "${RELEASE_ENV}" \
-    -f "${COMPOSE_FILE}" "$@"
+  SCHOLIGHT_RUNTIME_ENV="${RUNTIME_ENV}" SCHOLIGHT_RELEASE_ENV="${RELEASE_ENV}" \
+    SCHOLIGHT_COMPOSE_FILE="${COMPOSE_FILE}" "${COMPOSE_COMMAND}" "$@"
 }
 
 retry() {
@@ -57,6 +58,7 @@ service_running() {
 
 SCHOLIGHT_DOMAIN=$(read_env_value SCHOLIGHT_DOMAIN)
 SCHOLIGHT_EDGE_DOMAIN=$(read_env_value SCHOLIGHT_EDGE_DOMAIN)
+SCHOLIGHT_SURVEY_ENABLED=$(read_env_value SCHOLIGHT_SURVEY_ENABLED)
 LOCAL_INGRESS_RESOLVE="${SCHOLIGHT_DOMAIN}:443:127.0.0.1"
 LOCAL_EDGE_RESOLVE="${SCHOLIGHT_EDGE_DOMAIN}:80:127.0.0.1"
 
@@ -69,6 +71,23 @@ retry "frontend health" compose exec -T frontend \
   wget -q -O /dev/null http://127.0.0.1:8080/healthz
 retry "metadata-sync running" service_running metadata-sync
 retry "paper-ingest running" service_running paper-ingest
+if [[ ${SCHOLIGHT_SURVEY_ENABLED} == true ]]; then
+  retry "Survey Draft worker running" service_running survey-draft-worker
+  retry "Survey execution worker running" service_running survey-worker
+  retry "Survey Draft worker API service discovery" compose exec -T survey-draft-worker \
+    curl --fail --silent --show-error http://api:8000/livez
+  retry "Survey execution worker API service discovery" compose exec -T survey-worker \
+    curl --fail --silent --show-error http://api:8000/livez
+  retry "Survey cleanup sibling heartbeat" compose exec -T survey-worker \
+    /bin/sh -ec 'find /tmp/scholight-survey-cleanup.heartbeat -mmin -2 -print -quit | grep -q .'
+  retry "Survey migrations, configuration, cleanup, and S3 access" compose exec -T survey-worker \
+    /app/.venv/bin/scholight survey smoke --json-output
+  retry "Survey email notification queue readable" compose exec -T survey-worker \
+    /app/.venv/bin/scholight survey status --json-output
+elif [[ ${SCHOLIGHT_SURVEY_ENABLED} != false ]]; then
+  printf 'SCHOLIGHT_SURVEY_ENABLED must be exactly true or false\n' >&2
+  exit 1
+fi
 retry "load balancer origin health" curl --fail --silent --show-error \
   --output /dev/null "http://127.0.0.1/healthz"
 retry "edge HTTP API ingress" curl --fail --silent --show-error \

@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated, Any
 from uuid import UUID, uuid4
 
-from cloud_auth.models.user import UserRecord
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, EmailStr, Field
+from sanchezcloud_identity.models.user import UserRecord
 
 from scholight.api.deps import get_current_user, get_scholight_admin
 from scholight.api.http_errors import http_error
@@ -26,6 +26,7 @@ from scholight.db.queries_admin import (
     update_user_quota_overrides,
 )
 from scholight.db.queries_quota import get_user_quota_status
+from scholight.db.queries_survey_views import get_survey_quota_snapshot
 
 router = APIRouter()
 
@@ -54,6 +55,7 @@ class AdminQuotaResponse(BaseModel):
 class AdminQuotasResponse(BaseModel):
     standard: AdminQuotaResponse
     thorough: AdminQuotaResponse
+    survey: AdminQuotaResponse
 
 
 class AdminUserLookupResponse(BaseModel):
@@ -64,6 +66,7 @@ class AdminUserLookupResponse(BaseModel):
 class QuotaOverrideRequest(BaseModel):
     standard: int | None = Field(ge=0, le=1_000_000)
     thorough: int | None = Field(ge=0, le=1_000_000)
+    survey: int | None = Field(ge=0, le=1_000_000)
 
 
 class QuotaOverrideUpdateResponse(BaseModel):
@@ -89,10 +92,16 @@ async def _lookup(target: AdminTarget) -> AdminUserLookupResponse:
         standard_default_limit=settings.authenticated_standard_daily_limit,
         thorough_default_limit=settings.authenticated_thorough_daily_limit,
     )
+    survey_status = await get_survey_quota_snapshot(
+        user_id=target.id,
+        quota_date=datetime.now(UTC).date(),
+        daily_limit=settings.survey_daily_limit,
+    )
     by_strength = {status.strength: status for status in statuses}
     defaults = {
         "standard": settings.authenticated_standard_daily_limit,
         "thorough": settings.authenticated_thorough_daily_limit,
+        "survey": settings.survey_daily_limit,
     }
     quotas: dict[str, AdminQuotaResponse] = {}
     for strength in ("standard", "thorough"):
@@ -104,6 +113,13 @@ async def _lookup(target: AdminTarget) -> AdminUserLookupResponse:
             used=status.used,
             remaining=status.remaining,
         )
+    quotas["survey"] = AdminQuotaResponse(
+        default_limit=defaults["survey"],
+        override_limit=overrides["survey"],
+        effective_limit=survey_status.daily_limit,
+        used=survey_status.reserved + survey_status.succeeded,
+        remaining=survey_status.remaining,
+    )
     return AdminUserLookupResponse(
         user=AdminUserResponse(
             id=target.id,
@@ -114,6 +130,7 @@ async def _lookup(target: AdminTarget) -> AdminUserLookupResponse:
         quotas=AdminQuotasResponse(
             standard=quotas["standard"],
             thorough=quotas["thorough"],
+            survey=quotas["survey"],
         ),
     )
 
@@ -183,6 +200,7 @@ async def update_quota_overrides(
             target_user_id=user_id,
             standard=body.standard,
             thorough=body.thorough,
+            survey=body.survey,
             event_id=uuid4(),
         )
     except AdminTargetNotFoundError as exc:

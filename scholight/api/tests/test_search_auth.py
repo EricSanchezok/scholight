@@ -7,8 +7,8 @@ from uuid import uuid4
 
 import httpx
 import pytest
-from cloud_auth.models.user import UserRecord
 from fastapi import Depends, FastAPI, HTTPException
+from sanchezcloud_identity.models.user import UserRecord
 
 from scholight.api import deps
 from scholight.api.deps import get_optional_current_user
@@ -80,7 +80,7 @@ async def test_present_invalid_authorization_never_downgrades_to_anonymous(
 
 
 @pytest.mark.asyncio
-async def test_bearer_authorization_reuses_cloud_auth_resolver(
+async def test_bearer_authorization_reuses_sanchezcloud_identity_resolver(
     auth_app: tuple[FastAPI, AsyncMock], active_user: UserRecord
 ) -> None:
     app, resolver = auth_app
@@ -99,7 +99,7 @@ async def test_bearer_authorization_reuses_cloud_auth_resolver(
 
 
 @pytest.mark.asyncio
-async def test_cloud_auth_status_error_is_preserved(
+async def test_sanchezcloud_identity_status_error_is_preserved(
     auth_app: tuple[FastAPI, AsyncMock],
 ) -> None:
     app, resolver = auth_app

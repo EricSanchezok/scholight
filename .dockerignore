@@ -8,7 +8,7 @@
 #   - uv.lock                (pinned dependency versions)
 #   - global-bundle.pem      (AWS RDS SSL cert)
 #   - docker/scholight-api/  (API startup script and Dockerfile)
-# cloud-auth is fetched at its pinned commit through a BuildKit secret.
+# sanchezcloud-identity is fetched at its pinned commit through a BuildKit secret.
 #
 # Everything else is excluded to keep the build context small.
 # ═══════════════════════════════════════════════════════════════════
@@ -49,6 +49,10 @@ logs/
 # ── Tests ─────────────────────────────────────────────────────────
 tests/
 **/tests/
+!tests/
+tests/*
+!tests/survey_e2e/
+!tests/survey_e2e/**
 
 # ── Host-only operational scripts ─────────────────────────────────
 scripts/
@@ -56,10 +60,10 @@ scripts/
 # ── Archive — old MinerU GPU Dockerfile, retired Milvus setup ─────
 docker/archive/
 
-# ── External repos (production cloud-auth is fetched at pinned SHA) ──
+# ── External repos (production sanchezcloud-identity is fetched at pinned SHA) ──
 RCM/
 rdc/
-cloud-auth/
+sanchezcloud-identity/
 
 # ── Research docs ─────────────────────────────────────────────────
 docs/research/

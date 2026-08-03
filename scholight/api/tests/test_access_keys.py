@@ -8,8 +8,8 @@ from uuid import UUID, uuid4
 
 import httpx
 import pytest
-from cloud_auth.models.user import UserRecord
 from fastapi import Depends, FastAPI
+from sanchezcloud_identity.models.user import UserRecord
 
 from scholight.api.access_keys import (
     AccessKeyError,

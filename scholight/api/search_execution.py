@@ -10,8 +10,8 @@ from uuid import UUID
 
 import grpc
 import structlog
-from cloud_auth.models.user import UserRecord
 from pymilvus.exceptions import MilvusException
+from sanchezcloud_identity.models.user import UserRecord
 
 from scholight.api.history_tasks import schedule_search_history_write
 from scholight.api.models.search import PublicSearchRequest, PublicSearchResponse
@@ -237,6 +237,33 @@ def _emit_failure_metric(error: BaseException, *, strength: str) -> None:
 
 def _is_unexpected_5xx(status_code: int, code: str) -> bool:
     return status_code >= 500 and code not in _EXPECTED_SERVER_ERROR_CODES
+
+
+def _log_survey_search_finished(
+    invocation: SearchInvocation,
+    *,
+    strength: str,
+    outcome: str,
+    status_code: int,
+    duration_ms: float,
+    result_count: int | None,
+    error_code: str | None,
+) -> None:
+    """Correlate delegated Survey searches without logging queries or model content."""
+    survey_job_id = getattr(invocation.actor, "survey_job_id", None)
+    if survey_job_id is None:
+        return
+    logger.info(
+        "survey_search_finished",
+        survey_job_id=str(survey_job_id),
+        request_id=invocation.request_id,
+        strength=strength,
+        outcome=outcome,
+        status_code=status_code,
+        duration_ms=round(duration_ms, 3),
+        result_count=result_count,
+        error_code=error_code,
+    )
 
 
 def _emit_in_flight_metric(body: PublicSearchRequest, invocation: SearchInvocation) -> None:
@@ -562,23 +589,44 @@ async def execute_public_search(
             try:
                 response = await _execute_search(body, invocation)
             except PublicSearchError as exc:
+                elapsed_ms = (time.perf_counter() - started) * 1000
                 snapshot = tracker.snapshot()
                 _emit_search_metrics(
                     body,
                     invocation,
                     outcome="failed",
-                    elapsed_ms=(time.perf_counter() - started) * 1000,
+                    elapsed_ms=elapsed_ms,
                     unexpected_5xx=_is_unexpected_5xx(exc.status_code, exc.code),
                     in_flight=snapshot.total,
                 )
+                _log_survey_search_finished(
+                    invocation,
+                    strength=body.strength.value,
+                    outcome="failed",
+                    status_code=exc.status_code,
+                    duration_ms=elapsed_ms,
+                    result_count=None,
+                    error_code=exc.code,
+                )
                 raise
             snapshot = tracker.snapshot()
+            elapsed_ms = (time.perf_counter() - started) * 1000
+            outcome = "degraded" if response.degraded else "success"
             _emit_search_metrics(
                 body,
                 invocation,
-                outcome="degraded" if response.degraded else "success",
-                elapsed_ms=(time.perf_counter() - started) * 1000,
+                outcome=outcome,
+                elapsed_ms=elapsed_ms,
                 in_flight=snapshot.total,
+            )
+            _log_survey_search_finished(
+                invocation,
+                strength=body.strength.value,
+                outcome=outcome,
+                status_code=200,
+                duration_ms=elapsed_ms,
+                result_count=response.result_count,
+                error_code=None,
             )
             return response
     finally:

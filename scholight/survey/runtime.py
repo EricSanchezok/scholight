@@ -4,33 +4,42 @@ from __future__ import annotations
 
 import os
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import jwt
 
 from scholight.config import settings
 
 
-def delegated_authorization(*, user_id: int, lifetime_seconds: int) -> str:
+def delegated_authorization(
+    *,
+    user_id: int,
+    lifetime_seconds: int,
+    survey_job_id: UUID | None = None,
+) -> str:
     now = datetime.now(UTC)
-    token = jwt.encode(
-        {
-            "iss": "scholight-survey",
-            "aud": "scholight-mcp",
-            "sub": str(user_id),
-            "scope": "mcp",
-            "iat": int(now.timestamp()),
-            "exp": int((now + timedelta(seconds=lifetime_seconds, minutes=15)).timestamp()),
-            "jti": str(uuid4()),
-        },
-        settings.survey_mcp_jwt_secret,
-        algorithm="HS256",
-    )
+    claims = {
+        "iss": "scholight-survey",
+        "aud": "scholight-mcp",
+        "sub": str(user_id),
+        "scope": "search",
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(seconds=lifetime_seconds, minutes=15)).timestamp()),
+        "jti": str(uuid4()),
+    }
+    if survey_job_id is not None:
+        claims["survey_job_id"] = str(survey_job_id)
+    claims["scope"] = "mcp"
+    token = jwt.encode(claims, settings.survey_mcp_jwt_secret, algorithm="HS256")
     return f"Bearer {token}"
 
 
 def survey_environment(
-    *, user_id: int, lifetime_seconds: int, include_image: bool
+    *,
+    user_id: int,
+    lifetime_seconds: int,
+    include_image: bool,
+    survey_job_id: UUID | None = None,
 ) -> dict[str, str]:
     environment = {
         "HOME": os.environ.get("HOME", "/home/scholight"),
@@ -41,6 +50,7 @@ def survey_environment(
         "SCHOLIGHT_SURVEY_MCP_AUTHORIZATION": delegated_authorization(
             user_id=user_id,
             lifetime_seconds=lifetime_seconds,
+            survey_job_id=survey_job_id,
         ),
     }
     if include_image and settings.image_gen_api_key:

@@ -9,7 +9,7 @@ description = "AI-focused academic research engine with paper search and general
 requires-python = ">=3.11"
 dependencies = [
     "boto3>=1.35,<2",
-    "cloud-auth[aliyun]",
+    "sanchezcloud-identity[aliyun]",
     "click>=8",
     "httpx>=0.27",
     "grpcio>=1.60,<2",
@@ -47,6 +47,15 @@ scholight = "scholight.cli:cli"
 
 [tool.setuptools.packages.find]
 include = ["scholight*"]
+
+[tool.setuptools.package-data]
+"scholight.survey" = [
+    "workflow/AGENTS.md",
+    "workflow/rcm.toml",
+    "workflow/prompts/*.txt",
+    "workflow/rcm/*.rcm",
+    "workflow/schema/*.md",
+]
 
 
 # ── Ruff ─────────────────────────────────────────────────────────────
@@ -143,7 +152,8 @@ min_confidence = 80
 # ── Pytest ────────────────────────────────────────────────────────────
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+pythonpath = ["."]
+testpaths = ["scholight", "tests"]
 addopts = ["-rXs", "--strict-config", "--strict-markers", "-m", "not pg_integration"]
 xfail_strict = true
 filterwarnings = ["error"]
@@ -173,4 +183,4 @@ dev = [
 
 [tool.uv.sources]
 # Immutable identity/session SDK revision; products never depend on a moving branch.
-cloud-auth = { git = "https://github.com/EricSanchezok/cloud-auth.git", rev = "9e82bb25f38a33aaa309933bfb0affb6d47c1df2" }
+sanchezcloud-identity = { git = "https://github.com/EricSanchezok/sanchezcloud-identity.git", tag = "v0.5.1" }

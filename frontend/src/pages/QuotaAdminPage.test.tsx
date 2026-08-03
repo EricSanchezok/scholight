@@ -38,6 +38,13 @@ const target: AdminUserLookup = {
       used: 4,
       remaining: 996,
     },
+    survey: {
+      default_limit: 3,
+      override_limit: 2,
+      effective_limit: 2,
+      used: 1,
+      remaining: 1,
+    },
   },
 };
 
@@ -61,7 +68,7 @@ describe("quota administration page", () => {
     vi.mocked(adminApi.auditEvents).mockReset().mockResolvedValue([]);
   });
 
-  it("finds one exact email and presents both quota strengths", async () => {
+  it("finds one exact email and presents all three quota activities", async () => {
     const user = userEvent.setup();
     renderPage();
 
@@ -71,6 +78,7 @@ describe("quota administration page", () => {
     expect(await screen.findByText("Reader")).toBeInTheDocument();
     expect(screen.getByLabelText("Standard custom daily limit")).toHaveValue(5000);
     expect(screen.getByLabelText("Thorough custom daily limit")).toHaveValue(null);
+    expect(screen.getByLabelText("Survey custom daily limit")).toHaveValue(2);
     expect(adminApi.lookupUser).toHaveBeenCalledWith("reader@example.com");
   });
 
@@ -93,13 +101,14 @@ describe("quota administration page", () => {
       expect(adminApi.updateQuotaOverrides).toHaveBeenCalledWith(7, {
         standard: 120,
         thorough: null,
+        survey: 2,
       }),
     );
     await waitFor(() => expect(adminApi.lookupUser).toHaveBeenCalledTimes(2));
     expect(adminApi.auditEvents).toHaveBeenCalledTimes(2);
   });
 
-  it("restores both strengths to deployment defaults", async () => {
+  it("restores all three activities to deployment defaults", async () => {
     const user = userEvent.setup();
     renderPage();
     await user.type(screen.getByLabelText("User email"), "reader@example.com");
@@ -113,6 +122,7 @@ describe("quota administration page", () => {
       expect(adminApi.updateQuotaOverrides).toHaveBeenCalledWith(7, {
         standard: null,
         thorough: null,
+        survey: null,
       }),
     );
   });

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -133,7 +134,7 @@ def test_workflows_do_not_persist_checkout_credentials_or_inherit_secrets() -> N
     assert "secrets: inherit" not in workflows
 
 
-def test_caddy_image_is_reviewed_and_not_runtime_overrideable() -> None:
+def test_caddy_image_is_reviewed_and_not_runtime_overridable() -> None:
     compose_text = (PRODUCTION / "compose.yaml").read_text(encoding="utf-8")
     compose = yaml.safe_load(compose_text)
     caddy_image = compose["services"]["caddy"]["image"]
@@ -209,6 +210,8 @@ def test_production_services_have_hard_resource_boundaries() -> None:
         "metadata-sync": ("384m", "0.2", 128),
         "caddy": ("192m", "0.25", 128),
         "frontend": ("128m", "0.1", 64),
+        "survey-draft-worker": ("768m", "0.5", 256),
+        "survey-worker": ("2560m", "1.0", 512),
     }
 
     for service_name, (memory, cpus, pids) in expected.items():
@@ -235,9 +238,37 @@ def test_production_database_pools_are_scoped_per_service() -> None:
 
     assert compose["services"]["api"]["environment"]["SCHOLIGHT_PG_POOL_MIN_SIZE"] == 2
     assert compose["services"]["api"]["environment"]["SCHOLIGHT_PG_POOL_MAX_SIZE"] == 12
-    for name in ("metadata-sync", "paper-ingest"):
+    for name in ("metadata-sync", "paper-ingest", "survey-draft-worker", "survey-worker"):
         assert compose["services"][name]["environment"]["SCHOLIGHT_PG_POOL_MIN_SIZE"] == 1
         assert compose["services"][name]["environment"]["SCHOLIGHT_PG_POOL_MAX_SIZE"] == 4
+
+
+def test_survey_workers_are_opt_in_and_hardened_for_compatibility_release() -> None:
+    compose = yaml.safe_load((PRODUCTION / "compose.yaml").read_text(encoding="utf-8"))
+
+    for name in ("survey-draft-worker", "survey-worker"):
+        service = compose["services"][name]
+        assert service["profiles"] == ["survey"]
+        assert service["read_only"] is True
+        assert service["cap_drop"] == ["ALL"]
+        assert service["security_opt"] == ["no-new-privileges:true"]
+        assert service["restart"] == "unless-stopped"
+        assert service["mem_limit"] == service["memswap_limit"]
+    assert compose["services"]["survey-worker"]["volumes"] == ["scholight-data:/data"]
+    assert "volumes" not in compose["services"]["survey-draft-worker"]
+
+
+def test_survey_workers_share_an_explicit_api_service_discovery_contract() -> None:
+    compose = yaml.safe_load((PRODUCTION / "compose.yaml").read_text(encoding="utf-8"))
+    smoke = (PRODUCTION / "smoke.sh").read_text(encoding="utf-8")
+
+    assert compose["services"]["api"]["networks"]["scholight"]["aliases"] == ["api"]
+    for worker in ("survey-draft-worker", "survey-worker"):
+        command = (
+            f"compose exec -T {worker} \\\n"
+            "    curl --fail --silent --show-error http://api:8000/livez"
+        )
+        assert command in smoke
 
 
 def test_uvicorn_has_explicit_tunable_connection_boundaries() -> None:
@@ -452,6 +483,7 @@ def test_backend_image_carries_the_complete_host_deployment_package() -> None:
 
     for name in (
         "bootstrap.sh",
+        "compose-command.sh",
         "release.sh",
         "smoke.sh",
         "wait-ssm.sh",
@@ -469,10 +501,10 @@ def test_backend_image_pins_verified_rcm_release() -> None:
     dockerfile = (ROOT / "docker" / "scholight-api" / "Dockerfile").read_text(encoding="utf-8")
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 
-    assert "ARG RCM_VERSION=v0.2.4" in dockerfile
+    assert "ARG RCM_VERSION=v0.2.8" in dockerfile
     assert (
         "ARG RCM_LINUX_X86_64_SHA256="
-        "9f7025f06aba2c2e9fd90fa292ed6a206f0c9938c8a71aef0629a6ba0008836c"
+        "ef73a5d0866ec346a0df37839c697731d29f5a0f5c1a398bd0c0a636a5236684"
     ) in dockerfile
     assert (
         "https://github.com/EricSanchezok/rcm-dist/releases/download/"
@@ -485,13 +517,76 @@ def test_backend_image_pins_verified_rcm_release() -> None:
     assert "/releases/latest/" not in dockerfile
     assert "test -x /usr/local/bin/accelerate" in workflow
     assert "/usr/local/bin/accelerate --help" in workflow
+    assert "poppler-utils" in dockerfile
+    assert "pdftotext /tmp/fallback.pdf" in workflow
 
 
 def test_bootstrap_is_part_of_the_release_package_digest() -> None:
     release_script = (PRODUCTION / "release.sh").read_text(encoding="utf-8")
 
     assert '"${SCRIPT_DIR}/bootstrap.sh"' in release_script
+    assert '"${SCRIPT_DIR}/compose-command.sh"' in release_script
     assert '"${SCRIPT_DIR}/cloudwatch-agent.json"' in release_script
+
+
+def test_release_and_smoke_share_one_survey_profile_decision() -> None:
+    release = (PRODUCTION / "release.sh").read_text(encoding="utf-8")
+    smoke = (PRODUCTION / "smoke.sh").read_text(encoding="utf-8")
+    helper = (PRODUCTION / "compose-command.sh").read_text(encoding="utf-8")
+
+    assert (
+        'COMPOSE_COMMAND=${SCHOLIGHT_COMPOSE_COMMAND:-"${SCRIPT_DIR}/compose-command.sh"}'
+        in release
+    )
+    assert (
+        'COMPOSE_COMMAND=${SCHOLIGHT_COMPOSE_COMMAND:-"${SCRIPT_DIR}/compose-command.sh"}' in smoke
+    )
+    assert "--profile survey" in helper
+    assert "SCHOLIGHT_SURVEY_ENABLED must be exactly true or false" in helper
+    assert "--profile survey" not in release
+    assert "--profile survey" not in smoke
+
+
+def test_compose_helper_applies_survey_profile_only_when_enabled(tmp_path: Path) -> None:
+    helper = PRODUCTION / "compose-command.sh"
+    runtime = tmp_path / "runtime.env"
+    release = tmp_path / "release.env"
+    compose = tmp_path / "compose.yaml"
+    fake_bin = tmp_path / "bin"
+    log = tmp_path / "docker.log"
+    fake_bin.mkdir()
+    release.write_text("SCHOLIGHT_BACKEND_IMAGE=fixture\n", encoding="utf-8")
+    compose.write_text("services: {}\n", encoding="utf-8")
+    docker = fake_bin / "docker"
+    docker.write_text(
+        '#!/usr/bin/env bash\nprintf \'%s\\n\' "$*" >"${FAKE_DOCKER_LOG}"\n',
+        encoding="utf-8",
+    )
+    docker.chmod(0o755)
+    environment = {
+        **os.environ,
+        "PATH": f"{fake_bin}:{os.environ['PATH']}",
+        "FAKE_DOCKER_LOG": str(log),
+        "SCHOLIGHT_RUNTIME_ENV": str(runtime),
+        "SCHOLIGHT_RELEASE_ENV": str(release),
+        "SCHOLIGHT_COMPOSE_FILE": str(compose),
+    }
+
+    runtime.write_text("SCHOLIGHT_SURVEY_ENABLED=false\n", encoding="utf-8")
+    disabled = subprocess.run(
+        ["bash", str(helper), "ps"], env=environment, capture_output=True, text=True, check=False
+    )
+    disabled_command = log.read_text(encoding="utf-8")
+    runtime.write_text("SCHOLIGHT_SURVEY_ENABLED=true\n", encoding="utf-8")
+    enabled = subprocess.run(
+        ["bash", str(helper), "ps"], env=environment, capture_output=True, text=True, check=False
+    )
+    enabled_command = log.read_text(encoding="utf-8")
+
+    assert disabled.returncode == 0
+    assert "--profile survey" not in disabled_command
+    assert enabled.returncode == 0
+    assert "--profile survey ps" in enabled_command
 
 
 def test_observability_template_has_bounded_retention_and_required_alarms() -> None:
@@ -513,6 +608,12 @@ def test_observability_template_has_bounded_retention_and_required_alarms() -> N
         "StandardLatencyAlarm",
         "ThoroughLatencyAlarm",
         "DeadIngestionAlarm",
+        "SurveyContractAlarm",
+        "SurveyRuntimeFailureAlarm",
+        "SurveyDiagnosticsFailureAlarm",
+        "SurveyStalledAlarm",
+        "SurveyEmailDeadAlarm",
+        "SurveyEmailBacklogAlarm",
         "Proxy502Metric",
         "Proxy504Metric",
         "ProxyConnectionResetMetric",
@@ -522,15 +623,45 @@ def test_observability_template_has_bounded_retention_and_required_alarms() -> N
     assert "CapacityAlarm" not in resources
 
     dashboard = resources["Dashboard"]["Properties"]["DashboardBody"]["Sub"]
+    parsed_dashboard = json.loads(dashboard)
+    assert isinstance(parsed_dashboard["widgets"], list)
     assert "Search in-flight and throughput" in dashboard
     assert "Search stage latency p95" in dashboard
     assert "HTTPX and thread-pool wait p95" in dashboard
     assert "Proxy and application errors" in dashboard
     assert "Background analytics queues" in dashboard
+    assert "Survey outcomes and duration" in dashboard
+    assert "Survey failures and activity" in dashboard
+    assert "Survey email delivery" in dashboard
     assert (
         resources["HostOomMetric"]["Properties"]["FilterPattern"]
         == '?"Out of memory" ?"Killed process" ?"oom-kill"'
     )
+
+
+def test_survey_smoke_checks_diagnostics_and_contract_audit() -> None:
+    source = (ROOT / "scholight" / "cli" / "survey.py").read_text(encoding="utf-8")
+
+    assert "_verify_diagnostic_workspace" in source
+    assert '"diagnostics_writable": True' in source
+    assert '"workflow_contract": workflow_audit_payload()' in source
+
+
+def test_survey_email_delivery_has_profile_safe_config_and_smoke_visibility() -> None:
+    compose = yaml.safe_load((PRODUCTION / "compose.yaml").read_text(encoding="utf-8"))
+    survey_environment = compose["x-survey-environment"]
+    smoke = (PRODUCTION / "smoke.sh").read_text(encoding="utf-8")
+    runtime = (PRODUCTION / "runtime.env.example").read_text(encoding="utf-8")
+
+    for name in (
+        "SCHOLIGHT_ALIYUN_DM_ACCESS_KEY_ID",
+        "SCHOLIGHT_ALIYUN_DM_ACCESS_KEY_SECRET",
+        "SCHOLIGHT_ALIYUN_DM_ACCOUNT_NAME",
+    ):
+        assert survey_environment[name] == f"${{{name}:-}}"
+        assert f"{name}=" in runtime
+    assert "scholight survey status --json-output" in smoke
+    assert "requested completion" in runtime
 
 
 def test_production_has_no_unreviewed_capacity_enforcement_settings() -> None:
@@ -680,9 +811,9 @@ def test_ci_runs_built_backend_migrations_against_postgres() -> None:
     assert "WHERE schemaname = 'public'" in workflow
 
 
-def test_cloud_auth_checkout_path_is_not_a_tracked_symlink() -> None:
+def test_sanchezcloud_identity_checkout_path_is_not_a_tracked_symlink() -> None:
     tracked = subprocess.run(
-        ["git", "ls-files", "--stage", "cloud-auth"],
+        ["git", "ls-files", "--stage", "sanchezcloud-identity"],
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -703,11 +834,14 @@ def test_database_bootstrap_is_reviewed_and_ci_exercises_least_privilege_roles()
     assert "CREATE SCHEMA IF NOT EXISTS scholight AUTHORIZATION %I" in bootstrap
     assert "GRANT REFERENCES ON TABLE auth.users" in bootstrap
     assert "GRANT SELECT, INSERT, UPDATE ON TABLE auth.users" in bootstrap
+    assert "GRANT SELECT, INSERT, UPDATE ON TABLE auth.user_clients" in bootstrap
     assert "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE auth.users" not in bootstrap
+    assert "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE auth.user_clients" not in bootstrap
     assert 'FOR ROLE :"auth_migrator_role"' not in bootstrap
     assert "SCHOLIGHT_PG_USER=scholight_migrator" in workflow
     assert "AUTH_DATABASE_URL=" in workflow
     assert "-U scholight_app" in workflow
+    assert "identity_runtime_smoke.py" in workflow
     assert "REVOKE ALL ON TABLE auth.schema_migrations" in bootstrap
     assert "REVOKE ALL ON TABLE scholight.schema_migrations" in bootstrap
     assert "CREATE TABLE public.app_role_must_not_create" in workflow

@@ -22,6 +22,9 @@ export function SiteHeader() {
       <NavLink to={routes.home.path} end onClick={() => setOpen(false)}>
         {messages.navigation.home}
       </NavLink>
+      <NavLink to={routes.survey.path} onClick={() => setOpen(false)}>
+        {messages.navigation.survey}
+      </NavLink>
       <NavLink to={routes.docs.path} onClick={() => setOpen(false)}>
         {messages.navigation.docs}
       </NavLink>

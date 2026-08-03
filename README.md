@@ -3,13 +3,15 @@
 AI 学术研究引擎——当前索引 arXiv 语料，提供段落级论文检索、多阶段重排与通用 Web Extract。
 
 前端产品原则以 [`PRODUCT.md`](PRODUCT.md) 为准，视觉与交互系统以 [`DESIGN.md`](DESIGN.md) 为准；新增界面前应先读取两者。
+共享身份接入、数据库角色、升级和排障的权威规范见
+[`sanchezcloud-identity` engineering handbook](https://github.com/EricSanchezok/sanchezcloud-identity/blob/main/docs/README.md)；本仓库只维护 Scholight 特有规则。
 
 ## 架构概览
 
 ```
 scholight/
 ├── scholight/
-│   ├── api/          FastAPI 搜索接口（含 cloud-auth 认证）
+│   ├── api/          FastAPI 搜索接口（含 sanchezcloud-identity 认证）
 │   ├── search/       多阶段检索与融合重排管线
 │   ├── store/        Zilliz Cloud 交互层（论文、段落、索引管理）
 │   ├── pipeline/     PDF/LaTeX 解析、段落切分、embedding
@@ -211,7 +213,7 @@ curl -sS -X DELETE "$API/user/access-keys/KEY_UUID" \
   -H "Authorization: Bearer $JWT"
 ```
 
-Usage 只保存计量和 server search time，不保存 query、标题、摘要、IP、完整 Key 或内部检索诊断。当天登录用户额度来自 `scholight.user_daily_search_usage`，覆盖值来自 `scholight.user_quota_overrides`，趋势来自幂等的 `scholight.usage_events`；cloud-auth 不参与额度或 Usage。
+Usage 只保存计量和 server search time，不保存 query、标题、摘要、IP、完整 Key 或内部检索诊断。当天登录用户额度来自 `scholight.user_daily_search_usage`，覆盖值来自 `scholight.user_quota_overrides`，趋势来自幂等的 `scholight.usage_events`；sanchezcloud-identity 不参与额度或 Usage。
 
 ```bash
 curl -sS "$API/user/usage/summary" -H "Authorization: Bearer $JWT"
@@ -225,7 +227,7 @@ curl -sS -OJ "$API/user/usage/export.csv?from=2026-07-01&to=2026-07-31" \
   -H "Authorization: Bearer $JWT"
 ```
 
-Session 以 cloud-auth 的、按 `client_id=scholight` 隔离的 refresh-token family 为单位。Access JWT 必须带 `aud=scholight` 和 `sid`；缺少任一字段均拒绝。浏览器 Refresh Token 仅存在 `Secure + HttpOnly + SameSite=Strict` Cookie，Access Token 只存在内存。
+Session 以 sanchezcloud-identity 的、按 `client_id=scholight` 隔离的 refresh-token family 为单位。Access JWT 必须带 `aud=scholight` 和 `sid`；缺少任一字段均拒绝。浏览器 Refresh Token 仅存在 `Secure + HttpOnly + SameSite=Strict` Cookie，Access Token 只存在内存。
 
 ```bash
 curl -sS "$API/auth/sessions" -H "Authorization: Bearer $JWT"
@@ -302,7 +304,7 @@ uv run scholight scheduler enqueue-backfill \
 
 本仓库根目录的 Compose 文件用于本地构建和运维。正式环境使用独立的
 [`deploy/production/`](deploy/production/README.md) 部署包：Caddy 是唯一公开入口，
-前后端按 digest 协调发布。cloud-auth 由其受保护工作流独立迁移
+前后端按 digest 协调发布。sanchezcloud-identity 由其受保护工作流独立迁移
 `auth.*`；Scholight 发布只校验 auth schema 版本并迁移 `scholight.*`。
 完整边界及新产品接入规则见
 [`docs/architecture/data-ownership.md`](docs/architecture/data-ownership.md)。
@@ -311,7 +313,7 @@ uv run scholight scheduler enqueue-backfill \
 cp .env.example .env   # 填入所有必填配置和明确的前端/代理值
 docker compose --env-file .env build
 
-# auth.* 已由 cloud-auth workflow 迁移后，只执行 Scholight migration
+# auth.* 已由 sanchezcloud-identity workflow 迁移后，只执行 Scholight migration
 docker compose --env-file .env --profile migrate run --rm migrate
 docker compose --env-file .env up -d api metadata-sync paper-ingest
 ```

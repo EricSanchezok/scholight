@@ -11,7 +11,7 @@ Frontend product decisions are authoritative in [`PRODUCT.md`](PRODUCT.md); visu
 
 ## 项目概述
 
-Scholight 是面向人工智能领域的学术研究引擎。当前已索引语料来自 arXiv，数据源边界必须保持可扩展；使用 **Zilliz Cloud** 作为论文检索存储引擎。通用 Web Extract 是独立的读取能力，不等同于论文语料摄入。
+Scholight 是面向人工智能领域的学术研究引擎。当前唯一已索引的论文数据源是 arXiv；Zilliz Cloud 保存论文与向量检索数据，PostgreSQL 保存共享身份和 Scholight 产品数据。通用 Web Extract 是独立的读取能力，不等同于论文语料摄入；新增论文来源必须通过独立 connector 接入。
 
 ## 目录结构
 
@@ -100,7 +100,7 @@ scholight/
 │   └── utils/               公共工具
 │       ├── http.py          HTTP 请求重试 / 指数退避
 │       └── marker.py        Marker BlockType 转换工具
-├── cloud-auth/              共享 Auth SDK（独立 repo，.gitignore）
+├── sanchezcloud-identity/              共享 Auth SDK（独立 repo，.gitignore）
 ├── scripts/                 运维脚本
 │   ├── audit_duplicates.py   论文去重审计
 │   ├── audit_orphan_pdfs.py  磁盘孤儿 PDF 检测
@@ -123,8 +123,8 @@ scholight/
 
 ## 技术选型
 
-- **唯一数据库**：Zilliz Cloud（managed Milvus），不引入其他数据库
-- **当前论文数据源**：arXiv（bulk PDF tar + OAI-PMH API）；新增来源通过独立 connector 接入，不把 arXiv 假设写入公共契约
+- **检索存储**：Zilliz Cloud（managed Milvus）只保存论文、段落、向量与索引；账户、额度、Usage 和历史保存在 PostgreSQL
+- **当前论文数据源**：arXiv（bulk PDF tar + OAI-PMH API）；新增来源通过独立 connector 接入，不把 Web Extract 当作摄入管线
 - **部署方式**：启智平台 notebook 容器，向量数据存于 Zilliz Cloud
 
 ## Zilliz Cloud 连接
@@ -228,6 +228,26 @@ configure_logging(log_level="INFO", use_json=True, file_handler=("app.log", 50_0
 - **CLI 入口**：`scholight` 命令由 `pyproject.toml` 的 `[project.scripts]` 注册，指向 `scholight.cli:cli`。
 - **依赖管理**：全部依赖声明在 `pyproject.toml`，`uv.lock` 锁定版本，不单独使用 `requirements.txt`。
 - **环境变量**：配置通过 `SCHOLIGHT_` 前缀的环境变量注入，模板在 `.env.example`。
+
+## 本地混合集成环境
+
+开发和验收 Survey、认证、Quota、Usage、History 或其他 PostgreSQL 业务功能时，默认使用以下隔离拓扑：
+
+```text
+本地 Frontend → 本地 Scholight API
+                    ├── 本地 PostgreSQL 16（auth + scholight Schema）
+                    ├── 本地 MinIO（S3-compatible Survey Artifact）
+                    └── 远端 Zilliz（仅论文搜索，只读）
+```
+
+- **PostgreSQL 必须本地隔离**：使用临时 Docker PostgreSQL 16，依次运行 sanchezcloud-identity 和 Scholight migrations；不得读取项目中指向生产 RDS 的 `.env`，不得复制生产用户数据。
+- **Artifact 必须本地隔离**：本地使用 MinIO，而不是生产 AWS S3。通过 `SCHOLIGHT_SURVEY_S3_ENDPOINT_URL` 指向 MinIO，并使用专用本地 Bucket 和测试凭据。MinIO 实现 S3 API，因此报告、Manifest、presigned URL、SHA 校验与 cleanup 流程仍使用真实对象存储协议。
+- **Zilliz 仅限只读搜索**：本地可连接远端 Zilliz 以获得真实论文搜索结果；优先使用 collection-scoped/read-only Key。不得在该环境启动 `metadata-sync`、`paper-ingest`、backfill、scheduler sync、store 维护或任何可能写入/删除 Zilliz 的命令。
+- **允许启动的服务**：Frontend、API、Survey Draft worker、Survey worker，以及本地 PostgreSQL/MinIO。论文摄入服务默认保持停止。
+- **模型按测试层级选择**：日常和 CI 使用固定假模型，不消耗真实 Token；最终人工验收可显式注入真实 `DEEPSEEK_API_KEY` 和 `IMAGE_GEN_API_KEY`。Secret 不得写入 Compose、测试产物、日志或 Git。
+- **本地模型凭据单一来源**：真实模型人工测试从项目根目录、Git 忽略且权限为 `0600` 的 `.env` 读取 `DEEPSEEK_API_KEY` 和 `IMAGE_GEN_API_KEY`；生产仍只从 Parameter Store 读取。不得把完整生产 `runtime.env` 复制到本机或提交任何 Secret。
+- **生产边界不混用**：本地环境不得连接生产 RDS 或生产 Survey S3 Bucket；生产运行时不得配置 MinIO endpoint。任何需要远端写操作的测试必须另行获得明确授权。
+- **环境可重建**：本地 PostgreSQL、MinIO Bucket 和测试账户都视为可丢弃状态；测试结果不得依赖手工修改后的持久容器。
 
 ## 测试规范（TDD）
 

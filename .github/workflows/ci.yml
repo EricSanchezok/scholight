@@ -12,10 +12,6 @@ on:
         description: Git revision to verify
         required: false
         type: string
-    secrets:
-      CLOUD_AUTH_READ_TOKEN:
-        description: Read-only token for the pinned private cloud-auth repository
-        required: true
 
 permissions:
   contents: read
@@ -60,12 +56,21 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
+      - name: Mint read-only SanchezCloud Identity token
+        id: identity-token
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        with:
+          app-id: ${{ vars.IDENTITY_READER_APP_ID }}
+          private-key: ${{ secrets.IDENTITY_READER_PRIVATE_KEY }}
+          owner: EricSanchezok
+          repositories: sanchezcloud-identity
+          permission-contents: read
       - name: Configure read-only private dependency access
         env:
-          CLOUD_AUTH_READ_TOKEN: ${{ secrets.CLOUD_AUTH_READ_TOKEN }}
+          IDENTITY_READ_TOKEN: ${{ steps.identity-token.outputs.token }}
         run: >-
           git config --global
-          url."https://x-access-token:${CLOUD_AUTH_READ_TOKEN}@github.com/".insteadOf
+          url."https://x-access-token:${IDENTITY_READ_TOKEN}@github.com/".insteadOf
           "https://github.com/"
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
@@ -84,14 +89,8 @@ jobs:
         run: uv run ruff format --check
       - name: Mypy
         run: uv run mypy scholight
-      - name: Unit tests
-        run: uv run pytest scholight/ tests/ -v --tb=short
-      - name: PostgreSQL ingestion and hermetic workflow tests
-        run: >-
-          uv run pytest
-          scholight/db/tests/
-          scholight/scheduler/tests/test_ingestion_e2e_pg.py
-          -m pg_integration -v --tb=short
+      - name: Full backend test suite
+        run: uv run pytest -m "" -v --tb=short
       - name: Bandit
         run: uv run bandit -c pyproject.toml -r scholight/ --severity-level medium
       - name: Vulture
@@ -108,12 +107,21 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
+      - name: Mint read-only SanchezCloud Identity token
+        id: identity-token
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        with:
+          app-id: ${{ vars.IDENTITY_READER_APP_ID }}
+          private-key: ${{ secrets.IDENTITY_READER_PRIVATE_KEY }}
+          owner: EricSanchezok
+          repositories: sanchezcloud-identity
+          permission-contents: read
       - name: Configure read-only private dependency access
         env:
-          CLOUD_AUTH_READ_TOKEN: ${{ secrets.CLOUD_AUTH_READ_TOKEN }}
+          IDENTITY_READ_TOKEN: ${{ steps.identity-token.outputs.token }}
         run: >-
           git config --global
-          url."https://x-access-token:${CLOUD_AUTH_READ_TOKEN}@github.com/".insteadOf
+          url."https://x-access-token:${IDENTITY_READ_TOKEN}@github.com/".insteadOf
           "https://github.com/"
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
@@ -163,14 +171,22 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
-      - name: Check out pinned cloud-auth migration owner
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Mint read-only SanchezCloud Identity token
+        id: identity-token
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
         with:
-          repository: EricSanchezok/cloud-auth
-          ref: 9e82bb25f38a33aaa309933bfb0affb6d47c1df2
-          token: ${{ secrets.CLOUD_AUTH_READ_TOKEN }}
-          path: .ci/cloud-auth
-          persist-credentials: false
+          app-id: ${{ vars.IDENTITY_READER_APP_ID }}
+          private-key: ${{ secrets.IDENTITY_READER_PRIVATE_KEY }}
+          owner: EricSanchezok
+          repositories: sanchezcloud-identity
+          permission-contents: read
+      - name: Configure read-only private dependency access
+        env:
+          IDENTITY_READ_TOKEN: ${{ steps.identity-token.outputs.token }}
+        run: >-
+          git config --global
+          url."https://x-access-token:${IDENTITY_READ_TOKEN}@github.com/".insteadOf
+          "https://github.com/"
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
@@ -181,8 +197,7 @@ jobs:
           version: "0.9.2"
           enable-cache: true
       - name: Install pinned auth migration tool
-        working-directory: .ci/cloud-auth
-        run: uv sync --frozen
+        run: uv sync --frozen --extra dev
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - name: Validate shell scripts
@@ -191,7 +206,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends shellcheck
           bash -n deploy/production/bootstrap.sh deploy/production/release.sh deploy/production/smoke.sh deploy/production/wait-ssm.sh
           sh -n frontend/runtime/render-docs.sh
-          shellcheck deploy/production/bootstrap.sh deploy/production/release.sh deploy/production/smoke.sh deploy/production/wait-ssm.sh tests/deploy/test_keepalive_integration.sh tests/deploy/test_edge_ingress_integration.sh
+          shellcheck deploy/production/bootstrap.sh deploy/production/compose-command.sh deploy/production/release.sh deploy/production/smoke.sh deploy/production/wait-ssm.sh tests/deploy/test_keepalive_integration.sh tests/deploy/test_edge_ingress_integration.sh
           shellcheck -s sh frontend/runtime/render-docs.sh
       - name: Validate production Compose
         env:
@@ -252,7 +267,7 @@ jobs:
           load: true
           tags: scholight-api:ci
           secrets: |
-            github_token=${{ secrets.CLOUD_AUTH_READ_TOKEN }}
+            github_token=${{ steps.identity-token.outputs.token }}
       - name: Build Web Extract image
         if: github.event_name != 'pull_request'
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
@@ -264,14 +279,40 @@ jobs:
         if: github.event_name != 'pull_request'
         run: |
           docker run --rm --user 0 --entrypoint /bin/sh scholight-api:ci -ec '
-            for name in bootstrap.sh release.sh smoke.sh wait-ssm.sh compose.yaml Caddyfile cloudwatch-agent.json bootstrap-db.sql; do
+            for name in bootstrap.sh compose-command.sh release.sh smoke.sh wait-ssm.sh compose.yaml Caddyfile cloudwatch-agent.json bootstrap-db.sql; do
               test -f "/opt/scholight-package/${name}"
             done
             test -x /opt/scholight-package/bootstrap.sh
+            test -x /opt/scholight-package/compose-command.sh
             test -x /opt/scholight-package/release.sh
             test -x /usr/local/bin/accelerate
             /usr/local/bin/accelerate --help >/dev/null
+            command -v pdftotext >/dev/null
+            /app/.venv/bin/python -c "import fitz; d=fitz.open(); p=d.new_page(); p.insert_text((72,72), \"Scholight PDF fallback\"); d.save(\"/tmp/fallback.pdf\")"
+            pdftotext /tmp/fallback.pdf /tmp/fallback.txt
+            grep -F "Scholight PDF fallback" /tmp/fallback.txt >/dev/null
           '
+      - name: Run hermetic Survey E2E
+        if: github.event_name != 'pull_request'
+        run: |
+          compose_file=tests/survey_e2e/compose.yaml
+          cleanup() {
+            docker compose -f "$compose_file" down -v --remove-orphans
+          }
+          trap cleanup EXIT
+
+          docker build \
+            --build-arg BASE_IMAGE=scholight-api:ci \
+            -f tests/survey_e2e/Dockerfile \
+            -t scholight-survey-e2e:ci \
+            .
+          docker compose -f "$compose_file" up -d
+          driver_id=$(docker compose -f "$compose_file" ps -q driver)
+          driver_exit=$(docker wait "$driver_id")
+          docker compose -f "$compose_file" logs \
+            --tail=200 \
+            driver survey-draft-worker survey-worker
+          test "$driver_exit" = 0
       - name: Verify Caddy and Uvicorn idle keep-alive integration
         if: github.event_name != 'pull_request'
         run: tests/deploy/test_keepalive_integration.sh
@@ -308,9 +349,9 @@ jobs:
 
             if [[ $phase == before ]]; then
               AUTH_DATABASE_URL="postgresql://auth_migrator:${AUTH_MIGRATOR_PASSWORD}@127.0.0.1:5432/sanchezcloud" \
-                uv run --project .ci/cloud-auth cloud-auth migrate
+                .venv/bin/sanchezcloud-identity migrate
               AUTH_DATABASE_URL="postgresql://auth_migrator:${AUTH_MIGRATOR_PASSWORD}@127.0.0.1:5432/sanchezcloud" \
-                uv run --project .ci/cloud-auth cloud-auth check-schema
+                .venv/bin/sanchezcloud-identity check-schema
             elif [[ $phase == after-auth ]]; then
               for _ in 1 2; do
                 docker run --rm --network host \
@@ -339,11 +380,15 @@ jobs:
                    AND to_regclass('scholight.ingestion_jobs') IS NOT NULL
                    AND to_regclass('auth.users') IS NOT NULL
                    AND to_regclass('auth.refresh_tokens') IS NOT NULL
+                   AND to_regclass('auth.user_clients') IS NOT NULL
                    AND NOT has_table_privilege(
                      'scholight_app', 'auth.users', 'DELETE'
                    )
                    AND NOT has_table_privilege(
                      'scholight_app', 'auth.refresh_tokens', 'DELETE'
+                   )
+                   AND NOT has_table_privilege(
+                     'scholight_app', 'auth.user_clients', 'DELETE'
                    )
                    AND NOT EXISTS (
                      SELECT 1 FROM scholight.schema_migrations WHERE checksum IS NULL
@@ -379,7 +424,61 @@ jobs:
                UPDATE scholight.ingestion_jobs
                  SET status = 'succeeded'
                  WHERE arxiv_id = '2401.00001';
+               INSERT INTO scholight.survey_daily_usage
+                 (user_id, usage_date, succeeded_count)
+                 VALUES (currval('auth.users_id_seq'), CURRENT_DATE, 1);
+               INSERT INTO scholight.surveys
+                 (id, user_id, client_request_id, initial_request, status, quota_date,
+                  quota_state, finished_at)
+                 VALUES ('00000000-0000-0000-0000-000000000101',
+                         currval('auth.users_id_seq'),
+                         '00000000-0000-0000-0000-000000000102',
+                         'CI artifact cleanup contract', 'succeeded', CURRENT_DATE,
+                         'consumed', now());
+               INSERT INTO scholight.survey_drafts
+                 (id, survey_id, client_request_id, revision, source, user_message,
+                  markdown, status, finished_at)
+                 VALUES ('00000000-0000-0000-0000-000000000103',
+                         '00000000-0000-0000-0000-000000000101',
+                         '00000000-0000-0000-0000-000000000104', 1, 'manual',
+                         'CI Draft', '# CI Draft', 'ready', now());
+               INSERT INTO scholight.survey_jobs
+                 (id, survey_id, approved_draft_id, client_request_id, status,
+                  terminal_outcome, storage_bucket, storage_prefix, manifest_key,
+                  finished_at)
+                 VALUES ('00000000-0000-0000-0000-000000000105',
+                         '00000000-0000-0000-0000-000000000101',
+                         '00000000-0000-0000-0000-000000000103',
+                         '00000000-0000-0000-0000-000000000106', 'finished',
+                         'succeeded', 'ci-private-bucket',
+                         'surveys/v1/' || currval('auth.users_id_seq') ||
+                           '/00000000-0000-0000-0000-000000000105',
+                         'surveys/v1/' || currval('auth.users_id_seq') ||
+                           '/00000000-0000-0000-0000-000000000105/manifest.json',
+                         now());
+               DELETE FROM scholight.surveys
+                 WHERE id = '00000000-0000-0000-0000-000000000101';
+               DO \$contract\$
+               BEGIN
+                 IF NOT EXISTS (
+                   SELECT 1 FROM scholight.survey_artifact_cleanup_outbox
+                   WHERE source_job_id = '00000000-0000-0000-0000-000000000105'
+                 ) THEN
+                   RAISE EXCEPTION 'Survey artifact cleanup outbox contract failed';
+                 END IF;
+               END
+               \$contract\$;
                ROLLBACK;"
+
+          docker run --rm --network host \
+            -e SCHOLIGHT_PG_HOST=127.0.0.1 \
+            -e SCHOLIGHT_PG_PORT=5432 \
+            -e SCHOLIGHT_PG_DATABASE=sanchezcloud \
+            -e SCHOLIGHT_PG_USER=scholight_app \
+            -e SCHOLIGHT_PG_PASSWORD="$APP_PASSWORD" \
+            -v "$PWD/tests/deploy/identity_runtime_smoke.py:/identity-runtime-smoke.py:ro" \
+            scholight-api:ci \
+            /app/.venv/bin/python /identity-runtime-smoke.py
 
           if docker run --rm --network host \
             -e PGPASSWORD="$APP_PASSWORD" \

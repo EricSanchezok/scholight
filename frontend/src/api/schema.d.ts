@@ -475,6 +475,24 @@ export interface paths {
     get: operations["survey_surveys__survey_id__get"];
     put?: never;
     post?: never;
+    /** Remove Survey */
+    delete: operations["remove_survey_surveys__survey_id__delete"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/surveys/{survey_id}/artifacts": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Survey Artifacts */
+    get: operations["survey_artifacts_surveys__survey_id__artifacts_get"];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -492,6 +510,23 @@ export interface paths {
     put?: never;
     /** Cancel Survey Request */
     post: operations["cancel_survey_request_surveys__survey_id__cancel_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/surveys/{survey_id}/download": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Survey Report Download */
+    get: operations["survey_report_download_surveys__survey_id__download_get"];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -527,6 +562,40 @@ export interface paths {
     put?: never;
     /** Add Manual Survey Draft */
     post: operations["add_manual_survey_draft_surveys__survey_id__drafts_manual_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/surveys/{survey_id}/progress": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Survey Progress */
+    get: operations["survey_progress_surveys__survey_id__progress_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/surveys/{survey_id}/report": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Survey Report */
+    get: operations["survey_report_surveys__survey_id__report_get"];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -943,6 +1012,7 @@ export interface components {
     /** AdminQuotasResponse */
     AdminQuotasResponse: {
       standard: components["schemas"]["AdminQuotaResponse"];
+      survey: components["schemas"]["AdminQuotaResponse"];
       thorough: components["schemas"]["AdminQuotaResponse"];
     };
     /** AdminSearchMetrics */
@@ -1409,6 +1479,8 @@ export interface components {
     QuotaOverrideRequest: {
       /** Standard */
       standard: number | null;
+      /** Survey */
+      survey: number | null;
       /** Thorough */
       thorough: number | null;
     };
@@ -1478,6 +1550,39 @@ export interface components {
        * Format: uuid
        */
       client_request_id: string;
+      /**
+       * Notify On Completion
+       * @default false
+       */
+      notify_on_completion: boolean;
+    };
+    /** SurveyArtifactItemResponse */
+    SurveyArtifactItemResponse: {
+      /** Content Type */
+      content_type: string;
+      /** Download Url */
+      download_url: string;
+      /** Path */
+      path: string;
+      /** Sha256 */
+      sha256: string;
+      /** Size */
+      size: number;
+    };
+    /** SurveyArtifactsResponse */
+    SurveyArtifactsResponse: {
+      /**
+       * Expires At
+       * Format: date-time
+       */
+      expires_at: string;
+      /** Items */
+      items: components["schemas"]["SurveyArtifactItemResponse"][];
+      /**
+       * Survey Id
+       * Format: uuid
+       */
+      survey_id: string;
     };
     /** SurveyCreateRequest */
     SurveyCreateRequest: {
@@ -1522,6 +1627,88 @@ export interface components {
       /** User Message */
       user_message: string;
     };
+    /** SurveyListResponse */
+    SurveyListResponse: {
+      /** Items */
+      items: components["schemas"]["SurveySummaryResponse"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+      quota: components["schemas"]["SurveyQuotaResponse"];
+    };
+    /** SurveyProgressResponse */
+    SurveyProgressResponse: {
+      /** Elapsed Seconds */
+      elapsed_seconds: number;
+      /** Finished At */
+      finished_at: string | null;
+      /**
+       * Last Activity At
+       * Format: date-time
+       */
+      last_activity_at: string;
+      /** Percent */
+      percent: number;
+      queue: components["schemas"]["SurveyQueueResponse"] | null;
+      /**
+       * Stage
+       * @enum {string}
+       */
+      stage:
+        | "drafting"
+        | "waiting_for_draft"
+        | "waiting_for_execution"
+        | "planning"
+        | "discovering"
+        | "reviewing_evidence"
+        | "structuring_report"
+        | "writing_report"
+        | "finalizing"
+        | "cancelling"
+        | "saving_results"
+        | "completed"
+        | "failed"
+        | "cancelled";
+      /** Started At */
+      started_at: string | null;
+      /** Status */
+      status: string;
+      /** Step */
+      step: number;
+      /**
+       * Survey Id
+       * Format: uuid
+       */
+      survey_id: string;
+      /** Total Steps */
+      total_steps: number;
+    };
+    /** SurveyQueueResponse */
+    SurveyQueueResponse: {
+      /** Kind */
+      kind: string;
+      /** Max Slots */
+      max_slots: number;
+      /** Position */
+      position: number;
+      /**
+       * Queued At
+       * Format: date-time
+       */
+      queued_at: string;
+      /** Running Slots */
+      running_slots: number;
+    };
+    /** SurveyQuotaResponse */
+    SurveyQuotaResponse: {
+      /** Daily Limit */
+      daily_limit: number;
+      /** Remaining */
+      remaining: number;
+      /** Reserved */
+      reserved: number;
+      /** Succeeded */
+      succeeded: number;
+    };
     /** SurveyResponse */
     SurveyResponse: {
       /**
@@ -1548,6 +1735,41 @@ export interface components {
       started_at: string | null;
       /** Status */
       status: string;
+      /** Title */
+      title: string;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+    };
+    /** SurveySummaryResponse */
+    SurveySummaryResponse: {
+      /** Artifacts Available */
+      artifacts_available: boolean;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Finished At */
+      finished_at: string | null;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Latest Draft Revision */
+      latest_draft_revision: number | null;
+      progress: components["schemas"]["SurveyProgressResponse"];
+      /** Report Available */
+      report_available: boolean;
+      /** Started At */
+      started_at: string | null;
+      /** Status */
+      status: string;
+      /** Title */
+      title: string;
       /**
        * Updated At
        * Format: date-time
@@ -1557,6 +1779,7 @@ export interface components {
     /** TodayUsage */
     TodayUsage: {
       standard: components["schemas"]["DailyQuotaUsage"];
+      survey: components["schemas"]["DailyQuotaUsage"];
       thorough: components["schemas"]["DailyQuotaUsage"];
     };
     /** UpdateAccessKeyRequest */
@@ -2491,7 +2714,9 @@ export interface operations {
   surveys_surveys_get: {
     parameters: {
       query?: {
+        view?: "active" | "completed" | "all";
         limit?: number;
+        cursor?: string | null;
       };
       header?: never;
       path?: never;
@@ -2505,7 +2730,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["SurveyResponse"][];
+          "application/json": components["schemas"]["SurveyListResponse"];
         };
       };
       /** @description Validation Error */
@@ -2583,6 +2808,66 @@ export interface operations {
       };
     };
   };
+  remove_survey_surveys__survey_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        survey_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  survey_artifacts_surveys__survey_id__artifacts_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        survey_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SurveyArtifactsResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
   cancel_survey_request_surveys__survey_id__cancel_post: {
     parameters: {
       query?: never;
@@ -2592,11 +2877,7 @@ export interface operations {
       };
       cookie?: never;
     };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["SurveyActionRequest"];
-      };
-    };
+    requestBody?: never;
     responses: {
       /** @description Successful Response */
       200: {
@@ -2605,6 +2886,37 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["SurveyResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  survey_report_download_surveys__survey_id__download_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        survey_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/zip": unknown;
         };
       };
       /** @description Validation Error */
@@ -2707,6 +3019,66 @@ export interface operations {
         content: {
           "application/json": components["schemas"]["SurveyDraftResponse"];
         };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  survey_progress_surveys__survey_id__progress_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        survey_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SurveyProgressResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  survey_report_surveys__survey_id__report_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        survey_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
       /** @description Validation Error */
       422: {

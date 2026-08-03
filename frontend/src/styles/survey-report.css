@@ -1,0 +1,264 @@
+.surveyReportPage {
+  max-width: var(--container);
+}
+
+.surveyReportHeader {
+  display: flex;
+  padding-bottom: 30px;
+  border-bottom: 1px solid var(--line-soft);
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 36px;
+}
+
+.surveyReportHeader h1 {
+  max-width: 760px;
+  font-size: 34px;
+  line-height: 1.35;
+}
+
+.surveyReportHeader > div {
+  display: flex;
+  gap: 12px;
+}
+
+.surveyReportHeader .secondaryButton,
+.surveyReportHeader .dangerButton {
+  min-height: 42px;
+}
+
+.surveyReportLayout {
+  display: grid;
+  padding-top: 34px;
+  grid-template-columns: minmax(0, 800px) minmax(220px, 280px);
+  gap: 80px;
+}
+
+.surveyReportDocument {
+  min-width: 0;
+}
+
+.surveyReportDetails {
+  position: sticky;
+  top: 28px;
+  align-self: start;
+}
+
+.surveyReportDetails > span {
+  color: var(--brand);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.surveyReportDetails dl {
+  margin: 22px 0 0;
+}
+
+.surveyReportDetails dl div {
+  margin-bottom: 20px;
+}
+
+.surveyReportDetails dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.surveyReportDetails dd {
+  margin: 4px 0 0;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.surveyReportDetails > p {
+  margin: 28px 0 0;
+  color: var(--warning);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.surveyMarkdown {
+  color: var(--ink-soft);
+  font-size: 15px;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+
+.surveyMarkdown h1,
+.surveyMarkdown h2,
+.surveyMarkdown h3,
+.surveyMarkdown h4 {
+  margin: 1.6em 0 0.55em;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.surveyMarkdown h1:first-child,
+.surveyMarkdown h2:first-child {
+  margin-top: 0;
+}
+
+.surveyMarkdown h1 {
+  font-size: 34px;
+}
+
+.surveyMarkdown h2 {
+  font-size: 27px;
+}
+
+.surveyMarkdown h3 {
+  font-size: 21px;
+}
+
+.surveyMarkdown p,
+.surveyMarkdown ul,
+.surveyMarkdown ol,
+.surveyMarkdown blockquote {
+  margin: 0 0 1.15em;
+}
+
+.surveyMarkdown a {
+  color: var(--brand-link);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.surveyMarkdown blockquote {
+  padding-left: 18px;
+  border-left: 3px solid var(--line);
+  color: var(--muted);
+}
+
+.surveyMarkdown code {
+  padding: 2px 5px;
+  border-radius: 3px;
+  background: var(--surface-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em;
+}
+
+.surveyMarkdown pre {
+  max-width: 100%;
+  padding: 18px;
+  overflow-x: auto;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+}
+
+.surveyMarkdown pre code {
+  padding: 0;
+  background: transparent;
+}
+
+.surveyMarkdown table {
+  width: 100%;
+  margin: 24px 0;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.surveyMarkdown th,
+.surveyMarkdown td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  text-align: left;
+  vertical-align: top;
+}
+
+.surveyMarkdown img {
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  margin: 30px auto 10px;
+}
+
+.surveyMarkdownCompact {
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.surveyMarkdownCompact h1,
+.surveyMarkdownCompact h2,
+.surveyMarkdownCompact h3 {
+  margin: 0.9em 0 0.25em;
+  font-size: 16px;
+  line-height: 22px;
+}
+
+.surveyReportPreviewBody {
+  height: 100%;
+  padding: 24px 26px;
+  overflow: hidden;
+}
+
+.surveyReportPreviewBody .surveyMarkdown {
+  color: var(--text-secondary);
+  font-size: 7px;
+  line-height: 1.5;
+}
+
+.surveyReportPreviewBody .surveyMarkdown h1,
+.surveyReportPreviewBody .surveyMarkdown h2,
+.surveyReportPreviewBody .surveyMarkdown h3,
+.surveyReportPreviewBody .surveyMarkdown h4 {
+  margin: 0.75em 0 0.28em;
+  font-size: 10px;
+  line-height: 1.3;
+}
+
+.surveyReportPreviewBody .surveyMarkdown h1:first-child,
+.surveyReportPreviewBody .surveyMarkdown h2:first-child,
+.surveyReportPreviewBody .surveyMarkdown h3:first-child {
+  margin-top: 0;
+}
+
+.surveyReportPreviewBody .surveyMarkdown p,
+.surveyReportPreviewBody .surveyMarkdown ul,
+.surveyReportPreviewBody .surveyMarkdown ol,
+.surveyReportPreviewBody .surveyMarkdown blockquote {
+  margin-bottom: 0.62em;
+}
+
+.surveyReportPreviewBody .surveyMarkdown table {
+  margin: 7px 0;
+  font-size: 6px;
+}
+
+.surveyReportPreviewBody .surveyMarkdown th,
+.surveyReportPreviewBody .surveyMarkdown td {
+  padding: 3px;
+}
+
+.surveyReportPreviewLoading {
+  display: grid;
+  padding-top: 4px;
+  gap: 8px;
+}
+
+.surveyReportPreviewLoading span {
+  display: block;
+  width: 88%;
+  height: 5px;
+  border-radius: 2px;
+  background: var(--surface-skeleton);
+}
+
+.surveyReportPreviewLoading span:first-child {
+  width: 34%;
+  height: 3px;
+}
+
+.surveyReportPreviewLoading span:nth-child(3) {
+  width: 72%;
+}
+
+.surveyReportPreviewUnavailable {
+  margin: 38px 0 0;
+  color: var(--muted);
+  font-size: 8px;
+  text-align: center;
+}

@@ -7,7 +7,7 @@ from typing import Literal, Protocol
 from uuid import UUID
 
 import httpx
-from cloud_auth.models.user import UserRecord
+from sanchezcloud_identity.models.user import UserRecord
 
 from scholight.config import settings
 from scholight.models.web_extract import ExtractRequest, ExtractResponse

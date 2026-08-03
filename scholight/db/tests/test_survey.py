@@ -15,6 +15,8 @@ from scholight.db.queries_survey import (
     create_survey,
     settle_survey_execution,
 )
+from scholight.db.queries_survey_views import SurveyQuotaSnapshot, get_survey_quota_snapshot
+from scholight.db.survey_locking import LockedSurveyAggregate
 
 
 class _AsyncContext(AbstractAsyncContextManager[MagicMock]):
@@ -39,7 +41,9 @@ def _survey_row(*, survey_id: UUID, status: str = "drafting") -> dict[str, objec
         "id": survey_id,
         "user_id": 42,
         "client_request_id": uuid4(),
+        "request_hash": "0" * 64,
         "initial_request": "retrieval augmented generation",
+        "title": None,
         "status": status,
         "quota_date": date(2026, 7, 31),
         "quota_state": "reserved" if status not in {"succeeded", "failed"} else "released",
@@ -64,17 +68,23 @@ def _job_row(
         "approved_draft": "# Research brief",
         "approved_draft_revision": 1,
         "client_request_id": uuid4(),
+        "request_hash": "1" * 64,
         "status": status,
         "terminal_outcome": None,
         "storage_prefix": None,
+        "storage_bucket": None,
         "manifest_key": None,
         "error_code": None,
         "error_message": None,
         "lease_owner": worker_id,
         "lease_expires_at": now,
         "heartbeat_at": now,
+        "progress_stage": "reviewing_evidence",
+        "progress_updated_at": now,
         "archive_attempts": 0,
         "next_archive_at": None,
+        "queued_at": now,
+        "last_claim_at": now,
         "created_at": now,
         "started_at": now,
         "finished_at": None,
@@ -86,6 +96,65 @@ def _pool_with_connection(connection: MagicMock) -> MagicMock:
     pool = MagicMock()
     pool.acquire.return_value = _AsyncContext(connection)
     return pool
+
+
+@pytest.mark.asyncio
+async def test_survey_quota_snapshot_counts_reserved_and_succeeded() -> None:
+    pool = MagicMock()
+    pool.fetchrow = AsyncMock(
+        return_value={"daily_limit": 2, "reserved_count": 1, "succeeded_count": 1}
+    )
+
+    with patch("scholight.db.queries_survey_views.get_pool", return_value=pool):
+        quota = await get_survey_quota_snapshot(
+            user_id=42,
+            quota_date=date(2026, 8, 2),
+            daily_limit=3,
+        )
+
+    assert quota == SurveyQuotaSnapshot(daily_limit=2, reserved=1, succeeded=1)
+
+
+@pytest.mark.asyncio
+async def test_survey_quota_snapshot_defaults_to_zero_without_usage_row() -> None:
+    pool = MagicMock()
+    pool.fetchrow = AsyncMock(return_value=None)
+
+    with patch("scholight.db.queries_survey_views.get_pool", return_value=pool):
+        quota = await get_survey_quota_snapshot(
+            user_id=42,
+            quota_date=date(2026, 8, 2),
+            daily_limit=3,
+        )
+
+    assert quota == SurveyQuotaSnapshot(daily_limit=3, reserved=0, succeeded=0)
+
+
+@pytest.mark.asyncio
+async def test_create_survey_enforces_user_override() -> None:
+    connection = MagicMock()
+    connection.execute = AsyncMock()
+    connection.fetchrow = AsyncMock(
+        side_effect=[{"reserved_count": 1, "succeeded_count": 1, "daily_limit": 2}, None]
+    )
+
+    with (
+        patch(
+            "scholight.db.queries_survey.get_pool",
+            return_value=_pool_with_connection(connection),
+        ),
+        pytest.raises(SurveyQuotaExceededError),
+    ):
+        await create_survey(
+            survey_id=uuid4(),
+            draft_id=uuid4(),
+            user_id=42,
+            initial_request="retrieval augmented generation",
+            client_request_id=uuid4(),
+            request_hash="2" * 64,
+            quota_date=date(2026, 8, 2),
+            daily_limit=3,
+        )
 
 
 @pytest.mark.asyncio
@@ -111,6 +180,7 @@ async def test_create_survey_reserves_quota_and_queues_initial_draft_atomically(
             user_id=42,
             initial_request="retrieval augmented generation",
             client_request_id=uuid4(),
+            request_hash="2" * 64,
             quota_date=date(2026, 7, 31),
             daily_limit=5,
         )
@@ -140,6 +210,7 @@ async def test_create_survey_rejects_sixth_reserved_or_successful_run() -> None:
             user_id=42,
             initial_request="retrieval augmented generation",
             client_request_id=uuid4(),
+            request_hash="2" * 64,
             quota_date=date(2026, 7, 31),
             daily_limit=5,
         )
@@ -164,18 +235,32 @@ async def test_failed_execution_releases_reservation_without_creating_another_su
     }
     connection = MagicMock()
     connection.execute = AsyncMock()
+    survey_row = _survey_row(survey_id=survey_id, status="running")
     connection.fetchrow = AsyncMock(
         side_effect=[
+            {"survey_id": survey_id},
             running_job,
-            _survey_row(survey_id=survey_id, status="running"),
             {"settled": 1},
             archiving_job,
         ]
     )
+    locked = LockedSurveyAggregate(
+        survey=survey_row,
+        usage={"reserved_count": 1},
+        job=running_job,
+        drafts=(),
+    )
 
-    with patch(
-        "scholight.db.queries_survey.get_pool",
-        return_value=_pool_with_connection(connection),
+    with (
+        patch(
+            "scholight.db.queries_survey.get_pool",
+            return_value=_pool_with_connection(connection),
+        ),
+        patch(
+            "scholight.db.queries_survey.lock_survey_aggregate",
+            new_callable=AsyncMock,
+            return_value=locked,
+        ),
     ):
         job = await settle_survey_execution(
             job_id=job_id,

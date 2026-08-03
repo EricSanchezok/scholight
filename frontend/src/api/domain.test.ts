@@ -69,6 +69,7 @@ describe("typed API client", () => {
           today: {
             standard: { used: 1, daily_limit: 10, remaining: 9 },
             thorough: { used: 0, daily_limit: 2, remaining: 2 },
+            survey: { used: 1, daily_limit: 3, remaining: 2 },
           },
           reset_at: "2026-07-23T00:00:00Z",
           timezone: "UTC",
@@ -118,10 +119,10 @@ describe("typed API client", () => {
     );
 
     const { adminApi } = await import("./domain");
-    await adminApi.updateQuotaOverrides(7, { standard: 5000, thorough: null });
+    await adminApi.updateQuotaOverrides(7, { standard: 5000, thorough: null, survey: 2 });
     const request = fetchMock.mock.calls[0]?.[0] as Request;
     expect(request.url).toContain("/api/admin/users/7/quota-overrides");
-    expect(await request.clone().json()).toEqual({ standard: 5000, thorough: null });
+    expect(await request.clone().json()).toEqual({ standard: 5000, thorough: null, survey: 2 });
     expect(request.headers.get("Authorization")).toBe("Bearer admin-access");
   });
 
@@ -135,5 +136,47 @@ describe("typed API client", () => {
     await expect(accessKeyApi.revoke("00000000-0000-0000-0000-000000000001")).resolves.toBe(
       undefined,
     );
+  });
+
+  it("uses protected Survey endpoints for list, report, and deletion", async () => {
+    const { establishSession } = await import("../auth/session");
+    establishSession({ access_token: "survey-access", token_type: "bearer" }, false);
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            items: [],
+            quota: { daily_limit: 5, reserved: 0, succeeded: 0, remaining: 5 },
+            next_cursor: null,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response("# Survey report", {
+          status: 200,
+          headers: { "Content-Type": "text/markdown" },
+        }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+    const { surveyApi } = await import("./domain");
+    await surveyApi.list("active");
+    await expect(surveyApi.report("00000000-0000-0000-0000-000000000001")).resolves.toBe(
+      "# Survey report",
+    );
+    await surveyApi.remove("00000000-0000-0000-0000-000000000001");
+
+    const requests = fetchMock.mock.calls.map((call) => call[0] as Request);
+    expect(requests[0]?.url).toContain("/api/surveys?view=active&limit=20");
+    expect(requests[1]?.url).toContain("/api/surveys/00000000-0000-0000-0000-000000000001/report");
+    expect(requests[2]?.method).toBe("DELETE");
+    expect(
+      requests.every((request) => request.headers.get("Authorization") === "Bearer survey-access"),
+    ).toBe(true);
   });
 });

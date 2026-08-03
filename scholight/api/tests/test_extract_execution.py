@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from cloud_auth.models.user import UserRecord
+from sanchezcloud_identity.models.user import UserRecord
 
 from scholight.api.deps import SearchActor
 from scholight.api.extract_execution import (
