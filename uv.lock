@@ -3115,8 +3115,8 @@ wheels = [
 
 [[package]]
 name = "sanchezcloud-identity"
-version = "0.5.1"
-source = { git = "https://github.com/EricSanchezok/sanchezcloud-identity.git?tag=v0.5.1#97553db587d8260a367d97e51c9b1a6f6d003aeb" }
+version = "0.5.2"
+source = { git = "https://github.com/EricSanchezok/sanchezcloud-identity.git?tag=v0.5.2#6acd693b52257a229cfb84b5ad252fb6d7a5d263" }
 dependencies = [
     { name = "asyncpg" },
     { name = "bcrypt" },
@@ -3204,7 +3204,7 @@ requires-dist = [
     { name = "pymupdf4llm", specifier = ">=1.27.2.3" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.5" },
-    { name = "sanchezcloud-identity", extras = ["aliyun"], git = "https://github.com/EricSanchezok/sanchezcloud-identity.git?tag=v0.5.1" },
+    { name = "sanchezcloud-identity", extras = ["aliyun"], git = "https://github.com/EricSanchezok/sanchezcloud-identity.git?tag=v0.5.2" },
     { name = "structlog", specifier = ">=24" },
     { name = "tenacity", specifier = ">=8" },
     { name = "trafilatura", specifier = ">=2.0,<3" },
