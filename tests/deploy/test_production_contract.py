@@ -53,7 +53,7 @@ def test_production_compose_uses_digest_images_and_only_caddy_ports() -> None:
     assert services["caddy"]["ports"] == ["80:80", "443:443"]
 
 
-def test_extract_sidecar_is_internal_hardened_and_health_gated() -> None:
+def test_extract_sidecar_is_internal_hardened_and_failure_isolated() -> None:
     compose = yaml.safe_load((PRODUCTION / "compose.yaml").read_text(encoding="utf-8"))
     services = compose["services"]
     extract = services["extract"]
@@ -63,18 +63,40 @@ def test_extract_sidecar_is_internal_hardened_and_health_gated() -> None:
     assert extract["read_only"] is True
     assert extract["cap_drop"] == ["ALL"]
     assert "no-new-privileges:true" in extract["security_opt"]
-    assert services["api"]["depends_on"]["extract"]["condition"] == "service_healthy"
+    assert "extract" not in services["api"].get("depends_on", {})
+    assert set(services["api"]["networks"]) == {"scholight", "extract-control"}
+    assert set(extract["networks"]) == {"extract-control", "extract-egress"}
+    assert "scholight" not in extract["networks"]
+    assert compose["networks"]["extract-control"]["internal"] is True
+    assert compose["networks"]["extract-egress"]["internal"] is False
     assert services["api"]["environment"]["SCHOLIGHT_EXTRACT_SERVICE_URL"] == (
         "http://extract:8001"
     )
     assert services["api"]["environment"]["SCHOLIGHT_EXTRACT_ENABLED"] == "true"
 
 
-def test_extract_runtime_contract_has_stable_token_and_dedicated_ip() -> None:
+def test_extract_runtime_contract_has_stable_token_without_shared_network_ip() -> None:
     runtime = (PRODUCTION / "runtime.env.example").read_text(encoding="utf-8")
 
-    assert "SCHOLIGHT_EXTRACT_IP=172.31.0.25" in runtime
+    assert "SCHOLIGHT_EXTRACT_IP=" not in runtime
     assert "SCHOLIGHT_EXTRACT_INTERNAL_TOKEN=" in runtime
+
+
+def test_local_extract_sidecar_has_matching_isolation_and_resource_limits() -> None:
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+    services = compose["services"]
+    extract = services["extract"]
+
+    assert "extract" not in services["api"].get("depends_on", {})
+    assert set(services["api"]["networks"]) == {"scholight", "extract-control"}
+    assert set(extract["networks"]) == {"extract-control", "extract-egress"}
+    assert "scholight" not in extract["networks"]
+    assert extract["mem_limit"] == "1536m"
+    assert extract["memswap_limit"] == "1536m"
+    assert str(extract["cpus"]) == "1.0"
+    assert extract["pids_limit"] == 256
+    assert compose["networks"]["extract-control"]["internal"] is True
+    assert compose["networks"]["extract-egress"]["internal"] is False
 
 
 def test_production_compose_separates_application_and_migration_database_roles() -> None:
@@ -212,6 +234,7 @@ def test_production_services_have_hard_resource_boundaries() -> None:
         "frontend": ("128m", "0.1", 64),
         "survey-draft-worker": ("768m", "0.5", 256),
         "survey-worker": ("2560m", "1.0", 512),
+        "extract": ("1536m", "1.0", 256),
     }
 
     for service_name, (memory, cpus, pids) in expected.items():

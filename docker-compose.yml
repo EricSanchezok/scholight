@@ -8,8 +8,8 @@
 # do not route /livez or /readyz publicly. If proxy headers are enabled, set the
 # exact proxy IP/subnet in SCHOLIGHT_FORWARDED_ALLOW_IPS; never use '*'.
 #
-# Start the API and native ingestion services:
-#   docker compose --env-file .env up -d api
+# Start the API, optional Web Extract, and native ingestion services:
+#   docker compose --env-file .env up -d api extract
 #   docker compose --env-file .env up -d metadata-sync paper-ingest
 
 x-image: &scholight-image
@@ -92,10 +92,8 @@ services:
       - "${SCHOLIGHT_BIND_ADDRESS:-127.0.0.1}:${SCHOLIGHT_HOST_PORT:-8000}:8000"
     restart: unless-stopped
     networks:
-      - scholight
-    depends_on:
-      extract:
-        condition: service_healthy
+      scholight:
+      extract-control:
 
   extract:
     image: ${SCHOLIGHT_EXTRACT_IMAGE:-scholight-extract:0.1.0}
@@ -112,7 +110,8 @@ services:
     expose:
       - "8001"
     networks:
-      - scholight
+      extract-control:
+      extract-egress:
     restart: unless-stopped
     read_only: true
     tmpfs:
@@ -121,6 +120,9 @@ services:
     security_opt:
       - no-new-privileges:true
     shm_size: 512m
+    mem_limit: 1536m
+    memswap_limit: 1536m
+    cpus: 1.0
     pids_limit: 256
 
   migrate:
@@ -200,3 +202,7 @@ networks:
     ipam:
       config:
         - subnet: 172.30.0.0/24
+  extract-control:
+    internal: true
+  extract-egress:
+    internal: false

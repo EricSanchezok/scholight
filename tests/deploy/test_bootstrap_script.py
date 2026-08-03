@@ -51,7 +51,6 @@ def runtime_contents() -> str:
             "SCHOLIGHT_CADDY_IP=172.31.0.2",
             "SCHOLIGHT_FRONTEND_IP=172.31.0.10",
             "SCHOLIGHT_API_IP=172.31.0.20",
-            "SCHOLIGHT_EXTRACT_IP=172.31.0.25",
             "SCHOLIGHT_METADATA_SYNC_IP=172.31.0.30",
             "SCHOLIGHT_PAPER_INGEST_IP=172.31.0.40",
             "SCHOLIGHT_SURVEY_ENABLED=false",

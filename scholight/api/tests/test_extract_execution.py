@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
+import httpx
 import pytest
 from sanchezcloud_identity.models.user import UserRecord
 
@@ -105,3 +106,17 @@ async def test_extract_requires_authenticated_tool_identity() -> None:
             ExtractRequest.model_validate({"url": "https://example.com"}),
             ExtractInvocation(actor=None, request_id="request-1", transport="mcp"),
         )
+
+
+@pytest.mark.asyncio
+async def test_extract_sidecar_failure_is_a_retryable_service_error() -> None:
+    request = ExtractRequest.model_validate({"url": "https://example.com"})
+    invocation = ExtractInvocation(actor=_actor(), request_id="request-1", transport="rest")
+
+    with patch("httpx.AsyncClient.post", AsyncMock(side_effect=httpx.ConnectError("offline"))):
+        with pytest.raises(PublicExtractError) as exc_info:
+            await execute_public_extract(request, invocation)
+
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.code == "extract_service_unavailable"
+    assert exc_info.value.retryable is True

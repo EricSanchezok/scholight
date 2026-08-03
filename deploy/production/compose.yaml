@@ -166,14 +166,12 @@ services:
       SCHOLIGHT_ALIYUN_DM_REPLY_TO_ADDRESS: ${SCHOLIGHT_ALIYUN_DM_REPLY_TO_ADDRESS:-true}
     expose:
       - "8000"
-    depends_on:
-      extract:
-        condition: service_healthy
     networks:
       scholight:
         aliases:
           - api
         ipv4_address: ${SCHOLIGHT_API_IP:?SCHOLIGHT_API_IP is required}
+      extract-control:
     restart: unless-stopped
     mem_limit: 1024m
     memswap_limit: 1024m
@@ -198,8 +196,8 @@ services:
     expose:
       - "8001"
     networks:
-      scholight:
-        ipv4_address: ${SCHOLIGHT_EXTRACT_IP:?SCHOLIGHT_EXTRACT_IP is required}
+      extract-control:
+      extract-egress:
     restart: unless-stopped
     read_only: true
     tmpfs:
@@ -358,3 +356,7 @@ networks:
     ipam:
       config:
         - subnet: ${SCHOLIGHT_DOCKER_SUBNET:?SCHOLIGHT_DOCKER_SUBNET is required}
+  extract-control:
+    internal: true
+  extract-egress:
+    internal: false
