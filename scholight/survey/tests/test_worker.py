@@ -29,6 +29,7 @@ from scholight.survey.worker import (
     process_survey_job,
     serve_survey_worker,
 )
+from scholight.survey.workflow_resources import WorkflowResourceError
 
 
 def test_worker_expects_pinned_rcm_release() -> None:
@@ -108,6 +109,31 @@ class _CompletedProcess:
 
     async def wait(self) -> int:
         return self.returncode
+
+
+@pytest.mark.asyncio
+async def test_missing_workflow_resources_fail_before_process_start(tmp_path: Path) -> None:
+    create_process = AsyncMock()
+    with (
+        patch(
+            "scholight.survey.worker.stage_workflow_schema",
+            side_effect=WorkflowResourceError("missing schema"),
+        ),
+        patch(
+            "scholight.survey.worker.asyncio.create_subprocess_exec",
+            create_process,
+        ),
+    ):
+        result = await execute_survey(
+            _job(job_id=uuid4(), worker_id=uuid4(), status="running"),
+            tmp_path,
+        )
+
+    assert result.error_code == "survey_workflow_resources_unavailable"
+    assert result.termination_reason == "workflow_resources_unavailable"
+    assert result.diagnostics is not None
+    assert result.diagnostics["last_event"]["type"] == "run.finished"
+    create_process.assert_not_awaited()
 
 
 def _write_complete_workflow_artifacts(run_root: Path) -> None:

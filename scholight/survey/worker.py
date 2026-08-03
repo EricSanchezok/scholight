@@ -45,6 +45,7 @@ from scholight.survey.process import (
 )
 from scholight.survey.progress import stage_for_component
 from scholight.survey.runtime import survey_environment
+from scholight.survey.workflow_resources import WorkflowResourceError, stage_workflow_schema
 
 logger = structlog.get_logger(__name__)
 
@@ -428,6 +429,41 @@ async def execute_survey(
         component="survey_pipeline",
         rcm_version=RCM_VERSION,
         workflow_version=WORKFLOW_VERSION,
+    )
+    try:
+        workflow_resources = stage_workflow_schema(run_root)
+    except WorkflowResourceError as exc:
+        diagnostics.record(
+            "workflow.resources_failed",
+            status="failed",
+            error_type=type(exc).__name__,
+        )
+        diagnostic_summary = _finish_diagnostics(
+            diagnostics,
+            outcome="failed",
+            return_code=None,
+            termination_reason="workflow_resources_unavailable",
+            audit_contract=False,
+        )
+        logger.error(
+            "survey_workflow_resources_unavailable",
+            job_id=str(job.id),
+            error_type=type(exc).__name__,
+        )
+        return SurveyExecutionResult(
+            outcome="failed",
+            error_code="survey_workflow_resources_unavailable",
+            error_message="Survey workflow resources are unavailable.",
+            started_at=started_at,
+            finished_at=datetime.now(UTC),
+            return_code=None,
+            termination_reason="workflow_resources_unavailable",
+            diagnostics=diagnostic_summary,
+        )
+    diagnostics.record(
+        "workflow.resources_staged",
+        status="completed",
+        resource_count=len(workflow_resources),
     )
     try:
         process = await asyncio.create_subprocess_exec(
