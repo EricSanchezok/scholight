@@ -120,9 +120,13 @@ async def test_browser_enforces_origin_and_method_boundaries() -> None:
                   catch (_error) {{}}
                   const serviceWorker = (await navigator.serviceWorker.getRegistrations()).length === 0
                     ? 'blocked' : 'failed';
-                  let webSocket = 'pending';
-                  const socket = new WebSocket('ws://127.0.0.1:9/socket');
-                  socket.onclose = () => {{ webSocket = 'blocked'; }};
+                  const webSocket = await new Promise(resolve => {{
+                    const socket = new WebSocket('ws://127.0.0.1:9/socket');
+                    const blocked = () => resolve('blocked');
+                    socket.onclose = blocked;
+                    socket.onerror = blocked;
+                    setTimeout(() => resolve('pending'), 2000);
+                  }});
                   const popup = window.open('/popup');
                   await new Promise(resolve => setTimeout(resolve, 250));
                   document.querySelector('#result').textContent = JSON.stringify({{
