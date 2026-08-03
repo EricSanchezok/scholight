@@ -21,11 +21,16 @@ DIAGNOSTICS_FILE = "diagnostics.json"
 _MAX_STRING_LENGTH = 2_048
 _MAX_QUERY_LENGTH = 500
 _MAX_COLLECTION_ITEMS = 64
+_MAX_EXPECTED_OUTPUTS = 1_024
+_MAX_PLAN_BYTES = 1_048_576
+_MAX_CARD_PLAN_ITEMS = 100
+_MAX_SECTION_PLAN_ITEMS = 128
 _SECRET_KEY = re.compile(r"(?i)(authorization|api[_-]?key|token|secret|password|jwt)")
 _SECRET_VALUE = re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._~-]+|sk_(?:live|test)_[A-Za-z0-9._~-]+")
 _ABSOLUTE_PATH = re.compile(r"(?<![A-Za-z0-9._~-])/(?:[^\s:'\"]+/)+[^\s:'\"]+")
 _SAFE_ARXIV_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 _SAFE_SECTION_PART = re.compile(r"^[A-Za-z0-9-]{1,64}$")
+_SAFE_SECTION_NUMBER = re.compile(r"^\d{2}$")
 _SECTION_FILE = re.compile(r"^(\d+)_.*\.md$")
 _REPORT_SECTION_HEADING = re.compile(r"^##\s+0*(\d+)(?:\s*[.:—-]\s*|\s+)")
 _REPORT_REFERENCES_HEADING = re.compile(
@@ -59,6 +64,7 @@ ARTIFACT_CONTRACTS = (
     ArtifactContract("expansion_merger", required=("03_expansion.md",)),
     ArtifactContract("expansion", required=("03_expansion.md",)),
     ArtifactContract("rank_pool", required=("04_ranked_pool.md",)),
+    ArtifactContract("card_plan", required=("00_card_plan.json",)),
     ArtifactContract("research_map", required=("05_research_map.md",)),
     ArtifactContract("coverage_judge", required=("06a_coverage_judge.md",)),
     ArtifactContract("scope_judge", required=("06b_scope_judge.md",)),
@@ -67,10 +73,14 @@ ARTIFACT_CONTRACTS = (
     ArtifactContract("judge_synthesizer", required=("06_judge_panel.md",)),
     ArtifactContract("judge_panel", required=("06_judge_panel.md",)),
     ArtifactContract("image_planner", optional=("08_global_picture.png",)),
-    ArtifactContract("survey_outline", required=("00_outline.md",)),
+    ArtifactContract("survey_outline", required=("00_outline.md", "00_sections.json")),
     ArtifactContract("survey_assembler", required=("08_survey.md", "index.md")),
 )
 _CONTRACT_BY_COMPONENT = {contract.component: contract for contract in ARTIFACT_CONTRACTS}
+_DURABLE_PLANS = {
+    "00_card_plan.json": ("card_plan", "spawn_PaperCard"),
+    "00_sections.json": ("survey_outline", "spawn_SectionExpander"),
+}
 _MILESTONE_COMPONENTS = (
     "anchor",
     "query_plan",
@@ -384,7 +394,7 @@ class SurveyDiagnostics:
         if not isinstance(raw_items, list):
             return
         normalized = tool.casefold()
-        for raw_item in raw_items[:_MAX_COLLECTION_ITEMS]:
+        for raw_item in raw_items[:_MAX_EXPECTED_OUTPUTS]:
             if not isinstance(raw_item, dict):
                 continue
             if normalized == "spawn_papercard":
@@ -396,6 +406,76 @@ class SurveyDiagnostics:
                 slug = str(raw_item.get("slug", ""))
                 if _SAFE_SECTION_PART.fullmatch(number) and _SAFE_SECTION_PART.fullmatch(slug):
                     self._dynamic_required[f"sections/{number}_{slug}.md"] = "section_expander"
+
+    def _read_durable_plan(self, relative_path: str) -> list[dict[str, object]] | None:
+        candidate = self.run_root / relative_path
+        if not _valid_artifact(self.run_root, relative_path):
+            return None
+        try:
+            candidate_stat = candidate.lstat()
+            if candidate_stat.st_size > _MAX_PLAN_BYTES:
+                return None
+            payload = json.loads(candidate.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            return None
+        max_items = (
+            _MAX_CARD_PLAN_ITEMS
+            if relative_path == "00_card_plan.json"
+            else _MAX_SECTION_PLAN_ITEMS
+        )
+        if not isinstance(payload, list) or len(payload) > max_items:
+            return None
+
+        validated: list[dict[str, object]] = []
+        outputs: set[str] = set()
+        for raw_item in payload:
+            if not isinstance(raw_item, dict) or raw_item.get("run_dir") != ".":
+                return None
+            if relative_path == "00_card_plan.json":
+                paper_id = raw_item.get("id")
+                if not isinstance(paper_id, str) or not _SAFE_ARXIV_ID.fullmatch(paper_id):
+                    return None
+                if not all(
+                    isinstance(raw_item.get(field), str) and bool(raw_item[field].strip())
+                    for field in ("title", "why")
+                ):
+                    return None
+                output = f"cards/{paper_id}.md"
+            else:
+                number = raw_item.get("n")
+                slug = raw_item.get("slug")
+                card_ids = raw_item.get("card_ids")
+                if (
+                    not isinstance(number, str)
+                    or not _SAFE_SECTION_NUMBER.fullmatch(number)
+                    or not isinstance(slug, str)
+                    or not _SAFE_SECTION_PART.fullmatch(slug)
+                    or not all(
+                        isinstance(raw_item.get(field), str) and bool(raw_item[field].strip())
+                        for field in ("title", "thesis")
+                    )
+                    or not isinstance(raw_item.get("transfer_angle"), str)
+                    or not isinstance(card_ids, list)
+                    or not all(
+                        isinstance(card_id, str) and _SAFE_ARXIV_ID.fullmatch(card_id)
+                        for card_id in card_ids
+                    )
+                ):
+                    return None
+                output = f"sections/{number}_{slug}.md"
+            if output in outputs:
+                return None
+            outputs.add(output)
+            validated.append(raw_item)
+        return validated
+
+    def _register_durable_plan(self, relative_path: str) -> bool:
+        items = self._read_durable_plan(relative_path)
+        if items is None:
+            return False
+        _component, spawn_tool = _DURABLE_PLANS[relative_path]
+        self._register_spawn_outputs(spawn_tool, {"items": items})
+        return True
 
     def tool_event(
         self,
@@ -443,7 +523,9 @@ class SurveyDiagnostics:
             )
 
     def observe_artifacts(self) -> None:
-        """Record newly visible declared and dynamic artifacts without reading their contents."""
+        """Record artifacts and recover expectations without retaining their contents."""
+        for relative_path in _DURABLE_PLANS:
+            self._register_durable_plan(relative_path)
         paths = {
             relative_path
             for contract in ARTIFACT_CONTRACTS
@@ -530,6 +612,16 @@ class SurveyDiagnostics:
     def finalize_contract_audit(self) -> None:
         """Take a final diagnostic snapshot after the existing workflow has stopped."""
         self.observe_artifacts()
+        for relative_path, (component, _spawn_tool) in _DURABLE_PLANS.items():
+            if _valid_artifact(self.run_root, relative_path) and not self._register_durable_plan(
+                relative_path
+            ):
+                self._record_anomaly(
+                    component=component,
+                    expected_artifact=relative_path,
+                    kind="plan_artifact_invalid",
+                    severity="error",
+                )
         for component in _MILESTONE_COMPONENTS:
             contract = _CONTRACT_BY_COMPONENT[component]
             if contract.required and all(

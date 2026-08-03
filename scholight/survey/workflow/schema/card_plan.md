@@ -9,10 +9,11 @@ It is the budget gate between the ranked pool and full-text reading.
   Reading full text is the expensive step, so this caps cost. Tune the budget
   here, in the contract — not by editing the prompt text.
 
-## Output
+## Durable output
 
-The planner writes a JSON array to `run_dir/00_card_plan.json` (consumed by the
-`paper_cards` map), one element per selected paper:
+Before dispatching workers, the planner writes a JSON array to
+`run_dir/00_card_plan.json`, one element per selected paper. The spawn call uses
+the same entries; the file preserves expectations across retries and recovery:
 
 - `run_dir`: the run directory, verbatim, in every element.
 - `id`: the paper's arXiv id — must exist in the ranked pool; never invented.

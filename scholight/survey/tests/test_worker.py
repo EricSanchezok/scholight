@@ -142,7 +142,8 @@ def _write_complete_workflow_artifacts(run_root: Path) -> None:
     }:
         path = run_root / relative_path
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("observed", encoding="utf-8")
+        content = "[]" if path.suffix == ".json" else "observed"
+        path.write_text(content, encoding="utf-8")
     sections = run_root / "sections"
     sections.mkdir(exist_ok=True)
     (sections / "01_introduction.md").write_text("## 1. Introduction", encoding="utf-8")

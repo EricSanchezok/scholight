@@ -1,14 +1,16 @@
 # Section Contract
 
 The survey is built **section by section**: an outline node emits a JSON list of
-section specs, a `map` expands each section into its own file, and an assembler
-stitches them into the final survey. This keeps each writing step's context small
-while letting every section go deep.
+section specs, parallel workers expand each section into its own file, and an
+assembler stitches them into the final survey. This keeps each writing step's
+context small while letting every section go deep.
 
 ## Section spec (outline → expansion)
 
-The outline writes a **JSON array to `run_dir/00_sections.json`**, one element per
-section, in the order they should appear. Each element:
+Before dispatching workers, the outline writes a **JSON array to
+`run_dir/00_sections.json`**, one element per section in final order. The spawn
+call uses the same entries; the file preserves expectations across retries and
+recovery. Each element:
 
 - `run_dir`: the run directory, repeated verbatim in every element.
 - `n`: two-digit order string, e.g. `"01"` — controls file name and final order.

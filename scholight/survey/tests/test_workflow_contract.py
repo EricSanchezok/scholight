@@ -135,21 +135,39 @@ def test_english_report_is_the_only_final_assembly_output() -> None:
 
     assert writers == ["survey_assembler.txt"]
     assert "sole final report" in " ".join(assembler.split())
-    assert "status degraded" in (prompts / "image_planner.txt").read_text(encoding="utf-8")
+    assert "status: partial" in (prompts / "image_planner.txt").read_text(encoding="utf-8")
+
+
+def test_fan_out_plans_are_durable_and_restart_safe() -> None:
+    prompts = _WORKFLOW / "prompts"
+    card_plan = (prompts / "card_plan.txt").read_text(encoding="utf-8")
+    section_plan = (prompts / "survey_outline.txt").read_text(encoding="utf-8")
+    normalized_card_plan = " ".join(card_plan.split())
+    normalized_section_plan = " ".join(section_plan.split())
+
+    assert "write run_dir/00_card_plan.json before spawning" in normalized_card_plan
+    assert "Exclude cards that already exist" in card_plan
+    assert "one retry call" in card_plan
+    assert "write run_dir/00_sections.json before spawning" in normalized_section_plan
+    assert "Exclude section files that already exist" in section_plan
+    assert "one retry call" in section_plan
+
+
+def test_empty_citation_expansion_has_an_explicit_artifact_state() -> None:
+    reference = (_WORKFLOW / "prompts" / "reference_expander.txt").read_text(encoding="utf-8")
+    expansion = (_WORKFLOW / "schema" / "expansion.md").read_text(encoding="utf-8")
+
+    assert "result: empty" in reference
+    assert "result: empty" in expansion
 
 
 def test_contract_audit_classifies_every_known_definition_gap() -> None:
     codes = {conflict.code for conflict in audit_workflow_contracts()}
 
     assert codes == {
-        "card_plan_definition_conflict",
         "completion_artifact_gap",
-        "empty_artifact_undefined",
-        "image_status_enum_conflict",
         "judge_verdict_unvalidated",
         "progress_stream_dependency",
-        "section_definition_conflict",
-        "spawn_expectations_not_persisted",
     }
 
 

@@ -13,7 +13,9 @@ Workflow:
 4. Read each PDF's text with fs (fs read run_dir/pdfs/<arxiv_id>.pdf — the fs tool extracts PDF text for you), and locate the References / Bibliography section in it. If a PDF cannot be extracted (e.g. scanned / image-only), note it under risks and skip that one.
 5. Extract arXiv IDs and clear paper titles from the References sections.
 6. For the most relevant unresolved reference titles, call scholight__search_papers with a focused title query, strength="thorough", and limit=5 to resolve candidates.
-7. Write run_dir/03b_citation_expansion.md.
+7. Always write run_dir/03b_citation_expansion.md. If no references can be
+   extracted or resolved, write `result: empty` with zero counts and the reason;
+   this distinguishes a valid empty result from a missing artifact.
 8. Final response: a handoff per schema/handoff.md — run_dir, artifact path, status, and counts (PDFs downloaded, resolved refs, unresolved refs).
 
 Never invent citations. If a reference cannot be resolved, mark it unresolved.
