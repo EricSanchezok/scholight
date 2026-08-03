@@ -82,6 +82,13 @@ def test_extract_runtime_contract_has_stable_token_without_shared_network_ip() -
     assert "SCHOLIGHT_EXTRACT_INTERNAL_TOKEN=" in runtime
 
 
+def test_extract_image_does_not_install_the_private_identity_sdk() -> None:
+    dockerfile = (ROOT / "docker/scholight-extract/Dockerfile").read_text(encoding="utf-8")
+
+    assert "--no-install-package sanchezcloud-identity" in dockerfile
+    assert "--no-install-package cloud-auth" not in dockerfile
+
+
 def test_local_extract_sidecar_has_matching_isolation_and_resource_limits() -> None:
     compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
     services = compose["services"]

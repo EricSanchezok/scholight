@@ -10,7 +10,7 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY pyproject.toml uv.lock /app/
-RUN uv sync --frozen --no-dev --no-install-project --no-install-package cloud-auth
+RUN uv sync --frozen --no-dev --no-install-project --no-install-package sanchezcloud-identity
 
 COPY scholight/ /app/scholight/
 RUN uv pip install --no-deps /app
