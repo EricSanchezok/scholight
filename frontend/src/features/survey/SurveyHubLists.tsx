@@ -10,7 +10,12 @@ import { formatDurationBetween, formatRelativeTime, formatReportDate } from "../
 import type { AppLocale } from "../../i18n/I18nProvider";
 import { styles } from "../../styles/classes";
 import { SurveyMarkdown } from "./SurveyMarkdown";
-import { queueDescription, runningDescription, surveyStageLabel } from "./survey";
+import {
+  queueDescription,
+  runningDescription,
+  runningGuidance,
+  surveyStageLabel,
+} from "./survey";
 
 const REPORT_PREVIEW_CHARACTER_LIMIT = 2400;
 
@@ -57,6 +62,9 @@ export function ActiveSurveyList({
               <div className={styles.surveyIdentity}>
                 <h2>{survey.title}</h2>
                 <p>{metadata}</p>
+                {isRunning && (
+                  <p className={styles.surveyRunningGuidance}>{runningGuidance(progress)}</p>
+                )}
               </div>
               <div className={styles.surveyRowActions}>
                 {isDraft ? (
@@ -68,7 +76,6 @@ export function ActiveSurveyList({
                     {surveyStageLabel(progress.stage).toUpperCase()}
                   </span>
                 )}
-                {isRunning && <strong>{progress.percent}%</strong>}
                 <button type="button" onClick={() => onCancel(survey)}>
                   Cancel
                 </button>
@@ -80,10 +87,15 @@ export function ActiveSurveyList({
                 role="progressbar"
                 aria-label={`${surveyStageLabel(progress.stage)} progress`}
                 aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={progress.percent}
+                aria-valuemax={progress.total_steps}
+                aria-valuenow={progress.step}
+                aria-valuetext={`Stage ${progress.step} of ${progress.total_steps}: ${surveyStageLabel(progress.stage)}`}
               >
-                <span style={{ width: `${progress.percent}%` }} />
+                <span
+                  style={{
+                    width: `${progress.total_steps > 0 ? (progress.step / progress.total_steps) * 100 : 0}%`,
+                  }}
+                />
               </div>
             )}
           </article>

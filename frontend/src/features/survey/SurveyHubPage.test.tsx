@@ -77,6 +77,31 @@ const completedSurvey: SurveySummary = {
   artifacts_available: true,
 };
 
+function runningSurvey(): SurveySummary {
+  const now = new Date().toISOString();
+  return {
+    ...completedSurvey,
+    status: "running",
+    updated_at: now,
+    started_at: "2026-08-03T06:00:00Z",
+    finished_at: null,
+    progress: {
+      ...completedSurvey.progress,
+      status: "running",
+      stage: "reviewing_evidence",
+      percent: 62,
+      step: 5,
+      total_steps: 8,
+      elapsed_seconds: 3 * 60 * 60,
+      started_at: "2026-08-03T06:00:00Z",
+      finished_at: null,
+      last_activity_at: now,
+    },
+    report_available: false,
+    artifacts_available: false,
+  };
+}
+
 function renderHub(auth: AuthContextValue = anonymous) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -125,6 +150,22 @@ describe("SurveyHubPage", () => {
     expect(start).toBeEnabled();
     await user.click(start);
     expect(screen.getByText("Describe the research survey you want to run.")).toBeVisible();
+  });
+
+  it("sets expectations for a long-running survey without presenting a time estimate", async () => {
+    vi.mocked(surveyApi.list).mockResolvedValue({ ...emptyList, items: [runningSurvey()] });
+
+    renderHub(authenticated);
+
+    expect(
+      await screen.findByText(
+        "You can leave this page. Your survey will continue in the background.",
+      ),
+    ).toBeVisible();
+    expect(screen.getByText(/Stage 5 of 8/)).toBeVisible();
+    expect(screen.queryByText("62%")).not.toBeInTheDocument();
+    expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "5");
+    expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuemax", "8");
   });
 
   it("defaults to completed history when no surveys are running", async () => {

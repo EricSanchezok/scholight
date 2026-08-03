@@ -149,6 +149,11 @@ describe("SurveyDraftPage", () => {
     await screen.findByRole("heading", { name: "Draft history" });
 
     await user.click(screen.getByRole("button", { name: "Approve & start" }));
+    expect(
+      screen.getByText(
+        "A full survey usually takes 3–6 hours. It will continue running if you close this page.",
+      ),
+    ).toBeInTheDocument();
     const notification = screen.getByRole("checkbox", {
       name: "Email me when this survey finishes",
     });
