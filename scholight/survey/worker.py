@@ -34,6 +34,8 @@ from scholight.survey.artifacts import SurveyArtifactStore
 from scholight.survey.cleanup_worker import serve_artifact_cleanup
 from scholight.survey.contracts import SurveyLeaseLostError
 from scholight.survey.diagnostics import SurveyDiagnostics
+from scholight.survey.email_notifications import AliyunSurveyEmailSender
+from scholight.survey.notification_worker import serve_email_notifications
 from scholight.survey.process import (
     ProcessControl,
     classify_rcm_error,
@@ -898,6 +900,14 @@ async def serve_survey_worker() -> None:
     )
     active: set[asyncio.Task[None]] = set()
     cleanup_supervisor = asyncio.create_task(serve_artifact_cleanup())
+    email_sender = AliyunSurveyEmailSender(
+        access_key_id=settings.aliyun_dm_access_key_id,
+        access_key_secret=settings.aliyun_dm_access_key_secret,
+        account_name=settings.aliyun_dm_account_name,
+        from_alias=settings.aliyun_dm_from_alias,
+        reply_to_address=settings.aliyun_dm_reply_to_address,
+    )
+    email_supervisor = asyncio.create_task(serve_email_notifications(email_sender))
     last_recovery = 0.0
     logger.info(
         "survey_supervisor_started",
@@ -918,6 +928,14 @@ async def serve_survey_worker() -> None:
                 except Exception:
                     logger.exception("survey_cleanup_supervisor_restarted")
                 cleanup_supervisor = asyncio.create_task(serve_artifact_cleanup())
+            if email_supervisor.done():
+                try:
+                    email_supervisor.result()
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.exception("survey_email_notification_supervisor_restarted")
+                email_supervisor = asyncio.create_task(serve_email_notifications(email_sender))
             now = time.monotonic()
             if now - last_recovery >= _RECOVERY_SECONDS:
                 try:
@@ -952,9 +970,15 @@ async def serve_survey_worker() -> None:
                 await asyncio.sleep(_IDLE_SECONDS)
     finally:
         cleanup_supervisor.cancel()
+        email_supervisor.cancel()
         for task in active:
             task.cancel()
-        await asyncio.gather(cleanup_supervisor, *active, return_exceptions=True)
+        await asyncio.gather(
+            cleanup_supervisor,
+            email_supervisor,
+            *active,
+            return_exceptions=True,
+        )
         logger.info("survey_supervisor_stopped")
 
 

@@ -24,6 +24,7 @@ from scholight.config import (
 from scholight.db.client import close_pool, create_pool, get_pool
 from scholight.db.queries_survey import get_survey_job_counts
 from scholight.db.queries_survey_cleanup import get_artifact_cleanup_status
+from scholight.db.queries_survey_notifications import get_email_notification_status
 from scholight.logging import configure_logging
 from scholight.survey.process import classify_rcm_error
 from scholight.survey.worker import RCM_VERSION, serve_survey_worker
@@ -67,11 +68,13 @@ def _verify_diagnostic_workspace(data_root: Path) -> None:
 async def _verify_survey_runtime_schema() -> None:
     """Probe the current Survey schema through application-visible columns."""
     await get_pool().fetch(
-        "SELECT surveys.title, drafts.request_hash, jobs.cancel_requested_at, cleanup.status "
+        "SELECT surveys.title, surveys.notify_on_completion, drafts.request_hash, "
+        "jobs.cancel_requested_at, cleanup.status, notifications.status "
         "FROM scholight.surveys AS surveys "
         "CROSS JOIN scholight.survey_drafts AS drafts "
         "CROSS JOIN scholight.survey_jobs AS jobs "
-        "CROSS JOIN scholight.survey_artifact_cleanup_outbox AS cleanup LIMIT 0"
+        "CROSS JOIN scholight.survey_artifact_cleanup_outbox AS cleanup "
+        "CROSS JOIN scholight.survey_email_notifications AS notifications LIMIT 0"
     )
 
 
@@ -131,6 +134,7 @@ def status(json_output: bool) -> None:
         try:
             jobs = await get_survey_job_counts()
             cleanup = await get_artifact_cleanup_status()
+            email = await get_email_notification_status()
             oldest_age = (
                 max(0, int((datetime.now(UTC) - cleanup.oldest_waiting_at).total_seconds()))
                 if cleanup.oldest_waiting_at is not None
@@ -146,6 +150,21 @@ def status(json_output: bool) -> None:
                     "succeeded": cleanup.succeeded,
                     "dead": cleanup.dead,
                     "oldest_waiting_seconds": oldest_age,
+                },
+                "email_notifications": {
+                    "pending": email.pending,
+                    "running": email.running,
+                    "retry": email.retry,
+                    "succeeded": email.succeeded,
+                    "dead": email.dead,
+                    "oldest_waiting_seconds": (
+                        max(
+                            0,
+                            int((datetime.now(UTC) - email.oldest_waiting_at).total_seconds()),
+                        )
+                        if email.oldest_waiting_at is not None
+                        else None
+                    ),
                 },
                 "concurrency": {
                     "draft": settings.survey_draft_concurrency,

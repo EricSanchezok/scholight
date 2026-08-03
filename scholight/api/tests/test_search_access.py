@@ -13,6 +13,7 @@ from scholight.config import (
     settings,
     validate_api_runtime_settings,
     validate_survey_draft_worker_settings,
+    validate_survey_worker_settings,
 )
 
 
@@ -222,3 +223,18 @@ def test_draft_worker_does_not_require_artifact_or_image_credentials(
     monkeypatch.setattr(settings, "image_gen_api_key", "")
 
     validate_survey_draft_worker_settings()
+
+
+def test_survey_worker_requires_directmail_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "survey_enabled", True)
+    monkeypatch.setattr(settings, "survey_mcp_jwt_secret", "s" * 32)
+    monkeypatch.setattr(settings, "deepseek_api_key", "deepseek-secret")
+    monkeypatch.setattr(settings, "survey_s3_bucket", "survey-artifacts")
+    monkeypatch.setattr(settings, "aliyun_dm_access_key_id", "")
+    monkeypatch.setattr(settings, "aliyun_dm_access_key_secret", "secret")
+    monkeypatch.setattr(settings, "aliyun_dm_account_name", "notifications@example.com")
+
+    with pytest.raises(ValueError, match="SCHOLIGHT_ALIYUN_DM_ACCESS_KEY_ID"):
+        validate_survey_worker_settings()

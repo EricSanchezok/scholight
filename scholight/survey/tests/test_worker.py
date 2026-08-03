@@ -823,6 +823,9 @@ async def test_survey_supervisor_keeps_execution_bounded(
     async def _cleanup() -> None:
         await asyncio.Event().wait()
 
+    async def _email_notifications(_sender: object) -> None:
+        await asyncio.Event().wait()
+
     with (
         patch("scholight.survey.worker.claim_survey_job", side_effect=_claim),
         patch("scholight.survey.worker._run_claimed_job", side_effect=_run),
@@ -831,6 +834,11 @@ async def test_survey_supervisor_keeps_execution_bounded(
             new_callable=AsyncMock,
         ),
         patch("scholight.survey.worker.serve_artifact_cleanup", side_effect=_cleanup),
+        patch(
+            "scholight.survey.worker.serve_email_notifications",
+            side_effect=_email_notifications,
+        ),
+        patch("scholight.survey.worker.AliyunSurveyEmailSender"),
         patch("scholight.survey.worker.SurveyArtifactStore"),
         patch("scholight.survey.worker._IDLE_SECONDS", 0.001),
     ):

@@ -150,5 +150,11 @@ def test_smoke_runtime_schema_probe_checks_latest_survey_columns() -> None:
 
     assert all(
         column in query
-        for column in ("surveys.title", "drafts.request_hash", "jobs.cancel_requested_at")
+        for column in (
+            "surveys.title",
+            "surveys.notify_on_completion",
+            "drafts.request_hash",
+            "jobs.cancel_requested_at",
+            "notifications.status",
+        )
     )

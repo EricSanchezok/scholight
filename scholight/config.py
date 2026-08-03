@@ -241,6 +241,12 @@ def validate_survey_worker_settings() -> None:
         raise ValueError("SCHOLIGHT_SURVEY_MCP_JWT_SECRET must contain at least 32 UTF-8 bytes")
     if not settings.survey_s3_bucket.strip():
         raise ValueError("SCHOLIGHT_SURVEY_S3_BUCKET is required by the Survey worker")
+    if not settings.aliyun_dm_access_key_id.strip():
+        raise ValueError("SCHOLIGHT_ALIYUN_DM_ACCESS_KEY_ID is required by the Survey worker")
+    if not settings.aliyun_dm_access_key_secret.strip():
+        raise ValueError("SCHOLIGHT_ALIYUN_DM_ACCESS_KEY_SECRET is required by the Survey worker")
+    if not settings.aliyun_dm_account_name.strip():
+        raise ValueError("SCHOLIGHT_ALIYUN_DM_ACCOUNT_NAME is required by the Survey worker")
 
 
 def validate_survey_draft_worker_settings() -> None:
