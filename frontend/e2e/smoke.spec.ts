@@ -318,6 +318,7 @@ test("anonymous survey hub prompts for sign-in without hiding the public shell",
   await page.getByRole("textbox", { name: "Describe the survey you want to start" }).focus();
   await expect(page.getByRole("dialog")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Sign in to start a survey" })).toBeVisible();
+  await settleMotion(page);
 
   const pageWidth = await page.locator("html").evaluate((element) => ({
     client: element.clientWidth,
