@@ -364,6 +364,41 @@ Resources:
       TreatMissingData: notBreaching
       AlarmActions: [!Ref AlertTopic]
 
+  SurveyEmailDeadAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: Scholight-Survey-Email-Dead-Letter
+      Namespace: Scholight/Production
+      MetricName: SurveyEmailNotificationDead
+      Dimensions:
+        - Name: service
+          Value: survey-worker
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+  SurveyEmailBacklogAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: Scholight-Survey-Email-Backlog
+      Namespace: Scholight/Production
+      MetricName: SurveyEmailNotificationOldestAge
+      Dimensions:
+        - Name: service
+          Value: survey-worker
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+      Threshold: 900
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
   Dashboard:
     Type: AWS::CloudWatch::Dashboard
     Properties:
@@ -508,6 +543,23 @@ Resources:
                   [".", "SurveyToolFailure", ".", ".", {"stat": "Sum"}],
                   [".", "SurveyDiagnosticsWriteFailure", ".", ".", {"stat": "Sum"}],
                   [".", "SurveyLastActivityAge", ".", ".", {"stat": "Maximum", "yAxis": "right"}]
+                ],
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0, "y": 30, "width": 24, "height": 6,
+              "properties": {
+                "region": "${AWS::Region}",
+                "title": "Survey email delivery",
+                "metrics": [
+                  ["Scholight/Production", "SurveyEmailNotificationPending", "service", "survey-worker", {"stat": "Maximum"}],
+                  [".", "SurveyEmailNotificationDead", ".", ".", {"stat": "Maximum"}],
+                  [".", "SurveyEmailNotificationOldestAge", ".", ".", {"stat": "Maximum", "yAxis": "right"}],
+                  [".", "SurveyEmailNotificationCount", ".", ".", "outcome", "sent", {"stat": "Sum"}],
+                  [".", ".", ".", ".", ".", "retry", {"stat": "Sum"}],
+                  [".", ".", ".", ".", ".", "dead", {"stat": "Sum"}]
                 ],
                 "period": 300
               }

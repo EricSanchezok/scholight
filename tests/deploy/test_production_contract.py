@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -580,6 +581,8 @@ def test_observability_template_has_bounded_retention_and_required_alarms() -> N
         "SurveyRuntimeFailureAlarm",
         "SurveyDiagnosticsFailureAlarm",
         "SurveyStalledAlarm",
+        "SurveyEmailDeadAlarm",
+        "SurveyEmailBacklogAlarm",
         "Proxy502Metric",
         "Proxy504Metric",
         "ProxyConnectionResetMetric",
@@ -589,6 +592,8 @@ def test_observability_template_has_bounded_retention_and_required_alarms() -> N
     assert "CapacityAlarm" not in resources
 
     dashboard = resources["Dashboard"]["Properties"]["DashboardBody"]["Sub"]
+    parsed_dashboard = json.loads(dashboard)
+    assert isinstance(parsed_dashboard["widgets"], list)
     assert "Search in-flight and throughput" in dashboard
     assert "Search stage latency p95" in dashboard
     assert "HTTPX and thread-pool wait p95" in dashboard
@@ -596,6 +601,7 @@ def test_observability_template_has_bounded_retention_and_required_alarms() -> N
     assert "Background analytics queues" in dashboard
     assert "Survey outcomes and duration" in dashboard
     assert "Survey failures and activity" in dashboard
+    assert "Survey email delivery" in dashboard
     assert (
         resources["HostOomMetric"]["Properties"]["FilterPattern"]
         == '?"Out of memory" ?"Killed process" ?"oom-kill"'
@@ -608,6 +614,23 @@ def test_survey_smoke_checks_diagnostics_and_contract_audit() -> None:
     assert "_verify_diagnostic_workspace" in source
     assert '"diagnostics_writable": True' in source
     assert '"workflow_contract": workflow_audit_payload()' in source
+
+
+def test_survey_email_delivery_has_profile_safe_config_and_smoke_visibility() -> None:
+    compose = yaml.safe_load((PRODUCTION / "compose.yaml").read_text(encoding="utf-8"))
+    survey_environment = compose["x-survey-environment"]
+    smoke = (PRODUCTION / "smoke.sh").read_text(encoding="utf-8")
+    runtime = (PRODUCTION / "runtime.env.example").read_text(encoding="utf-8")
+
+    for name in (
+        "SCHOLIGHT_ALIYUN_DM_ACCESS_KEY_ID",
+        "SCHOLIGHT_ALIYUN_DM_ACCESS_KEY_SECRET",
+        "SCHOLIGHT_ALIYUN_DM_ACCOUNT_NAME",
+    ):
+        assert survey_environment[name] == f"${{{name}:-}}"
+        assert f"{name}=" in runtime
+    assert "scholight survey status --json-output" in smoke
+    assert "requested completion" in runtime
 
 
 def test_production_has_no_unreviewed_capacity_enforcement_settings() -> None:

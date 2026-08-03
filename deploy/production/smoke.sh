@@ -79,6 +79,8 @@ if [[ ${SCHOLIGHT_SURVEY_ENABLED} == true ]]; then
     /bin/sh -ec 'find /tmp/scholight-survey-cleanup.heartbeat -mmin -2 -print -quit | grep -q .'
   retry "Survey migrations, configuration, cleanup, and S3 access" compose exec -T survey-worker \
     /app/.venv/bin/scholight survey smoke --json-output
+  retry "Survey email notification queue readable" compose exec -T survey-worker \
+    /app/.venv/bin/scholight survey status --json-output
 elif [[ ${SCHOLIGHT_SURVEY_ENABLED} != false ]]; then
   printf 'SCHOLIGHT_SURVEY_ENABLED must be exactly true or false\n' >&2
   exit 1

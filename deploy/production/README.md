@@ -206,11 +206,23 @@ from the worker container without rerunning it:
   /app/.venv/bin/scholight survey diagnose JOB_UUID --json-output
 ./deploy/production/compose-command.sh exec -T survey-worker \
   /app/.venv/bin/scholight survey contract-audit --json-output
+./deploy/production/compose-command.sh exec -T survey-worker \
+  /app/.venv/bin/scholight survey status --json-output
 ```
 
 CloudWatch service logs carry the same `survey_job_id` across the worker and its
 delegated MCP searches. Search queries remain only in the private per-run trace,
 not in centralized logs or metric dimensions.
+
+Survey completion email is opt-in per run. The terminal Survey update and its
+notification outbox row commit in one database transaction after report archival;
+failed runs are also eligible, while user cancellation is not. The existing
+Survey worker claims notifications independently, retries temporary DirectMail
+failures up to eight times, and never changes the Survey result when email delivery
+fails. It resolves the account's current verified email only when sending. Configure
+the existing `SCHOLIGHT_ALIYUN_DM_*` values and the canonical
+`SCHOLIGHT_PUBLIC_WEB_URL` before enabling Survey. `scholight survey status` reports
+pending, retrying, sent, and dead notification counts without exposing addresses.
 
 ## One-time observability stack
 
@@ -236,10 +248,11 @@ notifications. Bootstrap installs and starts rsyslog and the CloudWatch Agent
 idempotently from the package configuration. The policy cannot read Parameter
 Store, access RDS or Zilliz, or modify application data.
 
-The dashboard includes Survey outcome, duration, contract, tool, runtime, and
-last-activity panels. Contract violations, runtime failures, diagnostic write
-failures, and two consecutive periods above 30 minutes without Survey activity
-raise alerts; cancellation does not.
+The dashboard includes Survey outcome, duration, contract, tool, runtime,
+last-activity, and email-delivery panels. Contract violations, runtime failures,
+diagnostic write failures, dead email notifications, email backlog older than 15
+minutes, and two consecutive periods above 30 minutes without Survey activity raise
+alerts; cancellation does not.
 
 ## Runtime and release state
 
