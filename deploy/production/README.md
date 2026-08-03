@@ -55,7 +55,13 @@ Configure GitHub OIDC roles instead of static AWS access keys. Repository or env
 - `PRODUCTION_INSTANCE_ID`
 - `PRODUCTION_DOMAIN` (for example, `scholight.example.com`)
 
-Add the read-only `CLOUD_AUTH_READ_TOKEN` repository secret. Create a protected GitHub environment named `production` with required reviewers. The publish role may push only to the two ECR repositories; the deploy role may send and inspect SSM commands only for the production instance. The EC2 instance role needs ECR pull and SSM managed-instance permissions.
+Install the scoped Dependency Reader GitHub App on Scholight and
+`sanchezcloud-identity`, set repository variable `IDENTITY_READER_APP_ID`, and store its private
+key as `IDENTITY_READER_PRIVATE_KEY`. Workflows mint short-lived, contents-read tokens; do not
+create a long-lived dependency PAT. Create a protected GitHub environment named `production`
+with required reviewers. The publish role may push only to the two ECR repositories; the deploy
+role may send and inspect SSM commands only for the production instance. The EC2 instance role
+needs ECR pull and SSM managed-instance permissions.
 
 Use three distinct existing PostgreSQL login roles: `auth_migrator` owns only
 `auth`, `scholight_migrator` owns only `scholight`, and `scholight_app`

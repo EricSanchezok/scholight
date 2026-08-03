@@ -3,6 +3,8 @@
 AI 学术论文搜索引擎——arXiv 单一数据源，段落级向量检索 + 多阶段重排。
 
 前端产品原则以 [`PRODUCT.md`](PRODUCT.md) 为准，视觉与交互系统以 [`DESIGN.md`](DESIGN.md) 为准；新增界面前应先读取两者。
+共享身份接入、数据库角色、升级和排障的权威规范见
+[`sanchezcloud-identity` engineering handbook](https://github.com/EricSanchezok/sanchezcloud-identity/blob/main/docs/README.md)；本仓库只维护 Scholight 特有规则。
 
 ## 架构概览
 

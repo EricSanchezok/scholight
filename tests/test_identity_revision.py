@@ -61,5 +61,7 @@ def test_candidate_identity_compatibility_workflow_is_standardized() -> None:
     assert "uv pip install" in workflow
     assert "AUTH_SCHEMA_VERSION" in workflow
     assert "sanchezcloud-identity migrate" in workflow
+    assert "audit-database-role --profile product-runtime" in workflow
+    assert "app_role=scholight_app" in workflow
     assert "SANCHEZCLOUD_IDENTITY_REVISION" in workflow
     assert "CLOUD_AUTH_READ_TOKEN" not in workflow
