@@ -838,11 +838,12 @@ async def test_survey_supervisor_keeps_execution_bounded(
             "scholight.survey.worker.serve_email_notifications",
             side_effect=_email_notifications,
         ),
-        patch("scholight.survey.worker.AliyunSurveyEmailSender"),
+        patch("scholight.survey.worker.AliyunSurveyEmailSender") as sender_factory,
         patch("scholight.survey.worker.SurveyArtifactStore"),
         patch("scholight.survey.worker._IDLE_SECONDS", 0.001),
     ):
-        supervisor = asyncio.create_task(serve_survey_worker())
+        injected_sender = AsyncMock()
+        supervisor = asyncio.create_task(serve_survey_worker(email_sender=injected_sender))
         await asyncio.wait_for(at_capacity.wait(), timeout=1)
         assert running == 2
         release.set()
@@ -852,6 +853,7 @@ async def test_survey_supervisor_keeps_execution_bounded(
             await supervisor
 
     assert maximum_running == 2
+    sender_factory.assert_not_called()
 
 
 @pytest.mark.asyncio

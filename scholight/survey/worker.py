@@ -35,7 +35,7 @@ from scholight.survey.cleanup_worker import serve_artifact_cleanup
 from scholight.survey.contracts import SurveyLeaseLostError
 from scholight.survey.diagnostics import SurveyDiagnostics
 from scholight.survey.email_notifications import AliyunSurveyEmailSender
-from scholight.survey.notification_worker import serve_email_notifications
+from scholight.survey.notification_worker import SurveyEmailSender, serve_email_notifications
 from scholight.survey.process import (
     ProcessControl,
     classify_rcm_error,
@@ -892,7 +892,7 @@ async def process_survey_job(
         await heartbeat
 
 
-async def serve_survey_worker() -> None:
+async def serve_survey_worker(*, email_sender: SurveyEmailSender | None = None) -> None:
     """Supervise bounded concurrent Surveys with independent leases and process groups."""
     artifact_store = SurveyArtifactStore(
         bucket=settings.survey_s3_bucket,
@@ -900,13 +900,14 @@ async def serve_survey_worker() -> None:
     )
     active: set[asyncio.Task[None]] = set()
     cleanup_supervisor = asyncio.create_task(serve_artifact_cleanup())
-    email_sender = AliyunSurveyEmailSender(
-        access_key_id=settings.aliyun_dm_access_key_id,
-        access_key_secret=settings.aliyun_dm_access_key_secret,
-        account_name=settings.aliyun_dm_account_name,
-        from_alias=settings.aliyun_dm_from_alias,
-        reply_to_address=settings.aliyun_dm_reply_to_address,
-    )
+    if email_sender is None:
+        email_sender = AliyunSurveyEmailSender(
+            access_key_id=settings.aliyun_dm_access_key_id,
+            access_key_secret=settings.aliyun_dm_access_key_secret,
+            account_name=settings.aliyun_dm_account_name,
+            from_alias=settings.aliyun_dm_from_alias,
+            reply_to_address=settings.aliyun_dm_reply_to_address,
+        )
     email_supervisor = asyncio.create_task(serve_email_notifications(email_sender))
     last_recovery = 0.0
     logger.info(

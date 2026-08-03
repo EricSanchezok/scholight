@@ -126,7 +126,7 @@ services:
   survey-worker:
     image: scholight-survey-e2e:ci
     environment: *runtime-environment
-    command: ["/app/.venv/bin/scholight", "survey", "serve-worker"]
+    command: ["/app/.venv/bin/python", "-m", "survey_e2e.fake_sender_worker"]
     depends_on:
       api:
         condition: service_healthy

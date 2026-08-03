@@ -184,6 +184,25 @@ async def _assert_database_and_archive(s3: Any, survey_id: str) -> tuple[str, st
         assert quota is not None
         assert quota["reserved_count"] == 0
         assert quota["succeeded_count"] == 1
+        notify_on_completion = await connection.fetchval(
+            "SELECT notify_on_completion FROM scholight.surveys WHERE id = $1::uuid",
+            survey_id,
+        )
+        assert notify_on_completion is True
+        notification = None
+        for _ in range(30):
+            notification = await connection.fetchrow(
+                "SELECT survey_outcome, status, attempts "
+                "FROM scholight.survey_email_notifications WHERE survey_id = $1::uuid",
+                survey_id,
+            )
+            if notification is not None and notification["status"] == "succeeded":
+                break
+            await asyncio.sleep(0.25)
+        assert notification is not None
+        assert notification["survey_outcome"] == "succeeded"
+        assert notification["status"] == "succeeded"
+        assert notification["attempts"] == 1
         return str(job["id"]), str(job["manifest_key"])
     finally:
         await connection.close()
@@ -259,7 +278,7 @@ async def _assert_missing_candidate_pool_diagnostics(
         json={"client_request_id": str(uuid4())},
     )
     started.raise_for_status()
-    await _poll_survey(client, survey_id)
+    await _poll_survey(client, survey_id, expected_status="failed")
 
     connection = await asyncpg.connect(
         host="postgres",
@@ -275,7 +294,7 @@ async def _assert_missing_candidate_pool_diagnostics(
             survey_id,
         )
         assert job is not None
-        assert job["terminal_outcome"] == "succeeded"
+        assert job["terminal_outcome"] == "failed"
         manifest = json.loads(_read_object(s3, job["manifest_key"]))
         paths = {item["path"] for item in manifest["files"]}
         assert "run/02_candidate_pool.md" not in paths
@@ -288,7 +307,7 @@ async def _assert_missing_candidate_pool_diagnostics(
             )
         )
         assert run_record["process"]["return_code"] == 0
-        assert run_record["process"]["termination_reason"] == "completed"
+        assert run_record["process"]["termination_reason"] == "contract_violation"
         assert run_record["diagnostics"]["first_anomaly"] == {
             "component": "discovery_merger",
             "expected_artifact": "02_candidate_pool.md",
@@ -616,7 +635,10 @@ async def main() -> None:
         assert manual.json()["revision"] == 3
         started = await client.post(
             f"{API}/surveys/{survey_id}/start",
-            json={"client_request_id": str(uuid4())},
+            json={
+                "client_request_id": str(uuid4()),
+                "notify_on_completion": True,
+            },
         )
         started.raise_for_status()
         assert started.json()["status"] == "queued"

@@ -186,4 +186,4 @@ async def serve_email_notifications(sender: SurveyEmailSender) -> None:
         await asyncio.gather(*active, return_exceptions=True)
 
 
-__all__ = ["process_email_notification", "serve_email_notifications"]
+__all__ = ["SurveyEmailSender", "process_email_notification", "serve_email_notifications"]

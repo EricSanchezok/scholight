@@ -368,7 +368,13 @@ async def completion(request: Request, path: str) -> dict[str, Any]:
                 _write(
                     "08_survey.md",
                     "# Retrieval-Augmented Generation Survey\n\n"
-                    "This deterministic report verifies the real Survey graph.\n",
+                    "## Abstract\n\n"
+                    "This deterministic report verifies the real Survey graph. "
+                    "It follows the evidence into a compact evaluation argument.\n\n"
+                    "## 01 Introduction\n\n"
+                    "This deterministic section is grounded in [2401.12345].\n\n"
+                    "## References\n\n"
+                    "1. Deterministic RAG Evaluation. arXiv:2401.12345.\n",
                 ),
                 finish_reason="tool_calls",
             )
