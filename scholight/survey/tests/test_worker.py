@@ -33,7 +33,7 @@ from scholight.survey.workflow_resources import WorkflowResourceError
 
 
 def test_worker_expects_pinned_rcm_release() -> None:
-    assert RCM_VERSION == "0.2.8"
+    assert RCM_VERSION == "0.2.9"
 
 
 def _job(

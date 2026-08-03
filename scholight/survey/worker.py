@@ -49,7 +49,7 @@ from scholight.survey.workflow_resources import WorkflowResourceError, stage_wor
 
 logger = structlog.get_logger(__name__)
 
-RCM_VERSION = "0.2.8"
+RCM_VERSION = "0.2.9"
 WORKFLOW_VERSION = "scholight-survey-v1"
 _IDLE_SECONDS = 1
 _RECOVERY_SECONDS = 30
