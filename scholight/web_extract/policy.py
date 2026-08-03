@@ -11,6 +11,7 @@ from urllib.parse import urlsplit, urlunsplit
 from scholight.web_extract.errors import ExtractError
 
 IPAddress = ipaddress.IPv4Address | ipaddress.IPv6Address
+_DNS_TIMEOUT_SECONDS = 5.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,13 +24,16 @@ class ResolvedTarget:
 
 async def _resolve_addresses(host: str, port: int) -> tuple[IPAddress, ...]:
     try:
-        records = await asyncio.get_running_loop().getaddrinfo(
-            host,
-            port,
-            family=socket.AF_UNSPEC,
-            type=socket.SOCK_STREAM,
+        records = await asyncio.wait_for(
+            asyncio.get_running_loop().getaddrinfo(
+                host,
+                port,
+                family=socket.AF_UNSPEC,
+                type=socket.SOCK_STREAM,
+            ),
+            timeout=_DNS_TIMEOUT_SECONDS,
         )
-    except socket.gaierror as exc:
+    except (TimeoutError, socket.gaierror) as exc:
         raise ExtractError(
             code="dns_failed",
             message="Target hostname could not be resolved.",

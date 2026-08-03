@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from http.cookies import SimpleCookie
 from urllib.parse import urlsplit
@@ -14,6 +15,7 @@ from playwright.async_api import (
     Playwright,
     Route,
     TimeoutError as PlaywrightTimeoutError,
+    WebSocketRoute,
     async_playwright,
 )
 
@@ -21,7 +23,9 @@ from scholight.web_extract.engine import ExtractInput, FetchResult
 from scholight.web_extract.errors import ExtractError
 from scholight.web_extract.policy import validate_public_target
 
-_SENSITIVE_HEADERS = frozenset({"authorization", "cookie", "proxy-authorization"})
+_SAFE_METHODS = frozenset({"GET", "HEAD"})
+_SAME_ORIGIN_POST_RESOURCE_TYPES = frozenset({"fetch", "xhr"})
+_USER_AGENT = "Scholight-Web-Extract/1.0"
 
 
 def _origin(url: str) -> tuple[str, str | None, int]:
@@ -31,15 +35,6 @@ def _origin(url: str) -> tuple[str, str | None, int]:
         parsed.hostname,
         parsed.port or (443 if parsed.scheme.lower() == "https" else 80),
     )
-
-
-def _split_headers(headers: dict[str, str]) -> tuple[dict[str, str], dict[str, str]]:
-    regular: dict[str, str] = {}
-    sensitive: dict[str, str] = {}
-    for name, value in headers.items():
-        target = sensitive if name.lower() in _SENSITIVE_HEADERS else regular
-        target[name] = value
-    return regular, sensitive
 
 
 def _cookie_map(request: ExtractInput) -> dict[str, str]:
@@ -60,20 +55,27 @@ class PlaywrightBrowserRenderer:
         timeout_seconds: float = 45.0,
         concurrency: int = 2,
         max_content_bytes: int = 50_000_000,
+        validator: Callable[[str], Awaitable[object]] = validate_public_target,
     ) -> None:
         self._timeout_ms = int(timeout_seconds * 1000)
         self._semaphore = asyncio.Semaphore(concurrency)
         self._max_content_bytes = max_content_bytes
+        self._validator = validator
         self._startup_lock = asyncio.Lock()
         self._playwright: Playwright | None = None
         self._browser: Browser | None = None
 
     async def _ensure_browser(self) -> Browser:
-        if self._browser is not None:
+        if self._browser is not None and self._browser.is_connected():
             return self._browser
         async with self._startup_lock:
+            if self._browser is not None and not self._browser.is_connected():
+                with suppress(PlaywrightError):
+                    await self._browser.close()
+                self._browser = None
             if self._browser is None:
-                self._playwright = await async_playwright().start()
+                if self._playwright is None:
+                    self._playwright = await async_playwright().start()
                 self._browser = await self._playwright.chromium.launch(
                     headless=True,
                     args=["--disable-dev-shm-usage", "--no-sandbox"],
@@ -82,7 +84,8 @@ class PlaywrightBrowserRenderer:
 
     async def close(self) -> None:
         if self._browser is not None:
-            await self._browser.close()
+            with suppress(PlaywrightError):
+                await self._browser.close()
             self._browser = None
         if self._playwright is not None:
             await self._playwright.stop()
@@ -97,12 +100,10 @@ class PlaywrightBrowserRenderer:
         context: BrowserContext,
         request: ExtractInput,
     ) -> None:
-        regular_headers, sensitive_headers = _split_headers(request.headers)
-        sensitive_headers = {
-            name: value for name, value in sensitive_headers.items() if name.lower() != "cookie"
+        target_headers = {
+            name: value for name, value in request.headers.items() if name.lower() != "cookie"
         }
-        regular_headers.setdefault("User-Agent", "Scholight-Web-Extract/1.0")
-        await context.set_extra_http_headers(regular_headers)
+        target_header_names = {name.lower() for name in target_headers}
         cookies = _cookie_map(request)
         if cookies:
             await context.add_cookies(
@@ -123,18 +124,36 @@ class PlaywrightBrowserRenderer:
                 await route.abort("blockedbyclient")
                 return
             try:
-                await validate_public_target(target_url)
+                await self._validator(target_url)
             except ExtractError:
                 await route.abort("blockedbyclient")
                 return
-            if _origin(target_url) == initial_origin and sensitive_headers:
-                forwarded = await route.request.all_headers()
-                forwarded.update(sensitive_headers)
-                await route.continue_(headers=forwarded)
+
+            same_origin = _origin(target_url) == initial_origin
+            method = route.request.method.upper()
+            if method not in _SAFE_METHODS and not (
+                method == "POST"
+                and same_origin
+                and route.request.resource_type in _SAME_ORIGIN_POST_RESOURCE_TYPES
+            ):
+                await route.abort("blockedbyclient")
                 return
-            await route.continue_()
+
+            forwarded = {
+                name: value
+                for name, value in (await route.request.all_headers()).items()
+                if name.lower() not in target_header_names
+            }
+            if same_origin:
+                forwarded.update(target_headers)
+            await route.continue_(headers=forwarded)
 
         await context.route("**/*", enforce_policy)
+
+        async def block_web_socket(web_socket: WebSocketRoute) -> None:
+            await web_socket.close(code=1008, reason="Web Extract blocks WebSockets")
+
+        await context.route_web_socket("**", block_web_socket)
 
     async def render(self, request: ExtractInput) -> FetchResult:
         if self._semaphore.locked():
@@ -146,12 +165,18 @@ class PlaywrightBrowserRenderer:
             )
         await self._semaphore.acquire()
         try:
-            await validate_public_target(request.url)
+            await self._validator(request.url)
             browser = await self._ensure_browser()
-            context = await browser.new_context(ignore_https_errors=False)
+            context = await browser.new_context(
+                accept_downloads=False,
+                ignore_https_errors=False,
+                service_workers="block",
+                user_agent=_USER_AGENT,
+            )
             try:
                 await self._configure_context(context, request)
                 page = await context.new_page()
+                page.on("popup", lambda popup: asyncio.create_task(popup.close()))
                 response = await page.goto(
                     request.url,
                     wait_until="domcontentloaded",
@@ -205,7 +230,7 @@ class PlaywrightBrowserRenderer:
                     """
                 )
                 final_url = page.url
-                await validate_public_target(final_url)
+                await self._validator(final_url)
                 html = await page.content()
                 encoded_html = html.encode("utf-8")
                 if len(encoded_html) > self._max_content_bytes:

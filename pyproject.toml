@@ -158,6 +158,7 @@ addopts = ["-rXs", "--strict-config", "--strict-markers", "-m", "not pg_integrat
 xfail_strict = true
 filterwarnings = ["error"]
 markers = [
+    "browser_integration: launches a real local Chromium instance",
     "pg_integration: requires SCHOLIGHT_TEST_DATABASE_URL pointing to an isolated PostgreSQL database",
 ]
 

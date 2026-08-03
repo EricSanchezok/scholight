@@ -16,7 +16,7 @@ from scholight.web_extract.errors import ExtractError
 from scholight.web_extract.policy import resolve_public_addresses, validate_public_target
 
 _REDIRECTS = frozenset({301, 302, 303, 307, 308})
-_SENSITIVE_HEADERS = frozenset({"authorization", "cookie", "proxy-authorization"})
+_DEFAULT_HEADERS = {"User-Agent": "Scholight-Web-Extract/1.0"}
 
 
 class PublicResolver(AbstractResolver):
@@ -60,12 +60,6 @@ def _cookie_header(cookies: dict[str, str]) -> str:
     return "; ".join(morsel.OutputString() for morsel in jar.values())
 
 
-def _strip_cross_origin_credentials(headers: dict[str, str]) -> dict[str, str]:
-    return {
-        name: value for name, value in headers.items() if name.lower() not in _SENSITIVE_HEADERS
-    }
-
-
 class HttpFetcher:
     def __init__(
         self,
@@ -101,8 +95,8 @@ class HttpFetcher:
     async def _fetch(self, request: ExtractInput) -> FetchResult:
         requested_url = request.url
         current_url = requested_url
-        headers = dict(request.headers)
-        headers.setdefault("User-Agent", "Scholight-Web-Extract/1.0")
+        target_headers = dict(request.headers)
+        headers = {**_DEFAULT_HEADERS, **target_headers}
         if request.cookies and not any(name.lower() == "cookie" for name in headers):
             headers["Cookie"] = _cookie_header(request.cookies)
 
@@ -137,7 +131,7 @@ class HttpFetcher:
                                 next_url = urljoin(current_url, response.headers["Location"])
                                 await self._validator(next_url)
                                 if _origin(current_url) != _origin(next_url):
-                                    headers = _strip_cross_origin_credentials(headers)
+                                    headers = dict(_DEFAULT_HEADERS)
                                 current_url = next_url
                                 continue
                             if response.status >= 400:

@@ -178,6 +178,9 @@ async def test_initialize_and_list_tools_do_not_execute_search(
     }
     assert tools[0]["annotations"]["readOnlyHint"] is True
     assert tools[0]["annotations"]["destructiveHint"] is False
+    assert tools[1]["annotations"]["readOnlyHint"] is False
+    assert tools[1]["annotations"]["destructiveHint"] is True
+    assert tools[1]["annotations"]["idempotentHint"] is False
     execute.assert_not_awaited()
 
 

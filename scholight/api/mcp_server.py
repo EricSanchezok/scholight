@@ -501,12 +501,13 @@ def create_mcp_app() -> tuple[FastMCP[Any], ASGIApp]:
             "Fetch an HTTP or HTTPS URL and return readable Markdown, text, or raw HTML. Supports "
             "ordinary pages, JavaScript-rendered sites, JSON, XML, PDFs, custom target headers, "
             "stateless cookies, public non-default ports, and opaque cursor pagination. Use this after "
-            "search_papers or whenever source content must be read. Requires a Scholight Access Key."
+            "search_papers or whenever source content must be read. Rendered pages may issue "
+            "same-origin POST requests. Requires a Scholight Access Key."
         ),
         annotations=ToolAnnotations(
-            readOnlyHint=True,
-            destructiveHint=False,
-            idempotentHint=True,
+            readOnlyHint=False,
+            destructiveHint=True,
+            idempotentHint=False,
             openWorldHint=True,
         ),
     )(extract_url)

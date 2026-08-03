@@ -73,12 +73,13 @@ async def test_http_fetcher_forwards_target_headers_and_cookies() -> None:
 
 
 @pytest.mark.asyncio
-async def test_http_fetcher_strips_credentials_on_cross_origin_redirect() -> None:
+async def test_http_fetcher_strips_all_target_headers_on_cross_origin_redirect() -> None:
     async def destination(request: web.Request) -> web.Response:
         return web.json_response(
             {
                 "authorization": request.headers.get("Authorization"),
                 "cookie": request.headers.get("Cookie"),
+                "x-api-key": request.headers.get("X-Api-Key"),
             }
         )
 
@@ -96,13 +97,17 @@ async def test_http_fetcher_strips_credentials_on_cross_origin_redirect() -> Non
             result = await fetcher.fetch(
                 _request(
                     origin_url,
-                    headers={"Authorization": "Bearer target"},
+                    headers={
+                        "Authorization": "Bearer target",
+                        "X-Api-Key": "target-api-key",
+                    },
                     cookies={"session": "cookie-value"},
                 )
             )
 
     assert b'"authorization": null' in result.body
     assert b'"cookie": null' in result.body
+    assert b'"x-api-key": null' in result.body
 
 
 @pytest.mark.asyncio

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import ipaddress
 
 import pytest
@@ -69,3 +70,22 @@ async def test_validate_public_target_rejects_url_credentials() -> None:
         await validate_public_target("https://user:password@example.com")
 
     assert exc_info.value.code == "invalid_url"
+
+
+@pytest.mark.asyncio
+async def test_validate_public_target_bounds_dns_resolution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    loop = asyncio.get_running_loop()
+
+    async def never_resolves(*_args: object, **_kwargs: object) -> list[object]:
+        await asyncio.sleep(10)
+        return []
+
+    monkeypatch.setattr(loop, "getaddrinfo", never_resolves)
+    monkeypatch.setattr("scholight.web_extract.policy._DNS_TIMEOUT_SECONDS", 0.001)
+
+    with pytest.raises(ExtractError) as exc_info:
+        await validate_public_target("https://slow-dns.example")
+
+    assert exc_info.value.code == "dns_failed"
