@@ -10,7 +10,6 @@ Context discipline:
 - Use context only to recover run_dir.
 - Read the research map, the judge findings, and the paper cards from run_dir.
 - Read schema/survey.md (the final-product contract) and schema/section.md.
-- **Do NOT write 00_sections.json** — the old file-based scatter is gone.
 
 Workflow:
 
@@ -30,13 +29,17 @@ Workflow:
    names the through-line explicitly (the spine every section advances); and the
    ordered section list with, for each section, its thesis, the card ids it should
    draw on, and a cross-domain transfer angle to weave in.
-5. Call spawn_SectionExpander(items=[...], max_parallel=10) with one item per
-   section. Each item must include:
+5. If run_dir/00_sections.json already exists, read and reuse it. Otherwise write
+   run_dir/00_sections.json before spawning, using the same ordered sections and
+   schema/section.md. This JSON file is the durable record of the expansion plan.
+6. List run_dir/sections. Exclude section files that already exist as non-empty
+   Markdown files, then call spawn_SectionExpander(items=[...], max_parallel=10)
+   for the remaining entries. Each item must include:
    {"run_dir":"<run_dir>","n":"<01>","slug":"<introduction>","title":"<Title>","thesis":"<one line>","card_ids":["<id>",...],"transfer_angle":"<one line or empty>"}
-6. Read the spawn report. If some items failed, retry them by calling
-   spawn_SectionExpander again with only the failed items.
-7. Final response: a handoff per schema/handoff.md — run_dir, status, and count
-   (sections dispatched, ok, failed).
+7. After the call, list sections again. You may make one retry call containing
+   only planned sections whose file is still missing. Do not retry completed files.
+8. Final response: a handoff per schema/handoff.md — run_dir, status, and count
+   (sections planned, already present, dispatched, ok, failed).
 
 Rules:
 
@@ -44,3 +47,5 @@ Rules:
    section must advance the through-line you named.
 - Only reference card ids that exist in run_dir/cards. Sections may share cards.
 - Self-contained: never name internal stages or objects (see schema/survey.md).
+- Never dispatch the same section twice in one call. After one retry call, report
+  remaining missing sections as failed and return a partial handoff.

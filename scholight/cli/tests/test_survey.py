@@ -26,13 +26,13 @@ def test_installed_rcm_version_accepts_reviewed_binary() -> None:
     completed = subprocess.CompletedProcess(
         args=["/usr/local/bin/accelerate", "--version"],
         returncode=0,
-        stdout="accelerate 0.2.8\n",
+        stdout="accelerate 0.2.9\n",
         stderr="",
     )
     with patch("scholight.cli.survey.subprocess.run", return_value=completed):
         version = _installed_rcm_version()
 
-    assert version == "0.2.8"
+    assert version == "0.2.9"
 
 
 def test_installed_rcm_version_rejects_unreviewed_binary() -> None:
@@ -55,7 +55,12 @@ def test_contract_audit_command_reports_known_warnings() -> None:
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload["status"] == "warning"
-    assert payload["conflict_count"] == 8
+    assert payload["conflict_count"] == 3
+    assert {conflict["code"] for conflict in payload["conflicts"]} == {
+        "completion_artifact_gap",
+        "judge_verdict_unvalidated",
+        "progress_stream_dependency",
+    }
 
 
 def test_diagnose_reads_active_workspace_without_database(

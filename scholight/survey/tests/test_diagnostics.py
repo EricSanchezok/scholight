@@ -140,8 +140,11 @@ def test_final_audit_infers_last_component_from_artifacts_when_events_are_missin
         "05_research_map.md",
         "06_judge_panel.md",
         "00_outline.md",
+        "00_card_plan.json",
+        "00_sections.json",
     ):
-        (tmp_path / name).write_text("observed", encoding="utf-8")
+        content = "[]" if name.endswith(".json") else "observed"
+        (tmp_path / name).write_text(content, encoding="utf-8")
     diagnostics = SurveyDiagnostics(
         run_root=tmp_path,
         job_id=uuid4(),
@@ -164,7 +167,8 @@ def test_required_anomaly_precedes_optional_warning(tmp_path: Path) -> None:
     for relative_path in required:
         path = tmp_path / relative_path
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("observed", encoding="utf-8")
+        content = "[]" if path.suffix == ".json" else "observed"
+        path.write_text(content, encoding="utf-8")
     diagnostics = SurveyDiagnostics(
         run_root=tmp_path,
         job_id=uuid4(),
@@ -242,6 +246,115 @@ def test_spawned_outputs_are_checked_during_final_audit(tmp_path: Path) -> None:
     missing = {anomaly["expected_artifact"] for anomaly in diagnostics.snapshot()["anomalies"]}
     assert "cards/2501.12345.md" in missing
     assert "sections/01_introduction.md" in missing
+
+
+def test_all_spawned_card_outputs_are_tracked_beyond_log_preview_limit(tmp_path: Path) -> None:
+    diagnostics = SurveyDiagnostics(
+        run_root=tmp_path,
+        job_id=uuid4(),
+        survey_id=uuid4(),
+    )
+
+    diagnostics.tool_event(
+        tool="spawn_PaperCard",
+        status="started",
+        component="card_plan",
+        arguments={"items": [{"id": f"2501.{index:05d}"} for index in range(100)]},
+    )
+
+    assert len(diagnostics.snapshot()["expected_dynamic_artifacts"]) == 100
+
+
+def test_durable_plans_restore_spawn_expectations_without_runtime_events(tmp_path: Path) -> None:
+    (tmp_path / "00_card_plan.json").write_text(
+        json.dumps(
+            [
+                {
+                    "run_dir": ".",
+                    "id": "2501.12345",
+                    "title": "Paper",
+                    "why": "Core evidence",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "00_sections.json").write_text(
+        json.dumps(
+            [
+                {
+                    "run_dir": ".",
+                    "n": "01",
+                    "slug": "introduction",
+                    "title": "Introduction",
+                    "thesis": "Establish the problem.",
+                    "card_ids": ["2501.12345"],
+                    "transfer_angle": "",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    diagnostics = SurveyDiagnostics(
+        run_root=tmp_path,
+        job_id=uuid4(),
+        survey_id=uuid4(),
+    )
+
+    diagnostics.observe_artifacts()
+
+    assert diagnostics.snapshot()["expected_dynamic_artifacts"] == [
+        "cards/2501.12345.md",
+        "sections/01_introduction.md",
+    ]
+
+
+def test_invalid_durable_plan_is_a_contract_error(tmp_path: Path) -> None:
+    (tmp_path / "00_card_plan.json").write_text("not json", encoding="utf-8")
+    diagnostics = SurveyDiagnostics(
+        run_root=tmp_path,
+        job_id=uuid4(),
+        survey_id=uuid4(),
+    )
+
+    diagnostics.finalize_contract_audit()
+
+    assert {
+        "component": "card_plan",
+        "expected_artifact": "00_card_plan.json",
+        "kind": "plan_artifact_invalid",
+        "severity": "error",
+    } in diagnostics.snapshot()["anomalies"]
+
+
+def test_card_plan_over_budget_is_a_contract_error(tmp_path: Path) -> None:
+    (tmp_path / "00_card_plan.json").write_text(
+        json.dumps(
+            [
+                {
+                    "run_dir": ".",
+                    "id": f"2501.{index:05d}",
+                    "title": f"Paper {index}",
+                    "why": "Core evidence",
+                }
+                for index in range(101)
+            ]
+        ),
+        encoding="utf-8",
+    )
+    diagnostics = SurveyDiagnostics(
+        run_root=tmp_path,
+        job_id=uuid4(),
+        survey_id=uuid4(),
+    )
+
+    diagnostics.finalize_contract_audit()
+
+    assert any(
+        anomaly["kind"] == "plan_artifact_invalid"
+        and anomaly["expected_artifact"] == "00_card_plan.json"
+        for anomaly in diagnostics.snapshot()["anomalies"]
+    )
 
 
 def test_search_arguments_are_bounded_without_dropping_query(tmp_path: Path) -> None:

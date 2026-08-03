@@ -5,6 +5,9 @@ import type { AppLocale } from "../../i18n/I18nProvider";
 export const SURVEY_POLL_INTERVAL = 5_000;
 export const REPORT_PATH = "run/08_survey.md";
 
+const USUAL_SURVEY_DURATION_SECONDS = 6 * 60 * 60;
+const RECENT_ACTIVITY_WINDOW_MS = 30 * 60 * 1_000;
+
 export const activeSurveyStages = new Set<SurveyProgress["stage"]>([
   "drafting",
   "waiting_for_draft",
@@ -71,6 +74,17 @@ export function runningDescription(progress: SurveyProgress, locale: AppLocale):
     parts.push(`Running for ${formatElapsed(progress.elapsed_seconds)}`);
   parts.push(`Last active ${formatRelativeTime(progress.last_activity_at, locale)}`);
   return parts.join("  ·  ");
+}
+
+export function runningGuidance(progress: SurveyProgress, now = Date.now()): string {
+  const lastActivity = Date.parse(progress.last_activity_at);
+  if (Number.isFinite(lastActivity) && now - lastActivity >= RECENT_ACTIVITY_WINDOW_MS) {
+    return "No recent activity. This survey is still marked as running.";
+  }
+  if (progress.elapsed_seconds >= USUAL_SURVEY_DURATION_SECONDS) {
+    return "Taking longer than usual, but research is still active.";
+  }
+  return "You can leave this page. Your survey will continue in the background.";
 }
 
 export function shouldPollSummaries(items: SurveySummary[]): boolean {

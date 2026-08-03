@@ -167,6 +167,9 @@ export function SurveyStartDialog({
       onOpenChange={onOpenChange}
       onPrimary={onConfirm}
     >
+      <p className={styles.surveyDurationNote}>
+        A full survey usually takes 3–6 hours. It will continue running if you close this page.
+      </p>
       <label className={styles.surveyNotificationChoice}>
         <input
           type="checkbox"

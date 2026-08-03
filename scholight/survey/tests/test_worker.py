@@ -29,10 +29,11 @@ from scholight.survey.worker import (
     process_survey_job,
     serve_survey_worker,
 )
+from scholight.survey.workflow_resources import WorkflowResourceError
 
 
 def test_worker_expects_pinned_rcm_release() -> None:
-    assert RCM_VERSION == "0.2.8"
+    assert RCM_VERSION == "0.2.9"
 
 
 def _job(
@@ -110,13 +111,39 @@ class _CompletedProcess:
         return self.returncode
 
 
+@pytest.mark.asyncio
+async def test_missing_workflow_resources_fail_before_process_start(tmp_path: Path) -> None:
+    create_process = AsyncMock()
+    with (
+        patch(
+            "scholight.survey.worker.stage_workflow_schema",
+            side_effect=WorkflowResourceError("missing schema"),
+        ),
+        patch(
+            "scholight.survey.worker.asyncio.create_subprocess_exec",
+            create_process,
+        ),
+    ):
+        result = await execute_survey(
+            _job(job_id=uuid4(), worker_id=uuid4(), status="running"),
+            tmp_path,
+        )
+
+    assert result.error_code == "survey_workflow_resources_unavailable"
+    assert result.termination_reason == "workflow_resources_unavailable"
+    assert result.diagnostics is not None
+    assert result.diagnostics["last_event"]["type"] == "run.finished"
+    create_process.assert_not_awaited()
+
+
 def _write_complete_workflow_artifacts(run_root: Path) -> None:
     for relative_path in {
         relative_path for contract in ARTIFACT_CONTRACTS for relative_path in contract.required
     }:
         path = run_root / relative_path
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("observed", encoding="utf-8")
+        content = "[]" if path.suffix == ".json" else "observed"
+        path.write_text(content, encoding="utf-8")
     sections = run_root / "sections"
     sections.mkdir(exist_ok=True)
     (sections / "01_introduction.md").write_text("## 1. Introduction", encoding="utf-8")

@@ -9,23 +9,24 @@ Context discipline:
 - Use context only to recover run_dir.
 - Read schema/card_plan.md and follow it as the contract (incl. the max_fulltext_papers cap).
 - Read the RankedPool from run_dir.
-- **Do NOT write 00_card_plan.json** — the old file-based scatter is gone.
 
 Workflow:
 
 1. Extract run_dir from context. If run_dir is absent, return a blocked handoff;
    do not inspect another workspace.
 2. Read run_dir/04_ranked_pool.md.
-3. Select up to max_fulltext_papers papers (see schema/card_plan.md — currently 100)
-   to read in full. Each selected paper becomes one item in the spawn call.
-4. Call spawn_PaperCard(items=[...], max_parallel=20) with one item per selected
-   paper. Each item must include:
+3. If run_dir/00_card_plan.json exists, read and reuse it. Otherwise select up to
+   max_fulltext_papers papers and write run_dir/00_card_plan.json before spawning.
+   It is the durable record of the complete selection and follows schema/card_plan.md.
+4. List run_dir/cards. Exclude cards that already exist as non-empty Markdown files,
+   then call spawn_PaperCard(items=[...], max_parallel=20) for the remaining entries.
+   Each item must include:
    {"run_dir": "<run_dir>", "id": "<arxiv_id>", "title": "<title>", "why": "<one line: its role + why it matters to the anchor>"}
    Use the exact run_dir string in every item.
-5. Read the spawn report. If some items failed, retry them by calling
-   spawn_PaperCard again with only the failed items.
+5. After the call, list cards again. You may make one retry call containing only
+   planned items whose card is still missing. Do not retry completed cards.
 6. Final response: a handoff per schema/handoff.md — run_dir, status, and count
-   (papers dispatched, ok, failed).
+   (papers selected, already present, dispatched, ok, failed).
 
 Rules:
 
@@ -33,5 +34,5 @@ Rules:
    ids or papers.
 - At most max_fulltext_papers elements (see schema/card_plan.md).
 - Ground every claim in the paper. Never fabricate numbers, methods, or results.
-- Call spawn_PaperCard exactly once per batch. Retry failed items in a second call.
-- After spawn returns "All items completed successfully", proceed to the handoff.
+- Never dispatch the same id twice in one call. After one retry call, report any
+  remaining missing cards as failed and return a partial handoff.

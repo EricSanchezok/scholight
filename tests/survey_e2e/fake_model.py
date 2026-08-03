@@ -288,6 +288,28 @@ async def completion(request: Request, path: str) -> dict[str, Any]:
         )
 
     if stage == "card_plan":
+        written_paths = {
+            str(arguments.get("filePath"))
+            for name, arguments in called
+            if name == "fs" and arguments.get("action") == "write"
+        }
+        if "00_card_plan.json" not in written_paths:
+            return _response(
+                _write(
+                    "00_card_plan.json",
+                    json.dumps(
+                        [
+                            {
+                                "run_dir": ".",
+                                "id": "2401.12345",
+                                "title": "Deterministic RAG Evaluation",
+                                "why": "core_set benchmark evidence",
+                            }
+                        ]
+                    ),
+                ),
+                finish_reason="tool_calls",
+            )
         spawn = _tool_with_suffix(names, "spawn_PaperCard")
         if spawn is not None and spawn not in called_names:
             return _response(
@@ -328,6 +350,26 @@ async def completion(request: Request, path: str) -> dict[str, Any]:
         if outline not in written_paths:
             return _response(
                 _write(outline, _artifact_content(stage, outline)),
+                finish_reason="tool_calls",
+            )
+        if "00_sections.json" not in written_paths:
+            return _response(
+                _write(
+                    "00_sections.json",
+                    json.dumps(
+                        [
+                            {
+                                "run_dir": ".",
+                                "n": "01",
+                                "slug": "introduction",
+                                "title": "Introduction",
+                                "thesis": "Evaluation evidence determines RAG quality.",
+                                "card_ids": ["2401.12345"],
+                                "transfer_angle": "",
+                            }
+                        ]
+                    ),
+                ),
                 finish_reason="tool_calls",
             )
         spawn = _tool_with_suffix(names, "spawn_SectionExpander")

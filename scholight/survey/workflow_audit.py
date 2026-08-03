@@ -28,6 +28,7 @@ def audit_workflow_contracts() -> tuple[WorkflowConflict, ...]:
     conflicts: list[WorkflowConflict] = []
     card_schema = _read("scholight/survey/workflow/schema/card_plan.md")
     card_prompt = _read("scholight/survey/workflow/prompts/card_plan.txt")
+    normalized_card_prompt = " ".join(card_prompt.split())
     if "00_card_plan.json" in card_schema and "Do NOT write 00_card_plan.json" in card_prompt:
         conflicts.append(
             WorkflowConflict(
@@ -39,6 +40,7 @@ def audit_workflow_contracts() -> tuple[WorkflowConflict, ...]:
 
     section_schema = _read("scholight/survey/workflow/schema/section.md")
     section_prompt = _read("scholight/survey/workflow/prompts/survey_outline.txt")
+    normalized_section_prompt = " ".join(section_prompt.split())
     if "00_sections.json" in section_schema and "Do NOT write 00_sections.json" in section_prompt:
         conflicts.append(
             WorkflowConflict(
@@ -82,10 +84,7 @@ def audit_workflow_contracts() -> tuple[WorkflowConflict, ...]:
 
     expansion_schema = _read("scholight/survey/workflow/schema/expansion.md")
     reference_prompt = _read("scholight/survey/workflow/prompts/reference_expander.txt")
-    if (
-        "Citation links may be partial" in expansion_schema
-        and "03b_citation_expansion.md" in reference_prompt
-    ):
+    if "result: empty" not in expansion_schema or "result: empty" not in reference_prompt:
         conflicts.append(
             WorkflowConflict(
                 code="empty_artifact_undefined",
@@ -94,9 +93,9 @@ def audit_workflow_contracts() -> tuple[WorkflowConflict, ...]:
             )
         )
 
-    if (
-        "Do NOT write 00_card_plan.json" in card_prompt
-        and "Do NOT write 00_sections.json" in section_prompt
+    if not (
+        "write run_dir/00_card_plan.json before spawning" in normalized_card_prompt
+        and "write run_dir/00_sections.json before spawning" in normalized_section_prompt
     ):
         conflicts.append(
             WorkflowConflict(

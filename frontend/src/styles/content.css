@@ -704,6 +704,11 @@
   font-size: 12px;
   line-height: 1.5;
 }
+.dialogContent .surveyDurationNote {
+  margin-top: 18px;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
 .surveyNotificationChoice {
   display: grid;
   margin-top: 22px;

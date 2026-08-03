@@ -26,3 +26,8 @@ Required sections:
 - `next_expansion_queries`: targeted follow-up queries.
 
 Citation links may be partial. Mark unknowns explicitly instead of fabricating IDs.
+
+Route artifacts are always written, including when a route finds nothing. An empty
+citation expansion begins with `result: empty`, records zero counts, and explains
+why no references were extracted or resolved. A populated route may use
+`result: populated`; an incomplete route may use `result: partial`.
