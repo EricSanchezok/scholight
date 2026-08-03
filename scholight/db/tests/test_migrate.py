@@ -292,7 +292,7 @@ def test_delegated_actor_migration_requires_explicit_checksum_approval() -> None
 
 
 def test_access_key_all_tools_migration_rewrites_scope_atomically() -> None:
-    migration = Path(__file__).parents[3] / "migrations/007_access_keys_all_tools.sql"
+    migration = Path(__file__).parents[3] / "migrations/012_access_keys_all_tools.sql"
     sql = " ".join(migration.read_text(encoding="utf-8").split()).lower()
 
     assert "update scholight.access_keys set scopes = array['all']::text[]" in sql
