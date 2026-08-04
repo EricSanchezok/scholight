@@ -70,6 +70,12 @@ counts and schedules remain zero. Run `database-production`, then redeploy the
 same manifest with `ApplicationEnabled=true`. Routine releases and rollbacks
 always keep it true.
 
+The runtime template is larger than CloudFormation's inline-template limit.
+The protected production workflow uploads it to the release bucket under the
+short-lived `cloudformation/<release-sha>/` prefix before creating the change
+set. Those upload artifacts expire after 30 days; immutable release manifests
+remain under `releases/` and follow their separate retention policy.
+
 ## One-time foundation setup
 
 Deploy the shared platform first. Then validate and create the Scholight

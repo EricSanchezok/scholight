@@ -136,10 +136,23 @@ def test_active_workflows_are_oidc_manifest_and_digest_driven() -> None:
     assert "AWS_SECRET_ACCESS_KEY" not in publish + release + database
     assert "scripts/release_manifest.py verify" in release + database
     assert "aws cloudformation deploy" in release
+    assert '--s3-bucket "$template_bucket"' in release
+    assert '--s3-prefix "cloudformation/${RELEASE_SHA}"' in release
     assert "aws ecs wait services-stable" in release
     assert "aws ecs run-task" in database
     assert "AWS-RunShellScript" not in release + database
     assert "send-command" not in release + database
+
+
+def test_large_runtime_template_uses_bounded_s3_staging_permissions() -> None:
+    foundation = (ECS / "scholight-foundation.yml").read_text(encoding="utf-8")
+    runtime = (ECS / "scholight-production.yml").read_bytes()
+
+    assert len(runtime) > 51_200
+    assert "ExpireCloudFormationUploadArtifacts" in foundation
+    assert "${ReleaseManifestBucket.Arn}/cloudformation/*" in foundation
+    assert "Action: [s3:GetObject, s3:PutObject]" in foundation
+    assert "Action: [kms:Decrypt, kms:GenerateDataKey]" in foundation
 
 
 def test_active_workflows_do_not_depend_on_frozen_ec2_package() -> None:
