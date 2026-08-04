@@ -36,6 +36,10 @@ on:
         default: DISABLED
         type: choice
         options: [DISABLED, ENABLED]
+      confirmation:
+        description: Type DEPLOY SCHOLIGHT PRODUCTION or ROLLBACK SCHOLIGHT PRODUCTION
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -56,8 +60,12 @@ jobs:
           APPLICATION_ENABLED: ${{ inputs.application_enabled }}
           SURVEY_RUNTIME_ENABLED: ${{ inputs.survey_runtime_enabled }}
           SURVEY_PUBLIC_MODE: ${{ inputs.survey_public_mode }}
+          OPERATION: ${{ inputs.operation }}
+          CONFIRMATION: ${{ inputs.confirmation }}
         run: |
           [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          expected_confirmation="${OPERATION^^} SCHOLIGHT PRODUCTION"
+          test "$CONFIRMATION" = "$expected_confirmation"
           if [[ "$APPLICATION_ENABLED" != true && "$SURVEY_RUNTIME_ENABLED" == true ]]; then
             echo "Survey workers cannot run while application services are disabled" >&2
             exit 1

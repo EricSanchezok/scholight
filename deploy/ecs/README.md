@@ -145,8 +145,14 @@ Create three protected environments:
 `IDENTITY_READER_PRIVATE_KEY` is the only repository dependency-reader secret.
 AWS access uses OIDC; no long-lived AWS access key is stored in GitHub.
 
-Production and database-production require a reviewer. Image publication does
-not deploy and must not have database or CloudFormation permissions.
+Use a required reviewer for `production` and `database-production` when the
+repository billing plan supports environment reviewers. Private repositories
+without that feature use the manual dispatch itself as the approval boundary:
+the database workflow requires the exact phrase
+`MIGRATE SCHOLIGHT PRODUCTION`, while the release workflow requires either
+`DEPLOY SCHOLIGHT PRODUCTION` or `ROLLBACK SCHOLIGHT PRODUCTION`. Image
+publication does not deploy and must not have database or CloudFormation
+permissions.
 
 ## Release flow
 
