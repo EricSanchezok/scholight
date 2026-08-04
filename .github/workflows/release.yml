@@ -29,7 +29,7 @@ on:
         required: true
         default: off
         type: choice
-        options: [off, all]
+        options: ["off", "all"]
       scheduler_state:
         description: Run ingest and metadata schedules
         required: true

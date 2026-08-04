@@ -142,6 +142,7 @@ def test_active_workflows_are_oidc_manifest_and_digest_driven() -> None:
     assert "aws ecs run-task" in database
     assert "AWS-RunShellScript" not in release + database
     assert "send-command" not in release + database
+    assert 'options: ["off", "all"]' in release
 
 
 def test_large_runtime_template_uses_bounded_s3_staging_permissions() -> None:
