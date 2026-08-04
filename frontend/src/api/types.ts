@@ -1,6 +1,7 @@
 import type { components } from "./schema";
 
 export type ApiSchemas = components["schemas"];
+export type PublicCapabilities = ApiSchemas["PublicCapabilitiesResponse"];
 export type SearchRequest = ApiSchemas["PublicSearchRequest"];
 export type SearchResponse = ApiSchemas["PublicSearchResponse"];
 export type SearchHit = ApiSchemas["PublicSearchHit"];

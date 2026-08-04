@@ -1357,6 +1357,19 @@
         "title": "MessageResponse",
         "type": "object"
       },
+      "PublicCapabilitiesResponse": {
+        "description": "Features that the public client may expose to this deployment.",
+        "properties": {
+          "survey": {
+            "enum": ["off", "all"],
+            "title": "Survey",
+            "type": "string"
+          }
+        },
+        "required": ["survey"],
+        "title": "PublicCapabilitiesResponse",
+        "type": "object"
+      },
       "PublicSearchFilters": {
         "additionalProperties": false,
         "description": "Filters supported by the public HTTP search contract.",
@@ -3591,6 +3604,26 @@
         },
         "summary": "Verify Email",
         "tags": ["auth"]
+      }
+    },
+    "/capabilities": {
+      "get": {
+        "description": "Return fail-closed, non-user-specific product capabilities.",
+        "operationId": "get_capabilities_capabilities_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicCapabilitiesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Capabilities",
+        "tags": ["capabilities"]
       }
     },
     "/extract": {
