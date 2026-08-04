@@ -155,6 +155,28 @@ def test_large_runtime_template_uses_bounded_s3_staging_permissions() -> None:
     assert "Action: [kms:Decrypt, kms:GenerateDataKey]" in foundation
 
 
+def test_image_publish_role_can_verify_pushed_manifests_and_attestations() -> None:
+    foundation = (ECS / "scholight-foundation.yml").read_text(encoding="utf-8")
+    publish_policy = foundation.split("PublishRole:", maxsplit=1)[1].split(
+        "CloudFormationServiceRole:", maxsplit=1
+    )[0]
+
+    for action in (
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:BatchGetImage",
+        "ecr:CompleteLayerUpload",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:InitiateLayerUpload",
+        "ecr:PutImage",
+        "ecr:UploadLayerPart",
+    ):
+        assert f"- {action}" in publish_policy
+
+    assert "ecr:CreateRepository" not in publish_policy
+    assert "ecr:DeleteRepository" not in publish_policy
+    assert "ecr:DeleteRepositoryPolicy" not in publish_policy
+
+
 def test_active_workflows_do_not_depend_on_frozen_ec2_package() -> None:
     active = "\n".join(
         (ROOT / ".github/workflows" / name).read_text(encoding="utf-8")
