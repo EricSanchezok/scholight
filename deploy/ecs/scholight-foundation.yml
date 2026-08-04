@@ -1,0 +1,551 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Persistent release, secret, and artifact foundation for Scholight on SanchezCloud
+
+Parameters:
+  GitHubOidcProviderArn:
+    Type: String
+    AllowedPattern: "^arn:[^:]+:iam::[0-9]{12}:oidc-provider/token\\.actions\\.githubusercontent\\.com$"
+  GitHubOidcSubjectPrefix:
+    Type: String
+    Default: repo:EricSanchezok@115814526/scholight@1295347074
+    AllowedPattern: "^repo:[A-Za-z0-9_.-]+@[0-9]+/[A-Za-z0-9_.-]+@[0-9]+$"
+  AlertEmail:
+    Type: String
+    Default: ""
+    Description: Optional address that must confirm the SNS subscription
+
+Conditions:
+  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, ""]]
+
+Resources:
+  ConfigurationKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: Scholight production configuration and database credentials
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: EnableAccountAdministration
+            Effect: Allow
+            Principal: { AWS: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:root" }
+            Action: "kms:*"
+            Resource: "*"
+      Tags:
+        - { Key: System, Value: SanchezCloud }
+        - { Key: Product, Value: Scholight }
+        - { Key: Environment, Value: production }
+
+  ConfigurationKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: alias/sanchezcloud-scholight-configuration
+      TargetKeyId: !Ref ConfigurationKey
+
+  ArtifactKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: Scholight private Survey artifacts
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: EnableAccountAdministration
+            Effect: Allow
+            Principal: { AWS: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:root" }
+            Action: "kms:*"
+            Resource: "*"
+      Tags:
+        - { Key: System, Value: SanchezCloud }
+        - { Key: Product, Value: Scholight }
+        - { Key: DataClass, Value: private-survey-artifacts }
+
+  ArtifactKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: alias/sanchezcloud-scholight-artifacts
+      TargetKeyId: !Ref ArtifactKey
+
+  SurveyArtifactBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub sanchezcloud-scholight-artifacts-${AWS::AccountId}-${AWS::Region}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - BucketKeyEnabled: true
+            ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !GetAtt ArtifactKey.Arn
+      LifecycleConfiguration:
+        Rules:
+          - Id: AbortIncompleteMultipartUploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload: { DaysAfterInitiation: 7 }
+      OwnershipControls:
+        Rules: [{ ObjectOwnership: BucketOwnerEnforced }]
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration: { Status: Enabled }
+      Tags:
+        - { Key: System, Value: SanchezCloud }
+        - { Key: Product, Value: Scholight }
+        - { Key: Environment, Value: production }
+
+  SurveyArtifactBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref SurveyArtifactBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !GetAtt SurveyArtifactBucket.Arn
+              - !Sub ${SurveyArtifactBucket.Arn}/*
+            Condition: { Bool: { "aws:SecureTransport": "false" } }
+
+  ReleaseManifestBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub sanchezcloud-scholight-releases-${AWS::AccountId}-${AWS::Region}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - BucketKeyEnabled: true
+            ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !GetAtt ConfigurationKey.Arn
+      LifecycleConfiguration:
+        Rules:
+          - Id: RetainImmutableReleaseManifests
+            Status: Enabled
+            NoncurrentVersionExpiration: { NoncurrentDays: 365 }
+      OwnershipControls:
+        Rules: [{ ObjectOwnership: BucketOwnerEnforced }]
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration: { Status: Enabled }
+      Tags:
+        - { Key: System, Value: SanchezCloud }
+        - { Key: Product, Value: Scholight }
+        - { Key: DataClass, Value: release-manifest }
+
+  ReleaseManifestBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ReleaseManifestBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !GetAtt ReleaseManifestBucket.Arn
+              - !Sub ${ReleaseManifestBucket.Arn}/*
+            Condition: { Bool: { "aws:SecureTransport": "false" } }
+
+  WebRepository:
+    Type: AWS::ECR::Repository
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      RepositoryName: sanchezcloud-scholight-web
+      ImageScanningConfiguration: { ScanOnPush: true }
+      ImageTagMutability: IMMUTABLE
+      LifecyclePolicy:
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"Retain 30 release images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":30},"action":{"type":"expire"}}]}'
+
+  ApiRepository:
+    Type: AWS::ECR::Repository
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      RepositoryName: sanchezcloud-scholight-api
+      ImageScanningConfiguration: { ScanOnPush: true }
+      ImageTagMutability: IMMUTABLE
+      LifecyclePolicy:
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"Retain 30 release images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":30},"action":{"type":"expire"}}]}'
+
+  ExtractRepository:
+    Type: AWS::ECR::Repository
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      RepositoryName: sanchezcloud-scholight-extract
+      ImageScanningConfiguration: { ScanOnPush: true }
+      ImageTagMutability: IMMUTABLE
+      LifecyclePolicy:
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"Retain 30 release images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":30},"action":{"type":"expire"}}]}'
+
+  IngestRepository:
+    Type: AWS::ECR::Repository
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      RepositoryName: sanchezcloud-scholight-ingest
+      ImageScanningConfiguration: { ScanOnPush: true }
+      ImageTagMutability: IMMUTABLE
+      LifecyclePolicy:
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"Retain 30 release images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":30},"action":{"type":"expire"}}]}'
+
+  SurveyRepository:
+    Type: AWS::ECR::Repository
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      RepositoryName: sanchezcloud-scholight-survey
+      ImageScanningConfiguration: { ScanOnPush: true }
+      ImageTagMutability: IMMUTABLE
+      LifecyclePolicy:
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"Retain 30 release images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":30},"action":{"type":"expire"}}]}'
+
+  DatabaseRuntimeSecret:
+    Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Name: /sanchezcloud/database/scholight-runtime
+      Description: Scholight PostgreSQL runtime credential; never used for migrations
+      KmsKeyId: !GetAtt ConfigurationKey.Arn
+      GenerateSecretString:
+        SecretStringTemplate: '{"username":"scholight_app","host":"","port":"5432","dbname":"sanchezcloud"}'
+        GenerateStringKey: password
+        PasswordLength: 48
+        ExcludePunctuation: true
+      Tags:
+        - { Key: Product, Value: Scholight }
+        - { Key: CredentialType, Value: database-runtime }
+
+  DatabaseMigratorSecret:
+    Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Name: /sanchezcloud/database/scholight-migrator
+      Description: Scholight-owned schema migration credential
+      KmsKeyId: !GetAtt ConfigurationKey.Arn
+      GenerateSecretString:
+        SecretStringTemplate: '{"username":"scholight_migrator","host":"","port":"5432","dbname":"sanchezcloud"}'
+        GenerateStringKey: password
+        PasswordLength: 48
+        ExcludePunctuation: true
+      Tags:
+        - { Key: Product, Value: Scholight }
+        - { Key: CredentialType, Value: database-migrator }
+
+  CoreSecret:
+    Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Name: /sanchezcloud/scholight/production/core
+      Description: Scholight application-only secrets
+      KmsKeyId: !GetAtt ConfigurationKey.Arn
+      GenerateSecretString:
+        SecretStringTemplate: '{"anonymous_quota_hmac_secret":"","access_key_hmac_secret":"","mcp_delegation_jwt_secret":"","extract_internal_token":"","survey_mcp_jwt_secret":""}'
+        GenerateStringKey: auth_jwt_secret
+        PasswordLength: 64
+        ExcludePunctuation: true
+
+  SearchProvidersSecret:
+    Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Name: /sanchezcloud/scholight/production/search-providers
+      Description: Zilliz, embedding, and paper-ingestion provider credentials
+      KmsKeyId: !GetAtt ConfigurationKey.Arn
+      SecretString: '{"zilliz_uri":"","zilliz_token":"","embedding_base_url":"","embedding_api_key":"","embedding_model":"","mineru_api_key":""}'
+
+  SurveyProvidersSecret:
+    Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Name: /sanchezcloud/scholight/production/survey-providers
+      Description: Survey model, image, and email provider credentials
+      KmsKeyId: !GetAtt ConfigurationKey.Arn
+      SecretString: '{"deepseek_api_key":"","image_gen_api_key":"","aliyun_access_key_id":"","aliyun_access_key_secret":"","aliyun_account_name":""}'
+
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: sanchezcloud-scholight-alerts
+      KmsMasterKeyId: alias/aws/sns
+      Tags:
+        - { Key: System, Value: SanchezCloud }
+        - { Key: Product, Value: Scholight }
+
+  AlertSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlertEmail
+    Properties:
+      TopicArn: !Ref AlertTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  PublishRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: SanchezCloudScholightImagePublishRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Federated: !Ref GitHubOidcProviderArn }
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Sub "${GitHubOidcSubjectPrefix}:environment:image-publish"
+      Policies:
+        - PolicyName: PublishImmutableScholightImages
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:CompleteLayerUpload
+                  - ecr:InitiateLayerUpload
+                  - ecr:PutImage
+                  - ecr:UploadLayerPart
+                Resource:
+                  - !GetAtt WebRepository.Arn
+                  - !GetAtt ApiRepository.Arn
+                  - !GetAtt ExtractRepository.Arn
+                  - !GetAtt IngestRepository.Arn
+                  - !GetAtt SurveyRepository.Arn
+              - Effect: Allow
+                Action: [s3:GetBucketLocation, s3:ListBucket]
+                Resource: !GetAtt ReleaseManifestBucket.Arn
+              - Effect: Allow
+                Action: [s3:GetObject, s3:PutObject]
+                Resource: !Sub ${ReleaseManifestBucket.Arn}/releases/*
+              - Effect: Allow
+                Action: [kms:Decrypt, kms:GenerateDataKey]
+                Resource: !GetAtt ConfigurationKey.Arn
+
+  CloudFormationServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: SanchezCloudScholightCloudFormationServiceRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: cloudformation.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ManageScholightRuntime
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - application-autoscaling:*
+                  - cloudwatch:DeleteAlarms
+                  - cloudwatch:DeleteDashboards
+                  - cloudwatch:DescribeAlarms
+                  - cloudwatch:PutDashboard
+                  - cloudwatch:PutMetricAlarm
+                  - ec2:AuthorizeSecurityGroupEgress
+                  - ec2:AuthorizeSecurityGroupIngress
+                  - ec2:CreateSecurityGroup
+                  - ec2:CreateTags
+                  - ec2:DeleteSecurityGroup
+                  - ec2:Describe*
+                  - ec2:RevokeSecurityGroupEgress
+                  - ec2:RevokeSecurityGroupIngress
+                  - ecs:*
+                  - elasticloadbalancing:*
+                  - logs:CreateLogGroup
+                  - logs:DeleteLogGroup
+                  - logs:DescribeLogGroups
+                  - logs:PutRetentionPolicy
+                  - scheduler:CreateSchedule
+                  - scheduler:DeleteSchedule
+                  - scheduler:GetSchedule
+                  - scheduler:UpdateSchedule
+                  - sns:ListTopics
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - iam:CreateRole
+                  - iam:DeleteRole
+                  - iam:DeleteRolePolicy
+                  - iam:GetRole
+                  - iam:GetRolePolicy
+                  - iam:PassRole
+                  - iam:PutRolePolicy
+                  - iam:TagRole
+                  - iam:UntagRole
+                  - iam:UpdateAssumeRolePolicy
+                Resource: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/SanchezCloudScholight*
+
+  ProductionDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: SanchezCloudScholightProductionDeployRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Federated: !Ref GitHubOidcProviderArn }
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Sub "${GitHubOidcSubjectPrefix}:environment:production"
+      Policies:
+        - PolicyName: DeployScholightRuntimeStack
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudformation:CreateChangeSet
+                  - cloudformation:DeleteChangeSet
+                  - cloudformation:DescribeChangeSet
+                  - cloudformation:DescribeStackResources
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:DescribeStacks
+                  - cloudformation:ExecuteChangeSet
+                  - cloudformation:GetTemplate
+                  - cloudformation:GetTemplateSummary
+                  - cloudformation:ListChangeSets
+                  - cloudformation:CreateStack
+                  - cloudformation:UpdateStack
+                Resource: !Sub arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/sanchezcloud-scholight-production/*
+              - Effect: Allow
+                Action: cloudformation:ValidateTemplate
+                Resource: "*"
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource: !GetAtt CloudFormationServiceRole.Arn
+              - Effect: Allow
+                Action: [s3:GetObject]
+                Resource: !Sub ${ReleaseManifestBucket.Arn}/releases/*
+              - Effect: Allow
+                Action: kms:Decrypt
+                Resource: !GetAtt ConfigurationKey.Arn
+
+  DatabaseDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: SanchezCloudScholightDatabaseDeployRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Federated: !Ref GitHubOidcProviderArn }
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Sub "${GitHubOidcSubjectPrefix}:environment:database-production"
+      Policies:
+        - PolicyName: RunProtectedScholightMigration
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: ecs:RunTask
+                Resource: !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/sanchezcloud-scholight-migration:*
+                Condition:
+                  ArnLike:
+                    ecs:cluster: !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:cluster/sanchezcloud-production
+              - Effect: Allow
+                Action:
+                  - ecs:DeregisterTaskDefinition
+                  - ecs:DescribeTaskDefinition
+                  - ecs:DescribeTasks
+                  - ecs:RegisterTaskDefinition
+                  - ecs:StopTask
+                Resource: "*"
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/SanchezCloudScholightTaskExecutionRole
+              - Effect: Allow
+                Action: [logs:GetLogEvents, logs:FilterLogEvents]
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/sanchezcloud/scholight/migration:*
+              - Effect: Allow
+                Action: cloudformation:DescribeStacks
+                Resource: !Sub arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/sanchezcloud-scholight-production/*
+              - Effect: Allow
+                Action: cloudformation:ListExports
+                Resource: "*"
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub ${ReleaseManifestBucket.Arn}/releases/*
+              - Effect: Allow
+                Action: kms:Decrypt
+                Resource: !GetAtt ConfigurationKey.Arn
+
+Outputs:
+  ConfigurationKeyArn:
+    Value: !GetAtt ConfigurationKey.Arn
+    Export: { Name: sanchezcloud-scholight-configuration-key-arn }
+  ArtifactKeyArn:
+    Value: !GetAtt ArtifactKey.Arn
+    Export: { Name: sanchezcloud-scholight-artifact-key-arn }
+  SurveyArtifactBucketName:
+    Value: !Ref SurveyArtifactBucket
+    Export: { Name: sanchezcloud-scholight-artifact-bucket-name }
+  SurveyArtifactBucketArn:
+    Value: !GetAtt SurveyArtifactBucket.Arn
+    Export: { Name: sanchezcloud-scholight-artifact-bucket-arn }
+  ReleaseManifestBucketName:
+    Value: !Ref ReleaseManifestBucket
+    Export: { Name: sanchezcloud-scholight-release-bucket-name }
+  ReleaseManifestBucketArn:
+    Value: !GetAtt ReleaseManifestBucket.Arn
+    Export: { Name: sanchezcloud-scholight-release-bucket-arn }
+  DatabaseRuntimeSecretArn:
+    Value: !Ref DatabaseRuntimeSecret
+    Export: { Name: sanchezcloud-scholight-database-runtime-secret-arn }
+  DatabaseMigratorSecretArn:
+    Value: !Ref DatabaseMigratorSecret
+    Export: { Name: sanchezcloud-scholight-database-migrator-secret-arn }
+  CoreSecretArn:
+    Value: !Ref CoreSecret
+    Export: { Name: sanchezcloud-scholight-core-secret-arn }
+  SearchProvidersSecretArn:
+    Value: !Ref SearchProvidersSecret
+    Export: { Name: sanchezcloud-scholight-search-secret-arn }
+  SurveyProvidersSecretArn:
+    Value: !Ref SurveyProvidersSecret
+    Export: { Name: sanchezcloud-scholight-survey-secret-arn }
+  AlertTopicArn:
+    Value: !Ref AlertTopic
+    Export: { Name: sanchezcloud-scholight-alert-topic-arn }
+  PublishRoleArn: { Value: !GetAtt PublishRole.Arn }
+  ProductionDeployRoleArn: { Value: !GetAtt ProductionDeployRole.Arn }
+  DatabaseDeployRoleArn: { Value: !GetAtt DatabaseDeployRole.Arn }
+  CloudFormationServiceRoleArn: { Value: !GetAtt CloudFormationServiceRole.Arn }
+  WebRepositoryUri: { Value: !GetAtt WebRepository.RepositoryUri }
+  ApiRepositoryUri: { Value: !GetAtt ApiRepository.RepositoryUri }
+  ExtractRepositoryUri: { Value: !GetAtt ExtractRepository.RepositoryUri }
+  IngestRepositoryUri: { Value: !GetAtt IngestRepository.RepositoryUri }
+  SurveyRepositoryUri: { Value: !GetAtt SurveyRepository.RepositoryUri }

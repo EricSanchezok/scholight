@@ -92,11 +92,12 @@ async def test_survey_is_disabled_fail_closed(
     active_user: UserRecord,
 ) -> None:
     _authenticate(api_app, active_user)
-    settings.survey_enabled = False
+    settings.survey_runtime_enabled = False
+    settings.survey_public_mode = "off"
 
     response = await api_client.get("/surveys")
 
-    assert response.status_code == 503
+    assert response.status_code == 404
     assert response.json()["detail"]["code"] == "survey_unavailable"
 
 
@@ -107,7 +108,8 @@ async def test_create_survey_reserves_slot_and_queues_initial_draft(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _authenticate(api_app, active_user)
-    monkeypatch.setattr(settings, "survey_enabled", True)
+    monkeypatch.setattr(settings, "survey_runtime_enabled", True)
+    monkeypatch.setattr(settings, "survey_public_mode", "all")
     monkeypatch.setattr(settings, "survey_daily_limit", 5)
     survey_id = uuid4()
     request_id = uuid4()
@@ -141,7 +143,8 @@ async def test_create_survey_persists_generated_navigation_title(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _authenticate(api_app, active_user)
-    monkeypatch.setattr(settings, "survey_enabled", True)
+    monkeypatch.setattr(settings, "survey_runtime_enabled", True)
+    monkeypatch.setattr(settings, "survey_public_mode", "all")
     survey_id = uuid4()
     untitled = _survey(survey_id=survey_id)
     titled = replace(untitled, title="RAG evaluation methods")
@@ -180,7 +183,8 @@ async def test_survey_quota_has_stable_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _authenticate(api_app, active_user)
-    monkeypatch.setattr(settings, "survey_enabled", True)
+    monkeypatch.setattr(settings, "survey_runtime_enabled", True)
+    monkeypatch.setattr(settings, "survey_public_mode", "all")
     with patch(
         "scholight.api.routes.survey.create_survey",
         new_callable=AsyncMock,
@@ -206,7 +210,8 @@ async def test_anonymous_and_access_key_cannot_create_survey(
     api_client: httpx.AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(settings, "survey_enabled", True)
+    monkeypatch.setattr(settings, "survey_runtime_enabled", True)
+    monkeypatch.setattr(settings, "survey_public_mode", "all")
     body = {
         "initial_request": "retrieval augmented generation",
         "client_request_id": str(uuid4()),
@@ -231,7 +236,8 @@ async def test_revision_endpoint_queues_async_draft_for_owner(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _authenticate(api_app, active_user)
-    monkeypatch.setattr(settings, "survey_enabled", True)
+    monkeypatch.setattr(settings, "survey_runtime_enabled", True)
+    monkeypatch.setattr(settings, "survey_public_mode", "all")
     survey_id = uuid4()
     request_id = uuid4()
     with (
@@ -268,7 +274,8 @@ async def test_manual_draft_and_start_use_distinct_write_endpoints(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _authenticate(api_app, active_user)
-    monkeypatch.setattr(settings, "survey_enabled", True)
+    monkeypatch.setattr(settings, "survey_runtime_enabled", True)
+    monkeypatch.setattr(settings, "survey_public_mode", "all")
     survey_id = uuid4()
     owner = _survey(survey_id=survey_id)
     ready = replace(
@@ -322,7 +329,8 @@ async def test_start_survey_defaults_notification_preference_off_for_old_clients
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _authenticate(api_app, active_user)
-    monkeypatch.setattr(settings, "survey_enabled", True)
+    monkeypatch.setattr(settings, "survey_runtime_enabled", True)
+    monkeypatch.setattr(settings, "survey_public_mode", "all")
     survey_id = uuid4()
     with (
         patch(
@@ -354,7 +362,8 @@ async def test_manual_draft_accepts_full_one_mib_payload(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _authenticate(api_app, active_user)
-    monkeypatch.setattr(settings, "survey_enabled", True)
+    monkeypatch.setattr(settings, "survey_runtime_enabled", True)
+    monkeypatch.setattr(settings, "survey_public_mode", "all")
     survey_id = uuid4()
     markdown = "x" * (1024 * 1024)
     ready = replace(
@@ -395,7 +404,8 @@ async def test_cross_owner_survey_is_not_exposed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _authenticate(api_app, active_user)
-    monkeypatch.setattr(settings, "survey_enabled", True)
+    monkeypatch.setattr(settings, "survey_runtime_enabled", True)
+    monkeypatch.setattr(settings, "survey_public_mode", "all")
     with patch(
         "scholight.api.routes.survey.get_survey",
         new_callable=AsyncMock,
@@ -414,7 +424,8 @@ async def test_survey_disappearing_during_write_still_returns_not_found(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _authenticate(api_app, active_user)
-    monkeypatch.setattr(settings, "survey_enabled", True)
+    monkeypatch.setattr(settings, "survey_runtime_enabled", True)
+    monkeypatch.setattr(settings, "survey_public_mode", "all")
     survey_id = uuid4()
     with (
         patch(
@@ -447,7 +458,8 @@ async def test_progress_endpoint_returns_stable_public_milestone(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _authenticate(api_app, active_user)
-    monkeypatch.setattr(settings, "survey_enabled", True)
+    monkeypatch.setattr(settings, "survey_runtime_enabled", True)
+    monkeypatch.setattr(settings, "survey_public_mode", "all")
     survey_id = uuid4()
     now = datetime.now(UTC)
     snapshot = SurveyProgressSnapshot(
@@ -495,7 +507,8 @@ async def test_progress_endpoint_hides_cross_owner_survey(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _authenticate(api_app, active_user)
-    monkeypatch.setattr(settings, "survey_enabled", True)
+    monkeypatch.setattr(settings, "survey_runtime_enabled", True)
+    monkeypatch.setattr(settings, "survey_public_mode", "all")
     with patch(
         "scholight.api.routes.survey.get_survey_progress",
         new_callable=AsyncMock,
@@ -514,7 +527,8 @@ async def test_survey_list_returns_aggregate_projection_and_quota(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _authenticate(api_app, active_user)
-    monkeypatch.setattr(settings, "survey_enabled", True)
+    monkeypatch.setattr(settings, "survey_runtime_enabled", True)
+    monkeypatch.setattr(settings, "survey_public_mode", "all")
     monkeypatch.setattr(settings, "survey_daily_limit", 5)
     survey_id = uuid4()
     now = datetime.now(UTC)
@@ -577,7 +591,8 @@ async def test_progress_reports_cancelling_and_terminal_elapsed_time(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _authenticate(api_app, active_user)
-    monkeypatch.setattr(settings, "survey_enabled", True)
+    monkeypatch.setattr(settings, "survey_runtime_enabled", True)
+    monkeypatch.setattr(settings, "survey_public_mode", "all")
     survey_id = uuid4()
     started = datetime.now(UTC) - timedelta(seconds=73)
     cancelling = SurveyProgressSnapshot(
@@ -620,7 +635,8 @@ async def test_report_streams_manifest_authorized_markdown_for_owner(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _authenticate(api_app, active_user)
-    monkeypatch.setattr(settings, "survey_enabled", True)
+    monkeypatch.setattr(settings, "survey_runtime_enabled", True)
+    monkeypatch.setattr(settings, "survey_public_mode", "all")
     survey_id = uuid4()
     job_id = uuid4()
     storage_prefix = f"surveys/v1/{active_user.id}/{job_id}"
@@ -671,7 +687,8 @@ async def test_report_download_streams_owner_scoped_zip_package(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _authenticate(api_app, active_user)
-    monkeypatch.setattr(settings, "survey_enabled", True)
+    monkeypatch.setattr(settings, "survey_runtime_enabled", True)
+    monkeypatch.setattr(settings, "survey_public_mode", "all")
     survey_id = uuid4()
     job_id = uuid4()
     storage_prefix = f"surveys/v1/{active_user.id}/{job_id}"
@@ -723,7 +740,8 @@ async def test_artifacts_hide_storage_keys_and_use_short_lived_urls(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _authenticate(api_app, active_user)
-    monkeypatch.setattr(settings, "survey_enabled", True)
+    monkeypatch.setattr(settings, "survey_runtime_enabled", True)
+    monkeypatch.setattr(settings, "survey_public_mode", "all")
     survey_id = uuid4()
     job_id = uuid4()
     storage_prefix = f"surveys/v1/{active_user.id}/{job_id}"
@@ -824,7 +842,8 @@ async def test_archive_pending_is_retryable_without_opening_s3(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _authenticate(api_app, active_user)
-    monkeypatch.setattr(settings, "survey_enabled", True)
+    monkeypatch.setattr(settings, "survey_runtime_enabled", True)
+    monkeypatch.setattr(settings, "survey_public_mode", "all")
     survey_id = uuid4()
     reference = SurveyArtifactReference(
         survey_id=survey_id,
@@ -856,7 +875,8 @@ async def test_artifacts_reject_database_bucket_outside_runtime_configuration(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _authenticate(api_app, active_user)
-    monkeypatch.setattr(settings, "survey_enabled", True)
+    monkeypatch.setattr(settings, "survey_runtime_enabled", True)
+    monkeypatch.setattr(settings, "survey_public_mode", "all")
     monkeypatch.setattr(settings, "survey_s3_bucket", "configured-bucket")
     survey_id = uuid4()
     job_id = uuid4()
@@ -890,7 +910,8 @@ async def test_delete_uses_owner_scoped_transaction_and_returns_no_content(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _authenticate(api_app, active_user)
-    monkeypatch.setattr(settings, "survey_enabled", True)
+    monkeypatch.setattr(settings, "survey_runtime_enabled", True)
+    monkeypatch.setattr(settings, "survey_public_mode", "all")
     survey_id = uuid4()
     with patch(
         "scholight.api.routes.survey.delete_survey",

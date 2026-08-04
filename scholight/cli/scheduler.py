@@ -54,6 +54,34 @@ def serve_ingest_cmd() -> None:
     asyncio.run(_with_pool(serve_ingest))
 
 
+@scheduler_group.command("drain-ingest")
+@click.option(
+    "--idle-grace-seconds",
+    type=click.IntRange(1, 600),
+    default=60,
+    show_default=True,
+)
+@click.option(
+    "--max-runtime-seconds",
+    type=click.IntRange(60, 7200),
+    default=110 * 60,
+    show_default=True,
+)
+def drain_ingest_cmd(idle_grace_seconds: int, max_runtime_seconds: int) -> None:
+    """Drain the paper queue for one bounded scheduled task."""
+    from scholight.scheduler.ingest_worker import drain_ingest
+
+    async def _run() -> dict[str, str | int | float]:
+        result = await drain_ingest(
+            idle_grace_seconds=idle_grace_seconds,
+            max_runtime_seconds=max_runtime_seconds,
+        )
+        return result.as_dict()
+
+    result = asyncio.run(_with_pool(_run))
+    click.echo(json.dumps(result, sort_keys=True))
+
+
 @scheduler_group.command("status")
 @click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON.")
 def status_cmd(as_json: bool) -> None:

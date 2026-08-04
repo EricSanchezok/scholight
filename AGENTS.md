@@ -2,8 +2,9 @@
 
 ## Git 工作流
 
-- 当前由单人维护，所有开发直接在 `main` 上进行；不要自行创建功能分支。
-- 每个完整逻辑变更仍须保持原子提交，并在提交前运行对应测试。
+- `main` 受 GitHub ruleset 保护；所有变更必须从短期分支通过 Pull Request 合并，禁止
+  直接推送、force-push 或绕过 required checks。
+- 每个完整逻辑变更须保持原子提交，并在提交前运行对应测试；PR 合并后删除临时分支。
 
 ## Design Context
 
@@ -107,8 +108,13 @@ scholight/
 │   ├── check_env.py          环境快照采集
 │   ├── test_extract_pipeline.py  抽取管线对比测试
 │   └── benchmark/            检索评测基准（runners / tuning / run.py）
-├── migrations/              PostgreSQL 迁移 SQL
-│   └── 005_create_search_history.sql
+├── migrations/              PostgreSQL 产品迁移（Identity 迁移不在本仓库）
+│   ├── 001_scholight_baseline.sql
+│   ├── 002_ingestion_queue.sql
+│   ├── 003_admin_metrics.sql
+│   ├── 004_allow_delegated_usage_actor.sql
+│   ├── 005_survey.sql       Survey 首次发布的完整 Schema
+│   └── 012_access_keys_all_tools.sql
 ├── docker/
 │   └── scholight-api/       API 服务 Dockerfile + start.py
 ├── pyproject.toml           依赖 + CLI 入口
@@ -125,7 +131,8 @@ scholight/
 
 - **检索存储**：Zilliz Cloud（managed Milvus）只保存论文、段落、向量与索引；账户、额度、Usage 和历史保存在 PostgreSQL
 - **当前论文数据源**：arXiv（bulk PDF tar + OAI-PMH API）；新增来源通过独立 connector 接入，不把 Web Extract 当作摄入管线
-- **部署方式**：启智平台 notebook 容器，向量数据存于 Zilliz Cloud
+- **部署方式**：正式发布使用 `deploy/ecs/` 的共享 SanchezCloud Fargate 平台；
+  `deploy/production/` 仅是冻结的旧 EC2 回退参考。向量数据继续存于 Zilliz Cloud。
 
 ## Zilliz Cloud 连接
 
@@ -228,6 +235,14 @@ configure_logging(log_level="INFO", use_json=True, file_handler=("app.log", 50_0
 - **CLI 入口**：`scholight` 命令由 `pyproject.toml` 的 `[project.scripts]` 注册，指向 `scholight.cli:cli`。
 - **依赖管理**：全部依赖声明在 `pyproject.toml`，`uv.lock` 锁定版本，不单独使用 `requirements.txt`。
 - **环境变量**：配置通过 `SCHOLIGHT_` 前缀的环境变量注入，模板在 `.env.example`。
+- **本地开发权威手册**：端口、共享 PostgreSQL、启动 profile 与远程依赖边界统一由
+  [`DEVELOPMENT.md`](DEVELOPMENT.md) 定义，并服从 sanchezcloud-identity handbook。
+- **固定端口块**：Scholight 使用 `7200-7299`；Frontend `7200`、API `7201`、Extract
+  调试入口 `7202`。共享 PostgreSQL `55432`、MinIO `59000/59001`，全部绑定
+  `127.0.0.1`，端口占用时必须失败，不得自动换端口。
+- **启动无副作用**：`./scripts/dev.sh` 只启动 Frontend/API；不得安装依赖、执行迁移、
+  修复 grant 或启动摄入。迁移只能显式使用 `scholight_migrator`，运行时只能使用
+  `scholight_app`。
 
 ## 本地混合集成环境
 
@@ -243,6 +258,8 @@ configure_logging(log_level="INFO", use_json=True, file_handler=("app.log", 50_0
 - **PostgreSQL 必须本地隔离**：使用临时 Docker PostgreSQL 16，依次运行 sanchezcloud-identity 和 Scholight migrations；不得读取项目中指向生产 RDS 的 `.env`，不得复制生产用户数据。
 - **Artifact 必须本地隔离**：本地使用 MinIO，而不是生产 AWS S3。通过 `SCHOLIGHT_SURVEY_S3_ENDPOINT_URL` 指向 MinIO，并使用专用本地 Bucket 和测试凭据。MinIO 实现 S3 API，因此报告、Manifest、presigned URL、SHA 校验与 cleanup 流程仍使用真实对象存储协议。
 - **Zilliz 仅限只读搜索**：本地可连接远端 Zilliz 以获得真实论文搜索结果；优先使用 collection-scoped/read-only Key。不得在该环境启动 `metadata-sync`、`paper-ingest`、backfill、scheduler sync、store 维护或任何可能写入/删除 Zilliz 的命令。
+- **本地启动不得隐式读取旧 `.env`**：必须由开发脚本显式加载 `.env.local` 并设置
+  `SCHOLIGHT_DISABLE_DOTENV=1`；发现非 `127.0.0.1:55432` PostgreSQL 时立即退出。
 - **允许启动的服务**：Frontend、API、Survey Draft worker、Survey worker，以及本地 PostgreSQL/MinIO。论文摄入服务默认保持停止。
 - **模型按测试层级选择**：日常和 CI 使用固定假模型，不消耗真实 Token；最终人工验收可显式注入真实 `DEEPSEEK_API_KEY` 和 `IMAGE_GEN_API_KEY`。Secret 不得写入 Compose、测试产物、日志或 Git。
 - **本地模型凭据单一来源**：真实模型人工测试从项目根目录、Git 忽略且权限为 `0600` 的 `.env` 读取 `DEEPSEEK_API_KEY` 和 `IMAGE_GEN_API_KEY`；生产仍只从 Parameter Store 读取。不得把完整生产 `runtime.env` 复制到本机或提交任何 Secret。

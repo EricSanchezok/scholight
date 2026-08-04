@@ -12,7 +12,7 @@ export default defineConfig({
     },
   },
   use: {
-    baseURL: "http://127.0.0.1:5173",
+    baseURL: "http://127.0.0.1:7200",
     locale: "en-US",
     timezoneId: "Asia/Shanghai",
     trace: "on-first-retry",
@@ -23,7 +23,7 @@ export default defineConfig({
   ],
   webServer: {
     command: "npm run dev",
-    url: "http://127.0.0.1:5173",
+    url: "http://127.0.0.1:7200",
     reuseExistingServer: !process.env.CI,
   },
 });

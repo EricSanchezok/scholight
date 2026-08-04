@@ -17,7 +17,7 @@ from sanchezcloud_identity.models.user import UserRecord
 
 from scholight.api.deps import get_current_user
 from scholight.api.http_errors import http_error
-from scholight.config import settings
+from scholight.config import get_survey_public_mode, settings
 from scholight.db.client import DBError
 from scholight.db.queries_survey import (
     Survey,
@@ -353,13 +353,13 @@ def _summary_response(summary: SurveySummary) -> SurveySummaryResponse:
 
 
 def _require_enabled() -> None:
-    if not settings.survey_enabled:
+    if get_survey_public_mode() != "all":
         raise http_error(
-            503,
+            404,
             code="survey_unavailable",
             message="Scholight Survey is not available yet.",
-            retryable=True,
-            retry_after=60,
+            retryable=False,
+            retry_after=None,
         )
 
 

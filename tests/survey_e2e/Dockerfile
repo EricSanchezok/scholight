@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=scholight-api:ci
+ARG BASE_IMAGE=scholight-survey:ci
 FROM ${BASE_IMAGE}
 
 USER root

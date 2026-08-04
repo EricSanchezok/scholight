@@ -8,6 +8,7 @@ import { routes, visibleAccountRoutes, withQuery } from "../app/routes";
 import { mobileMenuMotion } from "../app/motion";
 import { useI18n } from "../i18n/I18nProvider";
 import { styles } from "../styles/classes";
+import { usePublicCapabilities } from "../features/capabilities/usePublicCapabilities";
 import { AccountMenu } from "./AccountMenu";
 import { CloseIcon, MenuIcon } from "./icons";
 
@@ -16,15 +17,18 @@ export function SiteHeader() {
   const { status, adminCapabilities, logout } = useAuth();
   const [open, setOpen] = useState(false);
   const location = useLocation();
+  const capabilities = usePublicCapabilities();
 
   const nav = (
     <>
       <NavLink to={routes.home.path} end onClick={() => setOpen(false)}>
         {messages.navigation.home}
       </NavLink>
-      <NavLink to={routes.survey.path} onClick={() => setOpen(false)}>
-        {messages.navigation.survey}
-      </NavLink>
+      {capabilities.data?.survey === "all" ? (
+        <NavLink to={routes.survey.path} onClick={() => setOpen(false)}>
+          {messages.navigation.survey}
+        </NavLink>
+      ) : null}
       <NavLink to={routes.docs.path} onClick={() => setOpen(false)}>
         {messages.navigation.docs}
       </NavLink>

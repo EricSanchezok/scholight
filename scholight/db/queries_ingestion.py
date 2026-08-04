@@ -283,6 +283,51 @@ async def claim_ingestion_job(worker_id: str, lease_seconds: int) -> IngestionJo
     return _job(row) if row is not None else None
 
 
+async def renew_ingestion_job_lease(
+    arxiv_id: str,
+    worker_id: str,
+    lease_seconds: int,
+) -> bool:
+    """Extend a running job lease only while this worker still owns it."""
+    try:
+        result = await get_pool().execute(
+            """
+            UPDATE scholight.ingestion_jobs
+            SET lease_expires_at = now() + make_interval(secs => $3),
+                updated_at = now()
+            WHERE arxiv_id = $1 AND status = 'running' AND lease_owner = $2
+            """,
+            arxiv_id,
+            worker_id,
+            lease_seconds,
+        )
+    except asyncpg.PostgresError as exc:
+        raise DBError("Unable to renew ingestion job lease") from exc
+    return str(result) != "UPDATE 0"
+
+
+async def release_ingestion_job(arxiv_id: str, worker_id: str) -> bool:
+    """Return an interrupted job to the queue without consuming an attempt."""
+    try:
+        result = await get_pool().execute(
+            """
+            UPDATE scholight.ingestion_jobs
+            SET status = 'pending',
+                attempt_count = GREATEST(attempt_count - 1, 0),
+                available_at = now(),
+                lease_owner = NULL,
+                lease_expires_at = NULL,
+                updated_at = now()
+            WHERE arxiv_id = $1 AND status = 'running' AND lease_owner = $2
+            """,
+            arxiv_id,
+            worker_id,
+        )
+    except asyncpg.PostgresError as exc:
+        raise DBError("Unable to release ingestion job lease") from exc
+    return str(result) != "UPDATE 0"
+
+
 async def complete_ingestion_job(arxiv_id: str, worker_id: str) -> None:
     await _finish_job(arxiv_id, worker_id, "succeeded", None, None, None)
 

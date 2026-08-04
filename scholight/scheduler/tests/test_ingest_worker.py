@@ -2,15 +2,22 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from scholight.db.queries_ingestion import IngestionJob
 from scholight.pipeline.latex_md import LatexMdError, LatexResourceLimitError
-from scholight.scheduler.ingest_worker import InvalidIngestionJobError, process_job
+from scholight.scheduler.ingest_worker import (
+    IngestionShutdownRequestedError,
+    InvalidIngestionJobError,
+    drain_ingest,
+    process_job,
+    run_worker_once,
+)
 from scholight.scheduler.resources import DownloadedResource
 
 
@@ -173,3 +180,85 @@ async def test_empty_latex_markdown_falls_back_to_exact_pdf(tmp_path: Path) -> N
             await process_job(_job(), scratch_root=tmp_path)
 
     fetch_pdf.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_worker_renews_lease_while_processing(tmp_path: Path) -> None:
+    async def slow_process(*_args: object, **_kwargs: object) -> str:
+        await asyncio.sleep(0.03)
+        return "installed"
+
+    renew = AsyncMock(return_value=True)
+    with (
+        patch(
+            "scholight.scheduler.ingest_worker.claim_ingestion_job", AsyncMock(return_value=_job())
+        ),
+        patch("scholight.scheduler.ingest_worker.process_job", side_effect=slow_process),
+        patch("scholight.scheduler.ingest_worker.renew_ingestion_job_lease", renew),
+        patch("scholight.scheduler.ingest_worker.complete_ingestion_job", AsyncMock()),
+    ):
+        worked = await run_worker_once(
+            "worker",
+            scratch_root=tmp_path,
+            heartbeat_interval_seconds=0.005,
+        )
+
+    assert worked is True
+    assert renew.await_count >= 1
+
+
+@pytest.mark.asyncio
+async def test_worker_releases_claim_when_shutdown_reaches_a_safe_boundary(tmp_path: Path) -> None:
+    stop = asyncio.Event()
+
+    async def interrupted(*_args: object, **_kwargs: object) -> str:
+        stop.set()
+        raise IngestionShutdownRequestedError
+
+    release = AsyncMock(return_value=True)
+    complete = AsyncMock()
+    with (
+        patch(
+            "scholight.scheduler.ingest_worker.claim_ingestion_job", AsyncMock(return_value=_job())
+        ),
+        patch("scholight.scheduler.ingest_worker.process_job", side_effect=interrupted),
+        patch("scholight.scheduler.ingest_worker.release_ingestion_job", release),
+        patch("scholight.scheduler.ingest_worker.complete_ingestion_job", complete),
+    ):
+        worked = await run_worker_once("worker", scratch_root=tmp_path, stop_event=stop)
+
+    assert worked is True
+    release.assert_awaited_once_with("2401.00001", "worker")
+    complete.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_drain_exits_after_queue_stays_idle() -> None:
+    with patch("scholight.scheduler.ingest_worker.run_worker_once", AsyncMock(return_value=False)):
+        result = await drain_ingest(
+            idle_grace_seconds=0.01,
+            max_runtime_seconds=1,
+            poll_seconds=0.002,
+            stop_event=asyncio.Event(),
+        )
+
+    assert result.reason == "idle"
+    assert result.jobs_processed == 0
+
+
+@pytest.mark.asyncio
+async def test_drain_stops_at_its_runtime_deadline() -> None:
+    async def slow_attempt(*_args: object, **_kwargs: object) -> bool:
+        await asyncio.sleep(0.01)
+        return True
+
+    with patch("scholight.scheduler.ingest_worker.run_worker_once", side_effect=slow_attempt):
+        result = await drain_ingest(
+            idle_grace_seconds=1,
+            max_runtime_seconds=0.025,
+            poll_seconds=0.001,
+            stop_event=asyncio.Event(),
+        )
+
+    assert result.reason == "max_runtime"
+    assert result.jobs_processed >= 1

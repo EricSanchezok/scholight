@@ -1,27 +1,10 @@
-"""Deployment and static safety contracts for native ingestion."""
+"""Static safety contracts for bounded native ingestion on ECS."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-import yaml
-
 ROOT = Path(__file__).parents[2]
-
-
-def test_production_runs_two_native_ingestion_services() -> None:
-    compose = yaml.safe_load((ROOT / "deploy/production/compose.yaml").read_text())
-    services = compose["services"]
-
-    assert services["metadata-sync"]["command"][-1] == "serve-sync"
-    assert services["paper-ingest"]["command"][-1] == "serve-ingest"
-    assert "profiles" not in services["metadata-sync"]
-    assert "profiles" not in services["paper-ingest"]
-    assert "volumes" not in services["api"]
-    assert "volumes" not in services["metadata-sync"]
-    assert services["paper-ingest"]["volumes"] == ["scholight-data:/data"]
-    assert services["metadata-sync"]["restart"] == "unless-stopped"
-    assert services["paper-ingest"]["restart"] == "unless-stopped"
 
 
 def test_ingestion_code_has_no_collection_lifecycle_or_filter_delete() -> None:
@@ -52,8 +35,23 @@ def test_legacy_daemons_and_checkpoints_are_removed() -> None:
     assert not (scheduler / "chunk_ingest.py").exists()
 
 
-def test_release_smoke_requires_both_ingestion_services_running() -> None:
-    smoke = (ROOT / "deploy/production/smoke.sh").read_text()
+def test_ecs_runs_bounded_ingestion_and_daily_metadata_tasks() -> None:
+    template = (ROOT / "deploy/ecs/scholight-production.yml").read_text(encoding="utf-8")
 
-    assert 'retry "metadata-sync running" service_running metadata-sync' in smoke
-    assert 'retry "paper-ingest running" service_running paper-ingest' in smoke
+    assert "Command: [scholight, scheduler, drain-ingest]" in template
+    assert "ScheduleExpression: rate(2 hours)" in template
+    assert "Command: [scholight, scheduler, sync]" in template
+    assert "ScheduleExpression: cron(0 8 * * ? *)" in template
+    assert template.count("State: !If [RunApplication, !Ref SchedulerState, DISABLED]") == 2
+
+
+def test_ingest_image_is_separate_and_is_not_a_long_lived_service() -> None:
+    dockerfile = (ROOT / "docker/scholight-api/Dockerfile").read_text(encoding="utf-8")
+    template = (ROOT / "deploy/ecs/scholight-production.yml").read_text(encoding="utf-8")
+
+    assert "FROM runtime-base AS ingest" in dockerfile
+    assert 'CMD ["scholight", "scheduler", "drain-ingest"]' in dockerfile
+    assert "IngestTaskDefinition:" in template
+    assert "MetadataTaskDefinition:" in template
+    assert "IngestService:" not in template
+    assert "MetadataService:" not in template

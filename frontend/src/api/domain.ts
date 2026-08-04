@@ -34,6 +34,7 @@ import type {
   SurveyManualDraftRequest,
   SurveyProgress,
   SurveyView,
+  PublicCapabilities,
 } from "./types";
 import { productConfig } from "../config/product";
 
@@ -80,6 +81,10 @@ export const authApi = {
 export const searchApi = {
   search: (body: SearchRequest) =>
     unwrap<SearchResponse>(withAuthRetry(() => apiClient.POST("/search", { body }))),
+};
+
+export const capabilitiesApi = {
+  get: () => unwrap<PublicCapabilities>(apiClient.GET("/capabilities")),
 };
 
 export const accountApi = {

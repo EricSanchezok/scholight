@@ -1,6 +1,6 @@
 # Scholight frontend
 
-Vite, React, and TypeScript client for Scholight. Browser requests always use the relative `/api` base. During local development Vite forwards that prefix to `localhost:8000` and removes `/api` before the request reaches FastAPI.
+Vite, React, and TypeScript client for Scholight. Browser requests always use the relative `/api` base. During local development Vite runs at `127.0.0.1:7200`, forwards that prefix to `127.0.0.1:7201`, and removes `/api` before the request reaches FastAPI.
 
 ```bash
 npm install

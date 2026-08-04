@@ -18,6 +18,7 @@ import { HomePage } from "../pages/HomePage";
 import { NotFoundPage } from "../pages/NotFoundPage";
 import { SearchPage } from "../pages/SearchPage";
 import { SurveyHubPage } from "../features/survey/SurveyHubPage";
+import { SurveyAvailabilityRoute } from "../features/capabilities/SurveyAvailabilityRoute";
 
 import { AnimatedOutlet, ScholightMotionProvider } from "./motion";
 import { privateRouteLoaders } from "./privateRoutes";
@@ -62,10 +63,14 @@ export function App() {
                 <Route index element={<HomePage />} />
                 <Route path={routes.search.segment} element={<SearchPage />} />
                 <Route path={routes.docs.segment} element={<DocsPage />} />
-                <Route path={routes.survey.segment} element={<SurveyHubPage />} />
+                <Route element={<SurveyAvailabilityRoute />}>
+                  <Route path={routes.survey.segment} element={<SurveyHubPage />} />
+                  <Route element={<ProtectedRoute />}>
+                    <Route path={routes.surveyDraft.segment} element={<SurveyDraftPage />} />
+                    <Route path={routes.surveyReport.segment} element={<SurveyReportPage />} />
+                  </Route>
+                </Route>
                 <Route element={<ProtectedRoute />}>
-                  <Route path={routes.surveyDraft.segment} element={<SurveyDraftPage />} />
-                  <Route path={routes.surveyReport.segment} element={<SurveyReportPage />} />
                   <Route path={routes.history.segment} element={<HistoryPage />} />
                   <Route path={routes.usage.segment} element={<UsagePage />} />
                   <Route path={routes.accessKeys.segment} element={<AccessKeysPage />} />

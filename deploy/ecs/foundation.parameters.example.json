@@ -1,0 +1,5 @@
+{
+  "GitHubOidcProviderArn": "arn:aws:iam::919651863140:oidc-provider/token.actions.githubusercontent.com",
+  "GitHubOidcSubjectPrefix": "repo:EricSanchezok@115814526/scholight@1295347074",
+  "AlertEmail": "operator@example.com"
+}

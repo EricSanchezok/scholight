@@ -28,10 +28,15 @@ const result = {
 test.beforeEach(async ({ page }) => {
   await page.clock.setFixedTime(new Date("2026-07-23T00:00:00Z"));
   await page.route("**/api/search", (route) => route.fulfill({ json: result }));
+  await page.route("**/api/capabilities", (route) => route.fulfill({ json: { survey: "off" } }));
   await page.route("**/api/auth/refresh", (route) =>
     route.fulfill({ status: 401, json: { detail: "Invalid session" } }),
   );
 });
+
+async function mockSurveyAvailable(page: Page) {
+  await page.route("**/api/capabilities", (route) => route.fulfill({ json: { survey: "all" } }));
+}
 
 async function mockAuthenticated(page: Page, canManageQuotas = false) {
   await page.route("**/api/auth/refresh", (route) =>
@@ -308,6 +313,7 @@ test("anonymous search reaches the continuous results view", async ({ page }) =>
 test("anonymous survey hub prompts for sign-in without hiding the public shell", async ({
   page,
 }) => {
+  await mockSurveyAvailable(page);
   await page.setViewportSize({ width: 320, height: 800 });
   await page.goto("/survey");
 
@@ -333,6 +339,7 @@ test("anonymous survey hub prompts for sign-in without hiding the public shell",
 });
 
 test("signed-in survey controls follow the shared page geometry", async ({ page }) => {
+  await mockSurveyAvailable(page);
   await mockAuthenticated(page);
   await page.route("**/api/surveys**", (route) =>
     route.fulfill({
@@ -368,6 +375,7 @@ test("signed-in survey controls follow the shared page geometry", async ({ page 
 });
 
 test("completed survey cards render a stable live Markdown preview", async ({ page }) => {
+  await mockSurveyAvailable(page);
   await mockAuthenticated(page);
   await page.route("**/api/surveys?*", (route) =>
     route.fulfill({
@@ -437,6 +445,7 @@ test("completed survey cards render a stable live Markdown preview", async ({ pa
 });
 
 test("a completed report downloads as a Markdown and image package", async ({ page }) => {
+  await mockSurveyAvailable(page);
   await mockAuthenticated(page);
   const surveyId = "00000000-0000-0000-0000-000000000001";
   await page.route(`**/api/surveys/${surveyId}`, (route) =>
@@ -488,6 +497,14 @@ test("a completed report downloads as a Markdown and image package", async ({ pa
   const download = await downloadPromise;
 
   expect(download.suggestedFilename()).toBe("Chain-of-thought-compression-and-evaluation.zip");
+});
+
+test("survey routes remain unavailable while the public capability is off", async ({ page }) => {
+  await page.goto("/survey");
+
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("heading", { name: "Research surveys" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Survey" })).toHaveCount(0);
 });
 
 test("a delayed search immediately shows a stable editorial skeleton", async ({ page }) => {

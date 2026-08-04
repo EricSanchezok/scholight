@@ -6,6 +6,7 @@ const historyRoot = [...privateRoot, "history"] as const;
 const surveyRoot = [...privateRoot, "survey"] as const;
 
 export const queryKeys = {
+  capabilities: ["public", "capabilities"] as const,
   search: (request: SearchRequest) => ["search", request] as const,
   privateRoot,
   historyRoot,

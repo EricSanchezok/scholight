@@ -1,292 +1,152 @@
-name: Release
+name: Deploy immutable release
 
 on:
   workflow_dispatch:
     inputs:
       operation:
-        description: Publish images, publish and deploy, or roll back production
+        description: Deploy a release or roll back to a previous immutable release
         required: true
         type: choice
-        options: [publish, deploy, rollback]
-      ref:
-        description: Git commit or tag to publish
-        required: false
-        default: main
+        options: [deploy, rollback]
+      release_sha:
+        description: Exact 40-character SHA whose release manifest will be deployed
+        required: true
         type: string
+      application_enabled:
+        description: Start application services (set false only for first database bootstrap)
+        required: true
+        default: "true"
+        type: choice
+        options: ["false", "true"]
+      survey_runtime_enabled:
+        description: Run Survey workers
+        required: true
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+      survey_public_mode:
+        description: Expose Survey to all users
+        required: true
+        default: off
+        type: choice
+        options: [off, all]
+      scheduler_state:
+        description: Run ingest and metadata schedules
+        required: true
+        default: DISABLED
+        type: choice
+        options: [DISABLED, ENABLED]
 
 permissions:
   contents: read
   id-token: write
 
 concurrency:
-  group: scholight-production-release
+  group: scholight-production
   cancel-in-progress: false
 
-
 jobs:
-  prepare:
-    if: inputs.operation != 'rollback'
-    runs-on: ubuntu-latest
-    outputs:
-      release_sha: ${{ steps.revision.outputs.release_sha }}
-      package_sha: ${{ steps.package.outputs.package_sha }}
-    steps:
-      - name: Check out release revision
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          ref: ${{ inputs.ref }}
-          persist-credentials: false
-          fetch-depth: 0
-      - name: Resolve immutable revision
-        id: revision
-        run: echo "release_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-      - name: Resolve production package digest
-        id: package
-        run: echo "package_sha=$(bash deploy/production/release.sh package-sha)" >> "$GITHUB_OUTPUT"
-      - name: Require revision to be merged into main
-        env:
-          RELEASE_SHA: ${{ steps.revision.outputs.release_sha }}
-        run: git merge-base --is-ancestor "$RELEASE_SHA" origin/main
-
-  quality:
-    if: inputs.operation != 'rollback'
-    needs: prepare
-    uses: ./.github/workflows/ci.yml
-    with:
-      ref: ${{ needs.prepare.outputs.release_sha }}
-
-  publish-backend:
-    if: inputs.operation != 'rollback'
-    needs: [prepare, quality]
-    runs-on: ubuntu-latest
-    outputs:
-      image: ${{ steps.image.outputs.reference }}
-    steps:
-      - name: Check out release revision
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          ref: ${{ needs.prepare.outputs.release_sha }}
-          persist-credentials: false
-      - name: Mint read-only SanchezCloud Identity token
-        id: identity-token
-        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
-        with:
-          app-id: ${{ vars.IDENTITY_READER_APP_ID }}
-          private-key: ${{ secrets.IDENTITY_READER_PRIVATE_KEY }}
-          owner: EricSanchezok
-          repositories: sanchezcloud-identity
-          permission-contents: read
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
-        with:
-          role-to-assume: ${{ vars.AWS_PUBLISH_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
-      - name: Log in to ECR
-        id: ecr
-        uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
-      - name: Build and push backend
-        id: build
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
-        with:
-          context: .
-          file: docker/scholight-api/Dockerfile
-          platforms: ${{ vars.PRODUCTION_PLATFORM }}
-          push: true
-          tags: ${{ steps.ecr.outputs.registry }}/${{ vars.ECR_BACKEND_REPOSITORY }}:git-${{ needs.prepare.outputs.release_sha }}
-          provenance: mode=max
-          sbom: true
-          secrets: |
-            github_token=${{ steps.identity-token.outputs.token }}
-      - name: Export digest-qualified backend reference
-        id: image
-        env:
-          REGISTRY: ${{ steps.ecr.outputs.registry }}
-          REPOSITORY: ${{ vars.ECR_BACKEND_REPOSITORY }}
-          DIGEST: ${{ steps.build.outputs.digest }}
-        run: echo "reference=${REGISTRY}/${REPOSITORY}@${DIGEST}" >> "$GITHUB_OUTPUT"
-
-  publish-frontend:
-    if: inputs.operation != 'rollback'
-    needs: [prepare, quality]
-    runs-on: ubuntu-latest
-    outputs:
-      image: ${{ steps.image.outputs.reference }}
-    steps:
-      - name: Check out release revision
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          ref: ${{ needs.prepare.outputs.release_sha }}
-          persist-credentials: false
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
-        with:
-          role-to-assume: ${{ vars.AWS_PUBLISH_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
-      - name: Log in to ECR
-        id: ecr
-        uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
-      - name: Build and push frontend
-        id: build
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
-        with:
-          context: frontend
-          file: frontend/Dockerfile
-          platforms: ${{ vars.PRODUCTION_PLATFORM }}
-          push: true
-          tags: ${{ steps.ecr.outputs.registry }}/${{ vars.ECR_FRONTEND_REPOSITORY }}:git-${{ needs.prepare.outputs.release_sha }}
-          provenance: mode=max
-          sbom: true
-      - name: Export digest-qualified frontend reference
-        id: image
-        env:
-          REGISTRY: ${{ steps.ecr.outputs.registry }}
-          REPOSITORY: ${{ vars.ECR_FRONTEND_REPOSITORY }}
-          DIGEST: ${{ steps.build.outputs.digest }}
-        run: echo "reference=${REGISTRY}/${REPOSITORY}@${DIGEST}" >> "$GITHUB_OUTPUT"
-
-  publish-extract:
-    if: inputs.operation != 'rollback'
-    needs: [prepare, quality]
-    runs-on: ubuntu-latest
-    outputs:
-      image: ${{ steps.image.outputs.reference }}
-    steps:
-      - name: Check out release revision
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          ref: ${{ needs.prepare.outputs.release_sha }}
-          persist-credentials: false
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
-        with:
-          role-to-assume: ${{ vars.AWS_PUBLISH_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
-      - name: Log in to ECR
-        id: ecr
-        uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
-      - name: Build and push Web Extract
-        id: build
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
-        with:
-          context: .
-          file: docker/scholight-extract/Dockerfile
-          platforms: ${{ vars.PRODUCTION_PLATFORM }}
-          push: true
-          tags: ${{ steps.ecr.outputs.registry }}/${{ vars.ECR_EXTRACT_REPOSITORY }}:git-${{ needs.prepare.outputs.release_sha }}
-          provenance: mode=max
-          sbom: true
-      - name: Export digest-qualified Web Extract reference
-        id: image
-        env:
-          REGISTRY: ${{ steps.ecr.outputs.registry }}
-          REPOSITORY: ${{ vars.ECR_EXTRACT_REPOSITORY }}
-          DIGEST: ${{ steps.build.outputs.digest }}
-        run: echo "reference=${REGISTRY}/${REPOSITORY}@${DIGEST}" >> "$GITHUB_OUTPUT"
-
-  release-manifest:
-    if: inputs.operation != 'rollback'
-    needs: [prepare, publish-backend, publish-frontend, publish-extract]
-    runs-on: ubuntu-latest
-    outputs:
-      backend_image: ${{ needs.publish-backend.outputs.image }}
-      frontend_image: ${{ needs.publish-frontend.outputs.image }}
-      extract_image: ${{ needs.publish-extract.outputs.image }}
-    steps:
-      - name: Create release manifest
-        env:
-          RELEASE_SHA: ${{ needs.prepare.outputs.release_sha }}
-          PACKAGE_SHA: ${{ needs.prepare.outputs.package_sha }}
-          BACKEND_IMAGE: ${{ needs.publish-backend.outputs.image }}
-          FRONTEND_IMAGE: ${{ needs.publish-frontend.outputs.image }}
-          EXTRACT_IMAGE: ${{ needs.publish-extract.outputs.image }}
-        run: |
-          {
-            echo 'SCHOLIGHT_RELEASE_CONTRACT_VERSION=2'
-            echo "SCHOLIGHT_PACKAGE_SHA=${PACKAGE_SHA}"
-            echo "SCHOLIGHT_RELEASE_SHA=${RELEASE_SHA}"
-            echo "SCHOLIGHT_BACKEND_IMAGE=${BACKEND_IMAGE}"
-            echo "SCHOLIGHT_FRONTEND_IMAGE=${FRONTEND_IMAGE}"
-            echo "SCHOLIGHT_EXTRACT_IMAGE=${EXTRACT_IMAGE}"
-          } > release.env
-      - name: Upload release manifest
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: scholight-release-${{ needs.prepare.outputs.release_sha }}
-          path: release.env
-          if-no-files-found: error
-          retention-days: 30
-
   deploy:
-    if: inputs.operation == 'deploy'
-    needs: [prepare, release-manifest]
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - name: Check out release revision
+      - name: Validate release selection
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+          APPLICATION_ENABLED: ${{ inputs.application_enabled }}
+          SURVEY_RUNTIME_ENABLED: ${{ inputs.survey_runtime_enabled }}
+          SURVEY_PUBLIC_MODE: ${{ inputs.survey_public_mode }}
+        run: |
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          if [[ "$APPLICATION_ENABLED" != true && "$SURVEY_RUNTIME_ENABLED" == true ]]; then
+            echo "Survey workers cannot run while application services are disabled" >&2
+            exit 1
+          fi
+          if [[ "$SURVEY_PUBLIC_MODE" == all && "$SURVEY_RUNTIME_ENABLED" != true ]]; then
+            echo "Survey cannot be public unless its workers are running" >&2
+            exit 1
+          fi
+      - name: Check out exact release source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ needs.prepare.outputs.release_sha }}
+          ref: ${{ inputs.release_sha }}
           persist-credentials: false
       - name: Configure AWS deployment credentials
         uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
-      - name: Deploy through Systems Manager
+      - name: Download and verify release manifest
         env:
-          INSTANCE_ID: ${{ vars.PRODUCTION_INSTANCE_ID }}
           AWS_REGION: ${{ vars.AWS_REGION }}
-          RELEASE_SHA: ${{ needs.prepare.outputs.release_sha }}
-          PACKAGE_SHA: ${{ needs.prepare.outputs.package_sha }}
-          BACKEND_IMAGE: ${{ needs.release-manifest.outputs.backend_image }}
-          FRONTEND_IMAGE: ${{ needs.release-manifest.outputs.frontend_image }}
-          EXTRACT_IMAGE: ${{ needs.release-manifest.outputs.extract_image }}
+          RELEASE_SHA: ${{ inputs.release_sha }}
         run: |
-          parameters=$(jq -cn \
-            --arg region "$AWS_REGION" \
-            --arg release "$RELEASE_SHA" \
-            --arg package "$PACKAGE_SHA" \
-            --arg backend "$BACKEND_IMAGE" \
-            --arg frontend "$FRONTEND_IMAGE" \
-            --arg extract "$EXTRACT_IMAGE" \
-            '{
-              Operation: ["deploy"],
-              AwsRegion: [$region],
-              ReleaseSha: [$release],
-              PackageSha: [$package],
-              BackendImage: [$backend],
-              FrontendImage: [$frontend],
-              ExtractImage: [$extract]
-            }')
-          command_id=$(aws ssm send-command \
-            --instance-ids "$INSTANCE_ID" \
-            --document-name Scholight-BootstrapAndRelease \
-            --parameters "$parameters" \
-            --query 'Command.CommandId' --output text)
-          bash deploy/production/wait-ssm.sh "$command_id" "$INSTANCE_ID"
+          account_id=$(aws sts get-caller-identity --query Account --output text)
+          bucket="sanchezcloud-scholight-releases-${account_id}-${AWS_REGION}"
+          aws s3 cp "s3://${bucket}/releases/${RELEASE_SHA}/manifest.json" release-manifest.json
+          python scripts/release_manifest.py verify \
+            --manifest release-manifest.json \
+            --expected-release-sha "$RELEASE_SHA"
+      - name: Deploy digest-qualified ECS release
+        env:
+          DOMAIN_NAME: ${{ vars.PRODUCTION_DOMAIN }}
+          CERTIFICATE_ARN: ${{ vars.PRODUCTION_CERTIFICATE_ARN }}
+          RDS_SECURITY_GROUP_ID: ${{ vars.RDS_SECURITY_GROUP_ID }}
+          CLOUDFORMATION_ROLE_ARN: ${{ vars.AWS_CLOUDFORMATION_ROLE_ARN }}
+          APPLICATION_ENABLED: ${{ inputs.application_enabled }}
+          SURVEY_RUNTIME_ENABLED: ${{ inputs.survey_runtime_enabled }}
+          SURVEY_PUBLIC_MODE: ${{ inputs.survey_public_mode }}
+          SCHEDULER_STATE: ${{ inputs.scheduler_state }}
+        run: |
+          web_image=$(jq -r .images.web release-manifest.json)
+          api_image=$(jq -r .images.api release-manifest.json)
+          extract_image=$(jq -r .images.extract release-manifest.json)
+          ingest_image=$(jq -r .images.ingest release-manifest.json)
+          survey_image=$(jq -r .images.survey release-manifest.json)
+          aws cloudformation deploy \
+            --stack-name sanchezcloud-scholight-production \
+            --template-file deploy/ecs/scholight-production.yml \
+            --role-arn "$CLOUDFORMATION_ROLE_ARN" \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              DomainName="$DOMAIN_NAME" \
+              CertificateArn="$CERTIFICATE_ARN" \
+              RdsSecurityGroupId="$RDS_SECURITY_GROUP_ID" \
+              WebImage="$web_image" \
+              ApiImage="$api_image" \
+              ExtractImage="$extract_image" \
+              IngestImage="$ingest_image" \
+              SurveyImage="$survey_image" \
+              ApplicationEnabled="$APPLICATION_ENABLED" \
+              SurveyRuntimeEnabled="$SURVEY_RUNTIME_ENABLED" \
+              SurveyPublicMode="$SURVEY_PUBLIC_MODE" \
+              SchedulerState="$SCHEDULER_STATE"
+      - name: Wait for services to stabilize
+        run: |
+          cluster=sanchezcloud-production
+          # JMESPath uses literal backticks.
+          # shellcheck disable=SC2016
+          mapfile -t services < <(aws cloudformation describe-stack-resources \
+            --stack-name sanchezcloud-scholight-production \
+            --query 'StackResources[?ResourceType==`AWS::ECS::Service`].PhysicalResourceId' \
+            --output text | tr '\t' '\n')
+          (( ${#services[@]} > 0 ))
+          aws ecs wait services-stable --cluster "$cluster" --services "${services[@]}"
       - name: Verify public deployment from the runner
+        if: inputs.application_enabled == 'true'
         env:
           PRODUCTION_DOMAIN: ${{ vars.PRODUCTION_DOMAIN }}
+          SURVEY_PUBLIC_MODE: ${{ inputs.survey_public_mode }}
         run: |
-          [[ "$PRODUCTION_DOMAIN" =~ ^[A-Za-z0-9.-]+$ ]] || {
-            echo "PRODUCTION_DOMAIN must be a DNS hostname" >&2
-            exit 1
-          }
+          [[ "$PRODUCTION_DOMAIN" =~ ^[A-Za-z0-9.-]+$ ]]
           retry() {
             local url=$1
-            for attempt in {1..12}; do
+            for attempt in {1..18}; do
               if curl --fail --silent --show-error --output /dev/null "$url"; then
                 return 0
               fi
-              if ((attempt < 12)); then
-                sleep 5
-              fi
+              (( attempt == 18 )) || sleep 10
             done
             echo "External smoke check failed: $url" >&2
             return 1
@@ -295,40 +155,16 @@ jobs:
           retry "https://${PRODUCTION_DOMAIN}/api/openapi.json"
           retry "https://${PRODUCTION_DOMAIN}/llms.txt"
           retry "https://${PRODUCTION_DOMAIN}/docs.md"
-          for path in livez readyz; do
-            status=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
-              "https://${PRODUCTION_DOMAIN}/api/${path}")
-            [[ "$status" == 404 ]] || {
-              echo "Public /api/${path} returned ${status}, expected 404" >&2
-              exit 1
-            }
-          done
-
-  rollback:
-    if: inputs.operation == 'rollback'
-    runs-on: ubuntu-latest
-    environment: production
-    steps:
-      - name: Check out release tooling
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          persist-credentials: false
-      - name: Configure AWS deployment credentials
-        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
-        with:
-          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
-      - name: Roll back through Systems Manager
-        env:
-          INSTANCE_ID: ${{ vars.PRODUCTION_INSTANCE_ID }}
-          AWS_REGION: ${{ vars.AWS_REGION }}
+          capabilities=$(curl --fail --silent --show-error \
+            "https://${PRODUCTION_DOMAIN}/api/capabilities")
+          test "$(jq -r .survey <<<"$capabilities")" = "$SURVEY_PUBLIC_MODE"
+      - name: Record release operation
         run: |
-          parameters=$(jq -cn \
-            --arg region "$AWS_REGION" \
-            '{Operation: ["rollback"], AwsRegion: [$region]}')
-          command_id=$(aws ssm send-command \
-            --instance-ids "$INSTANCE_ID" \
-            --document-name Scholight-BootstrapAndRelease \
-            --parameters "$parameters" \
-            --query 'Command.CommandId' --output text)
-          bash deploy/production/wait-ssm.sh "$command_id" "$INSTANCE_ID"
+          {
+            echo "### Scholight ${{ inputs.operation }}"
+            echo "- Release: \`${{ inputs.release_sha }}\`"
+            echo "- Application: \`${{ inputs.application_enabled }}\`"
+            echo "- Survey runtime: \`${{ inputs.survey_runtime_enabled }}\`"
+            echo "- Survey public mode: \`${{ inputs.survey_public_mode }}\`"
+            echo "- Schedulers: \`${{ inputs.scheduler_state }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

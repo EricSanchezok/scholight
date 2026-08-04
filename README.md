@@ -3,6 +3,7 @@
 AI 学术研究引擎——当前索引 arXiv 语料，提供段落级论文检索、多阶段重排与通用 Web Extract。
 
 前端产品原则以 [`PRODUCT.md`](PRODUCT.md) 为准，视觉与交互系统以 [`DESIGN.md`](DESIGN.md) 为准；新增界面前应先读取两者。
+本地端口、共享 PostgreSQL、启动 profile 和远程依赖规则以 [`DEVELOPMENT.md`](DEVELOPMENT.md) 为准。
 共享身份接入、数据库角色、升级和排障的权威规范见
 [`sanchezcloud-identity` engineering handbook](https://github.com/EricSanchezok/sanchezcloud-identity/blob/main/docs/README.md)；本仓库只维护 Scholight 特有规则。
 
@@ -31,7 +32,7 @@ scholight/
 | 组件                 | 用途                                                       |
 | -------------------- | ---------------------------------------------------------- |
 | Zilliz Cloud         | 向量数据库（Milvus 兼容），存储 303 万篇论文 + 1.72 亿段落 |
-| PostgreSQL (AWS RDS) | `auth.*` 共享身份 + `scholight.*` 产品账户、额度与历史      |
+| PostgreSQL | 本地共享 PG；生产使用 AWS RDS。保存 `auth.*` 与 `scholight.*` |
 | Embedding API        | 文本向量化（Qwen3-Embedding-0.6B，硅基流动 / faro-hosted） |
 
 ---
@@ -41,12 +42,16 @@ scholight/
 ```bash
 git clone git@github.com:EricSanchezok/scholight.git
 cd scholight
-cp .env.example .env   # 填入 API key 和密码
-
+cp .env.example .env.local   # 只填本地运行密码、应用 secret 和只读 Zilliz key
+chmod 600 .env.local
 uv sync
-uv run scholight store health   # 验证 Zilliz Cloud 连通性
-uv run scholight search -q "attention mechanism"   # 测试搜索
+npm --prefix frontend install
+./scripts/dev.sh             # Web 7200 / API 7201
 ```
+
+不要使用根目录遗留 `.env` 启动本地 API。开发脚本会显式加载 `.env.local`、禁用隐式
+dotenv，并拒绝非 `127.0.0.1:55432` 的 PostgreSQL。Zilliz 只允许只读搜索；详细规则见
+本地开发手册。
 
 程序化接入与 MCP 配置请从站内 `/docs` 开始。
 
@@ -300,23 +305,20 @@ uv run scholight scheduler enqueue-backfill \
 
 ---
 
-## Docker 部署
+## 生产部署
 
-本仓库根目录的 Compose 文件用于本地构建和运维。正式环境使用独立的
-[`deploy/production/`](deploy/production/README.md) 部署包：Caddy 是唯一公开入口，
-前后端按 digest 协调发布。sanchezcloud-identity 由其受保护工作流独立迁移
-`auth.*`；Scholight 发布只校验 auth schema 版本并迁移 `scholight.*`。
+正式环境的唯一主线是 [`deploy/ecs/`](deploy/ecs/README.md)：五个职责明确的不可变
+镜像运行在共享 SanchezCloud Fargate 平台，发布清单固定全部 digest。旧的
+[`deploy/production/`](deploy/production/README.md) 单机 Compose 包已冻结，只在迁移
+观察期作为旧 EC2 回退参考，不再接收功能或发布流程变更。
+
+sanchezcloud-identity 由其受保护工作流独立迁移 `auth.*`；Scholight 发布只校验
+Identity schema 版本，产品 migration workflow 只迁移 `scholight.*`。
 完整边界及新产品接入规则见
 [`docs/architecture/data-ownership.md`](docs/architecture/data-ownership.md)。
 
-```bash
-cp .env.example .env   # 填入所有必填配置和明确的前端/代理值
-docker compose --env-file .env build
-
-# auth.* 已由 sanchezcloud-identity workflow 迁移后，只执行 Scholight migration
-docker compose --env-file .env --profile migrate run --rm migrate
-docker compose --env-file .env up -d api metadata-sync paper-ingest
-```
+根 Compose 不是日常本地开发入口，且不得读取 `.env.local`。它不再是正式发布
+入口；本地开发统一使用 `./scripts/dev.sh`，生产操作遵循 `deploy/ecs/README.md`。
 
 反向代理只应信任明确的 Caddy IP/CIDR，不能把 `SCHOLIGHT_FORWARDED_ALLOW_IPS` 设为 `*`；不要公开路由 `/livez` 或 `/readyz`。生产 CORS 必须使用实际前端 origin 列表并允许凭据。匿名和 Access Key HMAC 配置只注入 API service，不注入 migrate 或 scheduler。
 
@@ -324,7 +326,7 @@ PostgreSQL 的 expand-only migration 保存每日连续游标、摄入任务、�
 `auth_migrator` 和 `scholight_migrator` 分别拥有自己的 schema，均没有数据库级
 `CREATE`；两个 runner 都会验证 schema 已由基础设施预置且归当前角色所有。
 
-生产 Compose 使用同一个 backend digest 运行 `metadata-sync` 和 `paper-ingest`。
+ECS 使用独立 ingest digest 运行 `metadata-sync` 和有界 `paper-ingest` tasks。
 后者按单篇论文依次完成下载、解析、切块、Embedding 与安全写入；修订时始终先
 upsert 完整新 chunks，再按已核验的明确主键差集清理旧 chunks。部署和 migration
 不会 drop、重建或批量回填现有 Zilliz collection。
