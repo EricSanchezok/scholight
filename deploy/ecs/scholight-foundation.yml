@@ -470,6 +470,9 @@ Resources:
                 Action: iam:PassRole
                 Resource: !GetAtt CloudFormationServiceRole.Arn
               - Effect: Allow
+                Action: ecs:DescribeServices
+                Resource: !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:service/sanchezcloud-production/scholight-*
+              - Effect: Allow
                 Action: [s3:GetObject]
                 Resource: !Sub ${ReleaseManifestBucket.Arn}/releases/*
               - Effect: Allow

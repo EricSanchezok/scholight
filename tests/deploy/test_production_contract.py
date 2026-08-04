@@ -195,6 +195,20 @@ def test_cloudformation_role_can_manage_scoped_task_role_policies() -> None:
     assert "iam:AttachGroupPolicy" not in cloudformation_policy
 
 
+def test_production_deploy_role_can_wait_for_scholight_services() -> None:
+    foundation = (ECS / "scholight-foundation.yml").read_text(encoding="utf-8")
+    deploy_policy = foundation.split("ProductionDeployRole:", maxsplit=1)[1].split(
+        "DatabaseDeployRole:", maxsplit=1
+    )[0]
+
+    assert "Action: ecs:DescribeServices" in deploy_policy
+    assert (
+        "arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:service/"
+        "sanchezcloud-production/scholight-*" in deploy_policy
+    )
+    assert "Action: ecs:*" not in deploy_policy
+
+
 def test_active_workflows_do_not_depend_on_frozen_ec2_package() -> None:
     active = "\n".join(
         (ROOT / ".github/workflows" / name).read_text(encoding="utf-8")
