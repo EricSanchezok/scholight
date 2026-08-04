@@ -10,6 +10,8 @@ from pydantic import ValidationError
 from scholight.api.search_access import anonymous_ip_digest
 from scholight.config import (
     Settings,
+    get_survey_public_mode,
+    is_survey_runtime_enabled,
     settings,
     validate_api_runtime_settings,
     validate_survey_draft_worker_settings,
@@ -79,6 +81,16 @@ def test_survey_daily_limit_defaults_to_three(monkeypatch: pytest.MonkeyPatch) -
     loaded = Settings(_env_file=None)  # type: ignore[call-arg]
 
     assert loaded.survey_daily_limit == 3
+
+
+def test_survey_runtime_can_run_while_public_mode_is_off(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "survey_runtime_enabled", True)
+    monkeypatch.setattr(settings, "survey_public_mode", "off")
+
+    assert is_survey_runtime_enabled() is True
+    assert get_survey_public_mode() == "off"
 
 
 def test_server_concurrency_limit_can_be_enabled_explicitly(
@@ -204,7 +216,8 @@ def test_runtime_validation_requires_survey_boundaries_only_when_enabled(
     monkeypatch.setattr(settings, "zilliz_token", "fixture-token")
     monkeypatch.setattr(settings, "embedding_base_url", "https://embedding.example.invalid/v1")
     monkeypatch.setattr(settings, "cors_allow_origins", ["http://localhost:3000"])
-    monkeypatch.setattr(settings, "survey_enabled", True)
+    monkeypatch.setattr(settings, "survey_runtime_enabled", True)
+    monkeypatch.setattr(settings, "survey_public_mode", "all")
     monkeypatch.setattr(settings, "deepseek_api_key", "deepseek-secret")
     monkeypatch.setattr(settings, "survey_mcp_jwt_secret", "")
     monkeypatch.setattr(settings, "survey_s3_bucket", "")
@@ -216,7 +229,8 @@ def test_runtime_validation_requires_survey_boundaries_only_when_enabled(
 def test_draft_worker_does_not_require_artifact_or_image_credentials(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(settings, "survey_enabled", True)
+    monkeypatch.setattr(settings, "survey_runtime_enabled", True)
+    monkeypatch.setattr(settings, "survey_public_mode", "all")
     monkeypatch.setattr(settings, "survey_mcp_jwt_secret", "s" * 32)
     monkeypatch.setattr(settings, "deepseek_api_key", "deepseek-secret")
     monkeypatch.setattr(settings, "survey_s3_bucket", "")
@@ -228,7 +242,8 @@ def test_draft_worker_does_not_require_artifact_or_image_credentials(
 def test_survey_worker_requires_directmail_credentials(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(settings, "survey_enabled", True)
+    monkeypatch.setattr(settings, "survey_runtime_enabled", True)
+    monkeypatch.setattr(settings, "survey_public_mode", "all")
     monkeypatch.setattr(settings, "survey_mcp_jwt_secret", "s" * 32)
     monkeypatch.setattr(settings, "deepseek_api_key", "deepseek-secret")
     monkeypatch.setattr(settings, "survey_s3_bucket", "survey-artifacts")

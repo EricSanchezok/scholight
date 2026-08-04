@@ -572,7 +572,7 @@ def test_release_and_smoke_share_one_survey_profile_decision() -> None:
         'COMPOSE_COMMAND=${SCHOLIGHT_COMPOSE_COMMAND:-"${SCRIPT_DIR}/compose-command.sh"}' in smoke
     )
     assert "--profile survey" in helper
-    assert "SCHOLIGHT_SURVEY_ENABLED must be exactly true or false" in helper
+    assert "SCHOLIGHT_SURVEY_RUNTIME_ENABLED must be exactly true or false" in helper
     assert "--profile survey" not in release
     assert "--profile survey" not in smoke
 
@@ -602,12 +602,12 @@ def test_compose_helper_applies_survey_profile_only_when_enabled(tmp_path: Path)
         "SCHOLIGHT_COMPOSE_FILE": str(compose),
     }
 
-    runtime.write_text("SCHOLIGHT_SURVEY_ENABLED=false\n", encoding="utf-8")
+    runtime.write_text("SCHOLIGHT_SURVEY_RUNTIME_ENABLED=false\n", encoding="utf-8")
     disabled = subprocess.run(
         ["bash", str(helper), "ps"], env=environment, capture_output=True, text=True, check=False
     )
     disabled_command = log.read_text(encoding="utf-8")
-    runtime.write_text("SCHOLIGHT_SURVEY_ENABLED=true\n", encoding="utf-8")
+    runtime.write_text("SCHOLIGHT_SURVEY_RUNTIME_ENABLED=true\n", encoding="utf-8")
     enabled = subprocess.run(
         ["bash", str(helper), "ps"], env=environment, capture_output=True, text=True, check=False
     )

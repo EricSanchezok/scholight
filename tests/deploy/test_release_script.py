@@ -35,7 +35,7 @@ def deployment_environment(tmp_path: Path) -> dict[str, str]:
     runtime.write_text(
         "SCHOLIGHT_AWS_REGION=ap-east-1\n"
         "SCHOLIGHT_ECR_REGISTRY=registry.example\n"
-        "SCHOLIGHT_SURVEY_ENABLED=false\n",
+        "SCHOLIGHT_SURVEY_RUNTIME_ENABLED=false\n",
         encoding="utf-8",
     )
     runtime.chmod(0o600)

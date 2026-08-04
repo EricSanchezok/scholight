@@ -1,6 +1,7 @@
 """Pydantic Settings for Scholight — all config via SCHOLIGHT_ env vars."""
 
 import os
+from typing import Literal
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
@@ -97,8 +98,8 @@ class Settings(BaseSettings):
     pg_user: str = "scholight_app"
     pg_password: str = ""
     pg_ssl_root_cert: str = "disable"
-    pg_pool_min_size: int = 5
-    pg_pool_max_size: int = 20
+    pg_pool_min_size: int = 2
+    pg_pool_max_size: int = 8
     pg_pool_acquire_timeout: float = 5.0
     pg_pool_command_timeout: float = 10.0
     pg_pool_max_inactive_lifetime: float = 300.0
@@ -156,7 +157,10 @@ class Settings(BaseSettings):
     survey_s3_bucket: str = ""
     survey_s3_endpoint_url: str | None = None
     survey_s3_public_endpoint_url: str | None = None
-    survey_enabled: bool = False
+    # Workers can be exercised with real dependencies while the public product
+    # remains fail-closed. Survey has never shipped, so there is no legacy switch.
+    survey_runtime_enabled: bool = False
+    survey_public_mode: Literal["off", "all"] = "off"
     survey_daily_limit: int = Field(default=3, ge=1, le=100)
     survey_draft_timeout_seconds: int = Field(default=1800, ge=60, le=3600)
     survey_job_timeout_seconds: int = Field(default=86400, ge=60, le=172800)
@@ -217,6 +221,16 @@ class Settings(BaseSettings):
 settings = Settings()
 
 
+def is_survey_runtime_enabled() -> bool:
+    """Return whether Survey workers and their real dependencies may run."""
+    return settings.survey_runtime_enabled
+
+
+def get_survey_public_mode() -> Literal["off", "all"]:
+    """Return the user-visible Survey mode."""
+    return settings.survey_public_mode
+
+
 def validate_api_runtime_settings() -> None:
     """Validate secrets and trust boundaries required only by the HTTP API."""
     if len(settings.jwt_secret.strip().encode("utf-8")) < 32:
@@ -231,7 +245,12 @@ def validate_api_runtime_settings() -> None:
         raise ValueError("SCHOLIGHT_MCP_DELEGATION_JWT_SECRET must contain at least 32 UTF-8 bytes")
     if settings.extract_enabled:
         _validate_extract_shared_settings()
-    if settings.survey_enabled:
+    if get_survey_public_mode() == "all":
+        if not is_survey_runtime_enabled():
+            raise ValueError(
+                "SCHOLIGHT_SURVEY_RUNTIME_ENABLED must be true when "
+                "SCHOLIGHT_SURVEY_PUBLIC_MODE is 'all'"
+            )
         if not settings.deepseek_api_key.strip():
             raise ValueError("DEEPSEEK_API_KEY is required when Survey is enabled")
         if len(settings.survey_mcp_jwt_secret.encode("utf-8")) < 32:
@@ -266,8 +285,8 @@ def validate_extract_runtime_settings() -> None:
 
 def validate_survey_worker_settings() -> None:
     """Validate only the secrets and storage needed by the Survey worker."""
-    if not settings.survey_enabled:
-        raise ValueError("SCHOLIGHT_SURVEY_ENABLED must be true to run the Survey worker")
+    if not is_survey_runtime_enabled():
+        raise ValueError("SCHOLIGHT_SURVEY_RUNTIME_ENABLED must be true to run the Survey worker")
     if not settings.deepseek_api_key.strip():
         raise ValueError("DEEPSEEK_API_KEY is required by the Survey worker")
     if len(settings.survey_mcp_jwt_secret.encode("utf-8")) < 32:
@@ -284,8 +303,10 @@ def validate_survey_worker_settings() -> None:
 
 def validate_survey_draft_worker_settings() -> None:
     """Validate the smaller secret boundary needed by the Draft worker."""
-    if not settings.survey_enabled:
-        raise ValueError("SCHOLIGHT_SURVEY_ENABLED must be true to run the Survey Draft worker")
+    if not is_survey_runtime_enabled():
+        raise ValueError(
+            "SCHOLIGHT_SURVEY_RUNTIME_ENABLED must be true to run the Survey Draft worker"
+        )
     if not settings.deepseek_api_key.strip():
         raise ValueError("DEEPSEEK_API_KEY is required by the Survey Draft worker")
     if len(settings.survey_mcp_jwt_secret.encode("utf-8")) < 32:

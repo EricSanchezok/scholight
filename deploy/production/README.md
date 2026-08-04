@@ -162,8 +162,10 @@ host package. GitHub Actions never sends or mutates host runtime secrets.
 
 ## Survey activation and artifact permissions
 
-`SCHOLIGHT_SURVEY_ENABLED` must be present in `runtime.env` and must be exactly
-`true` or `false`. The reviewed `compose-command.sh` is the single Compose entry
+`SCHOLIGHT_SURVEY_RUNTIME_ENABLED` must be present in `runtime.env` and must be exactly
+`true` or `false`. `SCHOLIGHT_SURVEY_PUBLIC_MODE` independently controls user exposure
+and must be `off` or `all`; `all` is rejected unless the runtime is enabled. The
+reviewed `compose-command.sh` is the single Compose entry
 point used by deploy, rollback, smoke, and diagnostics; it adds the `survey`
 profile only when the setting is `true`. A compatibility release therefore keeps
 both Survey workers absent without requiring Survey provider credentials.

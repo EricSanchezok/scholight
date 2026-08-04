@@ -31,7 +31,7 @@ scholight_compose() {
   local release_env=${SCHOLIGHT_RELEASE_ENV:?SCHOLIGHT_RELEASE_ENV is required}
   local compose_file=${SCHOLIGHT_COMPOSE_FILE:?SCHOLIGHT_COMPOSE_FILE is required}
   local enabled
-  enabled=$(scholight_compose_env_value "${runtime_env}" SCHOLIGHT_SURVEY_ENABLED)
+  enabled=$(scholight_compose_env_value "${runtime_env}" SCHOLIGHT_SURVEY_RUNTIME_ENABLED)
   case ${enabled} in
     true)
       docker compose --env-file "${runtime_env}" --env-file "${release_env}" \
@@ -42,7 +42,7 @@ scholight_compose() {
         -f "${compose_file}" "$@"
       ;;
     *)
-      printf 'SCHOLIGHT_SURVEY_ENABLED must be exactly true or false in %s\n' \
+      printf 'SCHOLIGHT_SURVEY_RUNTIME_ENABLED must be exactly true or false in %s\n' \
         "${runtime_env}" >&2
       return 1
       ;;

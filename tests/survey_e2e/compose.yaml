@@ -19,7 +19,8 @@ x-runtime-environment: &runtime-environment
   SCHOLIGHT_ZILLIZ_TOKEN: e2e-not-a-secret
   SCHOLIGHT_EMBEDDING_BASE_URL: http://embedding.invalid/v1
   SCHOLIGHT_EMBEDDING_API_KEY: e2e-not-a-secret
-  SCHOLIGHT_SURVEY_ENABLED: "true"
+  SCHOLIGHT_SURVEY_RUNTIME_ENABLED: "true"
+  SCHOLIGHT_SURVEY_PUBLIC_MODE: all
   SCHOLIGHT_SURVEY_S3_BUCKET: scholight-survey-e2e
   SCHOLIGHT_SURVEY_S3_ENDPOINT_URL: http://minio:9000
   SCHOLIGHT_SURVEY_DAILY_LIMIT: "5"
