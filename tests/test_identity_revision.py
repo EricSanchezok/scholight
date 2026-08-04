@@ -16,10 +16,14 @@ def _locked_revision() -> str:
     return match.group(1)
 
 
-def test_backend_image_uses_locked_identity_revision() -> None:
-    dockerfile = (ROOT / "docker/scholight-api/Dockerfile").read_text()
+def test_container_builds_use_locked_identity_revision() -> None:
+    dockerfiles = (
+        ROOT / "docker/scholight-api/Dockerfile",
+        ROOT / "tests/survey_e2e/Dockerfile",
+    )
 
-    assert f"ARG SANCHEZCLOUD_IDENTITY_REVISION={_locked_revision()}" in dockerfile
+    for path in dockerfiles:
+        assert f"ARG SANCHEZCLOUD_IDENTITY_REVISION={_locked_revision()}" in path.read_text()
 
 
 def test_migration_contract_uses_the_locked_consumer_environment() -> None:

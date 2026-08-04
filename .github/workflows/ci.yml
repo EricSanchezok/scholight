@@ -283,11 +283,14 @@ jobs:
             test ! -e /opt/scholight-package
             test -x /usr/local/bin/accelerate
             /usr/local/bin/accelerate --help >/dev/null
+            ! command -v uvicorn >/dev/null
             ! command -v pandoc >/dev/null
             ! command -v pdftotext >/dev/null
           '
       - name: Run hermetic Survey E2E
         if: github.event_name != 'pull_request'
+        env:
+          IDENTITY_READ_TOKEN: ${{ steps.identity-token.outputs.token }}
         run: |
           compose_file=tests/survey_e2e/compose.yaml
           cleanup() {
@@ -297,6 +300,7 @@ jobs:
 
           docker build \
             --build-arg BASE_IMAGE=scholight-survey:ci \
+            --secret id=github_token,env=IDENTITY_READ_TOKEN \
             -f tests/survey_e2e/Dockerfile \
             -t scholight-survey-e2e:ci \
             .
