@@ -228,6 +228,14 @@ configure_logging(log_level="INFO", use_json=True, file_handler=("app.log", 50_0
 - **CLI 入口**：`scholight` 命令由 `pyproject.toml` 的 `[project.scripts]` 注册，指向 `scholight.cli:cli`。
 - **依赖管理**：全部依赖声明在 `pyproject.toml`，`uv.lock` 锁定版本，不单独使用 `requirements.txt`。
 - **环境变量**：配置通过 `SCHOLIGHT_` 前缀的环境变量注入，模板在 `.env.example`。
+- **本地开发权威手册**：端口、共享 PostgreSQL、启动 profile 与远程依赖边界统一由
+  [`DEVELOPMENT.md`](DEVELOPMENT.md) 定义，并服从 sanchezcloud-identity handbook。
+- **固定端口块**：Scholight 使用 `7200-7299`；Frontend `7200`、API `7201`、Extract
+  调试入口 `7202`。共享 PostgreSQL `55432`、MinIO `59000/59001`，全部绑定
+  `127.0.0.1`，端口占用时必须失败，不得自动换端口。
+- **启动无副作用**：`./scripts/dev.sh` 只启动 Frontend/API；不得安装依赖、执行迁移、
+  修复 grant 或启动摄入。迁移只能显式使用 `scholight_migrator`，运行时只能使用
+  `scholight_app`。
 
 ## 本地混合集成环境
 
@@ -243,6 +251,8 @@ configure_logging(log_level="INFO", use_json=True, file_handler=("app.log", 50_0
 - **PostgreSQL 必须本地隔离**：使用临时 Docker PostgreSQL 16，依次运行 sanchezcloud-identity 和 Scholight migrations；不得读取项目中指向生产 RDS 的 `.env`，不得复制生产用户数据。
 - **Artifact 必须本地隔离**：本地使用 MinIO，而不是生产 AWS S3。通过 `SCHOLIGHT_SURVEY_S3_ENDPOINT_URL` 指向 MinIO，并使用专用本地 Bucket 和测试凭据。MinIO 实现 S3 API，因此报告、Manifest、presigned URL、SHA 校验与 cleanup 流程仍使用真实对象存储协议。
 - **Zilliz 仅限只读搜索**：本地可连接远端 Zilliz 以获得真实论文搜索结果；优先使用 collection-scoped/read-only Key。不得在该环境启动 `metadata-sync`、`paper-ingest`、backfill、scheduler sync、store 维护或任何可能写入/删除 Zilliz 的命令。
+- **本地启动不得隐式读取旧 `.env`**：必须由开发脚本显式加载 `.env.local` 并设置
+  `SCHOLIGHT_DISABLE_DOTENV=1`；发现非 `127.0.0.1:55432` PostgreSQL 时立即退出。
 - **允许启动的服务**：Frontend、API、Survey Draft worker、Survey worker，以及本地 PostgreSQL/MinIO。论文摄入服务默认保持停止。
 - **模型按测试层级选择**：日常和 CI 使用固定假模型，不消耗真实 Token；最终人工验收可显式注入真实 `DEEPSEEK_API_KEY` 和 `IMAGE_GEN_API_KEY`。Secret 不得写入 Compose、测试产物、日志或 Git。
 - **本地模型凭据单一来源**：真实模型人工测试从项目根目录、Git 忽略且权限为 `0600` 的 `.env` 读取 `DEEPSEEK_API_KEY` 和 `IMAGE_GEN_API_KEY`；生产仍只从 Parameter Store 读取。不得把完整生产 `runtime.env` 复制到本机或提交任何 Secret。

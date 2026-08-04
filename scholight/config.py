@@ -91,12 +91,12 @@ class Settings(BaseSettings):
     log_json: bool | None = None
 
     # ── PostgreSQL ──
-    pg_host: str = "localhost"
-    pg_port: int = 5432
-    pg_database: str = "scholight"
-    pg_user: str = "scholight"
+    pg_host: str = "127.0.0.1"
+    pg_port: int = 55432
+    pg_database: str = "sanchezcloud"
+    pg_user: str = "scholight_app"
     pg_password: str = ""
-    pg_ssl_root_cert: str = "global-bundle.pem"
+    pg_ssl_root_cert: str = "disable"
     pg_pool_min_size: int = 5
     pg_pool_max_size: int = 20
     pg_pool_acquire_timeout: float = 5.0
@@ -119,7 +119,7 @@ class Settings(BaseSettings):
         return self
 
     # ── Auth ──
-    public_web_url: str = "http://127.0.0.1:5173"
+    public_web_url: str = "http://127.0.0.1:7200"
     account_lockout_threshold: int = 5
     account_lockout_duration_minutes: int = 15
 
@@ -129,7 +129,7 @@ class Settings(BaseSettings):
 
     # ── Web Extract ──
     extract_enabled: bool = False
-    extract_service_url: str = "http://extract:8001"
+    extract_service_url: str = "http://127.0.0.1:7202"
     extract_internal_token: str = ""
     extract_request_timeout_seconds: float = Field(default=55.0, ge=1.0, le=180.0)
     extract_fetch_timeout_seconds: float = Field(default=30.0, ge=1.0, le=120.0)
@@ -144,7 +144,7 @@ class Settings(BaseSettings):
     extract_static_concurrency: int = Field(default=16, ge=1, le=256)
     extract_browser_concurrency: int = Field(default=2, ge=1, le=32)
     extract_server_host: str = "127.0.0.1"
-    extract_server_port: int = Field(default=8001, ge=1, le=65535)
+    extract_server_port: int = Field(default=7202, ge=1, le=65535)
 
     # ── Survey ──
     # Provider-standard names intentionally remain unprefixed end to end.
@@ -205,7 +205,7 @@ class Settings(BaseSettings):
     cors_allow_origins: list[str] = []
     # ── Server ──
     server_host: str = "127.0.0.1"
-    server_port: int = 8000
+    server_port: int = 7201
     proxy_headers: bool = False
     forwarded_allow_ips: str = "127.0.0.1"
     server_keep_alive_seconds: int = Field(default=65, ge=1, le=300)

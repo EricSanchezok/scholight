@@ -2,15 +2,15 @@
 #
 # Build uses an immutable sanchezcloud-identity Git revision declared in the Dockerfile.
 # Cloud-auth and Scholight migrations are explicit, ordered, and never run by API startup:
-#   docker compose --env-file .env --profile migrate run --rm migrate
+#   docker compose --env-file /path/to/explicit-remote-runtime.env --profile migrate run --rm migrate
 #
 # The API binds to loopback by default. Put a reverse proxy on the same host and
 # do not route /livez or /readyz publicly. If proxy headers are enabled, set the
 # exact proxy IP/subnet in SCHOLIGHT_FORWARDED_ALLOW_IPS; never use '*'.
 #
 # Start the API, optional Web Extract, and native ingestion services:
-#   docker compose --env-file .env up -d api extract
-#   docker compose --env-file .env up -d metadata-sync paper-ingest
+#   docker compose --env-file /path/to/explicit-remote-runtime.env up -d api extract
+#   docker compose --env-file /path/to/explicit-remote-runtime.env up -d metadata-sync paper-ingest
 
 x-image: &scholight-image
   image: ${SCHOLIGHT_IMAGE:-scholight:0.1.0}
@@ -35,7 +35,7 @@ services:
     depends_on:
       - api
     ports:
-      - "${SCHOLIGHT_BIND_ADDRESS:-127.0.0.1}:${SCHOLIGHT_FRONTEND_PORT:-3000}:8080"
+      - "${SCHOLIGHT_BIND_ADDRESS:-127.0.0.1}:${SCHOLIGHT_FRONTEND_PORT:-7200}:8080"
     networks:
       scholight:
         ipv4_address: 172.30.0.10
@@ -61,7 +61,7 @@ services:
       SCHOLIGHT_EXTRACT_SERVICE_URL: http://extract:8001
       SCHOLIGHT_EXTRACT_INTERNAL_TOKEN: ${SCHOLIGHT_EXTRACT_INTERNAL_TOKEN:?SCHOLIGHT_EXTRACT_INTERNAL_TOKEN is required}
       SCHOLIGHT_PG_HOST: ${SCHOLIGHT_PG_HOST:-}
-      SCHOLIGHT_PG_PORT: ${SCHOLIGHT_PG_PORT:-5432}
+      SCHOLIGHT_PG_PORT: ${SCHOLIGHT_PG_PORT:-55432}
       SCHOLIGHT_PG_DATABASE: ${SCHOLIGHT_PG_DATABASE:-sanchezcloud}
       SCHOLIGHT_PG_USER: ${SCHOLIGHT_PG_USER:-postgres}
       SCHOLIGHT_PG_PASSWORD: ${SCHOLIGHT_PG_PASSWORD:-}
@@ -70,7 +70,7 @@ services:
       SCHOLIGHT_PG_POOL_MAX_SIZE: ${SCHOLIGHT_PG_POOL_MAX_SIZE:-20}
       SCHOLIGHT_AUTH_JWT_SECRET: ${SCHOLIGHT_AUTH_JWT_SECRET:?SCHOLIGHT_AUTH_JWT_SECRET is required}
       SCHOLIGHT_AUTH_REFRESH_COOKIE_SECURE: ${SCHOLIGHT_AUTH_REFRESH_COOKIE_SECURE:-false}
-      SCHOLIGHT_PUBLIC_WEB_URL: ${SCHOLIGHT_PUBLIC_WEB_URL:-http://127.0.0.1:3000}
+      SCHOLIGHT_PUBLIC_WEB_URL: ${SCHOLIGHT_PUBLIC_WEB_URL:-http://127.0.0.1:7200}
       SCHOLIGHT_JWT_ACCESS_TOKEN_TTL_MINUTES: ${SCHOLIGHT_JWT_ACCESS_TOKEN_TTL_MINUTES:-15}
       SCHOLIGHT_JWT_REFRESH_TOKEN_TTL_DAYS: ${SCHOLIGHT_JWT_REFRESH_TOKEN_TTL_DAYS:-7}
       SCHOLIGHT_ACCOUNT_LOCKOUT_THRESHOLD: ${SCHOLIGHT_ACCOUNT_LOCKOUT_THRESHOLD:-5}
@@ -89,7 +89,7 @@ services:
       SCHOLIGHT_SEARCH_LEVEL2_RPC_TIMEOUT_SECONDS: ${SCHOLIGHT_SEARCH_LEVEL2_RPC_TIMEOUT_SECONDS:-45.0}
       SCHOLIGHT_SEARCH_LEVEL2_TIMEOUT_SECONDS: ${SCHOLIGHT_SEARCH_LEVEL2_TIMEOUT_SECONDS:-60.0}
     ports:
-      - "${SCHOLIGHT_BIND_ADDRESS:-127.0.0.1}:${SCHOLIGHT_HOST_PORT:-8000}:8000"
+      - "${SCHOLIGHT_BIND_ADDRESS:-127.0.0.1}:${SCHOLIGHT_HOST_PORT:-7201}:8000"
     restart: unless-stopped
     networks:
       scholight:
@@ -132,7 +132,7 @@ services:
     environment:
       SCHOLIGHT_LOG_LEVEL: ${SCHOLIGHT_LOG_LEVEL:-INFO}
       SCHOLIGHT_PG_HOST: ${SCHOLIGHT_PG_HOST:-}
-      SCHOLIGHT_PG_PORT: ${SCHOLIGHT_PG_PORT:-5432}
+      SCHOLIGHT_PG_PORT: ${SCHOLIGHT_PG_PORT:-55432}
       SCHOLIGHT_PG_DATABASE: ${SCHOLIGHT_PG_DATABASE:-sanchezcloud}
       SCHOLIGHT_PG_USER: ${SCHOLIGHT_PG_USER:-postgres}
       SCHOLIGHT_PG_PASSWORD: ${SCHOLIGHT_PG_PASSWORD:-}
@@ -148,7 +148,7 @@ services:
     environment:
       <<: *common-environment
       SCHOLIGHT_PG_HOST: ${SCHOLIGHT_PG_HOST:-}
-      SCHOLIGHT_PG_PORT: ${SCHOLIGHT_PG_PORT:-5432}
+      SCHOLIGHT_PG_PORT: ${SCHOLIGHT_PG_PORT:-55432}
       SCHOLIGHT_PG_DATABASE: ${SCHOLIGHT_PG_DATABASE:-sanchezcloud}
       SCHOLIGHT_PG_USER: ${SCHOLIGHT_PG_USER:-postgres}
       SCHOLIGHT_PG_PASSWORD: ${SCHOLIGHT_PG_PASSWORD:-}
@@ -172,7 +172,7 @@ services:
     environment:
       <<: *common-environment
       SCHOLIGHT_PG_HOST: ${SCHOLIGHT_PG_HOST:-}
-      SCHOLIGHT_PG_PORT: ${SCHOLIGHT_PG_PORT:-5432}
+      SCHOLIGHT_PG_PORT: ${SCHOLIGHT_PG_PORT:-55432}
       SCHOLIGHT_PG_DATABASE: ${SCHOLIGHT_PG_DATABASE:-sanchezcloud}
       SCHOLIGHT_PG_USER: ${SCHOLIGHT_PG_USER:-postgres}
       SCHOLIGHT_PG_PASSWORD: ${SCHOLIGHT_PG_PASSWORD:-}

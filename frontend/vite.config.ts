@@ -1,8 +1,8 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 
-const devPort = Number(process.env.SCHOLIGHT_DEV_FRONTEND_PORT ?? 5173);
-const apiTarget = process.env.SCHOLIGHT_DEV_API_TARGET ?? "http://localhost:8000";
+const devPort = Number(process.env.SCHOLIGHT_DEV_FRONTEND_PORT ?? 7200);
+const apiTarget = process.env.SCHOLIGHT_DEV_API_TARGET ?? "http://127.0.0.1:7201";
 
 export default defineConfig({
   plugins: [react()],

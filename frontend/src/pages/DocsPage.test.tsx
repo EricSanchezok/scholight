@@ -58,7 +58,7 @@ describe("DocsPage", () => {
     const user = userEvent.setup();
     const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
 
-    render(<DocsPage origin="http://127.0.0.1:5173" />);
+    render(<DocsPage origin="http://127.0.0.1:7200" />);
     await user.click(screen.getAllByRole("button", { name: "Copy code" })[0]!);
 
     expect(writeText).toHaveBeenCalledOnce();
