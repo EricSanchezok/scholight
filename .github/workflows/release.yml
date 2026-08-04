@@ -89,6 +89,8 @@ jobs:
             --expected-release-sha "$RELEASE_SHA"
       - name: Deploy digest-qualified ECS release
         env:
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          RELEASE_SHA: ${{ inputs.release_sha }}
           DOMAIN_NAME: ${{ vars.PRODUCTION_DOMAIN }}
           CERTIFICATE_ARN: ${{ vars.PRODUCTION_CERTIFICATE_ARN }}
           RDS_SECURITY_GROUP_ID: ${{ vars.RDS_SECURITY_GROUP_ID }}
@@ -98,6 +100,8 @@ jobs:
           SURVEY_PUBLIC_MODE: ${{ inputs.survey_public_mode }}
           SCHEDULER_STATE: ${{ inputs.scheduler_state }}
         run: |
+          account_id=$(aws sts get-caller-identity --query Account --output text)
+          template_bucket="sanchezcloud-scholight-releases-${account_id}-${AWS_REGION}"
           web_image=$(jq -r .images.web release-manifest.json)
           api_image=$(jq -r .images.api release-manifest.json)
           extract_image=$(jq -r .images.extract release-manifest.json)
@@ -106,6 +110,8 @@ jobs:
           aws cloudformation deploy \
             --stack-name sanchezcloud-scholight-production \
             --template-file deploy/ecs/scholight-production.yml \
+            --s3-bucket "$template_bucket" \
+            --s3-prefix "cloudformation/${RELEASE_SHA}" \
             --role-arn "$CLOUDFORMATION_ROLE_ARN" \
             --capabilities CAPABILITY_NAMED_IAM \
             --no-fail-on-empty-changeset \

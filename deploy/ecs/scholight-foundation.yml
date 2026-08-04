@@ -133,6 +133,11 @@ Resources:
           - Id: RetainImmutableReleaseManifests
             Status: Enabled
             NoncurrentVersionExpiration: { NoncurrentDays: 365 }
+          - Id: ExpireCloudFormationUploadArtifacts
+            Status: Enabled
+            Prefix: cloudformation/
+            ExpirationInDays: 30
+            NoncurrentVersionExpiration: { NoncurrentDays: 7 }
       OwnershipControls:
         Rules: [{ ObjectOwnership: BucketOwnerEnforced }]
       PublicAccessBlockConfiguration:
@@ -401,6 +406,12 @@ Resources:
                   - sns:ListTopics
                 Resource: "*"
               - Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub ${ReleaseManifestBucket.Arn}/cloudformation/*
+              - Effect: Allow
+                Action: kms:Decrypt
+                Resource: !GetAtt ConfigurationKey.Arn
+              - Effect: Allow
                 Action:
                   - iam:CreateRole
                   - iam:DeleteRole
@@ -458,7 +469,13 @@ Resources:
                 Action: [s3:GetObject]
                 Resource: !Sub ${ReleaseManifestBucket.Arn}/releases/*
               - Effect: Allow
-                Action: kms:Decrypt
+                Action: [s3:GetBucketLocation, s3:ListBucket]
+                Resource: !GetAtt ReleaseManifestBucket.Arn
+              - Effect: Allow
+                Action: [s3:GetObject, s3:PutObject]
+                Resource: !Sub ${ReleaseManifestBucket.Arn}/cloudformation/*
+              - Effect: Allow
+                Action: [kms:Decrypt, kms:GenerateDataKey]
                 Resource: !GetAtt ConfigurationKey.Arn
 
   DatabaseDeployRole:
