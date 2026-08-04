@@ -30,7 +30,7 @@ Create the private local catalog and install dependencies:
 ```bash
 cp .env.example .env.local
 chmod 600 .env.local
-uv sync
+uv sync --all-extras
 npm --prefix frontend install
 ```
 

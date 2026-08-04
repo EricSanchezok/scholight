@@ -245,10 +245,19 @@ def test_survey_has_one_clean_initial_schema_without_compatibility_migrations() 
 
 def test_python_images_have_explicit_minimal_runtime_targets() -> None:
     dockerfile = (ROOT / "docker/scholight-api/Dockerfile").read_text(encoding="utf-8")
+    extract = (ROOT / "docker/scholight-extract/Dockerfile").read_text(encoding="utf-8")
+    project = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
 
+    for extra in ("api", "extract", "ingest", "survey"):
+        assert f"{extra} = [" in project
     assert "FROM runtime-base AS api" in dockerfile
     assert "FROM runtime-base AS ingest" in dockerfile
     assert "FROM runtime-base AS survey" in dockerfile
+    assert "--extra api" in dockerfile
+    assert "--extra ingest" in dockerfile
+    assert "--extra survey" in dockerfile
+    assert "--extra extract" in extract
+    assert dockerfile.count("github_token") == 2
     assert "FROM api AS final" not in dockerfile
     assert "/opt/scholight-package" not in dockerfile
     assert dockerfile.index("poppler-utils") > dockerfile.index("FROM runtime-base AS ingest")

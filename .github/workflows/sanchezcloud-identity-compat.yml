@@ -99,7 +99,7 @@ jobs:
           enable-cache: true
       - name: Install locked consumer and candidate SDK
         run: |
-          uv sync --frozen --extra dev
+          uv sync --frozen --all-extras
           uv pip install --python .venv/bin/python --reinstall ".ci/sanchezcloud-identity[aliyun]"
       - name: Verify candidate identity metadata
         env:

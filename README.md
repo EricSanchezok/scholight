@@ -44,7 +44,7 @@ git clone git@github.com:EricSanchezok/scholight.git
 cd scholight
 cp .env.example .env.local   # 只填本地运行密码、应用 secret 和只读 Zilliz key
 chmod 600 .env.local
-uv sync
+uv sync --all-extras
 npm --prefix frontend install
 ./scripts/dev.sh             # Web 7200 / API 7201
 ```
