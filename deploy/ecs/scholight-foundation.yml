@@ -415,8 +415,10 @@ Resources:
                 Resource: !GetAtt ConfigurationKey.Arn
               - Effect: Allow
                 Action:
+                  - iam:AttachRolePolicy
                   - iam:CreateRole
                   - iam:DeleteRole
+                  - iam:DetachRolePolicy
                   - iam:DeleteRolePolicy
                   - iam:GetRole
                   - iam:GetRolePolicy
