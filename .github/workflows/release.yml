@@ -27,7 +27,7 @@ on:
       survey_public_mode:
         description: Expose Survey to all users
         required: true
-        default: off
+        default: "off"
         type: choice
         options: ["off", "all"]
       scheduler_state:

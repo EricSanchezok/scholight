@@ -142,6 +142,7 @@ def test_active_workflows_are_oidc_manifest_and_digest_driven() -> None:
     assert "aws ecs run-task" in database
     assert "AWS-RunShellScript" not in release + database
     assert "send-command" not in release + database
+    assert 'default: "off"' in release
     assert 'options: ["off", "all"]' in release
 
 
@@ -252,6 +253,14 @@ def test_first_cutover_creates_the_dormant_stack_before_running_migrations() -> 
     assert cutover.count("protected product migration") == 1
     assert cutover.index("ApplicationEnabled=false") < cutover.index("protected product migration")
     assert cutover.index("protected product migration") < cutover.index("ApplicationEnabled=true")
+
+
+def test_survey_public_mode_remains_a_string_in_cloudformation_rules() -> None:
+    runtime = (ECS / "scholight-production.yml").read_text(encoding="utf-8")
+
+    assert 'Default: "off"' in runtime
+    assert 'AllowedValues: ["off", "all"]' in runtime
+    assert '!Equals [!Ref SurveyPublicMode, "off"]' in runtime
 
 
 def test_github_oidc_trust_uses_immutable_repository_identity() -> None:
