@@ -179,6 +179,22 @@ def test_image_publish_role_can_verify_pushed_manifests_and_attestations() -> No
     assert "ecr:DeleteRepositoryPolicy" not in publish_policy
 
 
+def test_cloudformation_role_can_manage_scoped_task_role_policies() -> None:
+    foundation = (ECS / "scholight-foundation.yml").read_text(encoding="utf-8")
+    cloudformation_policy = foundation.split("CloudFormationServiceRole:", maxsplit=1)[1].split(
+        "ProductionDeployRole:", maxsplit=1
+    )[0]
+
+    assert "- iam:AttachRolePolicy" in cloudformation_policy
+    assert "- iam:DetachRolePolicy" in cloudformation_policy
+    assert (
+        "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/SanchezCloudScholight*"
+        in cloudformation_policy
+    )
+    assert "iam:AttachUserPolicy" not in cloudformation_policy
+    assert "iam:AttachGroupPolicy" not in cloudformation_policy
+
+
 def test_active_workflows_do_not_depend_on_frozen_ec2_package() -> None:
     active = "\n".join(
         (ROOT / ".github/workflows" / name).read_text(encoding="utf-8")
