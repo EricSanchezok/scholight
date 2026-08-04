@@ -23,6 +23,7 @@ from scholight.db.queries_ingestion import (
     claim_ingestion_job,
     complete_ingestion_job,
     fail_ingestion_job,
+    get_ingestion_status,
     release_ingestion_job,
     renew_ingestion_job_lease,
 )
@@ -489,6 +490,18 @@ async def drain_ingest(
         outcome=reason,
         metrics={"IngestionDrainJobs": (jobs_processed, "Count")},
     )
+    try:
+        queue = (await get_ingestion_status())["queue"]
+        emit_emf(
+            service="paper-ingest",
+            metrics={
+                "IngestionBacklog": (int(queue["backlog"]), "Count"),
+                "IngestionDeadTotal": (int(queue["dead"]), "Count"),
+                "IngestionOldestAge": (int(queue["oldest_age_seconds"]), "Seconds"),
+            },
+        )
+    except Exception:
+        logger.exception("ingestion queue metrics unavailable")
     return result
 
 

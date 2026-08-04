@@ -87,7 +87,7 @@ jobs:
       - name: Resolve Identity schema contract
         id: identity
         run: |
-          uv sync --frozen --no-dev
+          uv sync --frozen --no-dev --extra api
           schema_version=$(.venv/bin/python -c \
             'import sanchezcloud_identity as identity; print(identity.AUTH_SCHEMA_VERSION)')
           echo "schema_version=$schema_version" >> "$GITHUB_OUTPUT"
@@ -149,8 +149,6 @@ jobs:
           tags: ${{ steps.ecr.outputs.registry }}/sanchezcloud-scholight-ingest:git-${{ needs.prepare.outputs.release_sha }}
           provenance: mode=max
           sbom: true
-          secrets: |
-            github_token=${{ steps.identity-token.outputs.token }}
       - name: Build and push Survey
         id: survey
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
@@ -163,8 +161,6 @@ jobs:
           tags: ${{ steps.ecr.outputs.registry }}/sanchezcloud-scholight-survey:git-${{ needs.prepare.outputs.release_sha }}
           provenance: mode=max
           sbom: true
-          secrets: |
-            github_token=${{ steps.identity-token.outputs.token }}
       - name: Create deterministic release manifest
         env:
           RELEASE_SHA: ${{ needs.prepare.outputs.release_sha }}

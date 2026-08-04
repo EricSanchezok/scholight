@@ -416,6 +416,19 @@ async def get_ingestion_status() -> dict[str, Any]:
             GROUP BY status
             """
         )
+        queue = await get_pool().fetchrow(
+            """
+            SELECT
+                count(*) FILTER (WHERE status IN ('pending', 'retry'))::bigint AS backlog,
+                count(*) FILTER (WHERE status = 'dead')::bigint AS dead,
+                COALESCE(
+                    EXTRACT(EPOCH FROM (now() - min(created_at)
+                        FILTER (WHERE status IN ('pending', 'retry')))),
+                    0
+                )::bigint AS oldest_age_seconds
+            FROM scholight.ingestion_jobs
+            """
+        )
         state = await get_pool().fetchrow(
             """
             SELECT last_successful_date, last_started_at, last_succeeded_at,
@@ -428,5 +441,10 @@ async def get_ingestion_status() -> dict[str, Any]:
         raise DBError("Unable to read ingestion status") from exc
     return {
         "jobs": {str(row["status"]): int(row["count"]) for row in rows},
+        "queue": {
+            "backlog": int(queue["backlog"]),
+            "dead": int(queue["dead"]),
+            "oldest_age_seconds": int(queue["oldest_age_seconds"]),
+        },
         "sync": dict(state) if state is not None else None,
     }

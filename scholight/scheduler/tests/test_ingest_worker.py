@@ -234,7 +234,16 @@ async def test_worker_releases_claim_when_shutdown_reaches_a_safe_boundary(tmp_p
 
 @pytest.mark.asyncio
 async def test_drain_exits_after_queue_stays_idle() -> None:
-    with patch("scholight.scheduler.ingest_worker.run_worker_once", AsyncMock(return_value=False)):
+    with (
+        patch("scholight.scheduler.ingest_worker.run_worker_once", AsyncMock(return_value=False)),
+        patch(
+            "scholight.scheduler.ingest_worker.get_ingestion_status",
+            AsyncMock(
+                return_value={"queue": {"backlog": 4, "dead": 1, "oldest_age_seconds": 7200}}
+            ),
+        ),
+        patch("scholight.scheduler.ingest_worker.emit_emf") as emit,
+    ):
         result = await drain_ingest(
             idle_grace_seconds=0.01,
             max_runtime_seconds=1,
@@ -244,6 +253,18 @@ async def test_drain_exits_after_queue_stays_idle() -> None:
 
     assert result.reason == "idle"
     assert result.jobs_processed == 0
+    assert any(
+        call.kwargs
+        == {
+            "service": "paper-ingest",
+            "metrics": {
+                "IngestionBacklog": (4, "Count"),
+                "IngestionDeadTotal": (1, "Count"),
+                "IngestionOldestAge": (7200, "Seconds"),
+            },
+        }
+        for call in emit.call_args_list
+    )
 
 
 @pytest.mark.asyncio

@@ -116,7 +116,8 @@ Fill every required field before publishing a production release:
   every HMAC/JWT/internal-token field;
 - `/sanchezcloud/scholight/production/search-providers`: Zilliz, embedding,
   and MinerU endpoint/model/credential fields;
-- `/sanchezcloud/scholight/production/survey-providers`: model, image, and mail
+- `/sanchezcloud/scholight/production/survey-providers`: Survey model and image
+- `/sanchezcloud/scholight/production/mail`: transactional email
   provider fields required by the API and the real Survey doctor. The same
   product mail credential sends Identity verification and Survey completion
   messages; it is never an Identity signing secret.
@@ -179,20 +180,22 @@ migration.
 4. Promote the fully caught-up Singapore RDS replica only after the Hong Kong
    writers are paused and replication lag is zero.
 5. Create least-privilege runtime/migrator roles and fill Secrets Manager.
-6. Run the protected Scholight migration workflow.
-7. Point the existing legacy Scholight EC2 runtime at Singapore RDS without
+6. Point the existing legacy Scholight EC2 runtime at Singapore RDS without
    releasing new application code. This preserves an application rollback path.
-8. Deploy ECS once with `ApplicationEnabled=false`, Survey off, and schedules
-   disabled; run the protected product migration; then deploy the same manifest
-   with `ApplicationEnabled=true`.
-9. Smoke-test Search, authentication, history, Access Keys, MCP, Extract, queue
+7. Deploy the production stack once with `ApplicationEnabled=false`, Survey off,
+   and schedules disabled. This creates the reviewed migration task definition
+   without starting an application service.
+8. Run the protected product migration exactly once against that dormant stack.
+9. Deploy the same release manifest with `ApplicationEnabled=true`, while Survey
+   remains off and schedules remain disabled.
+10. Smoke-test Search, authentication, history, Access Keys, MCP, Extract, queue
    drain, and internal Survey on the candidate hostname.
-10. Move Cloudflare to the ALB and enable schedules.
-11. Enable Survey runtime while public mode remains `off`; pass the real doctor,
+11. Move Cloudflare to the ALB and enable schedules.
+12. Enable Survey runtime while public mode remains `off`; pass the real doctor,
     artifact, email, cancellation, and recovery checks.
-12. Change Survey public mode directly from `off` to `all`. There is no legacy
+13. Change Survey public mode directly from `off` to `all`. There is no legacy
     mode to preserve.
-13. Observe Search for 24 hours and retain the old EC2 and Hong Kong database
+14. Observe Search for 24 hours and retain the old EC2 and Hong Kong database
     rollback references for seven days before requesting cleanup.
 
 ## Failure handling

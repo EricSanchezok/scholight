@@ -1,11 +1,8 @@
-# Scholight Python service images. The API, ingest worker, and Survey worker share one
-# reviewed dependency layer but receive only the system tools required by their runtime.
+# Scholight Python images use separate dependency profiles so each runtime contains
+# only the libraries and system tools needed by that component.
 
 ARG PYTHON_IMAGE=python:3.11-slim-bookworm@sha256:b18992999dbe963a45a8a4da40ac2b1975be1a776d939d098c647482bcad5cba
-FROM ${PYTHON_IMAGE} AS builder
-
-ARG SANCHEZCLOUD_IDENTITY_ARCHIVE=https://api.github.com/repos/EricSanchezok/sanchezcloud-identity/tarball
-ARG SANCHEZCLOUD_IDENTITY_REVISION=6acd693b52257a229cfb84b5ad252fb6d7a5d263
+FROM ${PYTHON_IMAGE} AS builder-base
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl \
@@ -13,6 +10,14 @@ RUN apt-get update \
     && python -m pip install --no-cache-dir uv==0.9.2
 
 WORKDIR /app
+COPY pyproject.toml uv.lock /app/
+
+
+FROM builder-base AS api-builder
+
+ARG SANCHEZCLOUD_IDENTITY_ARCHIVE=https://api.github.com/repos/EricSanchezok/sanchezcloud-identity/tarball
+ARG SANCHEZCLOUD_IDENTITY_REVISION=6acd693b52257a229cfb84b5ad252fb6d7a5d263
+
 RUN --mount=type=secret,id=github_token \
     mkdir -p /app/sanchezcloud-identity \
     && curl --fail --location --silent --show-error \
@@ -23,17 +28,31 @@ RUN --mount=type=secret,id=github_token \
     && tar -xzf /tmp/sanchezcloud-identity.tar.gz \
         --strip-components=1 -C /app/sanchezcloud-identity \
     && rm /tmp/sanchezcloud-identity.tar.gz
-
-COPY pyproject.toml uv.lock /app/
-RUN uv sync --frozen --no-dev --no-install-project --no-install-package sanchezcloud-identity \
+RUN uv sync --frozen --no-dev --extra api --no-install-project \
+        --no-install-package sanchezcloud-identity \
     && uv pip install /app/sanchezcloud-identity/
-
 COPY scholight/ /app/scholight/
 COPY migrations/ /app/migrations/
 RUN uv pip install --no-deps /app
 
 
-FROM builder AS survey-builder
+FROM builder-base AS ingest-builder
+
+RUN uv sync --frozen --no-dev --extra ingest --no-install-project
+COPY scholight/ /app/scholight/
+COPY migrations/ /app/migrations/
+RUN uv pip install --no-deps /app
+
+
+FROM builder-base AS survey-python-builder
+
+RUN uv sync --frozen --no-dev --extra survey --no-install-project
+COPY scholight/ /app/scholight/
+COPY migrations/ /app/migrations/
+RUN uv pip install --no-deps /app
+
+
+FROM survey-python-builder AS survey-builder
 
 ARG RCM_VERSION=v0.2.9
 ARG RCM_LINUX_X86_64_SHA256=6e9009876b0d862d14618e0a8b7b92b51ed58f99229d12d74b61e64226cbd9a8
@@ -63,8 +82,6 @@ RUN apt-get update \
     && chown scholight:scholight /data
 
 WORKDIR /app
-COPY --from=builder /app/.venv/ /app/.venv/
-COPY --from=builder /app/migrations/ /app/migrations/
 COPY global-bundle.pem /etc/ssl/certs/global-bundle.pem
 
 ENV PATH=/app/.venv/bin:${PATH}
@@ -77,8 +94,14 @@ STOPSIGNAL SIGTERM
 
 FROM runtime-base AS api
 
+COPY --from=api-builder /app/.venv/ /app/.venv/
+COPY --from=api-builder /app/migrations/ /app/migrations/
+COPY global-bundle.pem /etc/ssl/certs/global-bundle.pem
 COPY docker/scholight-api/start.py /app/start.py
 
+ENV PATH=/app/.venv/bin:${PATH}
+ENV SCHOLIGHT_DATA_ROOT=/data
+ENV SCHOLIGHT_PG_SSL_ROOT_CERT=/etc/ssl/certs/global-bundle.pem
 ENV SCHOLIGHT_SERVER_HOST=0.0.0.0
 ENV SCHOLIGHT_SERVER_PORT=8000
 
@@ -95,13 +118,29 @@ USER root
 RUN apt-get update \
     && apt-get install -y --no-install-recommends pandoc poppler-utils \
     && rm -rf /var/lib/apt/lists/*
-USER scholight
 
+COPY --from=ingest-builder /app/.venv/ /app/.venv/
+COPY --from=ingest-builder /app/migrations/ /app/migrations/
+COPY global-bundle.pem /etc/ssl/certs/global-bundle.pem
+
+ENV PATH=/app/.venv/bin:${PATH}
+ENV SCHOLIGHT_DATA_ROOT=/data
+ENV SCHOLIGHT_PG_SSL_ROOT_CERT=/etc/ssl/certs/global-bundle.pem
+
+USER scholight
+STOPSIGNAL SIGTERM
 CMD ["scholight", "scheduler", "drain-ingest"]
 
 
 FROM runtime-base AS survey
 
+COPY --from=survey-builder /app/.venv/ /app/.venv/
+COPY --from=survey-builder /app/migrations/ /app/migrations/
 COPY --from=survey-builder /app/bin/accelerate /usr/local/bin/accelerate
+COPY global-bundle.pem /etc/ssl/certs/global-bundle.pem
+
+ENV PATH=/app/.venv/bin:${PATH}
+ENV SCHOLIGHT_DATA_ROOT=/data
+ENV SCHOLIGHT_PG_SSL_ROOT_CERT=/etc/ssl/certs/global-bundle.pem
 
 CMD ["scholight", "survey", "serve-worker"]

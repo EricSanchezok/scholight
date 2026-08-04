@@ -10,6 +10,10 @@ Parameters:
     AllowedPattern: "^arn:[^:]+:acm:[^:]+:[0-9]{12}:certificate/[0-9a-f-]+$"
   RdsSecurityGroupId:
     Type: AWS::EC2::SecurityGroup::Id
+  DatabaseInstanceIdentifier:
+    Type: String
+    Default: sanchezcloud-pg
+    AllowedPattern: "^[a-z][a-z0-9-]{0,62}$"
   WebImage:
     Type: String
     AllowedPattern: "^[0-9]{12}\\.dkr\\.ecr\\.[a-z0-9-]+\\.amazonaws\\.com/[a-z0-9/_-]+@sha256:[0-9a-f]{64}$"
@@ -271,6 +275,7 @@ Resources:
                   - !ImportValue sanchezcloud-scholight-core-secret-arn
                   - !ImportValue sanchezcloud-scholight-search-secret-arn
                   - !ImportValue sanchezcloud-scholight-survey-secret-arn
+                  - !ImportValue sanchezcloud-scholight-mail-secret-arn
               - Effect: Allow
                 Action: kms:Decrypt
                 Resource: !ImportValue sanchezcloud-scholight-configuration-key-arn
@@ -461,9 +466,9 @@ Resources:
             - { Name: SCHOLIGHT_EMBEDDING_API_KEY, ValueFrom: !Sub ["${Secret}:embedding_api_key::", { Secret: !ImportValue sanchezcloud-scholight-search-secret-arn }] }
             - { Name: SCHOLIGHT_EMBEDDING_MODEL, ValueFrom: !Sub ["${Secret}:embedding_model::", { Secret: !ImportValue sanchezcloud-scholight-search-secret-arn }] }
             - { Name: DEEPSEEK_API_KEY, ValueFrom: !Sub ["${Secret}:deepseek_api_key::", { Secret: !ImportValue sanchezcloud-scholight-survey-secret-arn }] }
-            - { Name: SCHOLIGHT_ALIYUN_DM_ACCESS_KEY_ID, ValueFrom: !Sub ["${Secret}:aliyun_access_key_id::", { Secret: !ImportValue sanchezcloud-scholight-survey-secret-arn }] }
-            - { Name: SCHOLIGHT_ALIYUN_DM_ACCESS_KEY_SECRET, ValueFrom: !Sub ["${Secret}:aliyun_access_key_secret::", { Secret: !ImportValue sanchezcloud-scholight-survey-secret-arn }] }
-            - { Name: SCHOLIGHT_ALIYUN_DM_ACCOUNT_NAME, ValueFrom: !Sub ["${Secret}:aliyun_account_name::", { Secret: !ImportValue sanchezcloud-scholight-survey-secret-arn }] }
+            - { Name: SCHOLIGHT_ALIYUN_DM_ACCESS_KEY_ID, ValueFrom: !Sub ["${Secret}:aliyun_access_key_id::", { Secret: !ImportValue sanchezcloud-scholight-mail-secret-arn }] }
+            - { Name: SCHOLIGHT_ALIYUN_DM_ACCESS_KEY_SECRET, ValueFrom: !Sub ["${Secret}:aliyun_access_key_secret::", { Secret: !ImportValue sanchezcloud-scholight-mail-secret-arn }] }
+            - { Name: SCHOLIGHT_ALIYUN_DM_ACCOUNT_NAME, ValueFrom: !Sub ["${Secret}:aliyun_account_name::", { Secret: !ImportValue sanchezcloud-scholight-mail-secret-arn }] }
           LogConfiguration:
             LogDriver: awslogs
             Options:
@@ -647,9 +652,9 @@ Resources:
             - { Name: DEEPSEEK_API_KEY, ValueFrom: !Sub ["${Secret}:deepseek_api_key::", { Secret: !ImportValue sanchezcloud-scholight-survey-secret-arn }] }
             - { Name: IMAGE_GEN_API_KEY, ValueFrom: !Sub ["${Secret}:image_gen_api_key::", { Secret: !ImportValue sanchezcloud-scholight-survey-secret-arn }] }
             - { Name: SCHOLIGHT_SURVEY_MCP_JWT_SECRET, ValueFrom: !Sub ["${Secret}:survey_mcp_jwt_secret::", { Secret: !ImportValue sanchezcloud-scholight-core-secret-arn }] }
-            - { Name: SCHOLIGHT_ALIYUN_DM_ACCESS_KEY_ID, ValueFrom: !Sub ["${Secret}:aliyun_access_key_id::", { Secret: !ImportValue sanchezcloud-scholight-survey-secret-arn }] }
-            - { Name: SCHOLIGHT_ALIYUN_DM_ACCESS_KEY_SECRET, ValueFrom: !Sub ["${Secret}:aliyun_access_key_secret::", { Secret: !ImportValue sanchezcloud-scholight-survey-secret-arn }] }
-            - { Name: SCHOLIGHT_ALIYUN_DM_ACCOUNT_NAME, ValueFrom: !Sub ["${Secret}:aliyun_account_name::", { Secret: !ImportValue sanchezcloud-scholight-survey-secret-arn }] }
+            - { Name: SCHOLIGHT_ALIYUN_DM_ACCESS_KEY_ID, ValueFrom: !Sub ["${Secret}:aliyun_access_key_id::", { Secret: !ImportValue sanchezcloud-scholight-mail-secret-arn }] }
+            - { Name: SCHOLIGHT_ALIYUN_DM_ACCESS_KEY_SECRET, ValueFrom: !Sub ["${Secret}:aliyun_access_key_secret::", { Secret: !ImportValue sanchezcloud-scholight-mail-secret-arn }] }
+            - { Name: SCHOLIGHT_ALIYUN_DM_ACCOUNT_NAME, ValueFrom: !Sub ["${Secret}:aliyun_account_name::", { Secret: !ImportValue sanchezcloud-scholight-mail-secret-arn }] }
           LogConfiguration:
             LogDriver: awslogs
             Options:
@@ -852,6 +857,42 @@ Resources:
         ScaleOutCooldown: 60
         PredefinedMetricSpecification: { PredefinedMetricType: ECSServiceAverageMemoryUtilization }
 
+  ExtractScalableTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Condition: RunApplication
+    Properties:
+      ServiceNamespace: ecs
+      ScalableDimension: ecs:service:DesiredCount
+      MinCapacity: 1
+      MaxCapacity: 3
+      ResourceId: !Join [/, [service, !ImportValue sanchezcloud-production-cluster-name, !GetAtt ExtractService.Name]]
+
+  ExtractCpuScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Condition: RunApplication
+    Properties:
+      PolicyName: scholight-extract-cpu
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref ExtractScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 60
+        ScaleInCooldown: 300
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification: { PredefinedMetricType: ECSServiceAverageCPUUtilization }
+
+  ExtractMemoryScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Condition: RunApplication
+    Properties:
+      PolicyName: scholight-extract-memory
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref ExtractScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 70
+        ScaleInCooldown: 300
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification: { PredefinedMetricType: ECSServiceAverageMemoryUtilization }
+
   IngestSchedule:
     Type: AWS::Scheduler::Schedule
     Properties:
@@ -941,6 +982,122 @@ Resources:
       TreatMissingData: notBreaching
       AlarmActions: [!ImportValue sanchezcloud-scholight-alert-topic-arn]
 
+  ApiLatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: RunApplication
+    Properties:
+      AlarmName: sanchezcloud-scholight-api-p95-latency
+      Namespace: AWS/ApplicationELB
+      MetricName: TargetResponseTime
+      Dimensions:
+        - { Name: LoadBalancer, Value: !GetAtt LoadBalancer.LoadBalancerFullName }
+        - { Name: TargetGroup, Value: !GetAtt ApiTargetGroup.TargetGroupFullName }
+      ExtendedStatistic: p95
+      Period: 300
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 3
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!ImportValue sanchezcloud-scholight-alert-topic-arn]
+
+  ExtractFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: RunApplication
+    Properties:
+      AlarmName: sanchezcloud-scholight-extract-failures
+      Namespace: Scholight/Production
+      MetricName: ExtractServiceFailure
+      Dimensions: [{ Name: service, Value: extract }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!ImportValue sanchezcloud-scholight-alert-topic-arn]
+
+  IngestionBacklogAgeAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: RunApplication
+    Properties:
+      AlarmName: sanchezcloud-scholight-ingest-oldest-age
+      Namespace: Scholight/Production
+      MetricName: IngestionOldestAge
+      Dimensions: [{ Name: service, Value: paper-ingest }]
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 21600
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!ImportValue sanchezcloud-scholight-alert-topic-arn]
+
+  IngestionDeadAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: RunApplication
+    Properties:
+      AlarmName: sanchezcloud-scholight-ingest-dead
+      Namespace: Scholight/Production
+      MetricName: IngestionDeadTotal
+      Dimensions: [{ Name: service, Value: paper-ingest }]
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!ImportValue sanchezcloud-scholight-alert-topic-arn]
+
+  DatabaseConnectionPressureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: RunApplication
+    Properties:
+      AlarmName: sanchezcloud-scholight-postgres-connection-pressure
+      Namespace: AWS/RDS
+      MetricName: DatabaseConnections
+      Dimensions: [{ Name: DBInstanceIdentifier, Value: !Ref DatabaseInstanceIdentifier }]
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 3
+      Threshold: 60
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!ImportValue sanchezcloud-scholight-alert-topic-arn]
+
+  SurveyRuntimeFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: RunSurveyWorkers
+    Properties:
+      AlarmName: sanchezcloud-scholight-survey-runtime-failure
+      Namespace: Scholight/Production
+      MetricName: SurveyRuntimeFailure
+      Dimensions: [{ Name: service, Value: survey-worker }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!ImportValue sanchezcloud-scholight-alert-topic-arn]
+
+  SurveyEmailDeadAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: RunSurveyWorkers
+    Properties:
+      AlarmName: sanchezcloud-scholight-survey-email-dead
+      Namespace: Scholight/Production
+      MetricName: SurveyEmailNotificationDead
+      Dimensions: [{ Name: service, Value: survey-worker }]
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!ImportValue sanchezcloud-scholight-alert-topic-arn]
+
   Dashboard:
     Type: AWS::CloudWatch::Dashboard
     Properties:
@@ -950,11 +1107,17 @@ Resources:
           {"widgets":[
             {"type":"metric","x":0,"y":0,"width":12,"height":6,"properties":{"title":"Scholight API","region":"${AWS::Region}","metrics":[["AWS/ECS","CPUUtilization","ServiceName","${ApiServiceName}","ClusterName","${ClusterName}"],[".","MemoryUtilization",".",".",".","."]]}},
             {"type":"metric","x":12,"y":0,"width":12,"height":6,"properties":{"title":"ALB requests and latency","region":"${AWS::Region}","metrics":[["AWS/ApplicationELB","RequestCount","LoadBalancer","${LoadBalancerName}"],[".","TargetResponseTime",".",".",{"stat":"p95"}]]}},
-            {"type":"log","x":0,"y":6,"width":24,"height":6,"properties":{"title":"Recent errors","region":"${AWS::Region}","query":"SOURCE '/sanchezcloud/scholight/api' | fields @timestamp, level, event, request_id | filter level in ['error','critical'] | sort @timestamp desc | limit 50"}}
+            {"type":"metric","x":0,"y":6,"width":12,"height":6,"properties":{"title":"Extract capacity","region":"${AWS::Region}","metrics":[["AWS/ECS","CPUUtilization","ServiceName","${ExtractServiceName}","ClusterName","${ClusterName}"],[".","MemoryUtilization",".",".",".","."]]}},
+            {"type":"metric","x":12,"y":6,"width":12,"height":6,"properties":{"title":"Ingestion queue","region":"${AWS::Region}","metrics":[["Scholight/Production","IngestionBacklog","service","paper-ingest"],[".","IngestionOldestAge",".","."],[".","IngestionDeadTotal",".","."]]}},
+            {"type":"metric","x":0,"y":12,"width":12,"height":6,"properties":{"title":"Survey reliability","region":"${AWS::Region}","metrics":[["Scholight/Production","SurveyRuntimeFailure","service","survey-worker"],[".","SurveyEmailNotificationDead",".","."]]}},
+            {"type":"metric","x":12,"y":12,"width":12,"height":6,"properties":{"title":"PostgreSQL connections","region":"${AWS::Region}","metrics":[["AWS/RDS","DatabaseConnections","DBInstanceIdentifier","${DatabaseInstanceIdentifier}"]]}},
+            {"type":"log","x":0,"y":18,"width":24,"height":6,"properties":{"title":"Recent errors","region":"${AWS::Region}","query":"SOURCE '/sanchezcloud/scholight/api' | fields @timestamp, level, event, request_id | filter level in ['error','critical'] | sort @timestamp desc | limit 50"}}
           ]}
         - ApiServiceName: !GetAtt ApiService.Name
+          ExtractServiceName: !GetAtt ExtractService.Name
           ClusterName: !ImportValue sanchezcloud-production-cluster-name
           LoadBalancerName: !GetAtt LoadBalancer.LoadBalancerFullName
+          DatabaseInstanceIdentifier: !Ref DatabaseInstanceIdentifier
 
 Outputs:
   LoadBalancerDnsName: { Value: !GetAtt LoadBalancer.DNSName }

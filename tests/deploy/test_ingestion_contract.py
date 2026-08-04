@@ -43,6 +43,8 @@ def test_ecs_runs_bounded_ingestion_and_daily_metadata_tasks() -> None:
     assert "Command: [scholight, scheduler, sync]" in template
     assert "ScheduleExpression: cron(0 8 * * ? *)" in template
     assert template.count("State: !If [RunApplication, !Ref SchedulerState, DISABLED]") == 2
+    assert "MetricName: IngestionOldestAge" in template
+    assert "MetricName: IngestionDeadTotal" in template
 
 
 def test_ingest_image_is_separate_and_is_not_a_long_lived_service() -> None:
