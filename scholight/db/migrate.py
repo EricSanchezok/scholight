@@ -30,21 +30,13 @@ _APPROVED_CONTRACT_MIGRATIONS = {
         "allow_delegated_usage_actor",
     ): "09d7bc9fc1358cdcdcc66a754992aa72eee31ad550a71f0dde481e612ff45186",
     (
-        6,
-        "survey_aggregate",
-    ): "7839587fb113308b08a29af4453e30d5d51babb90dbf43b720426315fdcaaac9",
-    (
         12,
         "access_keys_all_tools",
     ): "73edc54a385429a0fb01e84f63f6449fc7e5dd4a28ea81d762afa42477329ba2",
     (
-        8,
-        "survey_cancellation",
-    ): "50ba44148b1d14853b2c67ff25f92fe549e8fde208119848789f906002f83a29",
-    (
-        10,
-        "survey_quota_overrides",
-    ): "9c07ecf7c8eacafc000442fe369bd3a3c73c0c3ee89a46df119be0e3a195cca7",
+        5,
+        "survey",
+    ): "d80b622457cef62a2c47f3a8ce940c288efe42666c590faa8ec595f3d5c1307e",
 }
 
 

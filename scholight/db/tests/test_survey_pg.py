@@ -149,36 +149,6 @@ async def test_create_survey_enforces_user_override(survey_pool: asyncpg.Pool) -
 
 
 @pytest.mark.asyncio
-async def test_aggregate_migration_preserves_unexpected_legacy_rows() -> None:
-    pool = await asyncpg.create_pool(isolated_database_url(), min_size=1, max_size=2)
-    try:
-        await pool.execute("DROP SCHEMA IF EXISTS scholight CASCADE")
-        await pool.execute("DROP SCHEMA IF EXISTS auth CASCADE")
-        await pool.execute("CREATE SCHEMA auth")
-        await pool.execute("CREATE TABLE auth.users (id BIGINT PRIMARY KEY)")
-        await pool.execute("CREATE SCHEMA scholight")
-        for version in range(1, 6):
-            migration = next(_MIGRATIONS.glob(f"{version:03d}_*.sql"))
-            await pool.execute(migration.read_text(encoding="utf-8"))
-        await pool.execute("INSERT INTO auth.users (id) VALUES (42)")
-        await pool.execute(
-            "INSERT INTO scholight.survey_jobs (id, user_id, topic, quota_date) "
-            "VALUES ($1, 42, 'must survive', $2)",
-            uuid4(),
-            _QUOTA_DATE,
-        )
-
-        aggregate = (_MIGRATIONS / "006_survey_aggregate.sql").read_text(encoding="utf-8")
-        with pytest.raises(asyncpg.PostgresError, match=r"requires.*legacy.*empty"):
-            await pool.execute(aggregate)
-
-        assert await pool.fetchval("SELECT count(*) FROM scholight.survey_jobs") == 1
-        assert await pool.fetchval("SELECT to_regclass('scholight.surveys')") is None
-    finally:
-        await pool.close()
-
-
-@pytest.mark.asyncio
 async def test_create_idempotency_does_not_double_reserve(survey_pool: asyncpg.Pool) -> None:
     request_id = uuid4()
     with patch("scholight.db.queries_survey.get_pool", return_value=survey_pool):
