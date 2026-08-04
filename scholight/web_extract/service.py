@@ -205,6 +205,11 @@ def create_extract_service(
             )
         except ExtractError as exc:
             _emit_extract_metrics(started_at=started_at, outcome=f"error_{exc.code}")
+            if exc.status_code >= 500:
+                emit_emf(
+                    service="extract",
+                    metrics={"ExtractServiceFailure": (1, "Count")},
+                )
             return JSONResponse(
                 status_code=exc.status_code,
                 content={

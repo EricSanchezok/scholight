@@ -7,6 +7,7 @@ import httpx
 import pytest
 
 from scholight.web_extract.engine import ExtractDocument, ExtractInput
+from scholight.web_extract.errors import ExtractError
 from scholight.web_extract.service import create_extract_service
 
 
@@ -31,6 +32,16 @@ class _Engine:
             content_hash="a" * 64,
             fetched_at=datetime(2026, 8, 1, tzinfo=UTC),
             source_bytes=1234,
+        )
+
+
+class _FailingEngine:
+    async def extract(self, request: ExtractInput) -> ExtractDocument:
+        raise ExtractError(
+            code="browser_failed",
+            message="Browser extraction failed",
+            status_code=503,
+            retryable=True,
         )
 
 
@@ -120,3 +131,27 @@ async def test_extract_metrics_include_sizes_and_path_but_never_credentials() ->
     assert emit.call_args.kwargs["outcome"] == "static_success"
     assert emit.call_args.kwargs["metrics"]["DownloadBytes"] == (1234, "Bytes")
     assert "target-secret" not in repr(emit.call_args)
+
+
+@pytest.mark.asyncio
+async def test_extract_server_failures_emit_an_aggregate_alarm_metric() -> None:
+    app = create_extract_service(engine=_FailingEngine(), internal_token="internal-secret")
+    with patch("scholight.web_extract.service.emit_emf") as emit:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://extract"
+        ) as client:
+            response = await client.post(
+                "/v1/extract",
+                headers={"X-Scholight-Internal-Token": "internal-secret"},
+                json={"url": "https://example.com"},
+            )
+
+    assert response.status_code == 503
+    assert any(
+        call.kwargs
+        == {
+            "service": "extract",
+            "metrics": {"ExtractServiceFailure": (1, "Count")},
+        }
+        for call in emit.call_args_list
+    )

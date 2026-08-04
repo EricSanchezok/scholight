@@ -189,14 +189,33 @@ def test_first_ecs_deployment_can_bootstrap_without_starting_services() -> None:
         "ApiScalableTarget",
         "ApiCpuScalingPolicy",
         "ApiMemoryScalingPolicy",
+        "ExtractScalableTarget",
+        "ExtractCpuScalingPolicy",
+        "ExtractMemoryScalingPolicy",
         "ApiUnhealthyAlarm",
         "ApiFiveHundredAlarm",
+        "ApiLatencyAlarm",
+        "ExtractFailureAlarm",
+        "IngestionBacklogAgeAlarm",
+        "IngestionDeadAlarm",
+        "DatabaseConnectionPressureAlarm",
     ):
         assert re.search(
             rf"(?m)^  {resource}:\n    Type: .+\n    Condition: RunApplication$",
             template,
         )
     assert "if: inputs.application_enabled == 'true'" in workflow
+
+
+def test_first_cutover_creates_the_dormant_stack_before_running_migrations() -> None:
+    runbook = (ECS / "README.md").read_text(encoding="utf-8")
+    cutover = runbook.split("## First cutover", maxsplit=1)[1].split(
+        "## Failure handling", maxsplit=1
+    )[0]
+
+    assert cutover.count("protected product migration") == 1
+    assert cutover.index("ApplicationEnabled=false") < cutover.index("protected product migration")
+    assert cutover.index("protected product migration") < cutover.index("ApplicationEnabled=true")
 
 
 def test_github_oidc_trust_uses_immutable_repository_identity() -> None:
@@ -308,6 +327,15 @@ def test_runtime_secret_documents_cover_every_external_provider() -> None:
     production = (ECS / "scholight-production.yml").read_text(encoding="utf-8")
 
     assert "GenerateStringKey: auth_jwt_secret" in foundation
+    survey_secret = foundation.split("SurveyProvidersSecret:", maxsplit=1)[1].split(
+        "MailProvidersSecret:", maxsplit=1
+    )[0]
+    mail_secret = foundation.split("MailProvidersSecret:", maxsplit=1)[1].split(
+        "AlertTopic:", maxsplit=1
+    )[0]
+    assert "aliyun_access_key_id" not in survey_secret
+    assert "/sanchezcloud/scholight/production/mail" in mail_secret
+    assert "sanchezcloud-scholight-mail-secret-arn" in foundation
     for key in (
         "anonymous_quota_hmac_secret",
         "access_key_hmac_secret",
@@ -327,6 +355,14 @@ def test_runtime_secret_documents_cover_every_external_provider() -> None:
         "aliyun_account_name",
     ):
         assert f'"{key}"' in foundation
+
+    for variable in (
+        "SCHOLIGHT_ALIYUN_DM_ACCESS_KEY_ID",
+        "SCHOLIGHT_ALIYUN_DM_ACCESS_KEY_SECRET",
+        "SCHOLIGHT_ALIYUN_DM_ACCOUNT_NAME",
+    ):
+        line = next(line for line in production.splitlines() if variable in line)
+        assert "sanchezcloud-scholight-mail-secret-arn" in line
 
     for variable in (
         "SCHOLIGHT_ALIYUN_DM_ACCESS_KEY_ID",

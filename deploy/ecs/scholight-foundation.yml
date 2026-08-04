@@ -281,9 +281,19 @@ Resources:
     UpdateReplacePolicy: Retain
     Properties:
       Name: /sanchezcloud/scholight/production/survey-providers
-      Description: Survey model, image, and email provider credentials
+      Description: Survey model and image provider credentials
       KmsKeyId: !GetAtt ConfigurationKey.Arn
-      SecretString: '{"deepseek_api_key":"","image_gen_api_key":"","aliyun_access_key_id":"","aliyun_access_key_secret":"","aliyun_account_name":""}'
+      SecretString: '{"deepseek_api_key":"","image_gen_api_key":""}'
+
+  MailProvidersSecret:
+    Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Name: /sanchezcloud/scholight/production/mail
+      Description: Scholight transactional email provider credentials
+      KmsKeyId: !GetAtt ConfigurationKey.Arn
+      SecretString: '{"aliyun_access_key_id":"","aliyun_access_key_secret":"","aliyun_account_name":""}'
 
   AlertTopic:
     Type: AWS::SNS::Topic
@@ -537,6 +547,9 @@ Outputs:
   SurveyProvidersSecretArn:
     Value: !Ref SurveyProvidersSecret
     Export: { Name: sanchezcloud-scholight-survey-secret-arn }
+  MailProvidersSecretArn:
+    Value: !Ref MailProvidersSecret
+    Export: { Name: sanchezcloud-scholight-mail-secret-arn }
   AlertTopicArn:
     Value: !Ref AlertTopic
     Export: { Name: sanchezcloud-scholight-alert-topic-arn }
