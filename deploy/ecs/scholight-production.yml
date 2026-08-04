@@ -57,7 +57,7 @@ Rules:
   PublicSurveyRequiresWorkers:
     Assertions:
       - Assert: !Or
-          - !Equals [!Ref SurveyPublicMode, off]
+          - !Equals [!Ref SurveyPublicMode, "off"]
           - !Equals [!Ref SurveyRuntimeEnabled, "true"]
         AssertDescription: Survey public mode all requires Survey workers to be enabled
 
