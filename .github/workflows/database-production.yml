@@ -1,0 +1,119 @@
+name: Run protected product migration
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_sha:
+        description: Exact published release whose API image contains the migration
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: scholight-database-production
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    environment: database-production
+    steps:
+      - name: Validate release SHA
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: '[[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]'
+      - name: Check out exact release source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.release_sha }}
+          persist-credentials: false
+      - name: Configure protected database credentials
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          role-to-assume: ${{ vars.AWS_DATABASE_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Download and verify release manifest
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: |
+          account_id=$(aws sts get-caller-identity --query Account --output text)
+          bucket="sanchezcloud-scholight-releases-${account_id}-${AWS_REGION}"
+          aws s3 cp "s3://${bucket}/releases/${RELEASE_SHA}/manifest.json" release-manifest.json
+          python scripts/release_manifest.py verify \
+            --manifest release-manifest.json \
+            --expected-release-sha "$RELEASE_SHA"
+      - name: Register candidate migration task revision
+        id: task
+        run: |
+          # JMESPath and jq programs are literal expressions.
+          # shellcheck disable=SC2016
+          base_task=$(aws cloudformation describe-stacks \
+            --stack-name sanchezcloud-scholight-production \
+            --query 'Stacks[0].Outputs[?OutputKey==`MigrationTaskDefinitionArn`].OutputValue|[0]' \
+            --output text)
+          candidate_image=$(jq -r .images.api release-manifest.json)
+          aws ecs describe-task-definition --task-definition "$base_task" \
+            --query taskDefinition > base-task.json
+          jq --arg image "$candidate_image" '
+            {
+              family, taskRoleArn, executionRoleArn, networkMode,
+              containerDefinitions, volumes, placementConstraints,
+              requiresCompatibilities, cpu, memory, runtimePlatform,
+              ephemeralStorage
+            }
+            | .containerDefinitions[0].image = $image
+            | with_entries(select(.value != null))
+          ' base-task.json > candidate-task.json
+          task_definition=$(aws ecs register-task-definition \
+            --cli-input-json file://candidate-task.json \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "task_definition=$task_definition" >> "$GITHUB_OUTPUT"
+      - name: Run migration once and inspect its exit code
+        env:
+          TASK_DEFINITION: ${{ steps.task.outputs.task_definition }}
+        run: |
+          # JMESPath and jq programs are literal expressions.
+          # shellcheck disable=SC2016
+          subnet_1=$(aws cloudformation list-exports \
+            --query 'Exports[?Name==`sanchezcloud-production-private-subnet-1`].Value|[0]' \
+            --output text)
+          # shellcheck disable=SC2016
+          subnet_2=$(aws cloudformation list-exports \
+            --query 'Exports[?Name==`sanchezcloud-production-private-subnet-2`].Value|[0]' \
+            --output text)
+          # shellcheck disable=SC2016
+          task_sg=$(aws cloudformation describe-stacks \
+            --stack-name sanchezcloud-scholight-production \
+            --query 'Stacks[0].Outputs[?OutputKey==`TaskSecurityGroupId`].OutputValue|[0]' \
+            --output text)
+          # shellcheck disable=SC2016
+          network=$(jq -cn \
+            --arg subnet1 "$subnet_1" --arg subnet2 "$subnet_2" --arg sg "$task_sg" \
+            '{awsvpcConfiguration:{subnets:[$subnet1,$subnet2],securityGroups:[$sg],assignPublicIp:"DISABLED"}}')
+          task_arn=$(aws ecs run-task \
+            --cluster sanchezcloud-production \
+            --launch-type FARGATE \
+            --task-definition "$TASK_DEFINITION" \
+            --network-configuration "$network" \
+            --started-by "github-${GITHUB_RUN_ID}" \
+            --query 'tasks[0].taskArn' --output text)
+          test "$task_arn" != None
+          aws ecs wait tasks-stopped --cluster sanchezcloud-production --tasks "$task_arn"
+          # shellcheck disable=SC2016
+          exit_code=$(aws ecs describe-tasks \
+            --cluster sanchezcloud-production --tasks "$task_arn" \
+            --query 'tasks[0].containers[?name==`migration`].exitCode|[0]' --output text)
+          if [[ "$exit_code" != 0 ]]; then
+            aws ecs describe-tasks --cluster sanchezcloud-production --tasks "$task_arn"
+            echo "Migration task exited with code $exit_code" >&2
+            exit 1
+          fi
+      - name: Retire one-off candidate task definition
+        if: always() && steps.task.outputs.task_definition != ''
+        env:
+          TASK_DEFINITION: ${{ steps.task.outputs.task_definition }}
+        run: aws ecs deregister-task-definition --task-definition "$TASK_DEFINITION" >/dev/null

@@ -138,7 +138,7 @@ jobs:
             -v app_role=scholight_app \
             -v auth_migrator_role=auth_migrator \
             -v product_migrator_role=scholight_migrator \
-            -f deploy/production/bootstrap-db.sql
+            -f deploy/ecs/database-bootstrap.sql
           .venv/bin/sanchezcloud-identity migrate
           .venv/bin/sanchezcloud-identity migrate
           .venv/bin/sanchezcloud-identity check-schema
@@ -147,7 +147,7 @@ jobs:
             -v app_role=scholight_app \
             -v auth_migrator_role=auth_migrator \
             -v product_migrator_role=scholight_migrator \
-            -f deploy/production/bootstrap-db.sql
+            -f deploy/ecs/database-bootstrap.sql
           AUTH_DATABASE_URL=postgresql://scholight_app:scholight-app-password@127.0.0.1:5432/sanchezcloud \
             .venv/bin/sanchezcloud-identity audit-database-role --profile product-runtime
       - name: Build Scholight with the candidate SDK
@@ -160,6 +160,7 @@ jobs:
             --secret id=github_token,env=IDENTITY_READ_TOKEN \
             --build-arg SANCHEZCLOUD_IDENTITY_REVISION="$IDENTITY_REF" \
             --build-arg TARGETARCH=amd64 \
+            --target api \
             -f docker/scholight-api/Dockerfile \
             -t scholight-identity-compat:ci .
           docker run --rm --entrypoint /app/.venv/bin/python \

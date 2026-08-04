@@ -1,0 +1,220 @@
+name: Publish immutable release
+
+on:
+  workflow_run:
+    workflows: [CI]
+    branches: [main]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Commit or tag already merged into main
+        required: false
+        default: main
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: scholight-image-publish-${{ github.event.workflow_run.head_sha || inputs.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      release_sha: ${{ steps.revision.outputs.release_sha }}
+    steps:
+      - name: Check out release revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || inputs.ref }}
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Resolve and validate immutable revision
+        id: revision
+        run: |
+          release_sha=$(git rev-parse HEAD)
+          git merge-base --is-ancestor "$release_sha" origin/main
+          echo "release_sha=$release_sha" >> "$GITHUB_OUTPUT"
+
+  quality:
+    if: github.event_name == 'workflow_dispatch'
+    needs: prepare
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.prepare.outputs.release_sha }}
+    secrets:
+      IDENTITY_READER_PRIVATE_KEY: ${{ secrets.IDENTITY_READER_PRIVATE_KEY }}
+
+  publish:
+    if: >-
+      always() && needs.prepare.result == 'success' &&
+      (needs.quality.result == 'success' || needs.quality.result == 'skipped')
+    needs: [prepare, quality]
+    runs-on: ubuntu-latest
+    environment: image-publish
+    steps:
+      - name: Check out release revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.prepare.outputs.release_sha }}
+          persist-credentials: false
+      - name: Mint read-only SanchezCloud Identity token
+        id: identity-token
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        with:
+          app-id: ${{ vars.IDENTITY_READER_APP_ID }}
+          private-key: ${{ secrets.IDENTITY_READER_PRIVATE_KEY }}
+          owner: EricSanchezok
+          repositories: sanchezcloud-identity
+          permission-contents: read
+      - name: Configure private dependency access
+        env:
+          IDENTITY_READ_TOKEN: ${{ steps.identity-token.outputs.token }}
+        run: >-
+          git config --global
+          url."https://x-access-token:${IDENTITY_READ_TOKEN}@github.com/".insteadOf
+          "https://github.com/"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          version: "0.9.2"
+          enable-cache: true
+      - name: Resolve Identity schema contract
+        id: identity
+        run: |
+          uv sync --frozen --no-dev
+          schema_version=$(.venv/bin/python -c \
+            'import sanchezcloud_identity as identity; print(identity.AUTH_SCHEMA_VERSION)')
+          echo "schema_version=$schema_version" >> "$GITHUB_OUTPUT"
+      - name: Configure AWS publishing credentials
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          role-to-assume: ${{ vars.AWS_PUBLISH_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Log in to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Build and push Web
+        id: web
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: frontend
+          file: frontend/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.ecr.outputs.registry }}/sanchezcloud-scholight-web:git-${{ needs.prepare.outputs.release_sha }}
+          provenance: mode=max
+          sbom: true
+      - name: Build and push API
+        id: api
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: docker/scholight-api/Dockerfile
+          target: api
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.ecr.outputs.registry }}/sanchezcloud-scholight-api:git-${{ needs.prepare.outputs.release_sha }}
+          provenance: mode=max
+          sbom: true
+          secrets: |
+            github_token=${{ steps.identity-token.outputs.token }}
+      - name: Build and push Web Extract
+        id: extract
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: docker/scholight-extract/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.ecr.outputs.registry }}/sanchezcloud-scholight-extract:git-${{ needs.prepare.outputs.release_sha }}
+          provenance: mode=max
+          sbom: true
+      - name: Build and push ingest
+        id: ingest
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: docker/scholight-api/Dockerfile
+          target: ingest
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.ecr.outputs.registry }}/sanchezcloud-scholight-ingest:git-${{ needs.prepare.outputs.release_sha }}
+          provenance: mode=max
+          sbom: true
+          secrets: |
+            github_token=${{ steps.identity-token.outputs.token }}
+      - name: Build and push Survey
+        id: survey
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: docker/scholight-api/Dockerfile
+          target: survey
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.ecr.outputs.registry }}/sanchezcloud-scholight-survey:git-${{ needs.prepare.outputs.release_sha }}
+          provenance: mode=max
+          sbom: true
+          secrets: |
+            github_token=${{ steps.identity-token.outputs.token }}
+      - name: Create deterministic release manifest
+        env:
+          RELEASE_SHA: ${{ needs.prepare.outputs.release_sha }}
+          IDENTITY_SCHEMA_VERSION: ${{ steps.identity.outputs.schema_version }}
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          WEB_DIGEST: ${{ steps.web.outputs.digest }}
+          API_DIGEST: ${{ steps.api.outputs.digest }}
+          EXTRACT_DIGEST: ${{ steps.extract.outputs.digest }}
+          INGEST_DIGEST: ${{ steps.ingest.outputs.digest }}
+          SURVEY_DIGEST: ${{ steps.survey.outputs.digest }}
+        run: |
+          python scripts/release_manifest.py create \
+            --release-sha "$RELEASE_SHA" \
+            --identity-schema-version "$IDENTITY_SCHEMA_VERSION" \
+            --web-image "$REGISTRY/sanchezcloud-scholight-web@$WEB_DIGEST" \
+            --api-image "$REGISTRY/sanchezcloud-scholight-api@$API_DIGEST" \
+            --extract-image "$REGISTRY/sanchezcloud-scholight-extract@$EXTRACT_DIGEST" \
+            --ingest-image "$REGISTRY/sanchezcloud-scholight-ingest@$INGEST_DIGEST" \
+            --survey-image "$REGISTRY/sanchezcloud-scholight-survey@$SURVEY_DIGEST" \
+            --output release-manifest.json
+          python scripts/release_manifest.py verify \
+            --manifest release-manifest.json \
+            --expected-release-sha "$RELEASE_SHA"
+      - name: Store immutable release manifest
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          RELEASE_SHA: ${{ needs.prepare.outputs.release_sha }}
+        run: |
+          account_id=$(aws sts get-caller-identity --query Account --output text)
+          bucket="sanchezcloud-scholight-releases-${account_id}-${AWS_REGION}"
+          key="releases/${RELEASE_SHA}/manifest.json"
+          if aws s3api head-object --bucket "$bucket" --key "$key" >/dev/null 2>&1; then
+            aws s3 cp "s3://${bucket}/${key}" existing-manifest.json
+            cmp --silent release-manifest.json existing-manifest.json || {
+              echo "An immutable manifest already exists with different content" >&2
+              exit 1
+            }
+          else
+            aws s3api put-object \
+              --bucket "$bucket" \
+              --key "$key" \
+              --body release-manifest.json \
+              --content-type application/json \
+              --cache-control no-store \
+              --if-none-match '*' >/dev/null
+          fi
+      - name: Upload release manifest to workflow artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: scholight-release-${{ needs.prepare.outputs.release_sha }}
+          path: release-manifest.json
+          if-no-files-found: error
+          retention-days: 90

@@ -58,8 +58,6 @@ service_running() {
 
 SCHOLIGHT_DOMAIN=$(read_env_value SCHOLIGHT_DOMAIN)
 SCHOLIGHT_EDGE_DOMAIN=$(read_env_value SCHOLIGHT_EDGE_DOMAIN)
-SCHOLIGHT_SURVEY_RUNTIME_ENABLED=$(read_env_value SCHOLIGHT_SURVEY_RUNTIME_ENABLED)
-SCHOLIGHT_SURVEY_PUBLIC_MODE=$(read_env_value SCHOLIGHT_SURVEY_PUBLIC_MODE)
 LOCAL_INGRESS_RESOLVE="${SCHOLIGHT_DOMAIN}:443:127.0.0.1"
 LOCAL_EDGE_RESOLVE="${SCHOLIGHT_EDGE_DOMAIN}:80:127.0.0.1"
 
@@ -72,37 +70,6 @@ retry "frontend health" compose exec -T frontend \
   wget -q -O /dev/null http://127.0.0.1:8080/healthz
 retry "metadata-sync running" service_running metadata-sync
 retry "paper-ingest running" service_running paper-ingest
-if [[ ${SCHOLIGHT_SURVEY_RUNTIME_ENABLED} == true ]]; then
-  retry "Survey Draft worker running" service_running survey-draft-worker
-  retry "Survey execution worker running" service_running survey-worker
-  retry "Survey Draft worker API service discovery" compose exec -T survey-draft-worker \
-    curl --fail --silent --show-error http://api:8000/livez
-  retry "Survey execution worker API service discovery" compose exec -T survey-worker \
-    curl --fail --silent --show-error http://api:8000/livez
-  retry "Survey cleanup sibling heartbeat" compose exec -T survey-worker \
-    /bin/sh -ec 'find /tmp/scholight-survey-cleanup.heartbeat -mmin -2 -print -quit | grep -q .'
-  retry "Survey migrations, configuration, cleanup, and S3 access" compose exec -T survey-worker \
-    /app/.venv/bin/scholight survey smoke --json-output
-  retry "Survey email notification queue readable" compose exec -T survey-worker \
-    /app/.venv/bin/scholight survey status --json-output
-elif [[ ${SCHOLIGHT_SURVEY_RUNTIME_ENABLED} != false ]]; then
-  printf 'SCHOLIGHT_SURVEY_RUNTIME_ENABLED must be exactly true or false\n' >&2
-  exit 1
-fi
-case ${SCHOLIGHT_SURVEY_PUBLIC_MODE} in
-  off | all) ;;
-  *)
-    printf 'SCHOLIGHT_SURVEY_PUBLIC_MODE must be exactly off or all\n' >&2
-    exit 1
-    ;;
-esac
-if [[ ${SCHOLIGHT_SURVEY_PUBLIC_MODE} == all && ${SCHOLIGHT_SURVEY_RUNTIME_ENABLED} != true ]]; then
-  printf 'Survey public mode cannot be all while the runtime is disabled\n' >&2
-  exit 1
-fi
-retry "public capabilities" compose exec -T api \
-  /bin/sh -ec \
-  "curl --fail --silent --show-error http://127.0.0.1:8000/capabilities | grep -F '\"survey\":\"${SCHOLIGHT_SURVEY_PUBLIC_MODE}\"'"
 retry "load balancer origin health" curl --fail --silent --show-error \
   --output /dev/null "http://127.0.0.1/healthz"
 retry "edge HTTP API ingress" curl --fail --silent --show-error \

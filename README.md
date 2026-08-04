@@ -305,25 +305,20 @@ uv run scholight scheduler enqueue-backfill \
 
 ---
 
-## Docker 部署
+## 生产部署
 
-本仓库根目录的 Compose 文件用于本地构建和运维。正式环境使用独立的
-[`deploy/production/`](deploy/production/README.md) 部署包：Caddy 是唯一公开入口，
-前后端按 digest 协调发布。sanchezcloud-identity 由其受保护工作流独立迁移
-`auth.*`；Scholight 发布只校验 auth schema 版本并迁移 `scholight.*`。
+正式环境的唯一主线是 [`deploy/ecs/`](deploy/ecs/README.md)：五个职责明确的不可变
+镜像运行在共享 SanchezCloud Fargate 平台，发布清单固定全部 digest。旧的
+[`deploy/production/`](deploy/production/README.md) 单机 Compose 包已冻结，只在迁移
+观察期作为旧 EC2 回退参考，不再接收功能或发布流程变更。
+
+sanchezcloud-identity 由其受保护工作流独立迁移 `auth.*`；Scholight 发布只校验
+Identity schema 版本，产品 migration workflow 只迁移 `scholight.*`。
 完整边界及新产品接入规则见
 [`docs/architecture/data-ownership.md`](docs/architecture/data-ownership.md)。
 
-```bash
-docker compose --env-file /path/to/explicit-remote-runtime.env build
-
-# auth.* 已由 sanchezcloud-identity workflow 迁移后，只执行 Scholight migration
-docker compose --env-file /path/to/explicit-remote-runtime.env --profile migrate run --rm migrate
-docker compose --env-file /path/to/explicit-remote-runtime.env up -d api metadata-sync paper-ingest
-```
-
-根 Compose 不是日常本地开发入口，且不得读取 `.env.local`。正式环境优先使用
-`deploy/production/`；本地开发统一使用 `./scripts/dev.sh`。
+根 Compose 不是日常本地开发入口，且不得读取 `.env.local`。它不再是正式发布
+入口；本地开发统一使用 `./scripts/dev.sh`，生产操作遵循 `deploy/ecs/README.md`。
 
 反向代理只应信任明确的 Caddy IP/CIDR，不能把 `SCHOLIGHT_FORWARDED_ALLOW_IPS` 设为 `*`；不要公开路由 `/livez` 或 `/readyz`。生产 CORS 必须使用实际前端 origin 列表并允许凭据。匿名和 Access Key HMAC 配置只注入 API service，不注入 migrate 或 scheduler。
 
@@ -331,7 +326,7 @@ PostgreSQL 的 expand-only migration 保存每日连续游标、摄入任务、�
 `auth_migrator` 和 `scholight_migrator` 分别拥有自己的 schema，均没有数据库级
 `CREATE`；两个 runner 都会验证 schema 已由基础设施预置且归当前角色所有。
 
-生产 Compose 使用同一个 backend digest 运行 `metadata-sync` 和 `paper-ingest`。
+ECS 使用独立 ingest digest 运行 `metadata-sync` 和有界 `paper-ingest` tasks。
 后者按单篇论文依次完成下载、解析、切块、Embedding 与安全写入；修订时始终先
 upsert 完整新 chunks，再按已核验的明确主键差集清理旧 chunks。部署和 migration
 不会 drop、重建或批量回填现有 Zilliz collection。

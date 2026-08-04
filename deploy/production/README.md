@@ -1,4 +1,9 @@
-# Scholight production deployment package
+# Legacy Scholight EC2 rollback package (frozen)
+
+This single-host package is frozen. It remains only as a temporary rollback
+reference while the production service moves to ECS. Do not add features,
+secrets, migrations, or new release automation here. The authoritative
+production path is [`deploy/ecs/`](../ecs/README.md).
 
 This package deploys one coordinated Scholight frontend, API, Web Extract sidecar,
 metadata-sync, and paper-ingest release to a single Docker Compose host. Caddy is the only public
@@ -160,74 +165,6 @@ Each release carries a SHA-256 digest of `compose.yaml`, `Caddyfile`,
 `/opt/scholight-package`; bootstrap verifies their digest before changing the
 host package. GitHub Actions never sends or mutates host runtime secrets.
 
-## Survey activation and artifact permissions
-
-`SCHOLIGHT_SURVEY_RUNTIME_ENABLED` must be present in `runtime.env` and must be exactly
-`true` or `false`. `SCHOLIGHT_SURVEY_PUBLIC_MODE` independently controls user exposure
-and must be `off` or `all`; `all` is rejected unless the runtime is enabled. The
-reviewed `compose-command.sh` is the single Compose entry
-point used by deploy, rollback, smoke, and diagnostics; it adds the `survey`
-profile only when the setting is `true`. A compatibility release therefore keeps
-both Survey workers absent without requiring Survey provider credentials.
-
-When Survey is activated, the existing EC2 role may access only the dedicated
-Survey bucket. Object permissions remain limited to `surveys/v1/*`. Prefix listing
-is used only when a server-generated manifest is missing during cleanup:
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
-      "Resource": "arn:aws:s3:::scholight-surveys-683390797772-ap-southeast-1/surveys/v1/*"
-    },
-    {
-      "Effect": "Allow",
-      "Action": "s3:ListBucket",
-      "Resource": "arn:aws:s3:::scholight-surveys-683390797772-ap-southeast-1",
-      "Condition": {
-        "StringLike": {"s3:prefix": "surveys/v1/*"}
-      }
-    }
-  ]
-}
-```
-
-Do not grant access to any other bucket or prefix. Updating this policy and the
-SecureString does not itself activate Survey; activation also requires the
-reviewed release after the EC2 resize and local E2E gate.
-
-Each execution archives a private `run/trajectory.jsonl`, `run/diagnostics.json`,
-and schema-v2 `run.json` under the existing owner-scoped Survey prefix. These
-files contain bounded, redacted runtime metadata; they never contain provider
-credentials, PDF bodies, or model reasoning. Diagnose an active or archived job
-from the worker container without rerunning it:
-
-```bash
-./deploy/production/compose-command.sh exec -T survey-worker \
-  /app/.venv/bin/scholight survey diagnose JOB_UUID --json-output
-./deploy/production/compose-command.sh exec -T survey-worker \
-  /app/.venv/bin/scholight survey contract-audit --json-output
-./deploy/production/compose-command.sh exec -T survey-worker \
-  /app/.venv/bin/scholight survey status --json-output
-```
-
-CloudWatch service logs carry the same `survey_job_id` across the worker and its
-delegated MCP searches. Search queries remain only in the private per-run trace,
-not in centralized logs or metric dimensions.
-
-Survey completion email is opt-in per run. The terminal Survey update and its
-notification outbox row commit in one database transaction after report archival;
-failed runs are also eligible, while user cancellation is not. The existing
-Survey worker claims notifications independently, retries temporary DirectMail
-failures up to eight times, and never changes the Survey result when email delivery
-fails. It resolves the account's current verified email only when sending. Configure
-the existing `SCHOLIGHT_ALIYUN_DM_*` values and the canonical
-`SCHOLIGHT_PUBLIC_WEB_URL` before enabling Survey. `scholight survey status` reports
-pending, retrying, sent, and dead notification counts without exposing addresses.
-
 ## One-time observability stack
 
 After the P0 runtime release has completed its observation window, deploy the
@@ -251,12 +188,6 @@ Confirm the SNS subscription from the operations mailbox before relying on
 notifications. Bootstrap installs and starts rsyslog and the CloudWatch Agent
 idempotently from the package configuration. The policy cannot read Parameter
 Store, access RDS or Zilliz, or modify application data.
-
-The dashboard includes Survey outcome, duration, contract, tool, runtime,
-last-activity, and email-delivery panels. Contract violations, runtime failures,
-diagnostic write failures, dead email notifications, email backlog older than 15
-minutes, and two consecutive periods above 30 minutes without Survey activity raise
-alerts; cancellation does not.
 
 ## Runtime and release state
 

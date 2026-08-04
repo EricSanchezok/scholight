@@ -107,8 +107,13 @@ scholight/
 │   ├── check_env.py          环境快照采集
 │   ├── test_extract_pipeline.py  抽取管线对比测试
 │   └── benchmark/            检索评测基准（runners / tuning / run.py）
-├── migrations/              PostgreSQL 迁移 SQL
-│   └── 005_create_search_history.sql
+├── migrations/              PostgreSQL 产品迁移（Identity 迁移不在本仓库）
+│   ├── 001_scholight_baseline.sql
+│   ├── 002_ingestion_queue.sql
+│   ├── 003_admin_metrics.sql
+│   ├── 004_allow_delegated_usage_actor.sql
+│   ├── 005_survey.sql       Survey 首次发布的完整 Schema
+│   └── 012_access_keys_all_tools.sql
 ├── docker/
 │   └── scholight-api/       API 服务 Dockerfile + start.py
 ├── pyproject.toml           依赖 + CLI 入口
@@ -125,7 +130,8 @@ scholight/
 
 - **检索存储**：Zilliz Cloud（managed Milvus）只保存论文、段落、向量与索引；账户、额度、Usage 和历史保存在 PostgreSQL
 - **当前论文数据源**：arXiv（bulk PDF tar + OAI-PMH API）；新增来源通过独立 connector 接入，不把 Web Extract 当作摄入管线
-- **部署方式**：启智平台 notebook 容器，向量数据存于 Zilliz Cloud
+- **部署方式**：正式发布使用 `deploy/ecs/` 的共享 SanchezCloud Fargate 平台；
+  `deploy/production/` 仅是冻结的旧 EC2 回退参考。向量数据继续存于 Zilliz Cloud。
 
 ## Zilliz Cloud 连接
 

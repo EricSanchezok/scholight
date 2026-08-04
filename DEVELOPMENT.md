@@ -73,7 +73,7 @@ Local development must not run metadata sync, paper ingest, backfill, collection
 generation are explicit acceptance-test dependencies; unit and CI tests use fakes.
 
 Local mode must never connect to RDS, production S3, production mail, KMS, Redis, or RabbitMQ.
-Production and staging commands use `deploy/production` and separately named environment files;
+Production commands use the protected ECS workflows and contracts documented in `deploy/ecs`;
 changing `.env.local` is not an approved route to a remote stateful service.
 
 ## Shutdown and diagnostics

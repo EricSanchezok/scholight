@@ -1,0 +1,14 @@
+{
+  "DomainName": "candidate.scholight.example.com",
+  "CertificateArn": "arn:aws:acm:ap-southeast-1:919651863140:certificate/00000000-0000-0000-0000-000000000000",
+  "RdsSecurityGroupId": "sg-00000000000000000",
+  "WebImage": "919651863140.dkr.ecr.ap-southeast-1.amazonaws.com/sanchezcloud-scholight-web@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "ApiImage": "919651863140.dkr.ecr.ap-southeast-1.amazonaws.com/sanchezcloud-scholight-api@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "ExtractImage": "919651863140.dkr.ecr.ap-southeast-1.amazonaws.com/sanchezcloud-scholight-extract@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "IngestImage": "919651863140.dkr.ecr.ap-southeast-1.amazonaws.com/sanchezcloud-scholight-ingest@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "SurveyImage": "919651863140.dkr.ecr.ap-southeast-1.amazonaws.com/sanchezcloud-scholight-survey@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "ApplicationEnabled": "false",
+  "SurveyRuntimeEnabled": "false",
+  "SurveyPublicMode": "off",
+  "SchedulerState": "DISABLED"
+}

@@ -12,6 +12,9 @@ on:
         description: Git revision to verify
         required: false
         type: string
+    secrets:
+      IDENTITY_READER_PRIVATE_KEY:
+        required: true
 
 permissions:
   contents: read
@@ -200,73 +203,59 @@ jobs:
           enable-cache: true
       - name: Install pinned auth migration tool
         run: uv sync --frozen --extra dev
+      - name: Validate ECS CloudFormation contracts
+        run: >-
+          uvx --from cfn-lint==1.44.0 cfn-lint
+          deploy/ecs/scholight-foundation.yml
+          deploy/ecs/scholight-production.yml
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - name: Validate shell scripts
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends shellcheck
-          bash -n deploy/production/bootstrap.sh deploy/production/release.sh deploy/production/smoke.sh deploy/production/wait-ssm.sh
           sh -n frontend/runtime/render-docs.sh
-          shellcheck deploy/production/bootstrap.sh deploy/production/compose-command.sh deploy/production/release.sh deploy/production/smoke.sh deploy/production/wait-ssm.sh tests/deploy/test_keepalive_integration.sh tests/deploy/test_edge_ingress_integration.sh
           shellcheck -s sh frontend/runtime/render-docs.sh
-      - name: Validate production Compose
-        env:
-          SCHOLIGHT_BACKEND_IMAGE: registry.example/scholight/backend@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-          SCHOLIGHT_FRONTEND_IMAGE: registry.example/scholight/frontend@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-          SCHOLIGHT_EXTRACT_IMAGE: registry.example/scholight/extract@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-          SCHOLIGHT_DOMAIN: scholight.example.invalid
-          SCHOLIGHT_EDGE_DOMAIN: edge.example.invalid
-          SCHOLIGHT_ACME_EMAIL: operator@example.invalid
-          SCHOLIGHT_DOCKER_SUBNET: 172.31.0.0/24
-          SCHOLIGHT_CADDY_IP: 172.31.0.2
-          SCHOLIGHT_FRONTEND_IP: 172.31.0.10
-          SCHOLIGHT_API_IP: 172.31.0.20
-          SCHOLIGHT_METADATA_SYNC_IP: 172.31.0.30
-          SCHOLIGHT_PAPER_INGEST_IP: 172.31.0.40
-          SCHOLIGHT_PG_HOST: postgres.example.invalid
-          SCHOLIGHT_PG_DATABASE: sanchezcloud
-          SCHOLIGHT_APP_PG_USER: scholight_app
-          SCHOLIGHT_APP_PG_PASSWORD: fixture-not-a-secret
-          SCHOLIGHT_MIGRATION_PG_USER: scholight_migrator
-          SCHOLIGHT_MIGRATION_PG_PASSWORD: fixture-not-a-secret
-          SCHOLIGHT_ZILLIZ_URI: https://zilliz.example.invalid
-          SCHOLIGHT_ZILLIZ_TOKEN: fixture-not-a-secret
-          SCHOLIGHT_EMBEDDING_BASE_URL: https://embedding.example.invalid/v1
-          SCHOLIGHT_EMBEDDING_API_KEY: fixture-not-a-secret
-          SCHOLIGHT_EMBEDDING_MODEL: fixture-model
-          SCHOLIGHT_AUTH_JWT_SECRET: fixture-secret-at-least-thirty-two-bytes
-          SCHOLIGHT_ANONYMOUS_QUOTA_HMAC_SECRET: another-fixture-secret-at-least-32-bytes
-          SCHOLIGHT_ACCESS_KEY_HMAC_SECRET: access-key-fixture-secret-at-least-32-bytes
-          SCHOLIGHT_MCP_DELEGATION_JWT_SECRET: delegation-fixture-secret-at-least-32-bytes
-          SCHOLIGHT_EXTRACT_INTERNAL_TOKEN: extract-fixture-secret-at-least-32-bytes
-          SCHOLIGHT_PUBLIC_WEB_URL: https://scholight.example.invalid
-          SCHOLIGHT_CORS_ALLOW_ORIGINS: '["https://scholight.example.invalid","https://edge.example.invalid"]'
-        run: docker compose -f deploy/production/compose.yaml config --quiet
-      - name: Validate Caddyfile
-        run: |
-          docker run --rm \
-            -e SCHOLIGHT_DOMAIN=scholight.example.invalid \
-            -e SCHOLIGHT_EDGE_DOMAIN=edge.example.invalid \
-            -e SCHOLIGHT_ACME_EMAIL=operator@example.invalid \
-            -v "$PWD/deploy/production/Caddyfile:/etc/caddy/Caddyfile:ro" \
-            caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d \
-            caddy validate --config /etc/caddy/Caddyfile
       - name: Build frontend image
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: frontend
           file: frontend/Dockerfile
           push: false
-      - name: Build backend image
+      - name: Build API image
         if: github.event_name != 'pull_request'
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           file: docker/scholight-api/Dockerfile
+          target: api
           push: false
           load: true
           tags: scholight-api:ci
+          secrets: |
+            github_token=${{ steps.identity-token.outputs.token }}
+      - name: Build ingest image
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: docker/scholight-api/Dockerfile
+          target: ingest
+          push: false
+          load: true
+          tags: scholight-ingest:ci
+          secrets: |
+            github_token=${{ steps.identity-token.outputs.token }}
+      - name: Build Survey image
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: docker/scholight-api/Dockerfile
+          target: survey
+          push: false
+          load: true
+          tags: scholight-survey:ci
           secrets: |
             github_token=${{ steps.identity-token.outputs.token }}
       - name: Build Web Extract image
@@ -276,22 +265,30 @@ jobs:
           context: .
           file: docker/scholight-extract/Dockerfile
           push: false
-      - name: Verify backend host package
+      - name: Verify component image boundaries
         if: github.event_name != 'pull_request'
         run: |
           docker run --rm --user 0 --entrypoint /bin/sh scholight-api:ci -ec '
-            for name in bootstrap.sh compose-command.sh release.sh smoke.sh wait-ssm.sh compose.yaml Caddyfile cloudwatch-agent.json bootstrap-db.sql; do
-              test -f "/opt/scholight-package/${name}"
-            done
-            test -x /opt/scholight-package/bootstrap.sh
-            test -x /opt/scholight-package/compose-command.sh
-            test -x /opt/scholight-package/release.sh
-            test -x /usr/local/bin/accelerate
-            /usr/local/bin/accelerate --help >/dev/null
+            test ! -e /opt/scholight-package
+            ! command -v accelerate >/dev/null
+            ! command -v pandoc >/dev/null
+            ! command -v pdftotext >/dev/null
+          '
+          docker run --rm --user 0 --entrypoint /bin/sh scholight-ingest:ci -ec '
+            test ! -e /opt/scholight-package
+            ! command -v accelerate >/dev/null
+            command -v pandoc >/dev/null
             command -v pdftotext >/dev/null
             /app/.venv/bin/python -c "import fitz; d=fitz.open(); p=d.new_page(); p.insert_text((72,72), \"Scholight PDF fallback\"); d.save(\"/tmp/fallback.pdf\")"
             pdftotext /tmp/fallback.pdf /tmp/fallback.txt
             grep -F "Scholight PDF fallback" /tmp/fallback.txt >/dev/null
+          '
+          docker run --rm --user 0 --entrypoint /bin/sh scholight-survey:ci -ec '
+            test ! -e /opt/scholight-package
+            test -x /usr/local/bin/accelerate
+            /usr/local/bin/accelerate --help >/dev/null
+            ! command -v pandoc >/dev/null
+            ! command -v pdftotext >/dev/null
           '
       - name: Run hermetic Survey E2E
         if: github.event_name != 'pull_request'
@@ -303,7 +300,7 @@ jobs:
           trap cleanup EXIT
 
           docker build \
-            --build-arg BASE_IMAGE=scholight-api:ci \
+            --build-arg BASE_IMAGE=scholight-survey:ci \
             -f tests/survey_e2e/Dockerfile \
             -t scholight-survey-e2e:ci \
             .
@@ -314,12 +311,6 @@ jobs:
             --tail=200 \
             driver survey-draft-worker survey-worker
           test "$driver_exit" = 0
-      - name: Verify Caddy and Uvicorn idle keep-alive integration
-        if: github.event_name != 'pull_request'
-        run: tests/deploy/test_keepalive_integration.sh
-      - name: Verify canonical HTTPS and edge HTTP ingress isolation
-        if: github.event_name != 'pull_request'
-        run: tests/deploy/test_edge_ingress_integration.sh
       - name: Smoke-test built backend migrations with least-privilege roles
         if: github.event_name != 'pull_request'
         env:
@@ -340,13 +331,13 @@ jobs:
           for phase in before after-auth after-scholight; do
             docker run --rm --network host \
               -e PGPASSWORD="$POSTGRES_PASSWORD" \
-              -v "$PWD/deploy/production/bootstrap-db.sql:/bootstrap-db.sql:ro" \
+              -v "$PWD/deploy/ecs/database-bootstrap.sql:/database-bootstrap.sql:ro" \
               "$POSTGRES_IMAGE" \
               psql -h 127.0.0.1 -U postgres -d sanchezcloud \
                 -v app_role=scholight_app \
                 -v auth_migrator_role=auth_migrator \
                 -v product_migrator_role=scholight_migrator \
-                -f /bootstrap-db.sql
+                -f /database-bootstrap.sql
 
             if [[ $phase == before ]]; then
               AUTH_DATABASE_URL="postgresql://auth_migrator:${AUTH_MIGRATOR_PASSWORD}@127.0.0.1:5432/sanchezcloud" \

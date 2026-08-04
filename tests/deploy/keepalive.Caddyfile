@@ -1,9 +1,0 @@
-:8080 {
-	reverse_proxy keepalive-api:8000 {
-		transport http {
-			dial_timeout 1s
-			response_header_timeout 5s
-			keepalive 1s
-		}
-	}
-}

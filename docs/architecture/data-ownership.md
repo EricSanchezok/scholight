@@ -36,7 +36,7 @@ internal `auth.users.id`; public Account IDs must not be used as relational keys
 - `scholight_app` owns nothing. It receives the minimum Identity core DML and Scholight runtime
   DML, but no migration-ledger writes, DDL, or access to another product schema.
 
-`deploy/production/bootstrap-db.sql` is the reviewed grant contract. It runs as the database
+`deploy/ecs/database-bootstrap.sql` is the reviewed grant contract. It runs as the database
 owner before and after each independent migration so that newly created objects receive explicit
 grants. It does not create login roles or store credentials.
 
