@@ -144,6 +144,8 @@ def test_active_workflows_are_oidc_manifest_and_digest_driven() -> None:
     assert "send-command" not in release + database
     assert 'default: "off"' in release
     assert 'options: ["off", "all"]' in release
+    assert "MIGRATE SCHOLIGHT PRODUCTION" in database
+    assert 'expected_confirmation="${OPERATION^^} SCHOLIGHT PRODUCTION"' in release
 
 
 def test_large_runtime_template_uses_bounded_s3_staging_permissions() -> None:

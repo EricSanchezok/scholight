@@ -7,6 +7,10 @@ on:
         description: Exact published release whose API image contains the migration
         required: true
         type: string
+      confirmation:
+        description: Type MIGRATE SCHOLIGHT PRODUCTION to authorize this database change
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -21,10 +25,13 @@ jobs:
     runs-on: ubuntu-latest
     environment: database-production
     steps:
-      - name: Validate release SHA
+      - name: Validate release selection
         env:
           RELEASE_SHA: ${{ inputs.release_sha }}
-        run: '[[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]'
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$CONFIRMATION" = "MIGRATE SCHOLIGHT PRODUCTION"
       - name: Check out exact release source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
