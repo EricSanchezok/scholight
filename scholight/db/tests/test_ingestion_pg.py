@@ -26,6 +26,8 @@ from scholight.db.queries_ingestion import (
     initialize_sync_cursor,
     mark_sync_started,
     mark_sync_succeeded,
+    release_ingestion_job,
+    renew_ingestion_job_lease,
     retry_ingestion_job,
 )
 from scholight.db.tests.pg_ingestion_support import (
@@ -198,6 +200,33 @@ async def test_expired_lease_is_recovered_by_another_worker(
     assert first is not None
     assert recovered is not None
     assert (recovered.lease_owner, recovered.attempt_count) == ("worker-b", 2)
+
+
+@pytest.mark.asyncio
+async def test_worker_can_renew_and_cooperatively_release_its_lease(
+    ingestion_pool: asyncpg.Pool,
+) -> None:
+    with patch("scholight.db.queries_ingestion.get_pool", return_value=ingestion_pool):
+        await enqueue_ingestion_job("2401.00001", 1, "new", max_attempts=8)
+        claimed = await claim_ingestion_job("worker-a", 30)
+        assert claimed is not None
+        first_expiry = await ingestion_pool.fetchval(
+            "SELECT lease_expires_at FROM scholight.ingestion_jobs WHERE arxiv_id = $1",
+            claimed.arxiv_id,
+        )
+        renewed = await renew_ingestion_job_lease(claimed.arxiv_id, "worker-a", 120)
+        renewed_expiry = await ingestion_pool.fetchval(
+            "SELECT lease_expires_at FROM scholight.ingestion_jobs WHERE arxiv_id = $1",
+            claimed.arxiv_id,
+        )
+        released = await release_ingestion_job(claimed.arxiv_id, "worker-a")
+        queued = await get_ingestion_job(claimed.arxiv_id)
+
+    assert renewed is True
+    assert renewed_expiry > first_expiry
+    assert released is True
+    assert queued is not None
+    assert (queued.status, queued.attempt_count, queued.lease_owner) == ("pending", 0, None)
 
 
 @pytest.mark.asyncio

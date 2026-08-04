@@ -13,6 +13,8 @@ from scholight.db.queries_ingestion import (
     claim_ingestion_job,
     enqueue_ingestion_job,
     mark_sync_succeeded,
+    release_ingestion_job,
+    renew_ingestion_job_lease,
 )
 from scholight.db.tests.pg_ingestion_support import isolated_database_url
 
@@ -48,6 +50,36 @@ async def test_claim_uses_skip_locked_and_expiring_lease() -> None:
     assert "FOR UPDATE SKIP LOCKED" in query
     assert "lease_expires_at <= now()" in query
     assert "CASE WHEN status = 'retry' THEN 0 ELSE 1 END" in query
+
+
+@pytest.mark.asyncio
+async def test_lease_renewal_requires_the_current_running_owner() -> None:
+    pool = AsyncMock()
+    pool.execute.return_value = "UPDATE 1"
+
+    with patch("scholight.db.queries_ingestion.get_pool", return_value=pool):
+        renewed = await renew_ingestion_job_lease("2401.00001", "worker-1", 7200)
+
+    query = pool.execute.call_args.args[0]
+    assert renewed is True
+    assert "status = 'running'" in query
+    assert "lease_owner = $2" in query
+    assert "make_interval(secs => $3)" in query
+
+
+@pytest.mark.asyncio
+async def test_release_returns_interrupted_work_without_spending_an_attempt() -> None:
+    pool = AsyncMock()
+    pool.execute.return_value = "UPDATE 1"
+
+    with patch("scholight.db.queries_ingestion.get_pool", return_value=pool):
+        released = await release_ingestion_job("2401.00001", "worker-1")
+
+    query = pool.execute.call_args.args[0]
+    assert released is True
+    assert "status = 'pending'" in query
+    assert "GREATEST(attempt_count - 1, 0)" in query
+    assert "lease_owner = $2" in query
 
 
 @pytest.mark.asyncio
