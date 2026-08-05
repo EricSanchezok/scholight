@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import time
 from datetime import UTC, datetime
+from typing import Literal
 
 import httpx
 import structlog
@@ -17,6 +18,29 @@ _METRIC_INTERVAL_SECONDS = 30.0
 _PROTECTION_REFRESH_SECONDS = 300.0
 _PROTECTION_RETRY_SECONDS = 30.0
 _PROTECTION_EXPIRES_MINUTES = 30
+
+SurveyQueueOperation = Literal["claim", "heartbeat"]
+
+
+def emit_survey_database_latency(
+    *,
+    queue: SurveyQueue,
+    service: str,
+    operation: SurveyQueueOperation,
+    started_at: float,
+) -> None:
+    """Emit anonymous queue database latency for staged-capacity gates."""
+    prefix = "SurveyDraft" if queue == "draft" else "SurveyJob"
+    suffix = "ClaimLatency" if operation == "claim" else "HeartbeatLatency"
+    emit_emf(
+        service=service,
+        metrics={
+            f"{prefix}{suffix}": (
+                (time.perf_counter() - started_at) * 1_000,
+                "Milliseconds",
+            )
+        },
+    )
 
 
 class SurveyTaskProtection:
@@ -131,4 +155,8 @@ class SurveyCapacityReporter:
             logger.exception("survey_capacity_metric_failed", queue=self._queue)
 
 
-__all__ = ["SurveyCapacityReporter", "SurveyTaskProtection"]
+__all__ = [
+    "SurveyCapacityReporter",
+    "SurveyTaskProtection",
+    "emit_survey_database_latency",
+]

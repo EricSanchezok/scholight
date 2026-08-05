@@ -24,7 +24,11 @@ from scholight.db.queries_survey_drafts import (
     recover_expired_survey_drafts,
 )
 from scholight.logging.emf import emit_emf
-from scholight.survey.capacity import SurveyCapacityReporter, SurveyTaskProtection
+from scholight.survey.capacity import (
+    SurveyCapacityReporter,
+    SurveyTaskProtection,
+    emit_survey_database_latency,
+)
 from scholight.survey.contracts import (
     DRAFT_CONTEXT_MAX_BYTES,
     DRAFT_OUTPUT_MAX_BYTES,
@@ -219,6 +223,7 @@ async def _heartbeat(
             await asyncio.wait_for(stop.wait(), timeout=settings.survey_heartbeat_seconds)
             return
         except TimeoutError:
+            started_at = time.perf_counter()
             try:
                 state = await heartbeat_survey_draft(
                     draft_id=draft_id,
@@ -234,6 +239,13 @@ async def _heartbeat(
                 if time.monotonic() - last_owned < settings.survey_lease_seconds:
                     continue
                 state = "lost"
+            finally:
+                emit_survey_database_latency(
+                    queue="draft",
+                    service="survey-draft-worker",
+                    operation="heartbeat",
+                    started_at=started_at,
+                )
             if state == "owned":
                 last_owned = time.monotonic()
                 continue
@@ -358,6 +370,7 @@ async def serve_survey_draft_worker() -> None:
                         await protection.release()
             while claims_allowed and len(active) < settings.survey_draft_worker_concurrency:
                 worker_id = uuid4()
+                started_at = time.perf_counter()
                 try:
                     draft = await claim_survey_draft(
                         worker_id=worker_id,
@@ -368,6 +381,13 @@ async def serve_survey_draft_worker() -> None:
                 except Exception:
                     logger.exception("survey_draft_claim_cycle_failed")
                     break
+                finally:
+                    emit_survey_database_latency(
+                        queue="draft",
+                        service="survey-draft-worker",
+                        operation="claim",
+                        started_at=started_at,
+                    )
                 if draft is None:
                     break
                 task = asyncio.create_task(_run_claimed_draft(draft, worker_id))

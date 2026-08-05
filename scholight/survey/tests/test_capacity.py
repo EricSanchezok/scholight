@@ -10,7 +10,29 @@ import httpx
 import pytest
 
 from scholight.db.queries_survey_capacity import SurveyCapacitySnapshot
-from scholight.survey.capacity import SurveyCapacityReporter, SurveyTaskProtection
+from scholight.survey.capacity import (
+    SurveyCapacityReporter,
+    SurveyTaskProtection,
+    emit_survey_database_latency,
+)
+
+
+def test_database_latency_metric_is_anonymous_and_queue_specific() -> None:
+    with (
+        patch("scholight.survey.capacity.time.perf_counter", return_value=10.025),
+        patch("scholight.survey.capacity.emit_emf") as emit,
+    ):
+        emit_survey_database_latency(
+            queue="draft",
+            service="survey-draft-worker",
+            operation="claim",
+            started_at=10.0,
+        )
+
+    emit.assert_called_once_with(
+        service="survey-draft-worker",
+        metrics={"SurveyDraftClaimLatency": (pytest.approx(25.0), "Milliseconds")},
+    )
 
 
 @pytest.mark.asyncio
