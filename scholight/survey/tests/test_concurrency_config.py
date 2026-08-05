@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
 from scholight.config import Settings
+
+ROOT = Path(__file__).parents[3]
 
 
 def test_survey_concurrency_defaults_are_split_by_scope() -> None:
@@ -17,6 +21,22 @@ def test_survey_concurrency_defaults_are_split_by_scope() -> None:
     assert loaded.survey_job_per_user_concurrency == 4
     assert loaded.survey_draft_worker_concurrency == 8
     assert loaded.survey_job_worker_concurrency == 1
+
+
+def test_environment_template_uses_only_explicit_concurrency_scopes() -> None:
+    template = (ROOT / ".env.example").read_text(encoding="utf-8")
+
+    for name, value in (
+        ("SCHOLIGHT_SURVEY_DRAFT_GLOBAL_CONCURRENCY", 64),
+        ("SCHOLIGHT_SURVEY_JOB_GLOBAL_CONCURRENCY", 16),
+        ("SCHOLIGHT_SURVEY_DRAFT_PER_USER_CONCURRENCY", 8),
+        ("SCHOLIGHT_SURVEY_JOB_PER_USER_CONCURRENCY", 4),
+        ("SCHOLIGHT_SURVEY_DRAFT_WORKER_CONCURRENCY", 8),
+        ("SCHOLIGHT_SURVEY_JOB_WORKER_CONCURRENCY", 1),
+    ):
+        assert f"{name}={value}" in template
+    assert "SCHOLIGHT_SURVEY_DRAFT_CONCURRENCY=" not in template
+    assert "SCHOLIGHT_SURVEY_JOB_CONCURRENCY=" not in template
 
 
 @pytest.mark.parametrize(
