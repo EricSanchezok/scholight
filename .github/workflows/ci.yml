@@ -274,6 +274,8 @@ jobs:
         run: |
           docker run --rm --user 0 --entrypoint /bin/sh scholight-ingest:ci -ec '
             test ! -e /opt/scholight-package
+            scholight scheduler --help >/dev/null
+            python -c "from scholight.db.client import create_pool"
             ! command -v accelerate >/dev/null
             command -v pandoc >/dev/null
             command -v pdftotext >/dev/null
@@ -283,6 +285,8 @@ jobs:
           '
           docker run --rm --user 0 --entrypoint /bin/sh scholight-survey:ci -ec '
             test ! -e /opt/scholight-package
+            scholight survey --help >/dev/null
+            python -c "from scholight.db.client import create_pool; from scholight.logging import configure_logging; from scholight.survey.email_notifications import AliyunSurveyEmailSender"
             test -x /usr/local/bin/accelerate
             /usr/local/bin/accelerate --help >/dev/null
             ! command -v uvicorn >/dev/null
