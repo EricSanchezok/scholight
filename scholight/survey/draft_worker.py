@@ -12,6 +12,7 @@ from uuid import UUID, uuid4
 import structlog
 
 from scholight.config import settings
+from scholight.db.queries_survey_capacity import get_survey_capacity_snapshot
 from scholight.db.queries_survey_drafts import (
     SurveyDraft,
     SurveyDraftContext,
@@ -22,6 +23,7 @@ from scholight.db.queries_survey_drafts import (
     heartbeat_survey_draft,
     recover_expired_survey_drafts,
 )
+from scholight.survey.capacity import SurveyCapacityReporter, SurveyTaskProtection
 from scholight.survey.contracts import (
     DRAFT_CONTEXT_MAX_BYTES,
     DRAFT_OUTPUT_MAX_BYTES,
@@ -301,6 +303,8 @@ async def _run_claimed_draft(draft: SurveyDraft, worker_id: UUID) -> None:
 async def serve_survey_draft_worker() -> None:
     """Supervise bounded concurrent Drafts without sharing task failure state."""
     active: set[asyncio.Task[None]] = set()
+    protection = SurveyTaskProtection(service="survey-draft-worker")
+    capacity_reporter = SurveyCapacityReporter(queue="draft", service="survey-draft-worker")
     last_recovery = 0.0
     logger.info(
         "survey_draft_supervisor_started",
@@ -313,6 +317,7 @@ async def serve_survey_draft_worker() -> None:
     try:
         while True:
             active = {task for task in active if not task.done()}
+            await capacity_reporter.emit_if_due()
             now = time.monotonic()
             if now - last_recovery >= _RECOVERY_SECONDS:
                 try:
@@ -321,7 +326,18 @@ async def serve_survey_draft_worker() -> None:
                     logger.exception("survey_draft_recovery_cycle_failed")
                 last_recovery = now
             claimed = False
-            while len(active) < settings.survey_draft_worker_concurrency:
+            claims_allowed = await protection.ensure() if active else not protection.enabled
+            if not active and protection.enabled:
+                try:
+                    capacity = await get_survey_capacity_snapshot(queue="draft")
+                except Exception:
+                    logger.exception("survey_draft_claim_preflight_failed")
+                else:
+                    if capacity.queued > 0:
+                        claims_allowed = await protection.ensure()
+                    else:
+                        await protection.release()
+            while claims_allowed and len(active) < settings.survey_draft_worker_concurrency:
                 worker_id = uuid4()
                 try:
                     draft = await claim_survey_draft(
@@ -344,6 +360,7 @@ async def serve_survey_draft_worker() -> None:
         for task in active:
             task.cancel()
         await asyncio.gather(*active, return_exceptions=True)
+        await protection.release()
         logger.info("survey_draft_supervisor_stopped")
 
 

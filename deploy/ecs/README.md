@@ -57,6 +57,15 @@ never bypasses the per-user concurrency limit. The old ambiguous
 `SCHOLIGHT_SURVEY_DRAFT_CONCURRENCY` and
 `SCHOLIGHT_SURVEY_JOB_CONCURRENCY` names are intentionally unsupported.
 
+In ECS, a worker must establish task scale-in protection before claiming work.
+It refreshes a 30-minute protection period every five minutes while work is
+active and clears protection when idle. If the ECS agent endpoint is present
+but protection cannot be established, the worker fails closed and does not
+claim another task; local workers without `ECS_AGENT_URI` safely skip this
+integration. Each worker also emits aggregate queued, running, outstanding,
+oldest-queue-age, and protection-failure metrics every 30 seconds. These
+metrics contain no user, Survey, topic, or document identifiers.
+
 The pre-release prototype migrations, including the Survey quota-strength
 change, were squashed into the single `005_survey.sql` baseline. A developer
 database that applied the abandoned prototype migration chain must recreate

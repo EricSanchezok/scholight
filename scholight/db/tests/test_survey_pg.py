@@ -29,6 +29,7 @@ from scholight.db.queries_survey import (
     start_survey,
     update_survey_job_progress,
 )
+from scholight.db.queries_survey_capacity import get_survey_capacity_snapshot
 from scholight.db.queries_survey_cleanup import get_artifact_cleanup_status
 from scholight.db.queries_survey_drafts import (
     SurveyDraftLimitError,
@@ -942,6 +943,7 @@ async def test_128_concurrent_draft_claims_enforce_global_and_user_limits(
     with (
         patch("scholight.db.queries_survey.get_pool", return_value=survey_pool),
         patch("scholight.db.queries_survey_drafts.get_pool", return_value=survey_pool),
+        patch("scholight.db.queries_survey_capacity.get_pool", return_value=survey_pool),
     ):
         for user_id in user_ids:
             for _ in range(16):
@@ -957,6 +959,7 @@ async def test_128_concurrent_draft_claims_enforce_global_and_user_limits(
                 for _ in range(128)
             )
         )
+        capacity = await get_survey_capacity_snapshot(queue="draft")
 
     active = [draft for draft in claimed if draft is not None]
     counts: dict[int, int] = {}
@@ -964,6 +967,7 @@ async def test_128_concurrent_draft_claims_enforce_global_and_user_limits(
         counts[draft.user_id] = counts.get(draft.user_id, 0) + 1
     assert len(active) == 64
     assert set(counts.values()) == {8}
+    assert (capacity.queued, capacity.running, capacity.outstanding) == (64, 64, 128)
 
 
 @pytest.mark.asyncio
@@ -978,6 +982,7 @@ async def test_64_concurrent_full_claims_enforce_global_and_user_limits(
     with (
         patch("scholight.db.queries_survey.get_pool", return_value=survey_pool),
         patch("scholight.db.queries_survey_drafts.get_pool", return_value=survey_pool),
+        patch("scholight.db.queries_survey_capacity.get_pool", return_value=survey_pool),
     ):
         surveys: list[tuple[UUID, int]] = []
         for user_id in user_ids:
@@ -1004,6 +1009,7 @@ async def test_64_concurrent_full_claims_enforce_global_and_user_limits(
                 for _ in range(64)
             )
         )
+        capacity = await get_survey_capacity_snapshot(queue="survey")
 
     active = [job for job in claimed if job is not None]
     counts: dict[int, int] = {}
@@ -1011,6 +1017,7 @@ async def test_64_concurrent_full_claims_enforce_global_and_user_limits(
         counts[job.user_id] = counts.get(job.user_id, 0) + 1
     assert len(active) == 16
     assert set(counts.values()) == {4}
+    assert (capacity.queued, capacity.running, capacity.outstanding) == (48, 16, 64)
 
 
 @pytest.mark.asyncio

@@ -29,8 +29,10 @@ from scholight.db.queries_survey import (
     settle_survey_execution,
     update_survey_job_progress,
 )
+from scholight.db.queries_survey_capacity import get_survey_capacity_snapshot
 from scholight.logging.emf import emit_emf
 from scholight.survey.artifacts import SurveyArtifactStore
+from scholight.survey.capacity import SurveyCapacityReporter, SurveyTaskProtection
 from scholight.survey.cleanup_worker import serve_artifact_cleanup
 from scholight.survey.contracts import SurveyLeaseLostError
 from scholight.survey.diagnostics import SurveyDiagnostics
@@ -935,6 +937,8 @@ async def serve_survey_worker(*, email_sender: SurveyEmailSender | None = None) 
         endpoint_url=settings.survey_s3_endpoint_url,
     )
     active: set[asyncio.Task[None]] = set()
+    protection = SurveyTaskProtection(service="survey-full-worker")
+    capacity_reporter = SurveyCapacityReporter(queue="survey", service="survey-full-worker")
     cleanup_supervisor = asyncio.create_task(serve_artifact_cleanup())
     if email_sender is None:
         email_sender = AliyunSurveyEmailSender(
@@ -958,6 +962,7 @@ async def serve_survey_worker(*, email_sender: SurveyEmailSender | None = None) 
     try:
         while True:
             active = {task for task in active if not task.done()}
+            await capacity_reporter.emit_if_due()
             if cleanup_supervisor.done():
                 try:
                     cleanup_supervisor.result()
@@ -982,7 +987,18 @@ async def serve_survey_worker(*, email_sender: SurveyEmailSender | None = None) 
                     logger.exception("survey_recovery_cycle_failed")
                 last_recovery = now
             claimed = False
-            while len(active) < settings.survey_job_worker_concurrency:
+            claims_allowed = await protection.ensure() if active else not protection.enabled
+            if not active and protection.enabled:
+                try:
+                    capacity = await get_survey_capacity_snapshot(queue="survey")
+                except Exception:
+                    logger.exception("survey_claim_preflight_failed")
+                else:
+                    if capacity.queued > 0:
+                        claims_allowed = await protection.ensure()
+                    else:
+                        await protection.release()
+            while claims_allowed and len(active) < settings.survey_job_worker_concurrency:
                 worker_id = uuid4()
                 try:
                     job = await claim_survey_job(
@@ -1018,6 +1034,7 @@ async def serve_survey_worker(*, email_sender: SurveyEmailSender | None = None) 
             *active,
             return_exceptions=True,
         )
+        await protection.release()
         logger.info("survey_supervisor_stopped")
 
 
