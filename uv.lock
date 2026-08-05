@@ -3183,6 +3183,8 @@ ingest = [
     { name = "pymupdf4llm" },
 ]
 survey = [
+    { name = "alibabacloud-credentials" },
+    { name = "alibabacloud-dm20151123" },
     { name = "boto3" },
     { name = "pyjwt" },
 ]
@@ -3195,6 +3197,8 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "aiohttp", marker = "extra == 'extract'", specifier = ">=3.9" },
+    { name = "alibabacloud-credentials", marker = "extra == 'survey'", specifier = ">=0.3.7" },
+    { name = "alibabacloud-dm20151123", marker = "extra == 'survey'", specifier = ">=1.2.2" },
     { name = "asyncpg", specifier = ">=0.29" },
     { name = "bandit", extras = ["toml"], marker = "extra == 'dev'", specifier = ">=1.8" },
     { name = "boto3", marker = "extra == 'api'", specifier = ">=1.35,<2" },
