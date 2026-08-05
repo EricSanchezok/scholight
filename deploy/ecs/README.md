@@ -19,6 +19,17 @@ target so a large Survey or ingestion runtime cannot leak into the Search API.
 | `sanchezcloud-scholight-ingest` | `ingest` | Metadata sync and bounded paper-ingestion tasks |
 | `sanchezcloud-scholight-survey` | `survey` | Survey draft/full workers and the pinned RCM runtime |
 
+The API and Extract processes share only the lightweight models in
+`scholight.web_extract.contracts`. Importing the API application must not load
+the extraction engine or require Playwright, Chromium, or `markdownify`; CI
+builds the minimal API image on every pull request and verifies that boundary
+inside the resulting container.
+
+The Web service joins the shared Service Connect namespace as a client, while
+the API and Extract services publish the `api` and `extract` discovery names.
+Nginx therefore reaches `http://api:8000` through Service Connect without a
+public endpoint or a hard-coded task address.
+
 Survey is a first-release capability. There is no legacy Survey mode, alias,
 container entrypoint, or configuration fallback. The only controls are rollout
 gates:

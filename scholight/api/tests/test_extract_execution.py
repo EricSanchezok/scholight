@@ -17,7 +17,7 @@ from scholight.api.extract_execution import (
     reset_extract_result_cache,
 )
 from scholight.models.web_extract import ExtractRequest
-from scholight.web_extract.service import InternalExtractResponse
+from scholight.web_extract.contracts import InternalExtractResponse
 
 
 def _actor() -> SearchActor:

@@ -12,7 +12,7 @@ from sanchezcloud_identity.models.user import UserRecord
 from scholight.config import settings
 from scholight.models.web_extract import ExtractRequest, ExtractResponse
 from scholight.web_extract.cache import ExtractResultCache, PageSlice
-from scholight.web_extract.service import InternalExtractResponse
+from scholight.web_extract.contracts import InternalExtractResponse
 
 
 class _ExtractActor(Protocol):
