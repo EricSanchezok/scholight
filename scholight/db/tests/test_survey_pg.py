@@ -151,6 +151,44 @@ async def test_create_survey_enforces_user_override(survey_pool: asyncpg.Pool) -
 
 
 @pytest.mark.asyncio
+async def test_upgraded_daily_quota_does_not_raise_full_survey_user_concurrency(
+    survey_pool: asyncpg.Pool,
+) -> None:
+    await survey_pool.execute(
+        "INSERT INTO scholight.user_quota_overrides "
+        "(user_id, strength, daily_limit) VALUES (42, 'survey', 10)"
+    )
+    with (
+        patch("scholight.db.queries_survey.get_pool", return_value=survey_pool),
+        patch("scholight.db.queries_survey_drafts.get_pool", return_value=survey_pool),
+    ):
+        survey_ids = [await _create(daily_limit=3) for _ in range(10)]
+        for revision in range(10):
+            await _complete_next_draft(markdown=f"# Approved Draft {revision}")
+        for survey_id in survey_ids:
+            await start_survey(
+                survey_id=survey_id,
+                user_id=42,
+                job_id=uuid4(),
+                client_request_id=uuid4(),
+                request_hash="a" * 64,
+            )
+        claimed = await asyncio.gather(
+            *(
+                claim_survey_job(
+                    worker_id=uuid4(),
+                    lease_seconds=3600,
+                    global_concurrency=16,
+                    per_user_concurrency=4,
+                )
+                for _ in range(10)
+            )
+        )
+
+    assert sum(job is not None for job in claimed) == 4
+
+
+@pytest.mark.asyncio
 async def test_create_idempotency_does_not_double_reserve(survey_pool: asyncpg.Pool) -> None:
     request_id = uuid4()
     with patch("scholight.db.queries_survey.get_pool", return_value=survey_pool):
