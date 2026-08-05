@@ -391,8 +391,8 @@ def test_api_image_smoke_imports_the_public_application() -> None:
     )[0]
 
     assert "if: github.event_name != 'pull_request'" not in api_build
-    assert "find_spec('markdownify') is None" in api_build
-    assert "find_spec('playwright') is None" in api_build
+    assert 'find_spec("markdownify") is None' in api_build
+    assert 'find_spec("playwright") is None' in api_build
     assert "import scholight.api.app; import scholight.api.extract_execution" in api_build
 
 

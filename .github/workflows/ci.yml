@@ -240,8 +240,8 @@ jobs:
             ! command -v accelerate >/dev/null
             ! command -v pandoc >/dev/null
             ! command -v pdftotext >/dev/null
-            /app/.venv/bin/python -c "import importlib.util; assert importlib.util.find_spec('markdownify') is None; assert importlib.util.find_spec('playwright') is None; import scholight.api.app; import scholight.api.extract_execution"
           '
+          docker run --rm --entrypoint /app/.venv/bin/python scholight-api:ci -c 'import importlib.util; assert importlib.util.find_spec("markdownify") is None; assert importlib.util.find_spec("playwright") is None; import scholight.api.app; import scholight.api.extract_execution'
       - name: Build ingest image
         if: github.event_name != 'pull_request'
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
