@@ -42,6 +42,21 @@ gates:
 These gates are not a compatibility layer. They let operators verify the real
 RCM, artifact, queue, and email boundaries before the first public activation.
 
+Survey capacity has three independent limits. PostgreSQL enforces the global
+and per-user limits atomically across every task; each worker separately bounds
+its local process concurrency:
+
+| Queue | Global hard limit | Per-user limit | Per-worker limit |
+| --- | ---: | ---: | ---: |
+| Draft | 64 | 8 | 8 |
+| Full Survey | 16 | 4 | 1 |
+
+The Full Survey daily quota remains 3 by default and is independent from these
+simultaneous-execution limits. A quota override may permit more daily work but
+never bypasses the per-user concurrency limit. The old ambiguous
+`SCHOLIGHT_SURVEY_DRAFT_CONCURRENCY` and
+`SCHOLIGHT_SURVEY_JOB_CONCURRENCY` names are intentionally unsupported.
+
 The pre-release prototype migrations, including the Survey quota-strength
 change, were squashed into the single `005_survey.sql` baseline. A developer
 database that applied the abandoned prototype migration chain must recreate

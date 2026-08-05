@@ -7,6 +7,13 @@ from uuid import UUID
 
 import asyncpg
 
+# Fixed, deployment-independent PostgreSQL advisory-lock keys. Claim transactions
+# serialize per queue so that global and per-user capacity checks remain atomic
+# across every worker and ECS task.
+_SURVEY_CAPACITY_LOCK_NAMESPACE = 1_397_046_095
+_DRAFT_CAPACITY_LOCK_KEY = 1
+_JOB_CAPACITY_LOCK_KEY = 2
+
 
 @dataclass(frozen=True, slots=True)
 class LockedSurveyAggregate:
@@ -59,4 +66,18 @@ async def lock_survey_aggregate(
     )
 
 
-__all__ = ["LockedSurveyAggregate", "lock_survey_aggregate"]
+async def lock_survey_capacity(
+    connection: asyncpg.Connection,
+    *,
+    queue: str,
+) -> None:
+    """Serialize capacity checks for one Survey queue until transaction end."""
+    key = _DRAFT_CAPACITY_LOCK_KEY if queue == "draft" else _JOB_CAPACITY_LOCK_KEY
+    await connection.execute(
+        "SELECT pg_advisory_xact_lock($1, $2)",
+        _SURVEY_CAPACITY_LOCK_NAMESPACE,
+        key,
+    )
+
+
+__all__ = ["LockedSurveyAggregate", "lock_survey_aggregate", "lock_survey_capacity"]

@@ -12,7 +12,7 @@ import structlog
 
 from scholight.db.client import DBError, get_pool
 from scholight.db.queries_survey import SurveyStateError
-from scholight.db.survey_locking import lock_survey_aggregate
+from scholight.db.survey_locking import lock_survey_aggregate, lock_survey_capacity
 from scholight.survey.contracts import (
     HeartbeatState,
     SurveyLeaseLostError,
@@ -262,11 +262,23 @@ async def create_manual_draft(
 
 
 async def claim_survey_draft(
-    *, worker_id: UUID, lease_seconds: int, per_user_concurrency: int = 2
+    *,
+    worker_id: UUID,
+    lease_seconds: int,
+    global_concurrency: int = 64,
+    per_user_concurrency: int = 8,
 ) -> SurveyDraft | None:
-    """Claim queued Drafts in user-round-robin order."""
+    """Atomically claim a Draft within global and per-user capacity."""
     try:
         async with get_pool().acquire() as connection, connection.transaction():
+            await lock_survey_capacity(connection, queue="draft")
+            running = await connection.fetchval(
+                "SELECT count(*) FROM scholight.survey_drafts "
+                "WHERE status = 'running' AND lease_owner IS NOT NULL "
+                "AND lease_expires_at > now()"
+            )
+            if int(running) >= global_concurrency:
+                return None
             candidates = await connection.fetch(
                 "WITH candidates AS ("
                 "SELECT d.id, d.survey_id, d.queued_at, s.user_id, "

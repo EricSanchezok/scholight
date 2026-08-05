@@ -949,7 +949,8 @@ async def serve_survey_worker(*, email_sender: SurveyEmailSender | None = None) 
     logger.info(
         "survey_supervisor_started",
         rcm_version=RCM_VERSION,
-        concurrency=settings.survey_job_concurrency,
+        global_concurrency=settings.survey_job_global_concurrency,
+        worker_concurrency=settings.survey_job_worker_concurrency,
         per_user_concurrency=settings.survey_job_per_user_concurrency,
         heartbeat_seconds=settings.survey_heartbeat_seconds,
         lease_seconds=settings.survey_lease_seconds,
@@ -981,12 +982,13 @@ async def serve_survey_worker(*, email_sender: SurveyEmailSender | None = None) 
                     logger.exception("survey_recovery_cycle_failed")
                 last_recovery = now
             claimed = False
-            while len(active) < settings.survey_job_concurrency:
+            while len(active) < settings.survey_job_worker_concurrency:
                 worker_id = uuid4()
                 try:
                     job = await claim_survey_job(
                         worker_id=worker_id,
                         lease_seconds=settings.survey_lease_seconds,
+                        global_concurrency=settings.survey_job_global_concurrency,
                         per_user_concurrency=settings.survey_job_per_user_concurrency,
                     )
                 except Exception:

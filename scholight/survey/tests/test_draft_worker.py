@@ -232,7 +232,8 @@ async def test_draft_supervisor_keeps_execution_bounded(
     at_capacity = asyncio.Event()
     all_started = asyncio.Event()
     release = asyncio.Event()
-    monkeypatch.setattr(settings, "survey_draft_concurrency", 3)
+    monkeypatch.setattr(settings, "survey_draft_worker_concurrency", 3)
+    monkeypatch.setattr(settings, "survey_draft_global_concurrency", 64)
     monkeypatch.setattr(settings, "survey_draft_per_user_concurrency", 2)
 
     async def _claim(**kwargs: object) -> SurveyDraft | None:

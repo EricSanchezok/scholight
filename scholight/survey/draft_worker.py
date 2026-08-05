@@ -304,7 +304,8 @@ async def serve_survey_draft_worker() -> None:
     last_recovery = 0.0
     logger.info(
         "survey_draft_supervisor_started",
-        concurrency=settings.survey_draft_concurrency,
+        global_concurrency=settings.survey_draft_global_concurrency,
+        worker_concurrency=settings.survey_draft_worker_concurrency,
         per_user_concurrency=settings.survey_draft_per_user_concurrency,
         heartbeat_seconds=settings.survey_heartbeat_seconds,
         lease_seconds=settings.survey_lease_seconds,
@@ -320,12 +321,13 @@ async def serve_survey_draft_worker() -> None:
                     logger.exception("survey_draft_recovery_cycle_failed")
                 last_recovery = now
             claimed = False
-            while len(active) < settings.survey_draft_concurrency:
+            while len(active) < settings.survey_draft_worker_concurrency:
                 worker_id = uuid4()
                 try:
                     draft = await claim_survey_draft(
                         worker_id=worker_id,
                         lease_seconds=settings.survey_lease_seconds,
+                        global_concurrency=settings.survey_draft_global_concurrency,
                         per_user_concurrency=settings.survey_draft_per_user_concurrency,
                     )
                 except Exception:

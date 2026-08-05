@@ -825,7 +825,8 @@ async def test_survey_supervisor_keeps_execution_bounded(
     at_capacity = asyncio.Event()
     all_started = asyncio.Event()
     release = asyncio.Event()
-    monkeypatch.setattr(settings, "survey_job_concurrency", 2)
+    monkeypatch.setattr(settings, "survey_job_worker_concurrency", 2)
+    monkeypatch.setattr(settings, "survey_job_global_concurrency", 16)
     monkeypatch.setattr(settings, "survey_job_per_user_concurrency", 1)
 
     async def _claim(**kwargs: object) -> SurveyJob | None:

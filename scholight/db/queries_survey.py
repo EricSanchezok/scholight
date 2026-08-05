@@ -11,7 +11,7 @@ import asyncpg
 import structlog
 
 from scholight.db.client import DBError, get_pool
-from scholight.db.survey_locking import lock_survey_aggregate
+from scholight.db.survey_locking import lock_survey_aggregate, lock_survey_capacity
 from scholight.survey.contracts import (
     HeartbeatState,
     SurveyConflictError,
@@ -607,12 +607,24 @@ async def delete_survey(*, survey_id: UUID, user_id: int) -> None:
 
 
 async def claim_survey_job(
-    *, worker_id: UUID, lease_seconds: int, per_user_concurrency: int = 1
+    *,
+    worker_id: UUID,
+    lease_seconds: int,
+    global_concurrency: int = 16,
+    per_user_concurrency: int = 4,
 ) -> SurveyJob | None:
-    """Claim fairly across users while preserving the canonical state-lock order."""
+    """Atomically claim fairly within global and per-user capacity."""
     lease = timedelta(seconds=lease_seconds)
     try:
         async with get_pool().acquire() as connection, connection.transaction():
+            await lock_survey_capacity(connection, queue="job")
+            running = await connection.fetchval(
+                "SELECT count(*) FROM scholight.survey_jobs "
+                "WHERE status IN ('running', 'archiving') AND lease_owner IS NOT NULL "
+                "AND lease_expires_at > now()"
+            )
+            if int(running) >= global_concurrency:
+                return None
             candidates = await connection.fetch(
                 "WITH candidates AS ("
                 "SELECT j.id, j.survey_id, j.status, j.queued_at, s.user_id, s.quota_date, "
