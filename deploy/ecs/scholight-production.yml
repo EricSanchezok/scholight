@@ -678,6 +678,7 @@ Resources:
           Essential: true
           Command: [scholight, store, migrate]
           Environment:
+            - { Name: SCHOLIGHT_MIGRATIONS_DIR, Value: "/app/migrations" }
             - { Name: SCHOLIGHT_PG_POOL_MIN_SIZE, Value: "1" }
             - { Name: SCHOLIGHT_PG_POOL_MAX_SIZE, Value: "2" }
           Secrets:

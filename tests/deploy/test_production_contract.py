@@ -315,6 +315,18 @@ def test_database_workflow_can_pass_only_exact_migration_execution_role() -> Non
     assert "role/SanchezCloudScholight*" not in database_policy
 
 
+def test_migration_task_pins_the_image_migration_directory() -> None:
+    production = (ECS / "scholight-production.yml").read_text(encoding="utf-8")
+    workflow = (ROOT / ".github/workflows/database-production.yml").read_text(encoding="utf-8")
+    migration_task = production.split("  MigrationTaskDefinition:", maxsplit=1)[1].split(
+        "  WebService:", maxsplit=1
+    )[0]
+
+    assert 'Name: SCHOLIGHT_MIGRATIONS_DIR, Value: "/app/migrations"' in migration_task
+    assert 'select(.name != "SCHOLIGHT_MIGRATIONS_DIR")' in workflow
+    assert 'name: "SCHOLIGHT_MIGRATIONS_DIR", value: "/app/migrations"' in workflow
+
+
 def test_survey_has_one_clean_initial_schema_without_compatibility_migrations() -> None:
     migration_names = {path.name for path in (ROOT / "migrations").glob("*.sql")}
     survey = (ROOT / "migrations/005_survey.sql").read_text(encoding="utf-8").lower()
