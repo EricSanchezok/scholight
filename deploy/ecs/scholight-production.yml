@@ -46,6 +46,18 @@ Parameters:
     Type: String
     Default: DISABLED
     AllowedValues: [ENABLED, DISABLED]
+  SurveyDraftMaxTasks:
+    Type: Number
+    Default: 1
+    MinValue: 1
+    MaxValue: 8
+    Description: Staged Draft worker ceiling; raise only after the previous capacity stage passes
+  SurveyFullMaxTasks:
+    Type: Number
+    Default: 1
+    MinValue: 1
+    MaxValue: 16
+    Description: Staged Full Survey worker ceiling; raise only after quota and provider validation
 
 Rules:
   SurveyRequiresApplication:
@@ -340,6 +352,13 @@ Resources:
               - Effect: Allow
                 Action: [kms:Decrypt, kms:Encrypt, kms:GenerateDataKey]
                 Resource: !ImportValue sanchezcloud-scholight-artifact-key-arn
+        - PolicyName: SurveyTaskScaleInProtection
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [ecs:GetTaskProtection, ecs:UpdateTaskProtection]
+                Resource: !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task/sanchezcloud-production/*
 
   SchedulerRole:
     Type: AWS::IAM::Role
@@ -444,6 +463,10 @@ Resources:
             - { Name: SCHOLIGHT_EXTRACT_SERVICE_URL, Value: "http://extract:8001" }
             - { Name: SCHOLIGHT_SURVEY_RUNTIME_ENABLED, Value: !Ref SurveyRuntimeEnabled }
             - { Name: SCHOLIGHT_SURVEY_PUBLIC_MODE, Value: !Ref SurveyPublicMode }
+            - { Name: SCHOLIGHT_SURVEY_DRAFT_GLOBAL_CONCURRENCY, Value: "64" }
+            - { Name: SCHOLIGHT_SURVEY_JOB_GLOBAL_CONCURRENCY, Value: "16" }
+            - { Name: SCHOLIGHT_SURVEY_DRAFT_PER_USER_CONCURRENCY, Value: "8" }
+            - { Name: SCHOLIGHT_SURVEY_JOB_PER_USER_CONCURRENCY, Value: "4" }
             - Name: SCHOLIGHT_SURVEY_S3_BUCKET
               Value: !ImportValue sanchezcloud-scholight-artifact-bucket-name
             - { Name: AWS_REGION, Value: !Ref AWS::Region }
@@ -595,6 +618,9 @@ Resources:
           Command: [scholight, survey, serve-draft-worker]
           Environment:
             - { Name: SCHOLIGHT_SURVEY_RUNTIME_ENABLED, Value: "true" }
+            - { Name: SCHOLIGHT_SURVEY_DRAFT_GLOBAL_CONCURRENCY, Value: "64" }
+            - { Name: SCHOLIGHT_SURVEY_DRAFT_PER_USER_CONCURRENCY, Value: "8" }
+            - { Name: SCHOLIGHT_SURVEY_DRAFT_WORKER_CONCURRENCY, Value: "8" }
             - { Name: SCHOLIGHT_PG_POOL_MIN_SIZE, Value: "1" }
             - { Name: SCHOLIGHT_PG_POOL_MAX_SIZE, Value: "4" }
             - { Name: SCHOLIGHT_SURVEY_S3_BUCKET, Value: !ImportValue sanchezcloud-scholight-artifact-bucket-name }
@@ -635,10 +661,11 @@ Resources:
           Command: [scholight, survey, serve-worker]
           Environment:
             - { Name: SCHOLIGHT_SURVEY_RUNTIME_ENABLED, Value: "true" }
-            - { Name: SCHOLIGHT_SURVEY_JOB_CONCURRENCY, Value: "1" }
-            - { Name: SCHOLIGHT_SURVEY_JOB_PER_USER_CONCURRENCY, Value: "1" }
+            - { Name: SCHOLIGHT_SURVEY_JOB_GLOBAL_CONCURRENCY, Value: "16" }
+            - { Name: SCHOLIGHT_SURVEY_JOB_PER_USER_CONCURRENCY, Value: "4" }
+            - { Name: SCHOLIGHT_SURVEY_JOB_WORKER_CONCURRENCY, Value: "1" }
             - { Name: SCHOLIGHT_PG_POOL_MIN_SIZE, Value: "1" }
-            - { Name: SCHOLIGHT_PG_POOL_MAX_SIZE, Value: "4" }
+            - { Name: SCHOLIGHT_PG_POOL_MAX_SIZE, Value: "2" }
             - { Name: SCHOLIGHT_SURVEY_S3_BUCKET, Value: !ImportValue sanchezcloud-scholight-artifact-bucket-name }
             - { Name: SCHOLIGHT_PUBLIC_WEB_URL, Value: !Sub "https://${DomainName}" }
             - { Name: AWS_REGION, Value: !Ref AWS::Region }
@@ -897,6 +924,98 @@ Resources:
         ScaleOutCooldown: 60
         PredefinedMetricSpecification: { PredefinedMetricType: ECSServiceAverageMemoryUtilization }
 
+  SurveyDraftScalableTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Condition: RunSurveyWorkers
+    Properties:
+      ServiceNamespace: ecs
+      ScalableDimension: ecs:service:DesiredCount
+      MinCapacity: 1
+      MaxCapacity: !Ref SurveyDraftMaxTasks
+      ResourceId: !Join [/, [service, !ImportValue sanchezcloud-production-cluster-name, !GetAtt SurveyDraftService.Name]]
+
+  SurveyDraftBacklogScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Condition: RunSurveyWorkers
+    Properties:
+      PolicyName: scholight-survey-draft-backlog-per-task
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref SurveyDraftScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 8
+        ScaleInCooldown: 900
+        ScaleOutCooldown: 60
+        CustomizedMetricSpecification:
+          Metrics:
+            - Id: outstanding
+              MetricStat:
+                Metric:
+                  Namespace: Scholight/Production
+                  MetricName: SurveyDraftOutstanding
+                  Dimensions: [{ Name: service, Value: survey-draft-worker }]
+                Stat: Average
+              ReturnData: false
+            - Id: running_tasks
+              MetricStat:
+                Metric:
+                  Namespace: ECS/ContainerInsights
+                  MetricName: RunningTaskCount
+                  Dimensions:
+                    - { Name: ClusterName, Value: !ImportValue sanchezcloud-production-cluster-name }
+                    - { Name: ServiceName, Value: !GetAtt SurveyDraftService.Name }
+                Stat: Average
+              ReturnData: false
+            - Id: backlog_per_task
+              Expression: IF(running_tasks>0,outstanding/running_tasks,outstanding)
+              Label: Draft outstanding work per running task
+              ReturnData: true
+
+  SurveyFullScalableTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Condition: RunSurveyWorkers
+    Properties:
+      ServiceNamespace: ecs
+      ScalableDimension: ecs:service:DesiredCount
+      MinCapacity: 1
+      MaxCapacity: !Ref SurveyFullMaxTasks
+      ResourceId: !Join [/, [service, !ImportValue sanchezcloud-production-cluster-name, !GetAtt SurveyService.Name]]
+
+  SurveyFullBacklogScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Condition: RunSurveyWorkers
+    Properties:
+      PolicyName: scholight-survey-full-backlog-per-task
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref SurveyFullScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 1
+        ScaleInCooldown: 900
+        ScaleOutCooldown: 60
+        CustomizedMetricSpecification:
+          Metrics:
+            - Id: outstanding
+              MetricStat:
+                Metric:
+                  Namespace: Scholight/Production
+                  MetricName: SurveyJobOutstanding
+                  Dimensions: [{ Name: service, Value: survey-full-worker }]
+                Stat: Average
+              ReturnData: false
+            - Id: running_tasks
+              MetricStat:
+                Metric:
+                  Namespace: ECS/ContainerInsights
+                  MetricName: RunningTaskCount
+                  Dimensions:
+                    - { Name: ClusterName, Value: !ImportValue sanchezcloud-production-cluster-name }
+                    - { Name: ServiceName, Value: !GetAtt SurveyService.Name }
+                Stat: Average
+              ReturnData: false
+            - Id: backlog_per_task
+              Expression: IF(running_tasks>0,outstanding/running_tasks,outstanding)
+              Label: Full Survey outstanding work per running task
+              ReturnData: true
+
   IngestSchedule:
     Type: AWS::Scheduler::Schedule
     Properties:
@@ -1070,6 +1189,40 @@ Resources:
       TreatMissingData: notBreaching
       AlarmActions: [!ImportValue sanchezcloud-scholight-alert-topic-arn]
 
+  DatabaseCpuAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: RunApplication
+    Properties:
+      AlarmName: sanchezcloud-scholight-postgres-cpu
+      Namespace: AWS/RDS
+      MetricName: CPUUtilization
+      Dimensions: [{ Name: DBInstanceIdentifier, Value: !Ref DatabaseInstanceIdentifier }]
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 3
+      Threshold: 60
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!ImportValue sanchezcloud-scholight-alert-topic-arn]
+
+  DatabaseFreeableMemoryAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: RunApplication
+    Properties:
+      AlarmName: sanchezcloud-scholight-postgres-freeable-memory
+      Namespace: AWS/RDS
+      MetricName: FreeableMemory
+      Dimensions: [{ Name: DBInstanceIdentifier, Value: !Ref DatabaseInstanceIdentifier }]
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 3
+      Threshold: 524288000
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!ImportValue sanchezcloud-scholight-alert-topic-arn]
+
   SurveyRuntimeFailureAlarm:
     Type: AWS::CloudWatch::Alarm
     Condition: RunSurveyWorkers
@@ -1102,6 +1255,248 @@ Resources:
       TreatMissingData: notBreaching
       AlarmActions: [!ImportValue sanchezcloud-scholight-alert-topic-arn]
 
+  SurveyDraftQueueAgeAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: RunSurveyWorkers
+    Properties:
+      AlarmName: sanchezcloud-scholight-survey-draft-oldest-queued-age
+      Namespace: Scholight/Production
+      MetricName: SurveyDraftOldestQueuedAge
+      Dimensions: [{ Name: service, Value: survey-draft-worker }]
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 5
+      DatapointsToAlarm: 3
+      Threshold: 300
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!ImportValue sanchezcloud-scholight-alert-topic-arn]
+
+  SurveyFullQueueAgeAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: RunSurveyWorkers
+    Properties:
+      AlarmName: sanchezcloud-scholight-survey-full-oldest-queued-age
+      Namespace: Scholight/Production
+      MetricName: SurveyJobOldestQueuedAge
+      Dimensions: [{ Name: service, Value: survey-full-worker }]
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 5
+      DatapointsToAlarm: 3
+      Threshold: 900
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!ImportValue sanchezcloud-scholight-alert-topic-arn]
+
+  SurveyClaimLatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: RunSurveyWorkers
+    Properties:
+      AlarmName: sanchezcloud-scholight-survey-claim-p95-latency
+      ComparisonOperator: GreaterThanThreshold
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 3
+      Threshold: 100
+      TreatMissingData: notBreaching
+      Metrics:
+        - Id: draft
+          MetricStat:
+            Metric:
+              Namespace: Scholight/Production
+              MetricName: SurveyDraftClaimLatency
+              Dimensions: [{ Name: service, Value: survey-draft-worker }]
+            Period: 60
+            Stat: p95
+          ReturnData: false
+        - Id: full
+          MetricStat:
+            Metric:
+              Namespace: Scholight/Production
+              MetricName: SurveyJobClaimLatency
+              Dimensions: [{ Name: service, Value: survey-full-worker }]
+            Period: 60
+            Stat: p95
+          ReturnData: false
+        - Id: worst
+          Expression: MAX([draft,full])
+          Label: Worst Survey claim p95 milliseconds
+          ReturnData: true
+      AlarmActions: [!ImportValue sanchezcloud-scholight-alert-topic-arn]
+
+  SurveyHeartbeatLatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: RunSurveyWorkers
+    Properties:
+      AlarmName: sanchezcloud-scholight-survey-heartbeat-p95-latency
+      ComparisonOperator: GreaterThanThreshold
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 3
+      Threshold: 100
+      TreatMissingData: notBreaching
+      Metrics:
+        - Id: draft
+          MetricStat:
+            Metric:
+              Namespace: Scholight/Production
+              MetricName: SurveyDraftHeartbeatLatency
+              Dimensions: [{ Name: service, Value: survey-draft-worker }]
+            Period: 60
+            Stat: p95
+          ReturnData: false
+        - Id: full
+          MetricStat:
+            Metric:
+              Namespace: Scholight/Production
+              MetricName: SurveyJobHeartbeatLatency
+              Dimensions: [{ Name: service, Value: survey-full-worker }]
+            Period: 60
+            Stat: p95
+          ReturnData: false
+        - Id: worst
+          Expression: MAX([draft,full])
+          Label: Worst Survey heartbeat p95 milliseconds
+          ReturnData: true
+      AlarmActions: [!ImportValue sanchezcloud-scholight-alert-topic-arn]
+
+  SurveyDraftNoTasksAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: RunSurveyWorkers
+    Properties:
+      AlarmName: sanchezcloud-scholight-survey-draft-no-running-tasks
+      Namespace: ECS/ContainerInsights
+      MetricName: RunningTaskCount
+      Dimensions:
+        - { Name: ClusterName, Value: !ImportValue sanchezcloud-production-cluster-name }
+        - { Name: ServiceName, Value: !GetAtt SurveyDraftService.Name }
+      Statistic: Minimum
+      Period: 60
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 3
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!ImportValue sanchezcloud-scholight-alert-topic-arn]
+
+  SurveyFullNoTasksAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: RunSurveyWorkers
+    Properties:
+      AlarmName: sanchezcloud-scholight-survey-full-no-running-tasks
+      Namespace: ECS/ContainerInsights
+      MetricName: RunningTaskCount
+      Dimensions:
+        - { Name: ClusterName, Value: !ImportValue sanchezcloud-production-cluster-name }
+        - { Name: ServiceName, Value: !GetAtt SurveyService.Name }
+      Statistic: Minimum
+      Period: 60
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 3
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!ImportValue sanchezcloud-scholight-alert-topic-arn]
+
+  SurveyDraftProtectionFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: RunSurveyWorkers
+    Properties:
+      AlarmName: sanchezcloud-scholight-survey-draft-task-protection-failure
+      Namespace: Scholight/Production
+      MetricName: SurveyTaskProtectionFailure
+      Dimensions: [{ Name: service, Value: survey-draft-worker }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!ImportValue sanchezcloud-scholight-alert-topic-arn]
+
+  SurveyFullProtectionFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: RunSurveyWorkers
+    Properties:
+      AlarmName: sanchezcloud-scholight-survey-full-task-protection-failure
+      Namespace: Scholight/Production
+      MetricName: SurveyTaskProtectionFailure
+      Dimensions: [{ Name: service, Value: survey-full-worker }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!ImportValue sanchezcloud-scholight-alert-topic-arn]
+
+  SurveyDraftProviderThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: RunSurveyWorkers
+    Properties:
+      AlarmName: sanchezcloud-scholight-survey-draft-provider-throttle-rate
+      ComparisonOperator: GreaterThanThreshold
+      EvaluationPeriods: 1
+      Threshold: 1
+      TreatMissingData: notBreaching
+      Metrics:
+        - Id: throttled
+          MetricStat:
+            Metric:
+              Namespace: Scholight/Production
+              MetricName: SurveyProviderThrottled
+              Dimensions: [{ Name: service, Value: survey-draft-worker }]
+            Period: 900
+            Stat: Sum
+          ReturnData: false
+        - Id: jobs
+          MetricStat:
+            Metric:
+              Namespace: Scholight/Production
+              MetricName: SurveyDraftJobCount
+              Dimensions: [{ Name: service, Value: survey-draft-worker }]
+            Period: 900
+            Stat: Sum
+          ReturnData: false
+        - Id: throttle_rate
+          Expression: IF(jobs>0,100*throttled/jobs,0)
+          Label: Draft provider throttle percentage
+          ReturnData: true
+      AlarmActions: [!ImportValue sanchezcloud-scholight-alert-topic-arn]
+
+  SurveyFullProviderThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: RunSurveyWorkers
+    Properties:
+      AlarmName: sanchezcloud-scholight-survey-full-provider-throttle-rate
+      ComparisonOperator: GreaterThanThreshold
+      EvaluationPeriods: 1
+      Threshold: 1
+      TreatMissingData: notBreaching
+      Metrics:
+        - Id: throttled
+          MetricStat:
+            Metric:
+              Namespace: Scholight/Production
+              MetricName: SurveyProviderThrottled
+              Dimensions: [{ Name: service, Value: survey-worker }]
+            Period: 900
+            Stat: Sum
+          ReturnData: false
+        - Id: jobs
+          MetricStat:
+            Metric:
+              Namespace: Scholight/Production
+              MetricName: SurveyJobCount
+              Dimensions: [{ Name: service, Value: survey-worker }]
+            Period: 900
+            Stat: Sum
+          ReturnData: false
+        - Id: throttle_rate
+          Expression: IF(jobs>0,100*throttled/jobs,0)
+          Label: Full Survey provider throttle percentage
+          ReturnData: true
+      AlarmActions: [!ImportValue sanchezcloud-scholight-alert-topic-arn]
+
   Dashboard:
     Type: AWS::CloudWatch::Dashboard
     Properties:
@@ -1113,12 +1508,18 @@ Resources:
             {"type":"metric","x":12,"y":0,"width":12,"height":6,"properties":{"title":"ALB requests and latency","region":"${AWS::Region}","metrics":[["AWS/ApplicationELB","RequestCount","LoadBalancer","${LoadBalancerName}"],[".","TargetResponseTime",".",".",{"stat":"p95"}]]}},
             {"type":"metric","x":0,"y":6,"width":12,"height":6,"properties":{"title":"Extract capacity","region":"${AWS::Region}","metrics":[["AWS/ECS","CPUUtilization","ServiceName","${ExtractServiceName}","ClusterName","${ClusterName}"],[".","MemoryUtilization",".",".",".","."]]}},
             {"type":"metric","x":12,"y":6,"width":12,"height":6,"properties":{"title":"Ingestion queue","region":"${AWS::Region}","metrics":[["Scholight/Production","IngestionBacklog","service","paper-ingest"],[".","IngestionOldestAge",".","."],[".","IngestionDeadTotal",".","."]]}},
-            {"type":"metric","x":0,"y":12,"width":12,"height":6,"properties":{"title":"Survey reliability","region":"${AWS::Region}","metrics":[["Scholight/Production","SurveyRuntimeFailure","service","survey-worker"],[".","SurveyEmailNotificationDead",".","."]]}},
-            {"type":"metric","x":12,"y":12,"width":12,"height":6,"properties":{"title":"PostgreSQL connections","region":"${AWS::Region}","metrics":[["AWS/RDS","DatabaseConnections","DBInstanceIdentifier","${DatabaseInstanceIdentifier}"]]}},
-            {"type":"log","x":0,"y":18,"width":24,"height":6,"properties":{"title":"Recent errors","region":"${AWS::Region}","query":"SOURCE '/sanchezcloud/scholight/api' | fields @timestamp, level, event, request_id | filter level in ['error','critical'] | sort @timestamp desc | limit 50"}}
+            {"type":"metric","x":0,"y":12,"width":12,"height":6,"properties":{"title":"Survey global capacity","region":"${AWS::Region}","metrics":[["Scholight/Production","SurveyDraftOutstanding","service","survey-draft-worker"],[".","SurveyDraftRunning",".","."],[".","SurveyJobOutstanding","service","survey-full-worker"],[".","SurveyJobRunning",".","."]]}},
+            {"type":"metric","x":12,"y":12,"width":12,"height":6,"properties":{"title":"Survey queue and user saturation","region":"${AWS::Region}","metrics":[["Scholight/Production","SurveyDraftOldestQueuedAge","service","survey-draft-worker"],[".","SurveyJobOldestQueuedAge","service","survey-full-worker"],[".","SurveyDraftUsersAtConcurrencyLimit","service","survey-draft-worker"],[".","SurveyJobUsersAtConcurrencyLimit","service","survey-full-worker"]]}},
+            {"type":"metric","x":0,"y":18,"width":12,"height":6,"properties":{"title":"Survey worker tasks","region":"${AWS::Region}","metrics":[["ECS/ContainerInsights","RunningTaskCount","ClusterName","${ClusterName}","ServiceName","${SurveyDraftServiceName}"],[".",".",".",".",".","${SurveyFullServiceName}"]]}},
+            {"type":"metric","x":12,"y":18,"width":12,"height":6,"properties":{"title":"Survey reliability and protection","region":"${AWS::Region}","metrics":[["Scholight/Production","SurveyRuntimeFailure","service","survey-worker"],[".","SurveyProviderThrottled",".","."],[".","SurveyProviderThrottled","service","survey-draft-worker"],[".","SurveyTaskProtectionFailure","service","survey-draft-worker"],[".",".",".","survey-full-worker"],[".","SurveyEmailNotificationDead","service","survey-worker"]]}},
+            {"type":"metric","x":0,"y":24,"width":12,"height":6,"properties":{"title":"Survey database latency","region":"${AWS::Region}","metrics":[["Scholight/Production","SurveyDraftClaimLatency","service","survey-draft-worker",{"stat":"p95"}],[".","SurveyDraftHeartbeatLatency",".",".",{"stat":"p95"}],[".","SurveyJobClaimLatency","service","survey-full-worker",{"stat":"p95"}],[".","SurveyJobHeartbeatLatency",".",".",{"stat":"p95"}]]}},
+            {"type":"metric","x":12,"y":24,"width":12,"height":6,"properties":{"title":"PostgreSQL capacity","region":"${AWS::Region}","metrics":[["AWS/RDS","DatabaseConnections","DBInstanceIdentifier","${DatabaseInstanceIdentifier}"],[".","CPUUtilization",".","."],[".","FreeableMemory",".",".",{"yAxis":"right"}]]}},
+            {"type":"log","x":0,"y":30,"width":24,"height":6,"properties":{"title":"Recent errors","region":"${AWS::Region}","query":"SOURCE '/sanchezcloud/scholight/api' | fields @timestamp, level, event, request_id | filter level in ['error','critical'] | sort @timestamp desc | limit 50"}}
           ]}
         - ApiServiceName: !GetAtt ApiService.Name
           ExtractServiceName: !GetAtt ExtractService.Name
+          SurveyDraftServiceName: !GetAtt SurveyDraftService.Name
+          SurveyFullServiceName: !GetAtt SurveyService.Name
           ClusterName: !ImportValue sanchezcloud-production-cluster-name
           LoadBalancerName: !GetAtt LoadBalancer.LoadBalancerFullName
           DatabaseInstanceIdentifier: !Ref DatabaseInstanceIdentifier
