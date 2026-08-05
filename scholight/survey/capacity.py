@@ -95,9 +95,10 @@ class SurveyTaskProtection:
 class SurveyCapacityReporter:
     """Emit one aggregate capacity snapshot at most every 30 seconds."""
 
-    def __init__(self, *, queue: SurveyQueue, service: str) -> None:
+    def __init__(self, *, queue: SurveyQueue, service: str, per_user_concurrency: int) -> None:
         self._queue = queue
         self._service = service
+        self._per_user_concurrency = per_user_concurrency
         self._next_at = 0.0
 
     async def emit_if_due(self) -> None:
@@ -106,7 +107,10 @@ class SurveyCapacityReporter:
             return
         self._next_at = now + _METRIC_INTERVAL_SECONDS
         try:
-            snapshot = await get_survey_capacity_snapshot(queue=self._queue)
+            snapshot = await get_survey_capacity_snapshot(
+                queue=self._queue,
+                per_user_concurrency=self._per_user_concurrency,
+            )
             oldest_age = (
                 max(0, int((datetime.now(UTC) - snapshot.oldest_queued_at).total_seconds()))
                 if snapshot.oldest_queued_at is not None
@@ -120,6 +124,7 @@ class SurveyCapacityReporter:
                     f"{prefix}Running": (snapshot.running, "Count"),
                     f"{prefix}Outstanding": (snapshot.outstanding, "Count"),
                     f"{prefix}OldestQueuedAge": (oldest_age, "Seconds"),
+                    f"{prefix}UsersAtConcurrencyLimit": (snapshot.users_at_limit, "Count"),
                 },
             )
         except Exception:

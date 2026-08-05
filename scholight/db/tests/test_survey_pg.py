@@ -959,7 +959,7 @@ async def test_128_concurrent_draft_claims_enforce_global_and_user_limits(
                 for _ in range(128)
             )
         )
-        capacity = await get_survey_capacity_snapshot(queue="draft")
+        capacity = await get_survey_capacity_snapshot(queue="draft", per_user_concurrency=8)
 
     active = [draft for draft in claimed if draft is not None]
     counts: dict[int, int] = {}
@@ -968,6 +968,7 @@ async def test_128_concurrent_draft_claims_enforce_global_and_user_limits(
     assert len(active) == 64
     assert set(counts.values()) == {8}
     assert (capacity.queued, capacity.running, capacity.outstanding) == (64, 64, 128)
+    assert capacity.users_at_limit == 8
 
 
 @pytest.mark.asyncio
@@ -1009,7 +1010,7 @@ async def test_64_concurrent_full_claims_enforce_global_and_user_limits(
                 for _ in range(64)
             )
         )
-        capacity = await get_survey_capacity_snapshot(queue="survey")
+        capacity = await get_survey_capacity_snapshot(queue="survey", per_user_concurrency=4)
 
     active = [job for job in claimed if job is not None]
     counts: dict[int, int] = {}
@@ -1018,6 +1019,7 @@ async def test_64_concurrent_full_claims_enforce_global_and_user_limits(
     assert len(active) == 16
     assert set(counts.values()) == {4}
     assert (capacity.queued, capacity.running, capacity.outstanding) == (48, 16, 64)
+    assert capacity.users_at_limit == 4
 
 
 @pytest.mark.asyncio

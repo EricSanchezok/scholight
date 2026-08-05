@@ -752,6 +752,7 @@ def test_result_metrics_use_only_low_cardinality_dimensions() -> None:
     assert failure_call.kwargs["metrics"] == {
         "SurveyContractAnomaly": (1, "Count"),
         "SurveyRuntimeFailure": (1, "Count"),
+        "SurveyProviderThrottled": (0, "Count"),
         "SurveyToolFailure": (2, "Count"),
         "SurveyDiagnosticsWriteFailure": (1, "Count"),
         "SurveyLastActivityAge": (0, "Seconds"),

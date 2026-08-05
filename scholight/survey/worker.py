@@ -37,6 +37,7 @@ from scholight.survey.cleanup_worker import serve_artifact_cleanup
 from scholight.survey.contracts import SurveyLeaseLostError
 from scholight.survey.diagnostics import SurveyDiagnostics
 from scholight.survey.email_notifications import AliyunSurveyEmailSender
+from scholight.survey.metrics import is_provider_throttled
 from scholight.survey.notification_worker import SurveyEmailSender, serve_email_notifications
 from scholight.survey.process import (
     ProcessControl,
@@ -381,6 +382,10 @@ def _emit_result_metrics(result: SurveyExecutionResult) -> None:
         metrics={
             "SurveyContractAnomaly": (contract_errors, "Count"),
             "SurveyRuntimeFailure": (1 if result.outcome == "failed" else 0, "Count"),
+            "SurveyProviderThrottled": (
+                1 if is_provider_throttled(result.error_code) else 0,
+                "Count",
+            ),
             "SurveyToolFailure": (tool_failures, "Count"),
             "SurveyDiagnosticsWriteFailure": (write_failures, "Count"),
             "SurveyLastActivityAge": (last_activity_age, "Seconds"),
@@ -938,7 +943,11 @@ async def serve_survey_worker(*, email_sender: SurveyEmailSender | None = None) 
     )
     active: set[asyncio.Task[None]] = set()
     protection = SurveyTaskProtection(service="survey-full-worker")
-    capacity_reporter = SurveyCapacityReporter(queue="survey", service="survey-full-worker")
+    capacity_reporter = SurveyCapacityReporter(
+        queue="survey",
+        service="survey-full-worker",
+        per_user_concurrency=settings.survey_job_per_user_concurrency,
+    )
     cleanup_supervisor = asyncio.create_task(serve_artifact_cleanup())
     if email_sender is None:
         email_sender = AliyunSurveyEmailSender(
@@ -990,7 +999,10 @@ async def serve_survey_worker(*, email_sender: SurveyEmailSender | None = None) 
             claims_allowed = await protection.ensure() if active else not protection.enabled
             if not active and protection.enabled:
                 try:
-                    capacity = await get_survey_capacity_snapshot(queue="survey")
+                    capacity = await get_survey_capacity_snapshot(
+                        queue="survey",
+                        per_user_concurrency=settings.survey_job_per_user_concurrency,
+                    )
                 except Exception:
                     logger.exception("survey_claim_preflight_failed")
                 else:

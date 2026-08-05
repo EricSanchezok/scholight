@@ -93,9 +93,14 @@ async def test_capacity_reporter_emits_only_aggregate_metrics() -> None:
         queued=10,
         running=6,
         outstanding=16,
+        users_at_limit=2,
         oldest_queued_at=datetime.now(UTC) - timedelta(seconds=45),
     )
-    reporter = SurveyCapacityReporter(queue="survey", service="survey-full-worker")
+    reporter = SurveyCapacityReporter(
+        queue="survey",
+        service="survey-full-worker",
+        per_user_concurrency=4,
+    )
     with (
         patch(
             "scholight.survey.capacity.get_survey_capacity_snapshot",
@@ -110,4 +115,5 @@ async def test_capacity_reporter_emits_only_aggregate_metrics() -> None:
     assert call.kwargs["metrics"]["SurveyJobQueued"] == (10, "Count")
     assert call.kwargs["metrics"]["SurveyJobRunning"] == (6, "Count")
     assert call.kwargs["metrics"]["SurveyJobOutstanding"] == (16, "Count")
+    assert call.kwargs["metrics"]["SurveyJobUsersAtConcurrencyLimit"] == (2, "Count")
     assert set(call.kwargs) == {"service", "metrics"}

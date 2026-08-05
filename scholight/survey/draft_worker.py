@@ -23,6 +23,7 @@ from scholight.db.queries_survey_drafts import (
     heartbeat_survey_draft,
     recover_expired_survey_drafts,
 )
+from scholight.logging.emf import emit_emf
 from scholight.survey.capacity import SurveyCapacityReporter, SurveyTaskProtection
 from scholight.survey.contracts import (
     DRAFT_CONTEXT_MAX_BYTES,
@@ -30,6 +31,7 @@ from scholight.survey.contracts import (
     SurveyLeaseLostError,
     utf8_size,
 )
+from scholight.survey.metrics import is_provider_throttled
 from scholight.survey.process import (
     ProcessControl,
     ProcessOutputTooLargeError,
@@ -250,6 +252,16 @@ async def process_survey_draft(*, draft: SurveyDraft, worker_id: UUID) -> None:
     try:
         context = await get_survey_draft_context(survey_id=draft.survey_id)
         result = await execute_draft(draft=draft, context=context, control=control)
+        emit_emf(
+            service="survey-draft-worker",
+            metrics={
+                "SurveyDraftJobCount": (1, "Count"),
+                "SurveyProviderThrottled": (
+                    1 if is_provider_throttled(result.error_code) else 0,
+                    "Count",
+                ),
+            },
+        )
         if control.lease_lost.is_set():
             return
         if result.markdown is not None:
@@ -304,7 +316,11 @@ async def serve_survey_draft_worker() -> None:
     """Supervise bounded concurrent Drafts without sharing task failure state."""
     active: set[asyncio.Task[None]] = set()
     protection = SurveyTaskProtection(service="survey-draft-worker")
-    capacity_reporter = SurveyCapacityReporter(queue="draft", service="survey-draft-worker")
+    capacity_reporter = SurveyCapacityReporter(
+        queue="draft",
+        service="survey-draft-worker",
+        per_user_concurrency=settings.survey_draft_per_user_concurrency,
+    )
     last_recovery = 0.0
     logger.info(
         "survey_draft_supervisor_started",
@@ -329,7 +345,10 @@ async def serve_survey_draft_worker() -> None:
             claims_allowed = await protection.ensure() if active else not protection.enabled
             if not active and protection.enabled:
                 try:
-                    capacity = await get_survey_capacity_snapshot(queue="draft")
+                    capacity = await get_survey_capacity_snapshot(
+                        queue="draft",
+                        per_user_concurrency=settings.survey_draft_per_user_concurrency,
+                    )
                 except Exception:
                     logger.exception("survey_draft_claim_preflight_failed")
                 else:
