@@ -73,6 +73,11 @@ jobs:
               ephemeralStorage
             }
             | .containerDefinitions[0].image = $image
+            | .containerDefinitions[0].environment = (
+                (.containerDefinitions[0].environment // [])
+                | map(select(.name != "SCHOLIGHT_MIGRATIONS_DIR"))
+                + [{name: "SCHOLIGHT_MIGRATIONS_DIR", value: "/app/migrations"}]
+              )
             | with_entries(select(.value != null))
           ' base-task.json > candidate-task.json
           task_definition=$(aws ecs register-task-definition \

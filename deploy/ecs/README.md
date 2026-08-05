@@ -112,6 +112,11 @@ platform. The protected compatibility and migration checks use this ECS-owned
 copy; the similarly named file inside the frozen EC2 package is retained only
 so that the already deployed host remains reproducible during cutover.
 
+The migration task and the protected database workflow both pin
+`SCHOLIGHT_MIGRATIONS_DIR=/app/migrations`. The API image copies the reviewed
+SQL files to that path; migration execution must never depend on the Python
+installation location inside `site-packages`.
+
 Fill every required field before publishing a production release:
 
 - `/sanchezcloud/database/scholight-runtime`: host, port, database, username,
