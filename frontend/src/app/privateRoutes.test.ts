@@ -5,7 +5,7 @@ import { accountApi, accessKeyApi, adminApi, historyApi, usageApi } from "../api
 import { prefetchPrivateDestination } from "./privateRoutes";
 
 vi.mock("../api/domain", () => ({
-  accountApi: { profile: vi.fn(), sessions: vi.fn() },
+  accountApi: { avatar: vi.fn(), profile: vi.fn(), sessions: vi.fn() },
   accessKeyApi: { list: vi.fn() },
   historyApi: { list: vi.fn() },
   usageApi: {
@@ -33,6 +33,7 @@ describe("private destination prefetch", () => {
     vi.mocked(accessKeyApi.list).mockResolvedValue([]);
     vi.mocked(historyApi.list).mockResolvedValue({ items: [], total: 0 } as never);
     vi.mocked(accountApi.profile).mockResolvedValue({} as never);
+    vi.mocked(accountApi.avatar).mockResolvedValue({} as never);
     vi.mocked(accountApi.sessions).mockResolvedValue([]);
     vi.mocked(adminApi.auditEvents).mockResolvedValue([]);
     vi.mocked(adminApi.analyticsOverview).mockResolvedValue({} as never);
@@ -73,5 +74,13 @@ describe("private destination prefetch", () => {
 
     expect(adminApi.analyticsOverview).toHaveBeenCalledWith(30);
     expect(adminApi.operationsOverview).toHaveBeenCalledWith(7, 20);
+  });
+
+  it("prefetches the shared profile, avatar, and sessions for account", async () => {
+    await prefetchPrivateDestination("/account", client);
+
+    expect(accountApi.profile).toHaveBeenCalledOnce();
+    expect(accountApi.avatar).toHaveBeenCalledOnce();
+    expect(accountApi.sessions).toHaveBeenCalledOnce();
   });
 });

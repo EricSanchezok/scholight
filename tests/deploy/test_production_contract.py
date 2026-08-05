@@ -539,12 +539,28 @@ def test_database_bootstrap_is_reviewed_and_ci_exercises_least_privilege_roles()
     assert "GRANT REFERENCES ON TABLE auth.users" in bootstrap
     assert "GRANT SELECT, INSERT, UPDATE ON TABLE auth.users" in bootstrap
     assert "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE auth.users" not in bootstrap
+    assert "GRANT SELECT ON TABLE auth.user_avatars" in bootstrap
+    assert "INSERT, UPDATE, DELETE ON TABLE auth.user_avatars" not in bootstrap
     assert "REVOKE ALL ON TABLE auth.schema_migrations" in bootstrap
     assert "REVOKE ALL ON TABLE scholight.schema_migrations" in bootstrap
     assert "deploy/ecs/database-bootstrap.sql" in workflow
     assert "SCHOLIGHT_PG_USER=scholight_migrator" in workflow
     assert "-U scholight_app" in workflow
     assert "CREATE TABLE public.app_role_must_not_create" in workflow
+
+
+def test_api_can_only_read_shared_profile_avatars() -> None:
+    production = (ECS / "scholight-production.yml").read_text(encoding="utf-8")
+    avatar_policy = production.split("PolicyName: ReadSharedProfileAvatars", maxsplit=1)[1].split(
+        "SurveyTaskRole:", maxsplit=1
+    )[0]
+
+    assert "Action: s3:GetObject" in avatar_policy
+    assert "s3:PutObject" not in avatar_policy
+    assert "s3:DeleteObject" not in avatar_policy
+    assert "Action: kms:Decrypt" in avatar_policy
+    assert "Action: kms:Encrypt" not in avatar_policy
+    assert "SCHOLIGHT_AVATAR_S3_BUCKET" in production
 
 
 def test_runtime_secret_documents_cover_every_external_provider() -> None:

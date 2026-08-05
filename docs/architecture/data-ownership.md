@@ -33,7 +33,8 @@ internal `auth.users.id`; public Account IDs must not be used as relational keys
 - `auth_migrator` owns only `auth` and is used only by the protected Identity workflow.
 - `scholight_migrator` owns only `scholight`, reads the Identity schema ledger, and may reference
   `auth.users` while applying product migrations.
-- `scholight_app` owns nothing. It receives the minimum Identity core DML and Scholight runtime
+- `scholight_app` owns nothing. It receives the minimum Identity core DML, read-only access to
+  shared avatar references, and Scholight runtime
   DML, but no migration-ledger writes, DDL, or access to another product schema.
 
 `deploy/ecs/database-bootstrap.sql` is the reviewed grant contract. It runs as the database

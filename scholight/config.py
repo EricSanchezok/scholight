@@ -104,6 +104,11 @@ class Settings(BaseSettings):
     pg_pool_command_timeout: float = 10.0
     pg_pool_max_inactive_lifetime: float = 300.0
 
+    # ── Shared SanchezCloud avatar (read-only in Scholight) ──
+    avatar_s3_bucket: str = ""
+    avatar_s3_endpoint_url: str | None = None
+    avatar_url_ttl_seconds: int = Field(default=900, ge=60, le=3600)
+
     # ── JWT ──
     auth_jwt_secret: str = ""
     jwt_secret: str = ""

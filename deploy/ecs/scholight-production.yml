@@ -323,6 +323,21 @@ Resources:
               - Effect: Allow
                 Action: kms:Decrypt
                 Resource: !ImportValue sanchezcloud-scholight-artifact-key-arn
+        - PolicyName: ReadSharedProfileAvatars
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub arn:${AWS::Partition}:s3:::sanchezcloud-account-avatars-${AWS::AccountId}-${AWS::Region}/auth/avatars/v1/*
+              - Effect: Allow
+                Action: kms:Decrypt
+                Resource: !Sub arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/*
+                Condition:
+                  StringEquals:
+                    "kms:ViaService": !Sub s3.${AWS::Region}.${AWS::URLSuffix}
+                  StringLike:
+                    "kms:EncryptionContext:aws:s3:arn": !Sub arn:${AWS::Partition}:s3:::sanchezcloud-account-avatars-${AWS::AccountId}-${AWS::Region}/auth/avatars/v1/*
 
   SurveyTaskRole:
     Type: AWS::IAM::Role
@@ -459,6 +474,7 @@ Resources:
             - { Name: SCHOLIGHT_PUBLIC_WEB_URL, Value: !Sub "https://${DomainName}" }
             - { Name: SCHOLIGHT_CORS_ALLOW_ORIGINS, Value: !Sub '["https://${DomainName}"]' }
             - { Name: SCHOLIGHT_AUTH_REFRESH_COOKIE_SECURE, Value: "true" }
+            - { Name: SCHOLIGHT_AVATAR_S3_BUCKET, Value: !Sub "sanchezcloud-account-avatars-${AWS::AccountId}-${AWS::Region}" }
             - { Name: SCHOLIGHT_EXTRACT_ENABLED, Value: "true" }
             - { Name: SCHOLIGHT_EXTRACT_SERVICE_URL, Value: "http://extract:8001" }
             - { Name: SCHOLIGHT_SURVEY_RUNTIME_ENABLED, Value: !Ref SurveyRuntimeEnabled }

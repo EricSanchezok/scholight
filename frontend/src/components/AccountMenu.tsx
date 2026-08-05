@@ -15,10 +15,10 @@ import { prefetchPrivateDestination, preloadPrivateRoutes } from "../app/private
 import { type AccountDestination, routes, visibleAccountRoutes } from "../app/routes";
 import { useAuth } from "../auth/context";
 import { productConfig } from "../config/product";
-import { avatarInitials } from "../lib/format";
 import { useI18n } from "../i18n/I18nProvider";
 import { styles } from "../styles/classes";
 import { ChevronDownIcon } from "./icons";
+import { SharedAvatar } from "./SharedAvatar";
 
 export function AccountMenu() {
   const { messages } = useI18n();
@@ -67,7 +67,7 @@ export function AccountMenu() {
         className={styles.accountTrigger}
         aria-label={messages.navigation.accountMenuLabel}
       >
-        <span className={styles.avatar}>{avatarInitials(user.display_name, user.email)}</span>
+        <SharedAvatar displayName={user.display_name} email={user.email} />
         <span className={styles.accountName}>{name}</span>
         <m.span {...chevronMotion(open)}>
           <ChevronDownIcon />

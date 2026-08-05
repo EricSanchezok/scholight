@@ -1,4 +1,7 @@
 export const productConfig = {
+  accountCenter: {
+    url: "https://myaccount.sanchezcloud.net",
+  },
   search: {
     maxQueryLength: 500,
     resultLimit: 10,

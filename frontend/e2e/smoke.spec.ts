@@ -72,6 +72,15 @@ async function settleMotion(page: Page) {
 
 async function mockAccountCenter(page: Page) {
   await mockAuthenticated(page);
+  await page.route("**/api/user/avatar", (route) =>
+    route.fulfill({
+      json: {
+        url: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='96' height='96'%3E%3Crect width='96' height='96' fill='%231f45b8'/%3E%3Ccircle cx='48' cy='38' r='17' fill='%23fbfaf5'/%3E%3Cpath d='M19 88c3-21 14-31 29-31s26 10 29 31' fill='%23fbfaf5'/%3E%3C/svg%3E",
+        version: "00000000-0000-4000-8000-000000000001",
+        expires_at: "2026-07-23T01:00:00Z",
+      },
+    }),
+  );
   const days = Array.from({ length: 12 }, (_, index) => {
     const day = String(index + 11).padStart(2, "0");
     return `2026-07-${day}T00:00:00Z`;
@@ -679,7 +688,7 @@ test("mobile account center keeps navigation and pages inside the viewport", asy
   await page.goto("/");
   await page.getByRole("button", { name: "Menu" }).click();
   await expect(page.getByRole("navigation", { name: "Mobile navigation" })).toContainText(
-    "Usage & quotaAccess KeysSearch historyAccount settingsSign out",
+    "Usage & quotaAccess KeysSearch historyAccountSign out",
   );
 
   for (const path of ["/usage", "/access-keys", "/account"]) {
@@ -747,7 +756,7 @@ test("account menu uses the approved order and protected destinations", async ({
     /Usage & quota/,
     /Access Keys/,
     /Search history/,
-    /Account settings/,
+    /Account/,
     /Sign out/,
   ]);
   await settleMotion(page);
@@ -790,22 +799,17 @@ test("usage, access keys, and account match the editorial account center", async
   await page.keyboard.press("Escape");
 
   await page.goto("/account");
-  await expect(page.getByRole("heading", { name: "Account settings" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Account" })).toBeVisible();
   await expect(page.getByText("Chrome on macOS")).toBeVisible();
   await expect(page.getByText("Safari on macOS")).toBeVisible();
-  const saveButtonMetrics = await page
-    .getByRole("button", { name: "Save changes" })
-    .evaluate((element) => {
-      const rect = element.getBoundingClientRect();
-      return { width: rect.width, height: rect.height, right: rect.right };
-    });
-  const passwordButtonMetrics = await page
-    .getByRole("button", { name: "Change password" })
-    .evaluate((element) => {
-      const rect = element.getBoundingClientRect();
-      return { width: rect.width, height: rect.height, right: rect.right };
-    });
-  expect(passwordButtonMetrics).toEqual(saveButtonMetrics);
+  await expect(page.getByRole("main").getByText("Eric Lin", { exact: true })).toBeVisible();
+  await expect(page.getByRole("main").getByText("eric@example.com", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Manage SanchezCloud account" })).toHaveAttribute(
+    "href",
+    "https://myaccount.sanchezcloud.net",
+  );
+  await expect(page.getByRole("button", { name: "Save changes" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Change password" })).toHaveCount(0);
   expect(
     (await new AxeBuilder({ page }).analyze()).violations.filter((item) =>
       ["serious", "critical"].includes(item.impact ?? ""),

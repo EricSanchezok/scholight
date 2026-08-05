@@ -790,6 +790,29 @@
         "title": "AdminUserResponse",
         "type": "object"
       },
+      "AvatarView": {
+        "description": "Short-lived authenticated view of a private avatar.",
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "url": {
+            "minLength": 1,
+            "title": "Url",
+            "type": "string"
+          },
+          "version": {
+            "format": "uuid",
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": ["url", "version", "expires_at"],
+        "title": "AvatarView",
+        "type": "object"
+      },
       "BulkDeleteSearchHistoryRequest": {
         "additionalProperties": false,
         "description": "Strict owner-scoped history IDs, stably deduplicated.",
@@ -4743,6 +4766,30 @@
         ],
         "summary": "Patch Key",
         "tags": ["access-keys"]
+      }
+    },
+    "/user/avatar": {
+      "get": {
+        "operationId": "get_avatar_user_avatar_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AvatarView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Get Avatar",
+        "tags": ["user"]
       }
     },
     "/user/profile": {

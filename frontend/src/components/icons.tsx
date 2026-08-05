@@ -59,3 +59,15 @@ export const RefreshIcon = (props: SVGProps<SVGSVGElement>) => (
     />
   </Icon>
 );
+
+export const ExternalLinkIcon = (props: SVGProps<SVGSVGElement>) => (
+  <Icon {...props}>
+    <path
+      d="M14 5h5v5M19 5l-9 9M19 13v6H5V5h6"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </Icon>
+);
