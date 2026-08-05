@@ -416,7 +416,7 @@ async def _wait_for_queue_shape(
 
 
 async def _assert_bounded_fair_queues(client: httpx.AsyncClient) -> None:
-    """Exercise the real supervisors at their configured 8/2 and 2/1 limits."""
+    """Exercise the real supervisors at their configured per-worker limits."""
 
     async def _create(user_id: int, sequence: int) -> tuple[int, str]:
         response = await client.post(
@@ -485,8 +485,8 @@ async def _assert_bounded_fair_queues(client: httpx.AsyncClient) -> None:
         response.raise_for_status()
     await _wait_for_queue_shape(
         table="survey_jobs",
-        running=2,
-        queued=2,
+        running=1,
+        queued=3,
         per_user_limit=1,
     )
     queued_jobs: list[tuple[int, str]] = []
@@ -500,7 +500,7 @@ async def _assert_bounded_fair_queues(client: httpx.AsyncClient) -> None:
             queued_jobs.append((user_id, survey_id))
             assert response.json()["queue"]["kind"] == "survey"
             assert response.json()["queue"]["position"] >= 1
-    assert len(queued_jobs) == 2
+    assert len(queued_jobs) == 3
 
     for user_id, survey_id in formal:
         response = await client.post(
