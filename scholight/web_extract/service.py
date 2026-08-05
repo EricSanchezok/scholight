@@ -14,10 +14,12 @@ from typing import Protocol
 
 from fastapi import FastAPI, Header
 from fastapi.responses import JSONResponse
-from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field
 
 from scholight.logging.emf import MetricUnit, emit_emf
-from scholight.models.web_extract import ExtractResponseFormat, RenderMode
+from scholight.web_extract.contracts import (
+    InternalExtractRequest,
+    InternalExtractResponse,
+)
 from scholight.web_extract.engine import ExtractDocument, ExtractInput
 from scholight.web_extract.errors import ExtractError
 
@@ -26,52 +28,23 @@ class _Engine(Protocol):
     async def extract(self, request: ExtractInput) -> ExtractDocument: ...
 
 
-class InternalExtractRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    url: AnyHttpUrl
-    render: RenderMode = RenderMode.AUTO
-    output: ExtractResponseFormat = ExtractResponseFormat.MAIN_MARKDOWN
-    headers: dict[str, str] = Field(default_factory=dict)
-    cookies: dict[str, str] = Field(default_factory=dict)
-
-
-class InternalExtractResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    requested_url: str
-    final_url: str
-    status_code: int
-    title: str | None
-    author: str | None
-    published_at: str | None
-    content_type: str
-    content: str
-    rendered: bool
-    extractor: str
-    warnings: list[str]
-    content_hash: str
-    fetched_at: datetime
-    source_bytes: int = Field(ge=0)
-
-    @classmethod
-    def from_document(cls, document: ExtractDocument) -> InternalExtractResponse:
-        return cls(
-            requested_url=document.requested_url,
-            final_url=document.final_url,
-            status_code=document.status_code,
-            title=document.title,
-            author=document.author,
-            published_at=document.published_at,
-            content_type=document.content_type,
-            content=document.content,
-            rendered=document.rendered,
-            extractor=document.extractor,
-            warnings=list(document.warnings),
-            content_hash=document.content_hash,
-            fetched_at=document.fetched_at,
-            source_bytes=document.source_bytes,
-        )
+def _response_from_document(document: ExtractDocument) -> InternalExtractResponse:
+    return InternalExtractResponse(
+        requested_url=document.requested_url,
+        final_url=document.final_url,
+        status_code=document.status_code,
+        title=document.title,
+        author=document.author,
+        published_at=document.published_at,
+        content_type=document.content_type,
+        content=document.content,
+        rendered=document.rendered,
+        extractor=document.extractor,
+        warnings=list(document.warnings),
+        content_hash=document.content_hash,
+        fetched_at=document.fetched_at,
+        source_bytes=document.source_bytes,
+    )
 
 
 class _SharedCache:
@@ -220,7 +193,7 @@ def create_extract_service(
                     }
                 },
             )
-        response = InternalExtractResponse.from_document(document)
+        response = _response_from_document(document)
         if cacheable:
             cache.put(key, response)
         _emit_extract_metrics(
@@ -233,4 +206,4 @@ def create_extract_service(
     return app
 
 
-__all__ = ["InternalExtractRequest", "InternalExtractResponse", "create_extract_service"]
+__all__ = ["create_extract_service"]

@@ -715,6 +715,9 @@ Resources:
             - !ImportValue sanchezcloud-production-private-subnet-2
       LoadBalancers:
         - { ContainerName: web, ContainerPort: 8080, TargetGroupArn: !Ref WebTargetGroup }
+      ServiceConnectConfiguration:
+        Enabled: true
+        Namespace: !ImportValue sanchezcloud-production-namespace-arn
       PropagateTags: SERVICE
       EnableExecuteCommand: false
 

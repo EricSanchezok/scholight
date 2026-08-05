@@ -123,6 +123,18 @@ def test_frontend_serves_agent_documents_without_spa_fallback() -> None:
     assert "/docker-entrypoint.d/40-render-scholight-docs.sh" in dockerfile
 
 
+def test_frontend_joins_service_connect_as_an_api_client() -> None:
+    template = (ECS / "scholight-production.yml").read_text(encoding="utf-8")
+    web_service = template.split("  WebService:", maxsplit=1)[1].split("  ApiService:", maxsplit=1)[
+        0
+    ]
+
+    assert "ServiceConnectConfiguration:" in web_service
+    assert "Enabled: true" in web_service
+    assert "Namespace: !ImportValue sanchezcloud-production-namespace-arn" in web_service
+    assert "Services:" not in web_service
+
+
 def test_active_workflows_are_oidc_manifest_and_digest_driven() -> None:
     publish = (ROOT / ".github/workflows/publish.yml").read_text(encoding="utf-8")
     release = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
@@ -370,6 +382,18 @@ def test_python_images_have_explicit_minimal_runtime_targets() -> None:
     assert "/opt/scholight-package" not in dockerfile
     assert dockerfile.index("poppler-utils") > dockerfile.index("FROM runtime-base AS ingest")
     assert dockerfile.index("poppler-utils") < dockerfile.index("FROM runtime-base AS survey")
+
+
+def test_api_image_smoke_imports_the_public_application() -> None:
+    workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    api_build = workflow.split("- name: Build API image", maxsplit=1)[1].split(
+        "- name: Build ingest image", maxsplit=1
+    )[0]
+
+    assert "if: github.event_name != 'pull_request'" not in api_build
+    assert "find_spec('markdownify') is None" in api_build
+    assert "find_spec('playwright') is None" in api_build
+    assert "import scholight.api.app; import scholight.api.extract_execution" in api_build
 
 
 def test_survey_image_pins_verified_rcm_release() -> None:
