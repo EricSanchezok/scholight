@@ -85,15 +85,11 @@ function UsageSkeleton() {
 function LedgerSkeleton({ pathname }: { pathname: string }) {
   const route = accountRouteFor(pathname);
   const isHistory = route?.id === "history";
-  const title = isHistory
-    ? "Search history"
-    : route?.id === "account"
-      ? "Account settings"
-      : "Access keys";
+  const title = isHistory ? "Search history" : route?.id === "account" ? "Account" : "Access keys";
   const intro = isHistory
     ? "Revisit your previous research questions or remove the searches you no longer need."
     : route?.id === "account"
-      ? "Manage your profile, password, sessions, and account."
+      ? "View your SanchezCloud profile and active Scholight sessions."
       : "Create keys for tools and agents that search Scholight on your behalf.";
   return (
     <main

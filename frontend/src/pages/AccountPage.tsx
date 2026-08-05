@@ -1,38 +1,24 @@
-import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as m from "motion/react-m";
-import { useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
-import { useNavigate } from "react-router-dom";
-import { z } from "zod";
+import { useState } from "react";
 
-import { accountApi, authApi } from "../api/domain";
+import { accountApi } from "../api/domain";
 import { ApiError } from "../api/errors";
 import type { Session } from "../api/types";
-import { queryKeys } from "../app/queryKeys";
-import { routes, withQuery } from "../app/routes";
 import { ledgerRowMotion } from "../app/motion";
+import { queryKeys } from "../app/queryKeys";
 import { useAuth } from "../auth/context";
-import { clearSession } from "../auth/session";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { EditorialRowsSkeleton } from "../components/EditorialSkeleton";
+import { ExternalLinkIcon } from "../components/icons";
 import { PageRefreshButton } from "../components/PageRefreshButton";
+import { SharedAvatar } from "../components/SharedAvatar";
+import { productConfig } from "../config/product";
 import { formatFullDateTime } from "../i18n/format";
 import { useI18n, type AppLocale } from "../i18n/I18nProvider";
 import type { Messages } from "../i18n/en";
 import { parseUserAgent, sortSessions } from "../lib/account";
 import { styles } from "../styles/classes";
-
-const passwordSchema = z
-  .object({
-    currentPassword: z.string().min(1, "Enter your current password."),
-    newPassword: z.string().min(12, "Use at least 12 characters."),
-    confirmPassword: z.string(),
-  })
-  .refine((value) => value.newPassword === value.confirmPassword, {
-    path: ["confirmPassword"],
-    message: "Passwords do not match.",
-  });
 
 function seenAt(
   value: string | null,
@@ -47,11 +33,8 @@ function seenAt(
 
 export function AccountPage() {
   const { locale, messages } = useI18n();
-  const { user, refreshProfile } = useAuth();
+  const { user } = useAuth();
   const queryClient = useQueryClient();
-  const navigate = useNavigate();
-  const [displayName, setDisplayName] = useState(user?.display_name ?? "");
-  const [passwordMessage, setPasswordMessage] = useState("");
   const [pendingSession, setPendingSession] = useState<Session | null>(null);
   const [revokeOthersOpen, setRevokeOthersOpen] = useState(false);
   const profile = useQuery({
@@ -63,14 +46,6 @@ export function AccountPage() {
     queryKey: queryKeys.sessions,
     queryFn: accountApi.sessions,
     staleTime: 30_000,
-  });
-  useEffect(() => setDisplayName(profile.data?.display_name ?? ""), [profile.data?.display_name]);
-  const updateProfile = useMutation({
-    mutationFn: () => accountApi.updateProfile(displayName.trim() || null),
-    onSuccess: async (data) => {
-      queryClient.setQueryData(queryKeys.profile, data);
-      await refreshProfile();
-    },
   });
   const revokeSession = useMutation({
     mutationFn: (sessionId: number) => accountApi.revokeSession(sessionId),
@@ -86,40 +61,24 @@ export function AccountPage() {
       await queryClient.invalidateQueries({ queryKey: queryKeys.sessions });
     },
   });
-  const {
-    register,
-    handleSubmit,
-    reset,
-    formState: { errors, isSubmitting },
-  } = useForm<z.infer<typeof passwordSchema>>({ resolver: zodResolver(passwordSchema) });
-  const changePassword = handleSubmit(async ({ currentPassword, newPassword }) => {
-    try {
-      setPasswordMessage("");
-      await authApi.changePassword(currentPassword, newPassword);
-      clearSession();
-      queryClient.clear();
-      reset();
-      navigate(withQuery(routes.login.path, { password: "changed" }), { replace: true });
-    } catch (error) {
-      setPasswordMessage(
-        error instanceof ApiError ? error.message : "Unable to change your password.",
-      );
-    }
-  });
   const orderedSessions = sortSessions(sessions.data ?? []);
   const otherSessions = orderedSessions.filter((session) => !session.current);
+  const displayName =
+    profile.data?.display_name?.trim() ||
+    profile.data?.email.split("@")[0] ||
+    "SanchezCloud account";
+  const email = profile.data?.email ?? user?.email ?? "";
 
   return (
     <main className={styles.accountPage}>
       <header className={styles.accountIntro}>
-        <p>ACCOUNT</p>
-        <h1>Account settings</h1>
-        <span>Manage your profile, security, and active sessions.</span>
+        <h1>Account</h1>
+        <span>View your SanchezCloud profile and active Scholight sessions.</span>
       </header>
       <section className={styles.accountSection}>
         <div className={styles.accountSectionIntro}>
           <h2>Profile</h2>
-          <p>How your name appears across Scholight.</p>
+          <p>Your shared SanchezCloud profile as it appears in Scholight.</p>
         </div>
         <div className={styles.accountSectionBody}>
           {profile.error ? (
@@ -130,86 +89,19 @@ export function AccountPage() {
               </button>
             </div>
           ) : (
-            <form
-              className={styles.accountForm}
-              onSubmit={(event) => {
-                event.preventDefault();
-                updateProfile.mutate();
-              }}
-            >
-              <label>
-                Display name
-                <input
-                  value={displayName}
-                  onChange={(event) => setDisplayName(event.target.value)}
-                  maxLength={120}
-                />
-              </label>
-              <div>
-                <span className={styles.fieldCaption}>EMAIL</span>
-                <p>{profile.data?.email ?? "—"}</p>
+            <div className={styles.profileSummary}>
+              <SharedAvatar displayName={displayName} email={email} size="profile" />
+              <div className={styles.profileIdentity}>
+                <strong>{displayName}</strong>
+                <span>{email || "—"}</span>
               </div>
-              {updateProfile.error && (
-                <p className={styles.formMessageError} role="alert">
-                  Could not update your profile.
-                </p>
-              )}
-              <button className={styles.primaryButton} disabled={updateProfile.isPending}>
-                {updateProfile.isPending ? "Saving…" : "Save changes"}
-              </button>
-            </form>
+              <p>Profile and password changes are managed in SanchezCloud Account.</p>
+              <a className={styles.accountCenterLink} href={productConfig.accountCenter.url}>
+                Manage SanchezCloud account
+                <ExternalLinkIcon />
+              </a>
+            </div>
           )}
-        </div>
-      </section>
-      <section className={styles.accountSection}>
-        <div className={styles.accountSectionIntro}>
-          <h2>Password</h2>
-          <p>Use at least 12 characters. Updating your password signs you out everywhere.</p>
-        </div>
-        <div className={styles.accountSectionBody}>
-          <form className={styles.passwordForm} onSubmit={changePassword}>
-            <label className={styles.fullField}>
-              <span className="sr-only">Current password</span>
-              <input
-                type="password"
-                placeholder="Current password"
-                autoComplete="current-password"
-                {...register("currentPassword")}
-              />
-              {errors.currentPassword && <small>{errors.currentPassword.message}</small>}
-            </label>
-            <label>
-              <span className="sr-only">New password</span>
-              <input
-                type="password"
-                placeholder="New password"
-                autoComplete="new-password"
-                {...register("newPassword")}
-              />
-              {errors.newPassword && <small>{errors.newPassword.message}</small>}
-            </label>
-            <label>
-              <span className="sr-only">Confirm new password</span>
-              <input
-                type="password"
-                placeholder="Confirm new password"
-                autoComplete="new-password"
-                {...register("confirmPassword")}
-              />
-              {errors.confirmPassword && <small>{errors.confirmPassword.message}</small>}
-            </label>
-            <p className={styles.passwordHint}>
-              A strong password is long, unique, and not reused elsewhere.
-            </p>
-            {passwordMessage && (
-              <p className={styles.formMessageError} role="alert">
-                {passwordMessage}
-              </p>
-            )}
-            <button className={styles.primaryButton} disabled={isSubmitting}>
-              {isSubmitting ? "Changing…" : "Change password"}
-            </button>
-          </form>
         </div>
       </section>
       <section className={styles.accountSection}>

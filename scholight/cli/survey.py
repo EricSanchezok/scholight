@@ -33,6 +33,19 @@ from scholight.survey.workflow_audit import workflow_audit_payload
 _DIAGNOSTIC_JSON_MAX_BYTES = 2 * 1024 * 1024
 
 
+def _echo_concurrency(concurrency: object) -> None:
+    if not isinstance(concurrency, dict):
+        raise click.ClickException("Survey concurrency response is invalid")
+    for queue in ("draft", "survey"):
+        limits = concurrency.get(queue)
+        if not isinstance(limits, dict):
+            raise click.ClickException("Survey concurrency response is invalid")
+        click.echo(
+            f"{queue} concurrency: global={limits.get('global')}, "
+            f"per-user={limits.get('per_user')}, per-worker={limits.get('per_worker')}"
+        )
+
+
 def _installed_rcm_version() -> str:
     # The command and arguments are constants installed in the reviewed image.
     completed = subprocess.run(  # nosec B603
@@ -167,10 +180,16 @@ def status(json_output: bool) -> None:
                     ),
                 },
                 "concurrency": {
-                    "draft": settings.survey_draft_concurrency,
-                    "draft_per_user": settings.survey_draft_per_user_concurrency,
-                    "survey": settings.survey_job_concurrency,
-                    "survey_per_user": settings.survey_job_per_user_concurrency,
+                    "draft": {
+                        "global": settings.survey_draft_global_concurrency,
+                        "per_user": settings.survey_draft_per_user_concurrency,
+                        "per_worker": settings.survey_draft_worker_concurrency,
+                    },
+                    "survey": {
+                        "global": settings.survey_job_global_concurrency,
+                        "per_user": settings.survey_job_per_user_concurrency,
+                        "per_worker": settings.survey_job_worker_concurrency,
+                    },
                 },
             }
         finally:
@@ -186,6 +205,7 @@ def status(json_output: bool) -> None:
         raise click.ClickException("Survey status response is invalid")
     for state, count in jobs.items():
         click.echo(f"{state}: {count}")
+    _echo_concurrency(payload["concurrency"])
 
 
 @survey_group.command("contract-audit")
@@ -447,10 +467,16 @@ def smoke(json_output: bool) -> None:
                 "diagnostics_writable": True,
                 "workflow_contract": workflow_audit_payload(),
                 "concurrency": {
-                    "draft": settings.survey_draft_concurrency,
-                    "draft_per_user": settings.survey_draft_per_user_concurrency,
-                    "survey": settings.survey_job_concurrency,
-                    "survey_per_user": settings.survey_job_per_user_concurrency,
+                    "draft": {
+                        "global": settings.survey_draft_global_concurrency,
+                        "per_user": settings.survey_draft_per_user_concurrency,
+                        "per_worker": settings.survey_draft_worker_concurrency,
+                    },
+                    "survey": {
+                        "global": settings.survey_job_global_concurrency,
+                        "per_user": settings.survey_job_per_user_concurrency,
+                        "per_worker": settings.survey_job_worker_concurrency,
+                    },
                 },
             }
         finally:
@@ -464,6 +490,7 @@ def smoke(json_output: bool) -> None:
         click.echo(json.dumps(payload, separators=(",", ":"), sort_keys=True))
     else:
         click.echo("Survey production smoke checks passed.")
+        _echo_concurrency(payload["concurrency"])
 
 
 __all__ = ["survey_group"]

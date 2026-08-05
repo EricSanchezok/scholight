@@ -691,13 +691,6 @@
   flex-direction: column;
   gap: 8px;
 }
-.accountIntro > p {
-  margin: 0 0 4px;
-  color: var(--brand);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-}
 .accountIntro h1 {
   margin: 0;
   font-family: var(--font-display);
@@ -738,89 +731,64 @@
 .accountSectionBody {
   min-width: 0;
 }
-.accountForm {
-  display: flex;
-  width: min(560px, 100%);
-  min-height: 212px;
-  flex-direction: column;
-  align-items: flex-start;
-}
-.accountForm label {
-  display: flex;
-  width: min(560px, 100%);
-  color: var(--muted-soft);
-  flex-direction: column;
-  gap: 8px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-.accountForm input,
-.passwordForm input {
-  width: 100%;
-  height: 48px;
-  padding: 0 13px;
-  border: 1px solid var(--line);
-  border-radius: 2px;
-  color: var(--ink);
-  background: var(--surface);
-  font: 13px var(--font-ui);
-}
-.accountForm > div {
-  margin-top: 28px;
-}
-.accountForm > div p {
-  margin: 12px 0 0;
-  color: var(--muted);
-  font-size: 13px;
-}
-.accountForm > button,
-.passwordForm > button {
-  width: 160px;
-  height: 44px;
-  min-height: 44px;
-  padding: 0 16px;
-  border-radius: 2px;
-  font-size: 12px;
-}
-.accountForm > button {
-  margin: auto 0 0 auto;
-}
-.passwordForm {
+.profileSummary {
   display: grid;
   width: min(560px, 100%);
-  min-height: 250px;
-  grid-template-columns: repeat(2, minmax(0, 270px));
+  min-height: 180px;
+  grid-template-columns: auto minmax(0, 1fr);
   align-content: start;
-  gap: 24px 20px;
+  align-items: center;
+  gap: 0 20px;
 }
-.passwordForm label {
-  display: block;
+.profileIdentity {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
 }
-.passwordForm .fullField {
-  grid-column: 1 / -1;
+.profileIdentity strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 600;
 }
-.passwordForm small {
-  display: block;
-  margin-top: 5px;
-  color: var(--danger);
-  font-size: 11px;
+.profileIdentity span {
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
 }
-.passwordHint {
-  margin: 0;
+.profileSummary > p {
+  margin: 28px 0 0;
   color: var(--muted);
   grid-column: 1 / -1;
-  font-size: 12px;
+  font-size: 13px;
+  line-height: 1.6;
 }
-.passwordForm .formMessageError {
-  margin: 0;
+.accountCenterLink {
+  display: inline-flex;
+  width: fit-content;
+  min-height: 44px;
+  margin-top: 10px;
+  color: var(--brand);
   grid-column: 1 / -1;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
 }
-.passwordForm > button {
-  margin: 6px 0 0 auto;
-  grid-column: 1 / -1;
-  justify-self: end;
+.accountCenterLink:hover {
+  color: var(--brand-link);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.accountCenterLink svg {
+  width: 16px;
+  height: 16px;
 }
 .sessionList {
   display: flex;

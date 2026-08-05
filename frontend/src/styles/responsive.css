@@ -368,17 +368,8 @@
   .accountSection:first-of-type {
     padding-top: 4px;
   }
-  .accountForm {
-    min-height: 230px;
-  }
-  .passwordForm {
-    grid-template-columns: 1fr;
-  }
-  .passwordForm .fullField,
-  .passwordHint,
-  .passwordForm .formMessageError,
-  .passwordForm > button {
-    grid-column: 1;
+  .profileSummary {
+    min-height: 0;
   }
   .adminLookup {
     grid-template-columns: 1fr;

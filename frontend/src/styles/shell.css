@@ -71,10 +71,12 @@
 .accountTrigger:hover {
   background: var(--surface-muted);
 }
-.avatar {
+.sharedAvatar {
   display: grid;
   width: 28px;
   height: 28px;
+  overflow: hidden;
+  flex: 0 0 auto;
   border-radius: 50%;
   color: var(--on-brand);
   background: var(--brand);
@@ -82,6 +84,16 @@
   font-size: 10px;
   font-weight: 500;
   letter-spacing: 0.04em;
+}
+.sharedAvatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.sharedAvatarProfile {
+  width: 64px;
+  height: 64px;
+  font-size: 18px;
 }
 .accountName {
   max-width: 150px;

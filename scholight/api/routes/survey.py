@@ -261,9 +261,9 @@ def _progress_response(snapshot: SurveyProgressSnapshot) -> SurveyProgressRespon
     if snapshot.cancel_requested_at is not None and snapshot.status == "running":
         stage = "cancelling"
     max_slots = (
-        settings.survey_draft_concurrency
+        settings.survey_draft_global_concurrency
         if snapshot.queue_kind == "draft"
-        else settings.survey_job_concurrency
+        else settings.survey_job_global_concurrency
     )
     queue = (
         SurveyQueueResponse(

@@ -126,6 +126,11 @@ export async function prefetchPrivateDestination(
     }),
     queryClient.prefetchQuery({
       ...common,
+      queryKey: queryKeys.avatar,
+      queryFn: accountApi.avatar,
+    }),
+    queryClient.prefetchQuery({
+      ...common,
       queryKey: queryKeys.sessions,
       queryFn: accountApi.sessions,
     }),

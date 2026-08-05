@@ -19,6 +19,7 @@ export const queryKeys = {
   surveyReport: (surveyId: string) => [...surveyRoot, surveyId, "report"] as const,
   surveyArtifacts: (surveyId: string) => [...surveyRoot, surveyId, "artifacts"] as const,
   profile: [...privateRoot, "profile"] as const,
+  avatar: [...privateRoot, "avatar"] as const,
   quotas: [...privateRoot, "quotas"] as const,
   accessKeys: [...privateRoot, "access-keys"] as const,
   usageSummary: [...privateRoot, "usage", "summary"] as const,

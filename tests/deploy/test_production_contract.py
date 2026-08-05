@@ -160,6 +160,118 @@ def test_active_workflows_are_oidc_manifest_and_digest_driven() -> None:
     assert 'expected_confirmation="${OPERATION^^} SCHOLIGHT PRODUCTION"' in release
 
 
+def test_survey_capacity_contract_is_explicit_and_staged() -> None:
+    runtime = (ECS / "scholight-production.yml").read_text(encoding="utf-8")
+    workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+    example = yaml.safe_load(
+        (ECS / "production.parameters.example.json").read_text(encoding="utf-8")
+    )
+    draft_task = runtime.split("  SurveyDraftTaskDefinition:", maxsplit=1)[1].split(
+        "  SurveyTaskDefinition:", maxsplit=1
+    )[0]
+    full_task = runtime.split("  SurveyTaskDefinition:", maxsplit=1)[1].split(
+        "  MigrationTaskDefinition:", maxsplit=1
+    )[0]
+
+    assert 'SCHOLIGHT_SURVEY_DRAFT_GLOBAL_CONCURRENCY, Value: "64"' in draft_task
+    assert 'SCHOLIGHT_SURVEY_DRAFT_PER_USER_CONCURRENCY, Value: "8"' in draft_task
+    assert 'SCHOLIGHT_SURVEY_DRAFT_WORKER_CONCURRENCY, Value: "8"' in draft_task
+    assert 'SCHOLIGHT_PG_POOL_MIN_SIZE, Value: "1"' in draft_task
+    assert 'SCHOLIGHT_PG_POOL_MAX_SIZE, Value: "4"' in draft_task
+    assert 'SCHOLIGHT_SURVEY_JOB_GLOBAL_CONCURRENCY, Value: "16"' in full_task
+    assert 'SCHOLIGHT_SURVEY_JOB_PER_USER_CONCURRENCY, Value: "4"' in full_task
+    assert 'SCHOLIGHT_SURVEY_JOB_WORKER_CONCURRENCY, Value: "1"' in full_task
+    assert 'SCHOLIGHT_PG_POOL_MIN_SIZE, Value: "1"' in full_task
+    assert 'SCHOLIGHT_PG_POOL_MAX_SIZE, Value: "2"' in full_task
+    assert re.search(r"Name: SCHOLIGHT_SURVEY_DRAFT_CONCURRENCY(?:,|\s*})", runtime) is None
+    assert re.search(r"Name: SCHOLIGHT_SURVEY_JOB_CONCURRENCY(?:,|\s*})", runtime) is None
+
+    assert "SurveyDraftMaxTasks:" in runtime
+    assert "MaxValue: 8" in runtime
+    assert "SurveyFullMaxTasks:" in runtime
+    assert "MaxValue: 16" in runtime
+    assert example["SurveyDraftMaxTasks"] == 1
+    assert example["SurveyFullMaxTasks"] == 1
+    assert "options: [1/1, 2/2, 4/4, 8/8, 8/16]" in workflow
+    assert "1/1|2/2|4/4|8/8|8/16" in workflow
+    assert "scripts/check_survey_capacity_stage.py" in workflow
+
+
+def test_survey_worker_autoscaling_and_protection_are_bounded() -> None:
+    runtime = (ECS / "scholight-production.yml").read_text(encoding="utf-8")
+    foundation = (ECS / "scholight-foundation.yml").read_text(encoding="utf-8")
+
+    draft_scaling = runtime.split("  SurveyDraftBacklogScalingPolicy:", maxsplit=1)[1].split(
+        "  SurveyFullScalableTarget:", maxsplit=1
+    )[0]
+    full_scaling = runtime.split("  SurveyFullBacklogScalingPolicy:", maxsplit=1)[1].split(
+        "  IngestSchedule:", maxsplit=1
+    )[0]
+    assert "TargetValue: 8" in draft_scaling
+    assert "SurveyDraftOutstanding" in draft_scaling
+    assert "TargetValue: 1" in full_scaling
+    assert "SurveyJobOutstanding" in full_scaling
+    for policy in (draft_scaling, full_scaling):
+        assert "ScaleOutCooldown: 60" in policy
+        assert "ScaleInCooldown: 900" in policy
+        assert "RunningTaskCount" in policy
+        assert "backlog_per_task" in policy
+
+    survey_role = runtime.split("  SurveyTaskRole:", maxsplit=1)[1].split(
+        "  SchedulerRole:", maxsplit=1
+    )[0]
+    assert "ecs:GetTaskProtection" in survey_role
+    assert "ecs:UpdateTaskProtection" in survey_role
+    deploy_role = foundation.split("  ProductionDeployRole:", maxsplit=1)[1].split(
+        "  DatabaseDeployRole:", maxsplit=1
+    )[0]
+    assert "cloudwatch:GetMetricStatistics" in deploy_role
+    assert "rds:DescribeDBInstances" in deploy_role
+    assert "servicequotas:GetServiceQuota" in deploy_role
+
+
+def test_survey_capacity_observability_has_no_identifier_dimensions() -> None:
+    runtime = (ECS / "scholight-production.yml").read_text(encoding="utf-8")
+
+    for metric in (
+        "SurveyDraftOldestQueuedAge",
+        "SurveyJobOldestQueuedAge",
+        "SurveyDraftUsersAtConcurrencyLimit",
+        "SurveyJobUsersAtConcurrencyLimit",
+        "SurveyDraftClaimLatency",
+        "SurveyDraftHeartbeatLatency",
+        "SurveyJobClaimLatency",
+        "SurveyJobHeartbeatLatency",
+        "SurveyTaskProtectionFailure",
+        "SurveyProviderThrottled",
+    ):
+        assert metric in runtime
+    assert "SurveyDraftProviderThrottleAlarm:" in runtime
+    assert "SurveyFullProviderThrottleAlarm:" in runtime
+    assert "IF(jobs>0,100*throttled/jobs,0)" in runtime
+    assert runtime.count("Threshold: 100") >= 2
+    assert "MetricName: CPUUtilization" in runtime
+    assert "MetricName: FreeableMemory" in runtime
+    assert "Threshold: 524288000" in runtime
+    assert "SurveyDraftNoTasksAlarm:" in runtime
+    assert "SurveyFullNoTasksAlarm:" in runtime
+    dashboard = runtime.split("  Dashboard:", maxsplit=1)[1]
+    for forbidden in ("user_id", "survey_id", "topic", "document"):
+        assert forbidden not in dashboard
+
+
+def test_release_defers_active_worker_images_and_gates_final_capacity() -> None:
+    workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+
+    assert "scripts/check_survey_worker_update.py" in workflow
+    assert "SurveyDraftRunning" in workflow
+    assert "SurveyJobRunning" in workflow
+    assert "SURVEY WORKERS IDLE" in workflow
+    assert "survey_capacity_prerequisites_confirmed" in workflow
+    assert "L-3032A538" in workflow
+    assert "db.t4g.small or larger" in workflow
+
+
 def test_large_runtime_template_uses_bounded_s3_staging_permissions() -> None:
     foundation = (ECS / "scholight-foundation.yml").read_text(encoding="utf-8")
     runtime = (ECS / "scholight-production.yml").read_bytes()
@@ -427,12 +539,28 @@ def test_database_bootstrap_is_reviewed_and_ci_exercises_least_privilege_roles()
     assert "GRANT REFERENCES ON TABLE auth.users" in bootstrap
     assert "GRANT SELECT, INSERT, UPDATE ON TABLE auth.users" in bootstrap
     assert "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE auth.users" not in bootstrap
+    assert "GRANT SELECT ON TABLE auth.user_avatars" in bootstrap
+    assert "INSERT, UPDATE, DELETE ON TABLE auth.user_avatars" not in bootstrap
     assert "REVOKE ALL ON TABLE auth.schema_migrations" in bootstrap
     assert "REVOKE ALL ON TABLE scholight.schema_migrations" in bootstrap
     assert "deploy/ecs/database-bootstrap.sql" in workflow
     assert "SCHOLIGHT_PG_USER=scholight_migrator" in workflow
     assert "-U scholight_app" in workflow
     assert "CREATE TABLE public.app_role_must_not_create" in workflow
+
+
+def test_api_can_only_read_shared_profile_avatars() -> None:
+    production = (ECS / "scholight-production.yml").read_text(encoding="utf-8")
+    avatar_policy = production.split("PolicyName: ReadSharedProfileAvatars", maxsplit=1)[1].split(
+        "SurveyTaskRole:", maxsplit=1
+    )[0]
+
+    assert "Action: s3:GetObject" in avatar_policy
+    assert "s3:PutObject" not in avatar_policy
+    assert "s3:DeleteObject" not in avatar_policy
+    assert "Action: kms:Decrypt" in avatar_policy
+    assert "Action: kms:Encrypt" not in avatar_policy
+    assert "SCHOLIGHT_AVATAR_S3_BUCKET" in production
 
 
 def test_runtime_secret_documents_cover_every_external_provider() -> None:

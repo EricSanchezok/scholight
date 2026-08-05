@@ -36,6 +36,23 @@ on:
         default: DISABLED
         type: choice
         options: [DISABLED, ENABLED]
+      survey_capacity_stage:
+        description: Reviewed Draft/Full worker ceiling stage
+        required: true
+        default: 1/1
+        type: choice
+        options: [1/1, 2/2, 4/4, 8/8, 8/16]
+      survey_capacity_prerequisites_confirmed:
+        description: Confirm model, image, and mail provider capacity before Full max 16
+        required: true
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+      survey_workers_idle_confirmation:
+        description: Enter SURVEY WORKERS IDLE only when activity metrics are unavailable
+        required: false
+        default: ""
+        type: string
       confirmation:
         description: Type DEPLOY SCHOLIGHT PRODUCTION or ROLLBACK SCHOLIGHT PRODUCTION
         required: true
@@ -60,6 +77,8 @@ jobs:
           APPLICATION_ENABLED: ${{ inputs.application_enabled }}
           SURVEY_RUNTIME_ENABLED: ${{ inputs.survey_runtime_enabled }}
           SURVEY_PUBLIC_MODE: ${{ inputs.survey_public_mode }}
+          SURVEY_CAPACITY_STAGE: ${{ inputs.survey_capacity_stage }}
+          SURVEY_CAPACITY_PREREQUISITES_CONFIRMED: ${{ inputs.survey_capacity_prerequisites_confirmed }}
           OPERATION: ${{ inputs.operation }}
           CONFIRMATION: ${{ inputs.confirmation }}
         run: |
@@ -72,6 +91,21 @@ jobs:
           fi
           if [[ "$SURVEY_PUBLIC_MODE" == all && "$SURVEY_RUNTIME_ENABLED" != true ]]; then
             echo "Survey cannot be public unless its workers are running" >&2
+            exit 1
+          fi
+          case "$SURVEY_CAPACITY_STAGE" in
+            1/1|2/2|4/4|8/8|8/16) ;;
+            *)
+              echo "Survey capacity must use a reviewed Draft/Full stage" >&2
+              exit 1
+              ;;
+          esac
+          survey_draft_max_tasks=${SURVEY_CAPACITY_STAGE%/*}
+          survey_full_max_tasks=${SURVEY_CAPACITY_STAGE#*/}
+          echo "SURVEY_DRAFT_MAX_TASKS=$survey_draft_max_tasks" >> "$GITHUB_ENV"
+          echo "SURVEY_FULL_MAX_TASKS=$survey_full_max_tasks" >> "$GITHUB_ENV"
+          if [[ "$survey_full_max_tasks" == 16 && "$SURVEY_CAPACITY_PREREQUISITES_CONFIRMED" != true ]]; then
+            echo "Full Survey max 16 requires confirmed external provider capacity" >&2
             exit 1
           fi
       - name: Check out exact release source
@@ -95,6 +129,131 @@ jobs:
           python scripts/release_manifest.py verify \
             --manifest release-manifest.json \
             --expected-release-sha "$RELEASE_SHA"
+      - name: Verify final Survey capacity prerequisites
+        if: inputs.survey_capacity_stage == '8/16'
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION }}
+        run: |
+          db_class=$(aws rds describe-db-instances \
+            --db-instance-identifier sanchezcloud-pg \
+            --query 'DBInstances[0].DBInstanceClass' \
+            --output text)
+          case "$db_class" in
+            *.nano|*.micro)
+              echo "Full Survey max 16 requires RDS db.t4g.small or larger; found $db_class" >&2
+              exit 1
+              ;;
+          esac
+          quota=$(aws service-quotas get-service-quota \
+            --service-code fargate \
+            --quota-code L-3032A538 \
+            --query 'Quota.Value' \
+            --output text)
+          python - "$quota" <<'PY'
+          import sys
+          if float(sys.argv[1]) < 64:
+              raise SystemExit("Fargate On-Demand vCPU quota must be at least 64")
+          PY
+      - name: Enforce the reviewed Survey capacity ladder
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          DESIRED_STAGE: ${{ inputs.survey_capacity_stage }}
+        run: |
+          desired_draft=${DESIRED_STAGE%/*}
+          desired_full=${DESIRED_STAGE#*/}
+          stack_error=$(mktemp)
+          set +e
+          stack=$(aws cloudformation describe-stacks \
+            --stack-name sanchezcloud-scholight-production \
+            --output json 2>"$stack_error")
+          stack_status=$?
+          set -e
+          if [[ "$stack_status" -ne 0 ]]; then
+            if grep -q "does not exist" "$stack_error"; then
+              rm -f "$stack_error"
+              if [[ "$DESIRED_STAGE" != "1/1" ]]; then
+                echo "The first Survey capacity deployment must remain at 1/1" >&2
+                exit 1
+              fi
+              exit 0
+            fi
+            cat "$stack_error" >&2
+            rm -f "$stack_error"
+            exit "$stack_status"
+          fi
+          rm -f "$stack_error"
+          current_draft=$(jq -r \
+            '([.Stacks[0].Parameters[] | select(.ParameterKey == "SurveyDraftMaxTasks") | .ParameterValue][0] // "1")' \
+            <<<"$stack")
+          current_full=$(jq -r \
+            '([.Stacks[0].Parameters[] | select(.ParameterKey == "SurveyFullMaxTasks") | .ParameterValue][0] // "1")' \
+            <<<"$stack")
+          python scripts/check_survey_capacity_stage.py \
+            --current-draft "$current_draft" \
+            --current-full "$current_full" \
+            --desired-draft "$desired_draft" \
+            --desired-full "$desired_full"
+      - name: Defer active Survey worker image replacements
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          IDLE_CONFIRMATION: ${{ inputs.survey_workers_idle_confirmation }}
+        run: |
+          desired_image=$(jq -r .images.survey release-manifest.json)
+          stack_error=$(mktemp)
+          set +e
+          stack=$(aws cloudformation describe-stacks \
+            --stack-name sanchezcloud-scholight-production \
+            --output json 2>"$stack_error")
+          stack_status=$?
+          set -e
+          if [[ "$stack_status" -ne 0 ]]; then
+            if grep -q "does not exist" "$stack_error"; then
+              rm -f "$stack_error"
+              exit 0
+            fi
+            cat "$stack_error" >&2
+            rm -f "$stack_error"
+            exit "$stack_status"
+          fi
+          rm -f "$stack_error"
+          current_image=$(jq -r '.Stacks[0].Parameters[] | select(.ParameterKey == "SurveyImage") | .ParameterValue' <<<"$stack")
+          runtime_enabled=$(jq -r '.Stacks[0].Parameters[] | select(.ParameterKey == "SurveyRuntimeEnabled") | .ParameterValue' <<<"$stack")
+          if [[ "$current_image" == "$desired_image" || "$runtime_enabled" != true ]]; then
+            exit 0
+          fi
+          end_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          start_time=$(date -u -d '10 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+          draft=$(aws cloudwatch get-metric-statistics \
+            --namespace Scholight/Production \
+            --metric-name SurveyDraftRunning \
+            --dimensions Name=service,Value=survey-draft-worker \
+            --start-time "$start_time" --end-time "$end_time" \
+            --period 60 --statistics Maximum)
+          full=$(aws cloudwatch get-metric-statistics \
+            --namespace Scholight/Production \
+            --metric-name SurveyJobRunning \
+            --dimensions Name=service,Value=survey-full-worker \
+            --start-time "$start_time" --end-time "$end_time" \
+            --period 60 --statistics Maximum)
+          draft_running=$(jq '[.Datapoints[].Maximum] | max // 0' <<<"$draft")
+          full_running=$(jq '[.Datapoints[].Maximum] | max // 0' <<<"$full")
+          metric_args=()
+          if [[ $(jq '.Datapoints | length' <<<"$draft") -gt 0 && $(jq '.Datapoints | length' <<<"$full") -gt 0 ]]; then
+            metric_args+=(--metrics-observed)
+          fi
+          selected_image=$(python scripts/check_survey_worker_update.py \
+            --current-image "$current_image" \
+            --desired-image "$desired_image" \
+            --runtime-enabled \
+            "${metric_args[@]}" \
+            --draft-running "$draft_running" \
+            --full-running "$full_running" \
+            --idle-confirmation "$IDLE_CONFIRMATION")
+          echo "SURVEY_IMAGE_OVERRIDE=$selected_image" >> "$GITHUB_ENV"
+          if [[ "$selected_image" != "$desired_image" ]]; then
+            echo "SURVEY_IMAGE_DEFERRED=true" >> "$GITHUB_ENV"
+            echo "Survey image update deferred; active workers keep the current digest." >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Deploy digest-qualified ECS release
         env:
           AWS_REGION: ${{ vars.AWS_REGION }}
@@ -114,7 +273,7 @@ jobs:
           api_image=$(jq -r .images.api release-manifest.json)
           extract_image=$(jq -r .images.extract release-manifest.json)
           ingest_image=$(jq -r .images.ingest release-manifest.json)
-          survey_image=$(jq -r .images.survey release-manifest.json)
+          survey_image=${SURVEY_IMAGE_OVERRIDE:-$(jq -r .images.survey release-manifest.json)}
           aws cloudformation deploy \
             --stack-name sanchezcloud-scholight-production \
             --template-file deploy/ecs/scholight-production.yml \
@@ -135,6 +294,8 @@ jobs:
               ApplicationEnabled="$APPLICATION_ENABLED" \
               SurveyRuntimeEnabled="$SURVEY_RUNTIME_ENABLED" \
               SurveyPublicMode="$SURVEY_PUBLIC_MODE" \
+              SurveyDraftMaxTasks="$SURVEY_DRAFT_MAX_TASKS" \
+              SurveyFullMaxTasks="$SURVEY_FULL_MAX_TASKS" \
               SchedulerState="$SCHEDULER_STATE"
       - name: Wait for services to stabilize
         run: |
@@ -180,5 +341,8 @@ jobs:
             echo "- Application: \`${{ inputs.application_enabled }}\`"
             echo "- Survey runtime: \`${{ inputs.survey_runtime_enabled }}\`"
             echo "- Survey public mode: \`${{ inputs.survey_public_mode }}\`"
+            echo "- Survey capacity stage (Draft/Full): \`${{ inputs.survey_capacity_stage }}\`"
+            echo "- Final capacity prerequisites confirmed: \`${{ inputs.survey_capacity_prerequisites_confirmed }}\`"
+            echo "- Survey image deferred: \`${SURVEY_IMAGE_DEFERRED:-false}\`"
             echo "- Schedulers: \`${{ inputs.scheduler_state }}\`"
           } >> "$GITHUB_STEP_SUMMARY"

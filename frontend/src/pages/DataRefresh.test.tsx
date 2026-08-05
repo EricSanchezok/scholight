@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { accessKeyApi, accountApi, authApi, historyApi, usageApi } from "../api/domain";
+import { accessKeyApi, accountApi, historyApi, usageApi } from "../api/domain";
 import { AccessKeysPage } from "./AccessKeysPage";
 import { AccountPage } from "./AccountPage";
 import { HistoryPage } from "./HistoryPage";
@@ -18,14 +18,11 @@ vi.mock("../api/domain", () => ({
     revoke: vi.fn(),
   },
   accountApi: {
+    avatar: vi.fn(),
     profile: vi.fn(),
-    updateProfile: vi.fn(),
     sessions: vi.fn(),
     revokeSession: vi.fn(),
     revokeOtherSessions: vi.fn(),
-  },
-  authApi: {
-    changePassword: vi.fn(),
   },
   historyApi: {
     list: vi.fn(),
@@ -75,8 +72,8 @@ describe("private data refresh controls", () => {
       status: "active",
       email_verified: true,
     });
+    vi.mocked(accountApi.avatar).mockReset().mockRejectedValue(new Error("No avatar"));
     vi.mocked(accountApi.sessions).mockReset().mockResolvedValue([]);
-    vi.mocked(authApi.changePassword).mockReset();
     vi.mocked(historyApi.list).mockReset().mockResolvedValue({
       items: [],
       total: 0,
@@ -171,5 +168,16 @@ describe("private data refresh controls", () => {
     await user.click(refresh);
 
     await waitFor(() => expect(accountApi.sessions).toHaveBeenCalledTimes(2));
+  });
+
+  it("keeps the profile read-only and delegates account changes", async () => {
+    renderPage(<AccountPage />);
+
+    const accountCenter = await screen.findByRole("link", {
+      name: "Manage SanchezCloud account",
+    });
+    expect(accountCenter).toHaveAttribute("href", "https://myaccount.sanchezcloud.net");
+    expect(screen.queryByRole("button", { name: "Save changes" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Change password" })).not.toBeInTheDocument();
   });
 });

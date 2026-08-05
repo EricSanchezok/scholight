@@ -29,12 +29,19 @@ from scholight.db.queries_survey import (
     settle_survey_execution,
     update_survey_job_progress,
 )
+from scholight.db.queries_survey_capacity import get_survey_capacity_snapshot
 from scholight.logging.emf import emit_emf
 from scholight.survey.artifacts import SurveyArtifactStore
+from scholight.survey.capacity import (
+    SurveyCapacityReporter,
+    SurveyTaskProtection,
+    emit_survey_database_latency,
+)
 from scholight.survey.cleanup_worker import serve_artifact_cleanup
 from scholight.survey.contracts import SurveyLeaseLostError
 from scholight.survey.diagnostics import SurveyDiagnostics
 from scholight.survey.email_notifications import AliyunSurveyEmailSender
+from scholight.survey.metrics import is_provider_throttled
 from scholight.survey.notification_worker import SurveyEmailSender, serve_email_notifications
 from scholight.survey.process import (
     ProcessControl,
@@ -379,6 +386,10 @@ def _emit_result_metrics(result: SurveyExecutionResult) -> None:
         metrics={
             "SurveyContractAnomaly": (contract_errors, "Count"),
             "SurveyRuntimeFailure": (1 if result.outcome == "failed" else 0, "Count"),
+            "SurveyProviderThrottled": (
+                1 if is_provider_throttled(result.error_code) else 0,
+                "Count",
+            ),
             "SurveyToolFailure": (tool_failures, "Count"),
             "SurveyDiagnosticsWriteFailure": (write_failures, "Count"),
             "SurveyLastActivityAge": (last_activity_age, "Seconds"),
@@ -736,6 +747,7 @@ async def _heartbeat(
             await asyncio.wait_for(stop.wait(), timeout=settings.survey_heartbeat_seconds)
             return
         except TimeoutError:
+            started_at = time.perf_counter()
             try:
                 state = await heartbeat_survey_job(
                     job_id=job_id,
@@ -751,6 +763,13 @@ async def _heartbeat(
                 if time.monotonic() - last_owned < settings.survey_lease_seconds:
                     continue
                 state = "lost"
+            finally:
+                emit_survey_database_latency(
+                    queue="survey",
+                    service="survey-full-worker",
+                    operation="heartbeat",
+                    started_at=started_at,
+                )
             if state == "owned":
                 last_owned = time.monotonic()
                 continue
@@ -935,6 +954,12 @@ async def serve_survey_worker(*, email_sender: SurveyEmailSender | None = None) 
         endpoint_url=settings.survey_s3_endpoint_url,
     )
     active: set[asyncio.Task[None]] = set()
+    protection = SurveyTaskProtection(service="survey-full-worker")
+    capacity_reporter = SurveyCapacityReporter(
+        queue="survey",
+        service="survey-full-worker",
+        per_user_concurrency=settings.survey_job_per_user_concurrency,
+    )
     cleanup_supervisor = asyncio.create_task(serve_artifact_cleanup())
     if email_sender is None:
         email_sender = AliyunSurveyEmailSender(
@@ -949,7 +974,8 @@ async def serve_survey_worker(*, email_sender: SurveyEmailSender | None = None) 
     logger.info(
         "survey_supervisor_started",
         rcm_version=RCM_VERSION,
-        concurrency=settings.survey_job_concurrency,
+        global_concurrency=settings.survey_job_global_concurrency,
+        worker_concurrency=settings.survey_job_worker_concurrency,
         per_user_concurrency=settings.survey_job_per_user_concurrency,
         heartbeat_seconds=settings.survey_heartbeat_seconds,
         lease_seconds=settings.survey_lease_seconds,
@@ -957,6 +983,7 @@ async def serve_survey_worker(*, email_sender: SurveyEmailSender | None = None) 
     try:
         while True:
             active = {task for task in active if not task.done()}
+            await capacity_reporter.emit_if_due()
             if cleanup_supervisor.done():
                 try:
                     cleanup_supervisor.result()
@@ -981,17 +1008,40 @@ async def serve_survey_worker(*, email_sender: SurveyEmailSender | None = None) 
                     logger.exception("survey_recovery_cycle_failed")
                 last_recovery = now
             claimed = False
-            while len(active) < settings.survey_job_concurrency:
+            claims_allowed = await protection.ensure() if active else not protection.enabled
+            if not active and protection.enabled:
+                try:
+                    capacity = await get_survey_capacity_snapshot(
+                        queue="survey",
+                        per_user_concurrency=settings.survey_job_per_user_concurrency,
+                    )
+                except Exception:
+                    logger.exception("survey_claim_preflight_failed")
+                else:
+                    if capacity.queued > 0:
+                        claims_allowed = await protection.ensure()
+                    else:
+                        await protection.release()
+            while claims_allowed and len(active) < settings.survey_job_worker_concurrency:
                 worker_id = uuid4()
+                started_at = time.perf_counter()
                 try:
                     job = await claim_survey_job(
                         worker_id=worker_id,
                         lease_seconds=settings.survey_lease_seconds,
+                        global_concurrency=settings.survey_job_global_concurrency,
                         per_user_concurrency=settings.survey_job_per_user_concurrency,
                     )
                 except Exception:
                     logger.exception("survey_claim_cycle_failed")
                     break
+                finally:
+                    emit_survey_database_latency(
+                        queue="survey",
+                        service="survey-full-worker",
+                        operation="claim",
+                        started_at=started_at,
+                    )
                 if job is None:
                     break
                 task = asyncio.create_task(
@@ -1016,6 +1066,7 @@ async def serve_survey_worker(*, email_sender: SurveyEmailSender | None = None) 
             *active,
             return_exceptions=True,
         )
+        await protection.release()
         logger.info("survey_supervisor_stopped")
 
 

@@ -10,6 +10,7 @@ export type SearchStrength = ApiSchemas["SearchStrength"];
 export type HistoryItem = ApiSchemas["PublicSearchHistoryItem"];
 export type HistoryPage = ApiSchemas["PublicSearchHistoryPage"];
 export type UserProfile = ApiSchemas["UserPublic"];
+export type AvatarView = ApiSchemas["AvatarView"];
 export type AccessTokenResponse = ApiSchemas["AccessTokenResponse"];
 export type LoginRequest = ApiSchemas["LoginRequest"];
 export type RegisterRequest = ApiSchemas["RegisterRequest"];

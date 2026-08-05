@@ -6,7 +6,7 @@ import asyncio
 import json
 from dataclasses import replace
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -232,7 +232,8 @@ async def test_draft_supervisor_keeps_execution_bounded(
     at_capacity = asyncio.Event()
     all_started = asyncio.Event()
     release = asyncio.Event()
-    monkeypatch.setattr(settings, "survey_draft_concurrency", 3)
+    monkeypatch.setattr(settings, "survey_draft_worker_concurrency", 3)
+    monkeypatch.setattr(settings, "survey_draft_global_concurrency", 64)
     monkeypatch.setattr(settings, "survey_draft_per_user_concurrency", 2)
 
     async def _claim(**kwargs: object) -> SurveyDraft | None:
@@ -273,6 +274,45 @@ async def test_draft_supervisor_keeps_execution_bounded(
             await supervisor
 
     assert maximum_running == 3
+
+
+@pytest.mark.asyncio
+async def test_draft_supervisor_stops_claiming_when_ecs_protection_fails() -> None:
+    attempted = asyncio.Event()
+
+    async def _ensure() -> bool:
+        attempted.set()
+        return False
+
+    protection = MagicMock(enabled=True)
+    protection.ensure = AsyncMock(side_effect=_ensure)
+    protection.release = AsyncMock()
+    snapshot = MagicMock(queued=1)
+    claim = AsyncMock()
+    reporter = MagicMock()
+    reporter.emit_if_due = AsyncMock()
+
+    with (
+        patch("scholight.survey.draft_worker.SurveyTaskProtection", return_value=protection),
+        patch("scholight.survey.draft_worker.SurveyCapacityReporter", return_value=reporter),
+        patch(
+            "scholight.survey.draft_worker.get_survey_capacity_snapshot",
+            new=AsyncMock(return_value=snapshot),
+        ),
+        patch("scholight.survey.draft_worker.claim_survey_draft", claim),
+        patch(
+            "scholight.survey.draft_worker.recover_expired_survey_drafts",
+            new_callable=AsyncMock,
+        ),
+        patch("scholight.survey.draft_worker._IDLE_SECONDS", 0.001),
+    ):
+        supervisor = asyncio.create_task(serve_survey_draft_worker())
+        await asyncio.wait_for(attempted.wait(), timeout=1)
+        supervisor.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await supervisor
+
+    claim.assert_not_awaited()
 
 
 @pytest.mark.asyncio

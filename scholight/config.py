@@ -104,6 +104,11 @@ class Settings(BaseSettings):
     pg_pool_command_timeout: float = 10.0
     pg_pool_max_inactive_lifetime: float = 300.0
 
+    # ── Shared SanchezCloud avatar (read-only in Scholight) ──
+    avatar_s3_bucket: str = ""
+    avatar_s3_endpoint_url: str | None = None
+    avatar_url_ttl_seconds: int = Field(default=900, ge=60, le=3600)
+
     # ── JWT ──
     auth_jwt_secret: str = ""
     jwt_secret: str = ""
@@ -164,24 +169,36 @@ class Settings(BaseSettings):
     survey_daily_limit: int = Field(default=3, ge=1, le=100)
     survey_draft_timeout_seconds: int = Field(default=1800, ge=60, le=3600)
     survey_job_timeout_seconds: int = Field(default=86400, ge=60, le=172800)
-    survey_draft_concurrency: int = Field(default=8, ge=1, le=64)
-    survey_job_concurrency: int = Field(default=2, ge=1, le=16)
-    survey_draft_per_user_concurrency: int = Field(default=2, ge=1, le=64)
-    survey_job_per_user_concurrency: int = Field(default=1, ge=1, le=16)
+    survey_draft_global_concurrency: int = Field(default=64, ge=1, le=64)
+    survey_job_global_concurrency: int = Field(default=16, ge=1, le=16)
+    survey_draft_per_user_concurrency: int = Field(default=8, ge=1, le=64)
+    survey_job_per_user_concurrency: int = Field(default=4, ge=1, le=16)
+    survey_draft_worker_concurrency: int = Field(default=8, ge=1, le=64)
+    survey_job_worker_concurrency: int = Field(default=1, ge=1, le=16)
     survey_heartbeat_seconds: int = Field(default=15, ge=5, le=60)
     survey_lease_seconds: int = Field(default=120, ge=30, le=600)
 
     @model_validator(mode="after")
     def _validate_survey_concurrency(self) -> "Settings":
-        if self.survey_draft_per_user_concurrency > self.survey_draft_concurrency:
+        if self.survey_draft_per_user_concurrency > self.survey_draft_global_concurrency:
             raise ValueError(
                 "SCHOLIGHT_SURVEY_DRAFT_PER_USER_CONCURRENCY must not exceed "
-                "SCHOLIGHT_SURVEY_DRAFT_CONCURRENCY"
+                "SCHOLIGHT_SURVEY_DRAFT_GLOBAL_CONCURRENCY"
             )
-        if self.survey_job_per_user_concurrency > self.survey_job_concurrency:
+        if self.survey_job_per_user_concurrency > self.survey_job_global_concurrency:
             raise ValueError(
                 "SCHOLIGHT_SURVEY_JOB_PER_USER_CONCURRENCY must not exceed "
-                "SCHOLIGHT_SURVEY_JOB_CONCURRENCY"
+                "SCHOLIGHT_SURVEY_JOB_GLOBAL_CONCURRENCY"
+            )
+        if self.survey_draft_worker_concurrency > self.survey_draft_global_concurrency:
+            raise ValueError(
+                "SCHOLIGHT_SURVEY_DRAFT_WORKER_CONCURRENCY must not exceed "
+                "SCHOLIGHT_SURVEY_DRAFT_GLOBAL_CONCURRENCY"
+            )
+        if self.survey_job_worker_concurrency > self.survey_job_global_concurrency:
+            raise ValueError(
+                "SCHOLIGHT_SURVEY_JOB_WORKER_CONCURRENCY must not exceed "
+                "SCHOLIGHT_SURVEY_JOB_GLOBAL_CONCURRENCY"
             )
         if self.survey_heartbeat_seconds * 2 >= self.survey_lease_seconds:
             raise ValueError(

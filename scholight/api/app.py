@@ -169,6 +169,7 @@ def create_app() -> FastAPI:
     from scholight.api.routes.admin import router as admin_router
     from scholight.api.routes.admin_analytics import router as admin_analytics_router
     from scholight.api.routes.admin_operations import router as admin_operations_router
+    from scholight.api.routes.avatar import get_avatar_read_router
     from scholight.api.routes.capabilities import router as capabilities_router
     from scholight.api.routes.extract import router as extract_router
     from scholight.api.routes.search import router as search_router
@@ -205,6 +206,22 @@ def create_app() -> FastAPI:
     user_manager = UserManager(db=db, email_sender=email_sender, config=auth_config)
     wire_dependencies(db=db, auth_config=auth_config, user_manager=user_manager)
 
+    avatar_reader = None
+    if settings.avatar_s3_bucket.strip():
+        import boto3
+        from sanchezcloud_identity.avatar_manager import AvatarManager
+        from sanchezcloud_identity.avatar_s3 import S3AvatarStorage
+        from sanchezcloud_identity.db.avatar_asyncpg import AsyncpgAvatarDatabase
+
+        avatar_reader = AvatarManager(
+            AsyncpgAvatarDatabase(pool_factory=lambda: get_pool()),
+            S3AvatarStorage(
+                client=boto3.client("s3", endpoint_url=settings.avatar_s3_endpoint_url),
+                bucket=settings.avatar_s3_bucket,
+            ),
+            url_ttl_seconds=settings.avatar_url_ttl_seconds,
+        )
+
     app.include_router(
         get_auth_router(
             user_manager=user_manager,
@@ -223,6 +240,14 @@ def create_app() -> FastAPI:
     )
     app.include_router(
         get_user_router(user_manager=user_manager, get_current_user=get_current_user),
+        prefix="/user",
+        tags=["user"],
+    )
+    app.include_router(
+        get_avatar_read_router(
+            avatar_reader=avatar_reader,
+            get_current_user=get_current_user,
+        ),
         prefix="/user",
         tags=["user"],
     )

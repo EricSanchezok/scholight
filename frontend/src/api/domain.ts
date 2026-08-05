@@ -35,6 +35,7 @@ import type {
   SurveyProgress,
   SurveyView,
   PublicCapabilities,
+  AvatarView,
 } from "./types";
 import { productConfig } from "../config/product";
 
@@ -65,16 +66,6 @@ export const authApi = {
         body: { token, new_password: newPassword },
       }),
     ),
-  changePassword: (currentPassword: string, newPassword: string) =>
-    unwrap(
-      withAuthRetry(
-        () =>
-          apiClient.POST("/auth/change-password", {
-            body: { current_password: currentPassword, new_password: newPassword },
-          }),
-        "protected",
-      ),
-    ),
   logout: () => unwrap(withAuthRetry(() => apiClient.POST("/auth/logout"), "protected")),
 };
 
@@ -88,15 +79,9 @@ export const capabilitiesApi = {
 };
 
 export const accountApi = {
+  avatar: () => unwrap<AvatarView>(withAuthRetry(() => apiClient.GET("/user/avatar"), "protected")),
   profile: () =>
     unwrap<UserProfile>(withAuthRetry(() => apiClient.GET("/user/profile"), "protected")),
-  updateProfile: (displayName: string | null) =>
-    unwrap<UserProfile>(
-      withAuthRetry(
-        () => apiClient.PATCH("/user/profile", { body: { display_name: displayName } }),
-        "protected",
-      ),
-    ),
   sessions: () =>
     unwrap<Session[]>(withAuthRetry(() => apiClient.GET("/auth/sessions"), "protected")),
   revokeSession: (sessionId: number) =>

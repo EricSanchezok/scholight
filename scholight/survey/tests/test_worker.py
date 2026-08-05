@@ -752,6 +752,7 @@ def test_result_metrics_use_only_low_cardinality_dimensions() -> None:
     assert failure_call.kwargs["metrics"] == {
         "SurveyContractAnomaly": (1, "Count"),
         "SurveyRuntimeFailure": (1, "Count"),
+        "SurveyProviderThrottled": (0, "Count"),
         "SurveyToolFailure": (2, "Count"),
         "SurveyDiagnosticsWriteFailure": (1, "Count"),
         "SurveyLastActivityAge": (0, "Seconds"),
@@ -825,7 +826,8 @@ async def test_survey_supervisor_keeps_execution_bounded(
     at_capacity = asyncio.Event()
     all_started = asyncio.Event()
     release = asyncio.Event()
-    monkeypatch.setattr(settings, "survey_job_concurrency", 2)
+    monkeypatch.setattr(settings, "survey_job_worker_concurrency", 2)
+    monkeypatch.setattr(settings, "survey_job_global_concurrency", 16)
     monkeypatch.setattr(settings, "survey_job_per_user_concurrency", 1)
 
     async def _claim(**kwargs: object) -> SurveyJob | None:

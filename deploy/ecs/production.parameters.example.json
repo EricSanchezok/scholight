@@ -10,5 +10,7 @@
   "ApplicationEnabled": "false",
   "SurveyRuntimeEnabled": "false",
   "SurveyPublicMode": "off",
+  "SurveyDraftMaxTasks": 1,
+  "SurveyFullMaxTasks": 1,
   "SchedulerState": "DISABLED"
 }

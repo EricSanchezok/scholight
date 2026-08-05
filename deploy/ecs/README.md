@@ -42,6 +42,48 @@ gates:
 These gates are not a compatibility layer. They let operators verify the real
 RCM, artifact, queue, and email boundaries before the first public activation.
 
+Survey capacity has three independent limits. PostgreSQL enforces the global
+and per-user limits atomically across every task; each worker separately bounds
+its local process concurrency:
+
+| Queue | Global hard limit | Per-user limit | Per-worker limit |
+| --- | ---: | ---: | ---: |
+| Draft | 64 | 8 | 8 |
+| Full Survey | 16 | 4 | 1 |
+
+The Full Survey daily quota remains 3 by default and is independent from these
+simultaneous-execution limits. A quota override may permit more daily work but
+never bypasses the per-user concurrency limit. The old ambiguous
+`SCHOLIGHT_SURVEY_DRAFT_CONCURRENCY` and
+`SCHOLIGHT_SURVEY_JOB_CONCURRENCY` names are intentionally unsupported.
+
+In ECS, a worker must establish task scale-in protection before claiming work.
+It refreshes a 30-minute protection period every five minutes while work is
+active and clears protection when idle. If the ECS agent endpoint is present
+but protection cannot be established, the worker fails closed and does not
+claim another task; local workers without `ECS_AGENT_URI` safely skip this
+integration. Each worker also emits aggregate queued, running, outstanding,
+oldest-queue-age, and protection-failure metrics every 30 seconds. These
+metrics contain no user, Survey, topic, or document identifiers.
+
+Autoscaling uses aggregate `outstanding / running ECS tasks` metric math with
+targets of 8 Drafts and 1 Full Survey per task. Scale-out waits 60 seconds;
+scale-in waits 15 minutes so short queue gaps do not terminate expensive
+workers. `SurveyDraftMaxTasks` and `SurveyFullMaxTasks` are deployment ceilings,
+not steady-state counts, and both default to 1. Open capacity in the reviewed
+stages `1/1 -> 2/2 -> 4/4 -> 8/8 -> 8/16`. Before the final stage, the Singapore
+RDS instance must be at least `db.t4g.small`, the Fargate On-Demand vCPU quota
+must be at least 64, and the model, image, and mail provider quotas must be
+confirmed. The production workflow checks AWS capacity automatically and
+requires an explicit operator confirmation for external provider capacity.
+
+Each stage is an observed capacity release, not a configuration-only change.
+Before raising either ceiling again, confirm that there are no OOM or abnormal
+task stops, provider throttling remains below 1%, RDS CPU stays below 60%, RDS
+freeable memory stays above 500 MiB, and Survey claim/heartbeat p95 latency stays
+below 100 ms. The production Dashboard and alarms expose these checks without
+using user or Survey identifiers.
+
 The pre-release prototype migrations, including the Survey quota-strength
 change, were squashed into the single `005_survey.sql` baseline. A developer
 database that applied the abandoned prototype migration chain must recreate
@@ -189,6 +231,8 @@ manual database-production(release SHA)
 
 manual production(release SHA)
   -> verify manifest
+  -> defer a changed Survey image while Draft or Full leases are active
+  -> verify final-stage AWS and provider capacity
   -> deploy digest-qualified runtime stack
   -> wait for every ECS service
   -> external smoke tests
@@ -197,6 +241,16 @@ manual production(release SHA)
 Application rollback selects an older manifest SHA. It does not move an image
 tag, rebuild code, restore a database snapshot, or reverse an additive schema
 migration.
+
+The production workflow reads only aggregate CloudWatch activity metrics before
+replacing a changed Survey worker image. Any active Draft or Full lease keeps
+the current Survey digest while the API, Web, and other safe services continue
+their release. Re-run the same release after the queue becomes idle to apply the
+desired Survey digest. Missing metrics fail closed; after directly confirming that
+both database queues have no active lease, the operator may enter the exact
+one-time phrase `SURVEY WORKERS IDLE`. This confirmation cannot override a
+positive activity metric. The workflow records any deferred digest in its job
+summary so the partial worker rollout cannot be mistaken for a complete one.
 
 ## First cutover
 

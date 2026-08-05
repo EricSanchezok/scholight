@@ -473,6 +473,15 @@ Resources:
                 Action: ecs:DescribeServices
                 Resource: !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:service/sanchezcloud-production/scholight-*
               - Effect: Allow
+                Action: cloudwatch:GetMetricStatistics
+                Resource: "*"
+              - Effect: Allow
+                Action: rds:DescribeDBInstances
+                Resource: !Sub arn:${AWS::Partition}:rds:${AWS::Region}:${AWS::AccountId}:db:sanchezcloud-pg
+              - Effect: Allow
+                Action: servicequotas:GetServiceQuota
+                Resource: "*"
+              - Effect: Allow
                 Action: [s3:GetObject]
                 Resource: !Sub ${ReleaseManifestBucket.Arn}/releases/*
               - Effect: Allow

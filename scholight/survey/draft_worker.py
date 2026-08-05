@@ -12,6 +12,7 @@ from uuid import UUID, uuid4
 import structlog
 
 from scholight.config import settings
+from scholight.db.queries_survey_capacity import get_survey_capacity_snapshot
 from scholight.db.queries_survey_drafts import (
     SurveyDraft,
     SurveyDraftContext,
@@ -22,12 +23,19 @@ from scholight.db.queries_survey_drafts import (
     heartbeat_survey_draft,
     recover_expired_survey_drafts,
 )
+from scholight.logging.emf import emit_emf
+from scholight.survey.capacity import (
+    SurveyCapacityReporter,
+    SurveyTaskProtection,
+    emit_survey_database_latency,
+)
 from scholight.survey.contracts import (
     DRAFT_CONTEXT_MAX_BYTES,
     DRAFT_OUTPUT_MAX_BYTES,
     SurveyLeaseLostError,
     utf8_size,
 )
+from scholight.survey.metrics import is_provider_throttled
 from scholight.survey.process import (
     ProcessControl,
     ProcessOutputTooLargeError,
@@ -215,6 +223,7 @@ async def _heartbeat(
             await asyncio.wait_for(stop.wait(), timeout=settings.survey_heartbeat_seconds)
             return
         except TimeoutError:
+            started_at = time.perf_counter()
             try:
                 state = await heartbeat_survey_draft(
                     draft_id=draft_id,
@@ -230,6 +239,13 @@ async def _heartbeat(
                 if time.monotonic() - last_owned < settings.survey_lease_seconds:
                     continue
                 state = "lost"
+            finally:
+                emit_survey_database_latency(
+                    queue="draft",
+                    service="survey-draft-worker",
+                    operation="heartbeat",
+                    started_at=started_at,
+                )
             if state == "owned":
                 last_owned = time.monotonic()
                 continue
@@ -248,6 +264,16 @@ async def process_survey_draft(*, draft: SurveyDraft, worker_id: UUID) -> None:
     try:
         context = await get_survey_draft_context(survey_id=draft.survey_id)
         result = await execute_draft(draft=draft, context=context, control=control)
+        emit_emf(
+            service="survey-draft-worker",
+            metrics={
+                "SurveyDraftJobCount": (1, "Count"),
+                "SurveyProviderThrottled": (
+                    1 if is_provider_throttled(result.error_code) else 0,
+                    "Count",
+                ),
+            },
+        )
         if control.lease_lost.is_set():
             return
         if result.markdown is not None:
@@ -301,10 +327,17 @@ async def _run_claimed_draft(draft: SurveyDraft, worker_id: UUID) -> None:
 async def serve_survey_draft_worker() -> None:
     """Supervise bounded concurrent Drafts without sharing task failure state."""
     active: set[asyncio.Task[None]] = set()
+    protection = SurveyTaskProtection(service="survey-draft-worker")
+    capacity_reporter = SurveyCapacityReporter(
+        queue="draft",
+        service="survey-draft-worker",
+        per_user_concurrency=settings.survey_draft_per_user_concurrency,
+    )
     last_recovery = 0.0
     logger.info(
         "survey_draft_supervisor_started",
-        concurrency=settings.survey_draft_concurrency,
+        global_concurrency=settings.survey_draft_global_concurrency,
+        worker_concurrency=settings.survey_draft_worker_concurrency,
         per_user_concurrency=settings.survey_draft_per_user_concurrency,
         heartbeat_seconds=settings.survey_heartbeat_seconds,
         lease_seconds=settings.survey_lease_seconds,
@@ -312,6 +345,7 @@ async def serve_survey_draft_worker() -> None:
     try:
         while True:
             active = {task for task in active if not task.done()}
+            await capacity_reporter.emit_if_due()
             now = time.monotonic()
             if now - last_recovery >= _RECOVERY_SECONDS:
                 try:
@@ -320,17 +354,40 @@ async def serve_survey_draft_worker() -> None:
                     logger.exception("survey_draft_recovery_cycle_failed")
                 last_recovery = now
             claimed = False
-            while len(active) < settings.survey_draft_concurrency:
+            claims_allowed = await protection.ensure() if active else not protection.enabled
+            if not active and protection.enabled:
+                try:
+                    capacity = await get_survey_capacity_snapshot(
+                        queue="draft",
+                        per_user_concurrency=settings.survey_draft_per_user_concurrency,
+                    )
+                except Exception:
+                    logger.exception("survey_draft_claim_preflight_failed")
+                else:
+                    if capacity.queued > 0:
+                        claims_allowed = await protection.ensure()
+                    else:
+                        await protection.release()
+            while claims_allowed and len(active) < settings.survey_draft_worker_concurrency:
                 worker_id = uuid4()
+                started_at = time.perf_counter()
                 try:
                     draft = await claim_survey_draft(
                         worker_id=worker_id,
                         lease_seconds=settings.survey_lease_seconds,
+                        global_concurrency=settings.survey_draft_global_concurrency,
                         per_user_concurrency=settings.survey_draft_per_user_concurrency,
                     )
                 except Exception:
                     logger.exception("survey_draft_claim_cycle_failed")
                     break
+                finally:
+                    emit_survey_database_latency(
+                        queue="draft",
+                        service="survey-draft-worker",
+                        operation="claim",
+                        started_at=started_at,
+                    )
                 if draft is None:
                     break
                 task = asyncio.create_task(_run_claimed_draft(draft, worker_id))
@@ -342,6 +399,7 @@ async def serve_survey_draft_worker() -> None:
         for task in active:
             task.cancel()
         await asyncio.gather(*active, return_exceptions=True)
+        await protection.release()
         logger.info("survey_draft_supervisor_stopped")
 
 
