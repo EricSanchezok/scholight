@@ -14,6 +14,7 @@ import pytest
 from scholight.config import settings
 from scholight.db.queries_survey_drafts import SurveyDraft, SurveyDraftContext
 from scholight.survey.draft_worker import (
+    DraftExecutionResult,
     _heartbeat,
     _run_claimed_draft,
     execute_draft,
@@ -67,6 +68,59 @@ class _Process:
 
     def kill(self) -> None:  # pragma: no cover - timeout path uses a separate fake
         pass
+
+
+@pytest.mark.asyncio
+async def test_draft_retries_transient_provider_failure_then_succeeds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    draft = _draft()
+    context = SurveyDraftContext(initial_request="Topic", history=())
+    monkeypatch.setattr(settings, "survey_provider_max_attempts", 3)
+    monkeypatch.setattr(settings, "survey_provider_retry_base_seconds", 2.0)
+    monkeypatch.setattr(settings, "survey_provider_retry_max_seconds", 30.0)
+
+    with (
+        patch(
+            "scholight.survey.draft_worker._execute_draft_once",
+            new_callable=AsyncMock,
+            side_effect=[
+                DraftExecutionResult(
+                    None,
+                    "survey_provider_unavailable",
+                    "A Survey provider is temporarily unavailable.",
+                ),
+                DraftExecutionResult("# Draft", None, None),
+            ],
+        ) as execute_once,
+        patch("scholight.survey.draft_worker.asyncio.sleep", new_callable=AsyncMock) as sleep,
+    ):
+        result = await execute_draft(draft=draft, context=context)
+
+    assert result.markdown == "# Draft"
+    assert execute_once.await_count == 2
+    sleep.assert_awaited_once_with(2.0)
+
+
+@pytest.mark.asyncio
+async def test_draft_does_not_retry_permanent_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    draft = _draft()
+    context = SurveyDraftContext(initial_request="Topic", history=())
+    monkeypatch.setattr(settings, "survey_provider_max_attempts", 3)
+
+    with patch(
+        "scholight.survey.draft_worker._execute_draft_once",
+        new_callable=AsyncMock,
+        return_value=DraftExecutionResult(
+            None,
+            "survey_model_auth_failed",
+            "The Survey model could not be authenticated.",
+        ),
+    ) as execute_once:
+        result = await execute_draft(draft=draft, context=context)
+
+    assert result.error_code == "survey_model_auth_failed"
+    execute_once.assert_awaited_once()
 
 
 @pytest.mark.asyncio

@@ -57,6 +57,12 @@ never bypasses the per-user concurrency limit. The old ambiguous
 `SCHOLIGHT_SURVEY_DRAFT_CONCURRENCY` and
 `SCHOLIGHT_SURVEY_JOB_CONCURRENCY` names are intentionally unsupported.
 
+Each worker makes at most three attempts for sanitized transient provider
+failures such as HTTP 429, 502, 503, 504, and network timeouts. Attempts use
+bounded exponential backoff while the original database lease and concurrency
+slot remain owned. Authentication, resource, sandbox, and workflow-contract
+failures are never retried automatically.
+
 In ECS, a worker must establish task scale-in protection before claiming work.
 It refreshes a 30-minute protection period every five minutes while work is
 active and clears protection when idle. If the ECS agent endpoint is present

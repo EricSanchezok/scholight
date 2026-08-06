@@ -40,6 +40,8 @@ from scholight.survey.process import (
     ProcessControl,
     ProcessOutputTooLargeError,
     classify_rcm_error,
+    is_transient_rcm_error,
+    provider_retry_delay_seconds,
     read_bounded,
     read_sanitized_tail,
     terminate_process_group,
@@ -92,7 +94,7 @@ def _timeout_message(seconds: int) -> str:
     return f"Draft generation exceeded its {minutes}-minute execution window."
 
 
-async def execute_draft(
+async def _execute_draft_once(
     *,
     draft: SurveyDraft,
     context: SurveyDraftContext,
@@ -208,6 +210,47 @@ async def execute_draft(
             lost_task,
             return_exceptions=True,
         )
+
+
+async def execute_draft(
+    *,
+    draft: SurveyDraft,
+    context: SurveyDraftContext,
+    control: ProcessControl | None = None,
+) -> DraftExecutionResult:
+    """Generate a Draft, retrying only sanitized transient provider failures."""
+    control = control or ProcessControl()
+    for attempt in range(1, settings.survey_provider_max_attempts + 1):
+        result = await _execute_draft_once(draft=draft, context=context, control=control)
+        if (
+            result.markdown is not None
+            or not is_transient_rcm_error(result.error_code)
+            or attempt >= settings.survey_provider_max_attempts
+        ):
+            return result
+        delay = provider_retry_delay_seconds(
+            attempt,
+            base=settings.survey_provider_retry_base_seconds,
+            maximum=settings.survey_provider_retry_max_seconds,
+        )
+        logger.warning(
+            "survey_draft_provider_retry_scheduled",
+            draft_id=str(draft.id),
+            attempt=attempt,
+            next_attempt=attempt + 1,
+            delay_seconds=delay,
+            error_code=result.error_code,
+        )
+        emit_emf(
+            service="survey-draft-worker",
+            metrics={"SurveyProviderRetry": (1, "Count")},
+        )
+        if control.lease_lost.is_set():
+            raise SurveyLeaseLostError("Survey Draft lease is no longer owned")
+        await asyncio.sleep(delay)
+        if control.lease_lost.is_set():
+            raise SurveyLeaseLostError("Survey Draft lease is no longer owned")
+    raise AssertionError("unreachable")
 
 
 async def _heartbeat(

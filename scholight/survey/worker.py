@@ -46,6 +46,8 @@ from scholight.survey.notification_worker import SurveyEmailSender, serve_email_
 from scholight.survey.process import (
     ProcessControl,
     classify_rcm_error,
+    is_transient_rcm_error,
+    provider_retry_delay_seconds,
     read_sanitized_tail,
     terminate_process_group,
     write_stdin,
@@ -422,7 +424,7 @@ def _timeout_message(seconds: int) -> str:
     return f"Survey generation exceeded its {hours}-hour execution window."
 
 
-async def execute_survey(
+async def _execute_survey_once(
     job: SurveyJob,
     run_root: Path,
     *,
@@ -732,6 +734,67 @@ async def execute_survey(
             artifact_observer,
             return_exceptions=True,
         )
+
+
+async def execute_survey(
+    job: SurveyJob,
+    run_root: Path,
+    *,
+    control: ProcessControl | None = None,
+) -> SurveyExecutionResult:
+    """Run Survey with bounded retries for transient provider failures only."""
+    control = control or ProcessControl()
+    for attempt in range(1, settings.survey_provider_max_attempts + 1):
+        result = await _execute_survey_once(job, run_root, control=control)
+        if (
+            result.outcome != "failed"
+            or not is_transient_rcm_error(result.error_code)
+            or attempt >= settings.survey_provider_max_attempts
+        ):
+            return result
+        delay = provider_retry_delay_seconds(
+            attempt,
+            base=settings.survey_provider_retry_base_seconds,
+            maximum=settings.survey_provider_retry_max_seconds,
+        )
+        logger.warning(
+            "survey_provider_retry_scheduled",
+            job_id=str(job.id),
+            attempt=attempt,
+            next_attempt=attempt + 1,
+            delay_seconds=delay,
+            error_code=result.error_code,
+        )
+        emit_emf(
+            service="survey-full-worker",
+            metrics={"SurveyProviderRetry": (1, "Count")},
+        )
+        if control.lease_lost.is_set():
+            raise SurveyLeaseLostError("Survey execution lease is no longer owned")
+        if control.cancel_requested.is_set():
+            return SurveyExecutionResult(
+                outcome="cancelled",
+                error_code=None,
+                error_message=None,
+                started_at=result.started_at,
+                finished_at=datetime.now(UTC),
+                termination_reason="cancelled_before_retry",
+            )
+        await asyncio.sleep(delay)
+        if control.lease_lost.is_set():
+            raise SurveyLeaseLostError("Survey execution lease is no longer owned")
+        if control.cancel_requested.is_set():
+            return SurveyExecutionResult(
+                outcome="cancelled",
+                error_code=None,
+                error_message=None,
+                started_at=result.started_at,
+                finished_at=datetime.now(UTC),
+                termination_reason="cancelled_before_retry",
+            )
+        shutil.rmtree(run_root, ignore_errors=True)
+        run_root.mkdir(parents=True, exist_ok=True)
+    raise AssertionError("unreachable")
 
 
 async def _heartbeat(

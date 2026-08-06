@@ -21,6 +21,9 @@ def test_survey_concurrency_defaults_are_split_by_scope() -> None:
     assert loaded.survey_job_per_user_concurrency == 4
     assert loaded.survey_draft_worker_concurrency == 8
     assert loaded.survey_job_worker_concurrency == 1
+    assert loaded.survey_provider_max_attempts == 3
+    assert loaded.survey_provider_retry_base_seconds == 2
+    assert loaded.survey_provider_retry_max_seconds == 30
 
 
 def test_environment_template_uses_only_explicit_concurrency_scopes() -> None:
@@ -65,3 +68,15 @@ def test_survey_concurrency_rejects_local_limits_above_global(
 ) -> None:
     with pytest.raises(ValidationError, match=setting_name):
         Settings(_env_file=None, **overrides)  # type: ignore[arg-type,call-arg]
+
+
+def test_survey_provider_retry_rejects_inverted_backoff_bounds() -> None:
+    with pytest.raises(
+        ValidationError,
+        match="SCHOLIGHT_SURVEY_PROVIDER_RETRY_BASE_SECONDS",
+    ):
+        Settings(  # type: ignore[call-arg]
+            _env_file=None,
+            survey_provider_retry_base_seconds=20,
+            survey_provider_retry_max_seconds=10,
+        )
