@@ -112,6 +112,52 @@ class _CompletedProcess:
 
 
 @pytest.mark.asyncio
+async def test_full_survey_retries_transient_provider_failure_from_clean_workspace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    worker_id = uuid4()
+    job = _job(job_id=uuid4(), worker_id=worker_id, status="running")
+    stale_artifact = tmp_path / "partial-model-output.md"
+    stale_artifact.write_text("partial", encoding="utf-8")
+    now = datetime.now(UTC)
+    transient = SurveyExecutionResult(
+        outcome="failed",
+        error_code="survey_provider_unavailable",
+        error_message="A Survey provider is temporarily unavailable.",
+        started_at=now,
+        finished_at=now,
+    )
+    succeeded = SurveyExecutionResult(
+        outcome="succeeded",
+        error_code=None,
+        error_message=None,
+        started_at=now,
+        finished_at=now,
+    )
+    monkeypatch.setattr(settings, "survey_provider_max_attempts", 3)
+    monkeypatch.setattr(settings, "survey_provider_retry_base_seconds", 2.0)
+    monkeypatch.setattr(settings, "survey_provider_retry_max_seconds", 30.0)
+
+    async def _execute_once(*args: object, **kwargs: object) -> SurveyExecutionResult:
+        del args, kwargs
+        if stale_artifact.exists():
+            return transient
+        return succeeded
+
+    with (
+        patch("scholight.survey.worker._execute_survey_once", side_effect=_execute_once) as execute,
+        patch("scholight.survey.worker.asyncio.sleep", new_callable=AsyncMock) as sleep,
+    ):
+        result = await execute_survey(job, tmp_path)
+
+    assert result.outcome == "succeeded"
+    assert execute.await_count == 2
+    assert not stale_artifact.exists()
+    sleep.assert_awaited_once_with(2.0)
+
+
+@pytest.mark.asyncio
 async def test_missing_workflow_resources_fail_before_process_start(tmp_path: Path) -> None:
     create_process = AsyncMock()
     with (

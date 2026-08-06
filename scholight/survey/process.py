@@ -20,6 +20,13 @@ _TOKEN_PATTERNS = (
 _PATH_PATTERN = re.compile(
     r"(?<![A-Za-z0-9._~-])/(?:data|tmp|var|home|Users|proc|etc)(?:/[^\s:'\"]+)+"
 )
+_HTTP_STATUS_PATTERN = re.compile(r"(?:status|http)\D{0,8}([45]\d\d)", re.I)
+_TRANSIENT_HTTP_STATUSES = {408, 425, 429, 500, 502, 503, 504}
+_TRANSIENT_RCM_ERROR_CODES = {
+    "survey_mcp_unavailable",
+    "survey_provider_rate_limited",
+    "survey_provider_unavailable",
+}
 
 
 class ProcessOutputTooLargeError(Exception):
@@ -123,8 +130,24 @@ def classify_rcm_error(stderr_tail: str) -> tuple[str, str]:
     text = stderr_tail.casefold()
     if any(marker in text for marker in ("unauthorized", "invalid api key", "status 401")):
         return "survey_model_auth_failed", "The Survey model could not be authenticated."
-    if any(marker in text for marker in ("rate limit", "too many requests", "status 429")):
+    if any(
+        marker in text for marker in ("rate limit", "too many requests", "status 429", "http 429")
+    ):
         return "survey_provider_rate_limited", "A Survey provider is temporarily rate limited."
+    status_match = _HTTP_STATUS_PATTERN.search(text)
+    http_status = int(status_match.group(1)) if status_match is not None else None
+    if http_status in _TRANSIENT_HTTP_STATUSES or any(
+        marker in text
+        for marker in (
+            "gateway timeout",
+            "connection reset",
+            "connection refused",
+            "request timed out",
+            "temporarily unavailable",
+            "temporary failure",
+        )
+    ):
+        return "survey_provider_unavailable", "A Survey provider is temporarily unavailable."
     if "survey_quota_exceeded" in text or "search quota" in text:
         return "survey_search_quota_exceeded", "The Survey search allowance was reached."
     if "mcp" in text and any(marker in text for marker in ("connect", "unavailable", "timeout")):
@@ -138,10 +161,23 @@ def classify_rcm_error(stderr_tail: str) -> tuple[str, str]:
     return "survey_runtime_unavailable", "The Survey runtime did not complete successfully."
 
 
+def is_transient_rcm_error(error_code: str | None) -> bool:
+    """Return whether a sanitized RCM failure is safe to retry automatically."""
+    return error_code in _TRANSIENT_RCM_ERROR_CODES
+
+
+def provider_retry_delay_seconds(attempt: int, *, base: float, maximum: float) -> float:
+    """Return bounded exponential backoff before the next provider attempt."""
+    exponent = max(0, attempt - 1)
+    return min(maximum, base * float(2**exponent))
+
+
 __all__ = [
     "ProcessControl",
     "ProcessOutputTooLargeError",
     "classify_rcm_error",
+    "is_transient_rcm_error",
+    "provider_retry_delay_seconds",
     "read_bounded",
     "read_sanitized_tail",
     "terminate_process_group",

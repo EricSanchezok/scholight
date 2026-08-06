@@ -169,6 +169,9 @@ class Settings(BaseSettings):
     survey_daily_limit: int = Field(default=3, ge=1, le=100)
     survey_draft_timeout_seconds: int = Field(default=1800, ge=60, le=3600)
     survey_job_timeout_seconds: int = Field(default=86400, ge=60, le=172800)
+    survey_provider_max_attempts: int = Field(default=3, ge=1, le=5)
+    survey_provider_retry_base_seconds: float = Field(default=2.0, ge=0.0, le=30.0)
+    survey_provider_retry_max_seconds: float = Field(default=30.0, ge=0.0, le=120.0)
     survey_draft_global_concurrency: int = Field(default=64, ge=1, le=64)
     survey_job_global_concurrency: int = Field(default=16, ge=1, le=16)
     survey_draft_per_user_concurrency: int = Field(default=8, ge=1, le=64)
@@ -180,6 +183,11 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _validate_survey_concurrency(self) -> "Settings":
+        if self.survey_provider_retry_base_seconds > self.survey_provider_retry_max_seconds:
+            raise ValueError(
+                "SCHOLIGHT_SURVEY_PROVIDER_RETRY_BASE_SECONDS must not exceed "
+                "SCHOLIGHT_SURVEY_PROVIDER_RETRY_MAX_SECONDS"
+            )
         if self.survey_draft_per_user_concurrency > self.survey_draft_global_concurrency:
             raise ValueError(
                 "SCHOLIGHT_SURVEY_DRAFT_PER_USER_CONCURRENCY must not exceed "
