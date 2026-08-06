@@ -6,10 +6,12 @@ import asyncio
 import json
 import time
 from collections import Counter
+from itertools import pairwise
 from typing import Any
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
 app = FastAPI()
 _REQUEST_COUNTS: Counter[str] = Counter()
@@ -214,12 +216,18 @@ async def stats() -> dict[str, object]:
     return {"request_counts": dict(sorted(_REQUEST_COUNTS.items()))}
 
 
-@app.post("/{path:path}")
-async def completion(request: Request, path: str) -> dict[str, Any]:
+@app.post("/{path:path}", response_model=None)
+async def completion(request: Request, path: str) -> Any:
     del path
     body = await request.json()
-    names = _tool_names(body)
     messages = body.get("messages", [])
+    roles = [message.get("role") for message in messages if isinstance(message, dict)]
+    if any(left == right == "system" for left, right in pairwise(roles)):
+        return JSONResponse(
+            status_code=422,
+            content={"error": {"message": "adjacent system messages are not supported"}},
+        )
+    names = _tool_names(body)
     serialized = json.dumps(body)
     is_title_request = "SCHOLIGHT_SURVEY_NAVIGATION_TITLE" in serialized
     if is_title_request:
