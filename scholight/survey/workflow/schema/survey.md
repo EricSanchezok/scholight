@@ -57,6 +57,11 @@ The article must argue, not enumerate. Required spine:
   most consequential next directions.
 - `references`: the cited papers, taken from the upstream artifacts — never invented.
 
+Each expanded section's top-level `##` heading is a stable assembly boundary. The
+final report must preserve that heading text exactly. A heading may be numbered or
+unnumbered; numbering is not part of the contract unless it already appears in the
+expanded section.
+
 ## Evidence rules
 
 - Obey the upstream `forbidden_overclaims` verbatim. Do not restate a banned claim.

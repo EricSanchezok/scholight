@@ -128,6 +128,65 @@ def test_optional_image_is_a_warning_only_at_final_audit(tmp_path: Path) -> None
     } in anomalies
 
 
+def test_final_audit_accepts_matching_unnumbered_section_headings(tmp_path: Path) -> None:
+    sections = tmp_path / "sections"
+    sections.mkdir()
+    (sections / "01_introduction.md").write_text(
+        "## Introduction: The Reliability Problem\n\nBody.",
+        encoding="utf-8",
+    )
+    (sections / "02_research_arc.md").write_text(
+        "## Research Arc — From Heuristics to Evaluation\n\nBody.",
+        encoding="utf-8",
+    )
+    (tmp_path / "08_survey.md").write_text(
+        "# Survey\n\n"
+        "## Introduction: The Reliability Problem\n\nBody.\n\n"
+        "## Research Arc — From Heuristics to Evaluation\n\nBody.\n\n"
+        "## References\n\n1. Paper.\n",
+        encoding="utf-8",
+    )
+    diagnostics = SurveyDiagnostics(
+        run_root=tmp_path,
+        job_id=uuid4(),
+        survey_id=uuid4(),
+    )
+
+    diagnostics.finalize_contract_audit()
+
+    assert not any(
+        anomaly["kind"] == "section_missing_from_final_report"
+        for anomaly in diagnostics.snapshot()["anomalies"]
+    )
+
+
+def test_final_audit_rejects_changed_unnumbered_section_heading(tmp_path: Path) -> None:
+    sections = tmp_path / "sections"
+    sections.mkdir()
+    (sections / "01_introduction.md").write_text(
+        "## Introduction: The Reliability Problem\n\nBody.",
+        encoding="utf-8",
+    )
+    (tmp_path / "08_survey.md").write_text(
+        "# Survey\n\n## A Different Introduction\n\nBody.\n\n## References\n\n1. Paper.\n",
+        encoding="utf-8",
+    )
+    diagnostics = SurveyDiagnostics(
+        run_root=tmp_path,
+        job_id=uuid4(),
+        survey_id=uuid4(),
+    )
+
+    diagnostics.finalize_contract_audit()
+
+    assert {
+        "component": "survey_assembler",
+        "expected_artifact": "08_survey.md#section-01",
+        "kind": "section_missing_from_final_report",
+        "severity": "error",
+    } in diagnostics.snapshot()["anomalies"]
+
+
 def test_final_audit_infers_last_component_from_artifacts_when_events_are_missing(
     tmp_path: Path,
 ) -> None:
