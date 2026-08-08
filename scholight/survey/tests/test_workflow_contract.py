@@ -131,10 +131,13 @@ def test_english_report_is_the_only_final_assembly_output() -> None:
         for path in prompts.glob("*.txt")
         if "08_survey.md" in path.read_text(encoding="utf-8")
     ]
-    assembler = (prompts / "survey_assembler.txt").read_text(encoding="utf-8")
+    pipeline = (_WORKFLOW / "rcm" / "survey_pipeline.rcm").read_text(encoding="utf-8")
+    schema = (_WORKFLOW / "schema" / "survey.md").read_text(encoding="utf-8")
 
-    assert writers == ["survey_assembler.txt"]
-    assert "sole final report" in " ".join(assembler.split())
+    assert writers == []
+    assert "SurveyAssembler" not in pipeline
+    assert not (prompts / "survey_assembler.txt").exists()
+    assert "Final assembly is application-owned and deterministic" in " ".join(schema.split())
     assert "status: partial" in (prompts / "image_planner.txt").read_text(encoding="utf-8")
 
 

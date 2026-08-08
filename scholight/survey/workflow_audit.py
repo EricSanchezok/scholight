@@ -108,16 +108,17 @@ def audit_workflow_contracts() -> tuple[WorkflowConflict, ...]:
     worker = _read("scholight/survey/worker.py")
     diagnostics = _read("scholight/survey/diagnostics.py")
     if not (
-        'ArtifactContract("survey_assembler", required=("08_survey.md", "index.md"))' in diagnostics
+        'ArtifactContract("survey_finalizer", required=("08_survey.md", "index.md"))' in diagnostics
         and "survey_contract_violation" in worker
         and "section_missing_from_final_report" in diagnostics
         and "references_missing_from_final_report" in diagnostics
+        and "finalize_survey(run_root)" in worker
     ):
         conflicts.append(
             WorkflowConflict(
                 code="final_report_validation_incomplete",
                 summary="Worker success validation does not prove that final output is complete.",
-                evidence=("worker.py", "diagnostics.py", "prompts/survey_assembler.txt"),
+                evidence=("worker.py", "diagnostics.py", "finalizer.py"),
             )
         )
 

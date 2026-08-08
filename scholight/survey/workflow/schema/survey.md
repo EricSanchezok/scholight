@@ -62,6 +62,11 @@ final report must preserve that heading text exactly. A heading may be numbered 
 unnumbered; numbering is not part of the contract unless it already appears in the
 expanded section.
 
+Final assembly is application-owned and deterministic. After the research workflow
+finishes, Scholight orders the completed section files, preserves their content, derives
+the reference list only from cited paper cards, and atomically writes `08_survey.md` and
+`index.md`. No model completion is allowed to own this mechanical delivery boundary.
+
 ## Evidence rules
 
 - Obey the upstream `forbidden_overclaims` verbatim. Do not restate a banned claim.

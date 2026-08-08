@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -30,6 +31,17 @@ from scholight.survey.worker import (
     serve_survey_worker,
 )
 from scholight.survey.workflow_resources import WorkflowResourceError
+
+
+@pytest.fixture(autouse=True)
+def _stub_durable_progress_update() -> Iterator[AsyncMock]:
+    """Worker unit tests do not initialize the PostgreSQL integration pool."""
+    with patch(
+        "scholight.survey.worker.update_survey_job_progress",
+        new_callable=AsyncMock,
+        return_value=True,
+    ) as update:
+        yield update
 
 
 def test_worker_expects_pinned_rcm_release() -> None:
@@ -190,13 +202,29 @@ def _write_complete_workflow_artifacts(run_root: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         content = "[]" if path.suffix == ".json" else "observed"
         path.write_text(content, encoding="utf-8")
-    sections = run_root / "sections"
-    sections.mkdir(exist_ok=True)
-    (sections / "01_introduction.md").write_text("## 1. Introduction", encoding="utf-8")
-    (run_root / "08_survey.md").write_text(
-        "# Survey\n\n## 1. Introduction\n\nBody.\n\n## References\n\n1. Paper.\n",
+    (run_root / "00_outline.md").write_text(
+        "# Survey Outline\n\n# Title\n\n**Survey**\n\n"
+        "# Abstract\n\nA complete deterministic abstract.\n",
         encoding="utf-8",
     )
+    sections = run_root / "sections"
+    sections.mkdir(exist_ok=True)
+    (sections / "01_introduction.md").write_text(
+        "## 1. Introduction\n\nBody grounded in [2401.12345].\n",
+        encoding="utf-8",
+    )
+    cards = run_root / "cards"
+    cards.mkdir(exist_ok=True)
+    (cards / "2401.12345.md").write_text(
+        "# PaperCard\n\n## header\n\n"
+        "- arxiv_id: 2401.12345\n"
+        "- title: Paper\n"
+        "- authors: Example\n"
+        "- year/venue: 2024 arXiv\n",
+        encoding="utf-8",
+    )
+    (run_root / "08_survey.md").unlink(missing_ok=True)
+    (run_root / "index.md").unlink(missing_ok=True)
 
 
 @pytest.mark.asyncio
@@ -340,14 +368,14 @@ async def test_success_requires_complete_final_artifacts(
 
 
 @pytest.mark.asyncio
-async def test_zero_exit_missing_index_is_contract_failure(
+async def test_zero_exit_missing_cited_card_is_finalization_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     job_id = uuid4()
     worker_id = uuid4()
     _write_complete_workflow_artifacts(tmp_path)
-    (tmp_path / "index.md").unlink()
+    (tmp_path / "cards" / "2401.12345.md").unlink()
     monkeypatch.setattr(settings, "survey_job_timeout_seconds", 60)
     monkeypatch.setattr(settings, "survey_mcp_jwt_secret", "s" * 32)
     monkeypatch.setattr(settings, "deepseek_api_key", "deepseek")
@@ -366,19 +394,19 @@ async def test_zero_exit_missing_index_is_contract_failure(
             tmp_path,
         )
 
-    assert result.error_code == "survey_contract_violation"
+    assert result.error_code == "survey_report_missing"
 
 
 @pytest.mark.asyncio
-async def test_zero_exit_report_omitting_generated_section_is_contract_failure(
+async def test_deterministic_finalizer_includes_every_generated_section(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     job_id = uuid4()
     worker_id = uuid4()
     _write_complete_workflow_artifacts(tmp_path)
-    (tmp_path / "sections" / "02_research_arc.md").write_text(
-        "## 2. Research Arc",
+    (tmp_path / "sections" / "02_research-arc.md").write_text(
+        "## 2. Research Arc\n\nMore evidence [2401.12345].\n",
         encoding="utf-8",
     )
     monkeypatch.setattr(settings, "survey_job_timeout_seconds", 60)
@@ -399,25 +427,18 @@ async def test_zero_exit_report_omitting_generated_section_is_contract_failure(
             tmp_path,
         )
 
-    assert result.error_code == "survey_contract_violation"
-    assert result.diagnostics is not None
-    assert {anomaly["expected_artifact"] for anomaly in result.diagnostics["anomalies"]} >= {
-        "08_survey.md#section-02"
-    }
+    assert result.outcome == "succeeded"
+    assert "## 2. Research Arc" in (tmp_path / "08_survey.md").read_text(encoding="utf-8")
 
 
 @pytest.mark.asyncio
-async def test_zero_exit_report_without_references_is_contract_failure(
+async def test_deterministic_finalizer_generates_references(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     job_id = uuid4()
     worker_id = uuid4()
     _write_complete_workflow_artifacts(tmp_path)
-    (tmp_path / "08_survey.md").write_text(
-        "# Survey\n\n## 1. Introduction\n\nBody.\n",
-        encoding="utf-8",
-    )
     monkeypatch.setattr(settings, "survey_job_timeout_seconds", 60)
     monkeypatch.setattr(settings, "survey_mcp_jwt_secret", "s" * 32)
     monkeypatch.setattr(settings, "deepseek_api_key", "deepseek")
@@ -436,7 +457,10 @@ async def test_zero_exit_report_without_references_is_contract_failure(
             tmp_path,
         )
 
-    assert result.error_code == "survey_contract_violation"
+    assert result.outcome == "succeeded"
+    report = (tmp_path / "08_survey.md").read_text(encoding="utf-8")
+    assert "## References" in report
+    assert "- [2401.12345]" in report
 
 
 @pytest.mark.asyncio

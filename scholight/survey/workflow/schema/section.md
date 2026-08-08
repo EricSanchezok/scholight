@@ -1,9 +1,9 @@
 # Section Contract
 
 The survey is built **section by section**: an outline node emits a JSON list of
-section specs, parallel workers expand each section into its own file, and an
-assembler stitches them into the final survey. This keeps each writing step's
-context small while letting every section go deep.
+section specs, parallel workers expand each section into its own file, and the
+application finalizer orders those files into the final survey. This keeps each
+writing step's context small while letting every section go deep.
 
 ## Section spec (outline → expansion)
 
@@ -24,9 +24,10 @@ recovery. Each element:
 A typical list: introduction, an evolution / research-arc section, one section
 per method family, a synthesizing comparison, open problems, conclusion.
 
-## Section file (expansion → assembler)
+## Section file (expansion → application finalizer)
 
 - Path: `run_dir/sections/<n>_<slug>.md`, starting with `## <title>`.
-- Detailed, flowing prose grounded in the cards; cites inline by `(Author, year)`
-  or `[arxiv_id]`. The assembler builds the single reference list.
+- Detailed, flowing prose grounded in the cards. Every cited paper must include
+  its exact `[arxiv_id]`; an adjacent `(Author, year)` is optional. The application
+  finalizer uses those identifiers to build one auditable reference list.
 - Self-contained: no internal stage/object names (see `schema/survey.md`).

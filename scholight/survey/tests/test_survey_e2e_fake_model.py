@@ -11,7 +11,7 @@ def test_stage_uses_current_system_prompt_instead_of_historical_tool_calls() -> 
                 "content": [
                     {
                         "type": "text",
-                        "text": "You are the SurveyAssembler for the final report.",
+                        "text": "You are the SurveyOutline author for the final report.",
                     }
                 ],
             },
@@ -30,4 +30,4 @@ def test_stage_uses_current_system_prompt_instead_of_historical_tool_calls() -> 
         ]
     }
 
-    assert _stage(body) == "survey_assembler"
+    assert _stage(body) == "survey_outline"

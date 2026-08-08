@@ -41,6 +41,7 @@ from scholight.survey.cleanup_worker import serve_artifact_cleanup
 from scholight.survey.contracts import SurveyLeaseLostError
 from scholight.survey.diagnostics import SurveyDiagnostics
 from scholight.survey.email_notifications import AliyunSurveyEmailSender
+from scholight.survey.finalizer import SurveyFinalizationError, finalize_survey
 from scholight.survey.metrics import is_provider_throttled
 from scholight.survey.notification_worker import SurveyEmailSender, serve_email_notifications
 from scholight.survey.process import (
@@ -620,6 +621,28 @@ async def _execute_survey_once(
                 termination_reason="nonzero_exit",
                 stderr_tail=stderr_tail or None,
                 diagnostics=diagnostic_summary,
+            )
+        try:
+            if job.lease_owner is not None:
+                await update_survey_job_progress(
+                    job_id=job.id,
+                    worker_id=job.lease_owner,
+                    stage="finalizing",
+                )
+            finalized = finalize_survey(run_root)
+            diagnostics.component_finished("survey_finalizer", status="completed")
+            logger.info(
+                "survey_report_finalized",
+                job_id=str(job.id),
+                section_count=finalized.section_count,
+                reference_count=finalized.reference_count,
+            )
+        except SurveyFinalizationError as exc:
+            logger.error(
+                "survey_report_finalization_failed",
+                job_id=str(job.id),
+                error_type=type(exc).__name__,
+                reason=str(exc),
             )
         if not _valid_final_report(run_root):
             diagnostic_summary = _finish_diagnostics(

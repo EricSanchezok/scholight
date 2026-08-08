@@ -146,7 +146,7 @@ async def _assert_database_and_archive(s3: Any, survey_id: str) -> tuple[str, st
         assert run_record["process"]["termination_reason"] == "completed"
         assert run_record["diagnostics"]["last_successful_component"] in {
             "survey_outline",
-            "survey_assembler",
+            "survey_finalizer",
         }
         assert run_record["diagnostics"]["tool_counts"]["started"] > 0
         assert run_record["diagnostics"]["tool_counts"]["finished"] > 0
@@ -221,7 +221,7 @@ async def _assert_public_report_and_artifacts(
 
     report = await client.get(f"{API}/surveys/{survey_id}/report")
     report.raise_for_status()
-    assert "real Survey graph" in report.text
+    assert "This deterministic section is grounded" in report.text
 
     artifacts = await client.get(f"{API}/surveys/{survey_id}/artifacts")
     artifacts.raise_for_status()
@@ -233,7 +233,7 @@ async def _assert_public_report_and_artifacts(
     assert hashlib.sha256(download.content).hexdigest() == diagnostics_artifact["sha256"]
 
 
-async def _assert_real_graph_reaches_assembler(client: httpx.AsyncClient) -> None:
+async def _assert_real_graph_reaches_section_writers(client: httpx.AsyncClient) -> None:
     response = await client.get("http://model:8080/stats")
     response.raise_for_status()
     counts = response.json()["request_counts"]
@@ -247,7 +247,7 @@ async def _assert_real_graph_reaches_assembler(client: httpx.AsyncClient) -> Non
         "section_expander",
     ):
         assert counts.get(component, 0) > 0
-    assert counts.get("survey_assembler", 0) > 0
+    assert counts.get("survey_assembler", 0) == 0
 
 
 async def _assert_missing_candidate_pool_diagnostics(
@@ -316,7 +316,7 @@ async def _assert_missing_candidate_pool_diagnostics(
         }
         assert run_record["diagnostics"]["last_successful_component"] in {
             "survey_outline",
-            "survey_assembler",
+            "survey_finalizer",
         }
         assert run_record["diagnostics"]["affected_components"] == [
             "expansion",
@@ -326,7 +326,7 @@ async def _assert_missing_candidate_pool_diagnostics(
             "judge_panel",
             "image_planner",
             "survey_outline",
-            "survey_assembler",
+            "survey_finalizer",
         ]
         return survey_id, str(job["manifest_key"])
     finally:
@@ -652,7 +652,7 @@ async def main() -> None:
             client,
             s3,
         )
-        await _assert_real_graph_reaches_assembler(client)
+        await _assert_real_graph_reaches_section_writers(client)
         cancelled_survey_id = await _assert_running_cancel(client)
         cancelled_artifacts = await client.get(f"{API}/surveys/{cancelled_survey_id}/artifacts")
         cancelled_artifacts.raise_for_status()

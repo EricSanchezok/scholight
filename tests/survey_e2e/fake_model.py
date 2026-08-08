@@ -41,7 +41,6 @@ _STAGE_MARKERS = {
     "ImagePlanner": "image_planner",
     "SurveyOutline author": "survey_outline",
     "SectionExpander": "section_expander",
-    "SurveyAssembler": "survey_assembler",
 }
 _ARTIFACTS = {
     "anchor": "00_survey_spec.md",
@@ -175,13 +174,27 @@ def _artifact_content(stage: str, path: str) -> str:
     if stage == "rank_pool":
         return "# Ranked pool\n\n1. 2401.12345 — Deterministic RAG Evaluation — core_set\n"
     if stage == "paper_card":
-        return "# 2401.12345\n\nEvidence: abstract_only\n\nDeterministic method and result.\n"
+        return (
+            "# PaperCard — 2401.12345\n\n"
+            "## header\n\n"
+            "- arxiv_id: 2401.12345\n"
+            "- title: Deterministic RAG Evaluation\n"
+            "- authors: Example et al.\n"
+            "- year/venue: 2024 arXiv\n\n"
+            "## evidence\n\nabstract_only\n\n"
+            "## results\n\nDeterministic method and result.\n"
+        )
     if stage == "research_map":
         return "# Research map\n\nRAG evaluation connects evidence quality and benchmarks.\n"
     if stage.endswith("judge") or stage == "judge_synthesizer":
         return f"# {stage}\n\nverdict: acceptable\n\nEvidence is sufficient for E2E.\n"
     if stage == "survey_outline":
-        return "# Retrieval-Augmented Generation Survey\n\n## 01 Introduction\n"
+        return (
+            "# Survey Outline\n\n"
+            "# Title\n\n**Retrieval-Augmented Generation Survey**\n\n"
+            "# Abstract\n\nThis deterministic report verifies the real Survey graph.\n\n"
+            "# Ordered section list\n\n## 01 Introduction\n"
+        )
     if stage == "section_expander":
         return "## Introduction\n\nThis deterministic section is grounded in [2401.12345].\n"
     return f"# {path}\n\nDeterministic E2E artifact.\n"
@@ -404,40 +417,6 @@ async def completion(request: Request, path: str) -> Any:
             )
         return _response(
             _handoff(status="ok", preserve_contract_failure=preserve_contract_failure),
-            finish_reason="stop",
-        )
-
-    if stage == "survey_assembler":
-        written_paths = {
-            str(arguments.get("filePath"))
-            for name, arguments in called
-            if name == "fs" and arguments.get("action") == "write"
-        }
-        if "08_survey.md" not in written_paths:
-            return _response(
-                _write(
-                    "08_survey.md",
-                    "# Retrieval-Augmented Generation Survey\n\n"
-                    "## Abstract\n\n"
-                    "This deterministic report verifies the real Survey graph. "
-                    "It follows the evidence into a compact evaluation argument.\n\n"
-                    "## 01 Introduction\n\n"
-                    "This deterministic section is grounded in [2401.12345].\n\n"
-                    "## References\n\n"
-                    "1. Deterministic RAG Evaluation. arXiv:2401.12345.\n",
-                ),
-                finish_reason="tool_calls",
-            )
-        if "index.md" not in written_paths:
-            return _response(
-                _write("index.md", "# Retrieval-Augmented Generation Survey\n"),
-                finish_reason="tool_calls",
-            )
-        return _response(
-            _handoff(
-                "08_survey.md",
-                preserve_contract_failure=preserve_contract_failure,
-            ),
             finish_reason="stop",
         )
 

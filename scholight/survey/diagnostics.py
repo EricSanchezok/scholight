@@ -91,7 +91,7 @@ ARTIFACT_CONTRACTS = (
     ArtifactContract("judge_panel", required=("06_judge_panel.md",)),
     ArtifactContract("image_planner", optional=("08_global_picture.png",)),
     ArtifactContract("survey_outline", required=("00_outline.md", "00_sections.json")),
-    ArtifactContract("survey_assembler", required=("08_survey.md", "index.md")),
+    ArtifactContract("survey_finalizer", required=("08_survey.md", "index.md")),
 )
 _CONTRACT_BY_COMPONENT = {contract.component: contract for contract in ARTIFACT_CONTRACTS}
 _DURABLE_PLANS = {
@@ -107,7 +107,7 @@ _MILESTONE_COMPONENTS = (
     "research_map",
     "judge_synthesizer",
     "survey_outline",
-    "survey_assembler",
+    "survey_finalizer",
 )
 _PIPELINE_STAGES = (
     "anchor",
@@ -120,7 +120,7 @@ _PIPELINE_STAGES = (
     "judge_panel",
     "image_planner",
     "survey_outline",
-    "survey_assembler",
+    "survey_finalizer",
 )
 _COMPONENT_STAGE = {
     "method_scout": "discovery",
@@ -446,7 +446,15 @@ class SurveyDiagnostics:
         validated: list[dict[str, object]] = []
         outputs: set[str] = set()
         for raw_item in payload:
-            if not isinstance(raw_item, dict) or raw_item.get("run_dir") != ".":
+            if not isinstance(raw_item, dict):
+                return None
+            raw_run_dir = raw_item.get("run_dir")
+            if not isinstance(raw_run_dir, str):
+                return None
+            if raw_run_dir != "." and (
+                not Path(raw_run_dir).is_absolute()
+                or Path(raw_run_dir).resolve(strict=False) != self.run_root.resolve(strict=False)
+            ):
                 return None
             if relative_path == "00_card_plan.json":
                 paper_id = raw_item.get("id")
@@ -621,7 +629,7 @@ class SurveyDiagnostics:
                             observed_titles.add(section_title)
         except (OSError, UnicodeError):
             self._record_anomaly(
-                component="survey_assembler",
+                component="survey_finalizer",
                 expected_artifact="08_survey.md",
                 kind="final_report_unreadable",
                 severity="error",
@@ -638,14 +646,14 @@ class SurveyDiagnostics:
         )
         for section_number in sorted(missing_sections):
             self._record_anomaly(
-                component="survey_assembler",
+                component="survey_finalizer",
                 expected_artifact=f"08_survey.md#section-{section_number:02d}",
                 kind="section_missing_from_final_report",
                 severity="error",
             )
         if expected_sections and not has_references:
             self._record_anomaly(
-                component="survey_assembler",
+                component="survey_finalizer",
                 expected_artifact="08_survey.md#references",
                 kind="references_missing_from_final_report",
                 severity="error",

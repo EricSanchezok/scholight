@@ -12,7 +12,6 @@ use "./judge_panel.rcm" as JudgePanel
 use "./image_planner.rcm" as ImagePlanner
 use "./survey_outline.rcm" as SurveyOutline
 use "./section_expander.rcm" as SectionExpander
-use "./survey_assembler.rcm" as SurveyAssembler
 
 graph {
     accelerator anchor = Anchor
@@ -27,7 +26,6 @@ graph {
     accelerator image_planner = ImagePlanner
     // SurveyOutline gets spawn_SectionExpander so its LLM dispatches section writers.
     accelerator survey_outline = SurveyOutline { spawns = ["SectionExpander"] }
-    accelerator survey_assembler = SurveyAssembler
 
     input.purpose -> anchor.purpose
 
@@ -58,10 +56,7 @@ graph {
     image_planner.context -> survey_outline.context
     image_planner.done -> survey_outline.trigger
 
-    survey_outline.context -> survey_assembler.context
-    survey_outline.done -> survey_assembler.trigger
-
-    survey_assembler.done -> output.done
-    survey_assembler.context -> output.context
-    survey_assembler.purpose -> output.purpose
+    survey_outline.done -> output.done
+    survey_outline.context -> output.context
+    survey_outline.purpose -> output.purpose
 }

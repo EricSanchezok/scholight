@@ -88,7 +88,7 @@ def test_completed_component_records_missing_primary_artifact(tmp_path: Path) ->
         "judge_panel",
         "image_planner",
         "survey_outline",
-        "survey_assembler",
+        "survey_finalizer",
     ]
 
 
@@ -180,7 +180,7 @@ def test_final_audit_rejects_changed_unnumbered_section_heading(tmp_path: Path) 
     diagnostics.finalize_contract_audit()
 
     assert {
-        "component": "survey_assembler",
+        "component": "survey_finalizer",
         "expected_artifact": "08_survey.md#section-01",
         "kind": "section_missing_from_final_report",
         "severity": "error",
@@ -237,7 +237,7 @@ def test_required_anomaly_precedes_optional_warning(tmp_path: Path) -> None:
     diagnostics.finalize_contract_audit()
 
     assert diagnostics.snapshot()["first_anomaly"] == {
-        "component": "survey_assembler",
+        "component": "survey_finalizer",
         "expected_artifact": "08_survey.md",
         "kind": "required_artifact_missing",
         "severity": "error",
@@ -366,6 +366,31 @@ def test_durable_plans_restore_spawn_expectations_without_runtime_events(tmp_pat
         "cards/2501.12345.md",
         "sections/01_introduction.md",
     ]
+
+
+def test_durable_plan_accepts_the_exact_absolute_run_directory(tmp_path: Path) -> None:
+    (tmp_path / "00_card_plan.json").write_text(
+        json.dumps(
+            [
+                {
+                    "run_dir": str(tmp_path),
+                    "id": "2501.12345",
+                    "title": "Paper",
+                    "why": "Core evidence",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    diagnostics = SurveyDiagnostics(
+        run_root=tmp_path,
+        job_id=uuid4(),
+        survey_id=uuid4(),
+    )
+
+    diagnostics.observe_artifacts()
+
+    assert diagnostics.snapshot()["expected_dynamic_artifacts"] == ["cards/2501.12345.md"]
 
 
 def test_invalid_durable_plan_is_a_contract_error(tmp_path: Path) -> None:
