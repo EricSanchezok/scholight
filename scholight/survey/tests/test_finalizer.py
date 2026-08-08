@@ -143,9 +143,43 @@ def test_finalizer_marks_missing_cited_card_as_unverified(tmp_path: Path) -> Non
     assert "arXiv:2606.19544" in report
 
 
+def test_finalizer_marks_incomplete_cited_card_as_unverified(tmp_path: Path) -> None:
+    _write_run(tmp_path)
+    (tmp_path / "sections" / "02_conclusion.md").write_text(
+        "## Conclusion\n\nVerified [2501.12345] and incomplete [1904.06505].\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "cards" / "1904.06505.md").write_text(
+        "# PaperCard\n\n- arxiv_id: 1904.06505\n\n## problem\n\nEvidence without metadata.\n",
+        encoding="utf-8",
+    )
+
+    result = finalize_survey(tmp_path)
+
+    report = result.report_path.read_text(encoding="utf-8")
+    assert result.reference_count == 2
+    assert result.unverified_reference_count == 1
+    assert "PaperCard metadata was unavailable or incomplete" in report
+    assert "arXiv:1904.06505" in report
+
+
 def test_finalizer_rejects_run_without_any_verified_paper_card(tmp_path: Path) -> None:
     _write_run(tmp_path)
     (tmp_path / "cards" / "2501.12345.md").unlink()
+
+    with pytest.raises(SurveyFinalizationError, match="no verified paper cards"):
+        finalize_survey(tmp_path)
+
+    assert not (tmp_path / "08_survey.md").exists()
+    assert not (tmp_path / "index.md").exists()
+
+
+def test_finalizer_rejects_run_when_every_paper_card_is_incomplete(tmp_path: Path) -> None:
+    _write_run(tmp_path)
+    (tmp_path / "cards" / "2501.12345.md").write_text(
+        "# PaperCard\n\n- arxiv_id: 2501.12345\n",
+        encoding="utf-8",
+    )
 
     with pytest.raises(SurveyFinalizationError, match="no verified paper cards"):
         finalize_survey(tmp_path)

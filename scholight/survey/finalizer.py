@@ -134,7 +134,7 @@ def _section_files(run_root: Path) -> list[Path]:
     return paths
 
 
-def _card_metadata(card: str, *, citation_id: str) -> tuple[str, str | None, str | None]:
+def _card_metadata(card: str) -> tuple[str | None, str | None, str | None]:
     fields: dict[str, str] = {}
     for line in card.splitlines():
         stripped = line.strip()
@@ -146,11 +146,17 @@ def _card_metadata(card: str, *, citation_id: str) -> tuple[str, str | None, str
             fields[key] = match.group(2).strip()
 
     title = fields.get("title")
-    if not title:
-        raise SurveyFinalizationError(f"Paper card has no title metadata: {citation_id}")
     authors = fields.get("authors")
     year_venue = fields.get("year/venue")
     return title, authors, year_venue
+
+
+def _unverified_reference(citation_id: str) -> str:
+    return (
+        f"- [{citation_id}] arXiv:{citation_id}. "
+        "PaperCard metadata was unavailable or incomplete in this run; "
+        "treat this citation as unverified."
+    )
 
 
 def _references(run_root: Path, section_texts: list[str]) -> tuple[str, int, int]:
@@ -173,10 +179,7 @@ def _references(run_root: Path, section_texts: list[str]) -> tuple[str, int, int
             card_stat = card_path.lstat()
             resolved_card = card_path.resolve(strict=True)
         except FileNotFoundError:
-            entries.append(
-                f"- [{citation_id}] arXiv:{citation_id}. "
-                "PaperCard metadata was unavailable in this run; treat this citation as unverified."
-            )
+            entries.append(_unverified_reference(citation_id))
             unverified_count += 1
             continue
         except OSError as exc:
@@ -191,9 +194,12 @@ def _references(run_root: Path, section_texts: list[str]) -> tuple[str, int, int
         ):
             raise SurveyFinalizationError(f"Cited paper card is invalid: {citation_id}")
         title, authors, year_venue = _card_metadata(
-            _read_text(card_path, label=f"cards/{citation_id}.md"),
-            citation_id=citation_id,
+            _read_text(card_path, label=f"cards/{citation_id}.md")
         )
+        if not title:
+            entries.append(_unverified_reference(citation_id))
+            unverified_count += 1
+            continue
         details = [value.rstrip(".") for value in (authors, year_venue) if value]
         suffix = f" {'; '.join(details)}." if details else ""
         entries.append(f"- [{citation_id}] **{title}.**{suffix} arXiv:{citation_id}.")
