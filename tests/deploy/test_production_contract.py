@@ -176,11 +176,13 @@ def test_survey_capacity_contract_is_explicit_and_staged() -> None:
     assert 'SCHOLIGHT_SURVEY_DRAFT_GLOBAL_CONCURRENCY, Value: "64"' in draft_task
     assert 'SCHOLIGHT_SURVEY_DRAFT_PER_USER_CONCURRENCY, Value: "8"' in draft_task
     assert 'SCHOLIGHT_SURVEY_DRAFT_WORKER_CONCURRENCY, Value: "8"' in draft_task
+    assert 'SCHOLIGHT_SURVEY_MCP_URL, Value: !Sub "https://${DomainName}/api/mcp"' in draft_task
     assert 'SCHOLIGHT_PG_POOL_MIN_SIZE, Value: "1"' in draft_task
     assert 'SCHOLIGHT_PG_POOL_MAX_SIZE, Value: "4"' in draft_task
     assert 'SCHOLIGHT_SURVEY_JOB_GLOBAL_CONCURRENCY, Value: "16"' in full_task
     assert 'SCHOLIGHT_SURVEY_JOB_PER_USER_CONCURRENCY, Value: "4"' in full_task
     assert 'SCHOLIGHT_SURVEY_JOB_WORKER_CONCURRENCY, Value: "1"' in full_task
+    assert 'SCHOLIGHT_SURVEY_MCP_URL, Value: !Sub "https://${DomainName}/api/mcp"' in full_task
     assert 'SCHOLIGHT_PG_POOL_MIN_SIZE, Value: "1"' in full_task
     assert 'SCHOLIGHT_PG_POOL_MAX_SIZE, Value: "2"' in full_task
     assert re.search(r"Name: SCHOLIGHT_SURVEY_DRAFT_CONCURRENCY(?:,|\s*})", runtime) is None

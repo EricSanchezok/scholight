@@ -24,6 +24,21 @@ def test_survey_concurrency_defaults_are_split_by_scope() -> None:
     assert loaded.survey_provider_max_attempts == 3
     assert loaded.survey_provider_retry_base_seconds == 2
     assert loaded.survey_provider_retry_max_seconds == 30
+    assert loaded.survey_mcp_url == "http://api:8000/mcp"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "ftp://api.example/mcp",
+        "https://user:secret@api.example/mcp",
+        "https://api.example/mcp?token=secret",
+        "https://api.example/mcp#fragment",
+    ],
+)
+def test_survey_mcp_url_rejects_unsafe_endpoints(url: str) -> None:
+    with pytest.raises(ValidationError, match="SCHOLIGHT_SURVEY_MCP_URL"):
+        Settings(_env_file=None, survey_mcp_url=url)  # type: ignore[call-arg]
 
 
 def test_environment_template_uses_only_explicit_concurrency_scopes() -> None:
