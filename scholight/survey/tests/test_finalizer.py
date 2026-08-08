@@ -50,7 +50,31 @@ def test_finalizer_preserves_sections_and_deduplicates_references(tmp_path: Path
     assert "Verified Evaluation" in report
     assert result.section_count == 2
     assert result.reference_count == 1
+    assert result.unverified_reference_count == 0
     assert result.index_path.read_text(encoding="utf-8").count("08_survey.md") == 1
+
+
+def test_finalizer_accepts_title_and_abstract_below_document_heading(
+    tmp_path: Path,
+) -> None:
+    """RCM writes one document heading followed by level-two outline fields."""
+    _write_run(tmp_path)
+    (tmp_path / "00_outline.md").write_text(
+        "# SurveyOutline — Evaluation Methods\n\n"
+        "- run_dir: .\n\n"
+        "## Title\n\nA Production Survey\n\n"
+        "## Abstract\n\nA production-shaped abstract.\n\n"
+        "## Through-line\n\nEvidence before conclusions.\n",
+        encoding="utf-8",
+    )
+
+    result = finalize_survey(tmp_path)
+
+    report = result.report_path.read_text(encoding="utf-8")
+    assert report.startswith(
+        "# A Production Survey\n\n## Abstract\n\nA production-shaped abstract."
+    )
+    assert "run_dir" not in report
 
 
 def test_finalizer_expands_grouped_citations_without_treating_labels_as_ids(
@@ -103,11 +127,27 @@ def test_finalizer_accepts_bold_metadata_without_header_section(tmp_path: Path) 
     assert "Verified Evaluation" in result.report_path.read_text(encoding="utf-8")
 
 
-def test_finalizer_rejects_missing_cited_card_without_partial_output(tmp_path: Path) -> None:
+def test_finalizer_marks_missing_cited_card_as_unverified(tmp_path: Path) -> None:
+    _write_run(tmp_path)
+    (tmp_path / "sections" / "02_conclusion.md").write_text(
+        "## Conclusion\n\nVerified [2501.12345] and unavailable [2606.19544].\n",
+        encoding="utf-8",
+    )
+
+    result = finalize_survey(tmp_path)
+
+    report = result.report_path.read_text(encoding="utf-8")
+    assert result.reference_count == 2
+    assert result.unverified_reference_count == 1
+    assert "PaperCard metadata was unavailable" in report
+    assert "arXiv:2606.19544" in report
+
+
+def test_finalizer_rejects_run_without_any_verified_paper_card(tmp_path: Path) -> None:
     _write_run(tmp_path)
     (tmp_path / "cards" / "2501.12345.md").unlink()
 
-    with pytest.raises(SurveyFinalizationError, match="Cited paper card is unavailable"):
+    with pytest.raises(SurveyFinalizationError, match="no verified paper cards"):
         finalize_survey(tmp_path)
 
     assert not (tmp_path / "08_survey.md").exists()

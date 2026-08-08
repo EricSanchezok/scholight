@@ -12,7 +12,7 @@ from pathlib import Path
 _BRACKETED_CITATIONS = re.compile(r"\[([^\]\n]{1,1024})\]")
 _ARXIV_ID = re.compile(r"(?<![A-Za-z0-9.])\d{4}\.\d{4,5}(?:v\d+)?(?![A-Za-z0-9.])")
 _SECTION_FILE = re.compile(r"^\d{2}_[A-Za-z0-9-]+\.md$")
-_OUTLINE_HEADING = re.compile(r"^#(?!#)\s+(.+?)\s*$")
+_OUTLINE_HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*$")
 _CARD_FIELD = re.compile(r"^-\s+(.+?):\s*(.*?)\s*$")
 
 
@@ -28,6 +28,7 @@ class FinalizedSurvey:
     index_path: Path
     section_count: int
     reference_count: int
+    unverified_reference_count: int
 
 
 def _regular_file(root: Path, relative_path: str, *, required: bool = True) -> Path | None:
@@ -152,7 +153,7 @@ def _card_metadata(card: str, *, citation_id: str) -> tuple[str, str | None, str
     return title, authors, year_venue
 
 
-def _references(run_root: Path, section_texts: list[str]) -> tuple[str, int]:
+def _references(run_root: Path, section_texts: list[str]) -> tuple[str, int, int]:
     citation_ids: list[str] = []
     for section in section_texts:
         for bracketed in _BRACKETED_CITATIONS.findall(section):
@@ -163,15 +164,24 @@ def _references(run_root: Path, section_texts: list[str]) -> tuple[str, int]:
         raise SurveyFinalizationError("Completed sections contain no auditable citations")
 
     entries: list[str] = []
+    verified_count = 0
+    unverified_count = 0
     card_root, resolved_card_root = _safe_directory(run_root, "cards")
     for citation_id in citation_ids:
         card_path = card_root / f"{citation_id}.md"
         try:
             card_stat = card_path.lstat()
             resolved_card = card_path.resolve(strict=True)
+        except FileNotFoundError:
+            entries.append(
+                f"- [{citation_id}] arXiv:{citation_id}. "
+                "PaperCard metadata was unavailable in this run; treat this citation as unverified."
+            )
+            unverified_count += 1
+            continue
         except OSError as exc:
             raise SurveyFinalizationError(
-                f"Cited paper card is unavailable: {citation_id}"
+                f"Unable to inspect cited paper card: {citation_id}"
             ) from exc
         if (
             not stat.S_ISREG(card_stat.st_mode)
@@ -187,7 +197,10 @@ def _references(run_root: Path, section_texts: list[str]) -> tuple[str, int]:
         details = [value.rstrip(".") for value in (authors, year_venue) if value]
         suffix = f" {'; '.join(details)}." if details else ""
         entries.append(f"- [{citation_id}] **{title}.**{suffix} arXiv:{citation_id}.")
-    return "\n".join(entries), len(entries)
+        verified_count += 1
+    if verified_count == 0:
+        raise SurveyFinalizationError("Completed sections contain no verified paper cards")
+    return "\n".join(entries), len(entries), unverified_count
 
 
 def _atomic_write(path: Path, content: str) -> None:
@@ -212,7 +225,7 @@ def finalize_survey(run_root: Path) -> FinalizedSurvey:
 
     sections = _section_files(run_root)
     section_texts = [_read_text(path, label=f"sections/{path.name}").strip() for path in sections]
-    references, reference_count = _references(run_root, section_texts)
+    references, reference_count, unverified_reference_count = _references(run_root, section_texts)
 
     report_parts = [f"# {title}", "## Abstract", abstract]
     if _regular_file(run_root, "08_global_picture.png", required=False) is not None:
@@ -247,6 +260,7 @@ def finalize_survey(run_root: Path) -> FinalizedSurvey:
         index_path=index_path,
         section_count=len(section_texts),
         reference_count=reference_count,
+        unverified_reference_count=unverified_reference_count,
     )
 
 

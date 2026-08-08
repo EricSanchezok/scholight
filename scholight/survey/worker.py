@@ -636,6 +636,7 @@ async def _execute_survey_once(
                 job_id=str(job.id),
                 section_count=finalized.section_count,
                 reference_count=finalized.reference_count,
+                unverified_reference_count=finalized.unverified_reference_count,
             )
         except SurveyFinalizationError as exc:
             logger.error(
