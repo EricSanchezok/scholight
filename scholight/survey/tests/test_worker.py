@@ -170,6 +170,45 @@ async def test_full_survey_retries_transient_provider_failure_from_clean_workspa
 
 
 @pytest.mark.asyncio
+async def test_zero_exit_incomplete_run_gets_one_same_workspace_repair(
+    tmp_path: Path,
+) -> None:
+    job = _job(job_id=uuid4(), worker_id=uuid4(), status="running")
+    partial = tmp_path / "partial-model-output.md"
+    partial.write_text("keep for repair", encoding="utf-8")
+    now = datetime.now(UTC)
+    incomplete = SurveyExecutionResult(
+        outcome="failed",
+        error_code="survey_report_missing",
+        error_message="Survey generation did not produce a final report.",
+        started_at=now,
+        finished_at=now,
+        return_code=0,
+        termination_reason="report_missing",
+    )
+    succeeded = SurveyExecutionResult(
+        outcome="succeeded",
+        error_code=None,
+        error_message=None,
+        started_at=now,
+        finished_at=now,
+        return_code=0,
+        termination_reason="completed",
+    )
+
+    with patch(
+        "scholight.survey.worker._execute_survey_once",
+        new_callable=AsyncMock,
+        side_effect=(incomplete, succeeded),
+    ) as execute:
+        result = await execute_survey(job, tmp_path)
+
+    assert result.outcome == "succeeded"
+    assert execute.await_count == 2
+    assert partial.read_text(encoding="utf-8") == "keep for repair"
+
+
+@pytest.mark.asyncio
 async def test_missing_workflow_resources_fail_before_process_start(tmp_path: Path) -> None:
     create_process = AsyncMock()
     with (

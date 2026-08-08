@@ -8,6 +8,7 @@ import pytest
 
 from scholight.survey.workflow_resources import (
     WorkflowResourceError,
+    prepare_workflow_workspace,
     referenced_schema_paths,
     stage_workflow_schema,
 )
@@ -80,3 +81,20 @@ def test_stage_rejects_symlinked_packaged_prompt(tmp_path: Path) -> None:
 
     with pytest.raises(WorkflowResourceError, match="unsafe"):
         stage_workflow_schema(run_root, workflow_root=workflow)
+
+
+def test_prepare_workspace_creates_only_listable_contract_directories(tmp_path: Path) -> None:
+    prepared = prepare_workflow_workspace(tmp_path)
+
+    assert {path.name for path in prepared} == {"pdfs", "cards", "sections"}
+    assert all((tmp_path / name).is_dir() for name in ("pdfs", "cards", "sections"))
+    assert not (tmp_path / "03b_citation_expansion.md").exists()
+
+
+def test_prepare_workspace_rejects_symlinked_contract_directory(tmp_path: Path) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (tmp_path / "cards").symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(WorkflowResourceError, match="cards cannot be a symbolic link"):
+        prepare_workflow_workspace(tmp_path)
