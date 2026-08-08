@@ -55,6 +55,7 @@ from scholight.survey.process import (
 from scholight.survey.progress import stage_for_component
 from scholight.survey.runtime import survey_environment
 from scholight.survey.workflow_resources import WorkflowResourceError, stage_workflow_schema
+from scholight.survey.workflow_runtime import workflow_file
 
 logger = structlog.get_logger(__name__)
 
@@ -111,7 +112,7 @@ class SurveyExecutionResult:
 
 
 def _workflow_file() -> Path:
-    return Path(__file__).parent / "workflow" / "rcm" / "survey_pipeline.rcm"
+    return workflow_file("survey_pipeline.rcm", mcp_url=settings.survey_mcp_url)
 
 
 def _job_root(job_id: UUID) -> Path:

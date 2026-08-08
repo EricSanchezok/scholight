@@ -2,6 +2,7 @@
 
 import os
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
@@ -159,6 +160,7 @@ class Settings(BaseSettings):
     survey_title_timeout_seconds: float = Field(default=15.0, ge=1.0, le=60.0)
     image_gen_api_key: str = Field(default="", validation_alias="IMAGE_GEN_API_KEY")
     survey_mcp_jwt_secret: str = ""
+    survey_mcp_url: str = "http://api:8000/mcp"
     survey_s3_bucket: str = ""
     survey_s3_endpoint_url: str | None = None
     survey_s3_public_endpoint_url: str | None = None
@@ -183,6 +185,19 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _validate_survey_concurrency(self) -> "Settings":
+        mcp_url = urlsplit(self.survey_mcp_url)
+        if (
+            mcp_url.scheme not in {"http", "https"}
+            or not mcp_url.hostname
+            or mcp_url.username is not None
+            or mcp_url.password is not None
+            or bool(mcp_url.query)
+            or bool(mcp_url.fragment)
+        ):
+            raise ValueError(
+                "SCHOLIGHT_SURVEY_MCP_URL must be an HTTP(S) URL without credentials, "
+                "query parameters, or a fragment"
+            )
         if self.survey_provider_retry_base_seconds > self.survey_provider_retry_max_seconds:
             raise ValueError(
                 "SCHOLIGHT_SURVEY_PROVIDER_RETRY_BASE_SECONDS must not exceed "

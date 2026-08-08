@@ -63,6 +63,14 @@ bounded exponential backoff while the original database lease and concurrency
 slot remain owned. Authentication, resource, sandbox, and workflow-contract
 failures are never retried automatically.
 
+The vendored RCM workflows keep `http://api:8000/mcp` as their local default.
+At startup the worker materializes an immutable copy of the workflow tree and
+injects `SCHOLIGHT_SURVEY_MCP_URL`. Production sets this to the authenticated
+same-origin `https://scholight.sanchezcloud.net/api/mcp` route, so Draft,
+Discovery, and Expansion all use the same endpoint that is covered by public
+health and deployment smoke tests. Bearer delegation remains mandatory; the
+endpoint URL contains no credential or user data.
+
 In ECS, a worker must establish task scale-in protection before claiming work.
 It refreshes a 30-minute protection period every five minutes while work is
 active and clears protection when idle. If the ECS agent endpoint is present

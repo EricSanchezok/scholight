@@ -634,6 +634,7 @@ Resources:
           Command: [scholight, survey, serve-draft-worker]
           Environment:
             - { Name: SCHOLIGHT_SURVEY_RUNTIME_ENABLED, Value: "true" }
+            - { Name: SCHOLIGHT_SURVEY_MCP_URL, Value: !Sub "https://${DomainName}/api/mcp" }
             - { Name: SCHOLIGHT_SURVEY_DRAFT_GLOBAL_CONCURRENCY, Value: "64" }
             - { Name: SCHOLIGHT_SURVEY_DRAFT_PER_USER_CONCURRENCY, Value: "8" }
             - { Name: SCHOLIGHT_SURVEY_DRAFT_WORKER_CONCURRENCY, Value: "8" }
@@ -680,6 +681,7 @@ Resources:
           Command: [scholight, survey, serve-worker]
           Environment:
             - { Name: SCHOLIGHT_SURVEY_RUNTIME_ENABLED, Value: "true" }
+            - { Name: SCHOLIGHT_SURVEY_MCP_URL, Value: !Sub "https://${DomainName}/api/mcp" }
             - { Name: SCHOLIGHT_SURVEY_JOB_GLOBAL_CONCURRENCY, Value: "16" }
             - { Name: SCHOLIGHT_SURVEY_JOB_PER_USER_CONCURRENCY, Value: "4" }
             - { Name: SCHOLIGHT_SURVEY_JOB_WORKER_CONCURRENCY, Value: "1" }

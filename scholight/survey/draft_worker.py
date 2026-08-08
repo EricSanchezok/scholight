@@ -6,7 +6,6 @@ import asyncio
 import json
 import time
 from dataclasses import dataclass
-from pathlib import Path
 from uuid import UUID, uuid4
 
 import structlog
@@ -48,6 +47,7 @@ from scholight.survey.process import (
     write_stdin,
 )
 from scholight.survey.runtime import survey_environment
+from scholight.survey.workflow_runtime import workflow_file
 
 logger = structlog.get_logger(__name__)
 
@@ -63,7 +63,7 @@ class DraftExecutionResult:
 
 
 def _workflow_file() -> str:
-    return str(Path(__file__).parent / "workflow" / "rcm" / "draft.rcm")
+    return str(workflow_file("draft.rcm", mcp_url=settings.survey_mcp_url))
 
 
 def _purpose(*, draft: SurveyDraft, context: SurveyDraftContext) -> str:
