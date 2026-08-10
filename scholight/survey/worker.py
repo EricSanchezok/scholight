@@ -772,7 +772,7 @@ async def execute_survey(
     *,
     control: ProcessControl | None = None,
 ) -> SurveyExecutionResult:
-    """Run Survey with bounded provider retries and one artifact repair pass."""
+    """Run Survey with bounded provider retries and one same-workspace repair pass."""
     control = control or ProcessControl()
     provider_attempt = 1
     artifact_repair_available = True
@@ -789,7 +789,7 @@ async def execute_survey(
         if (
             artifact_repair_available
             and result.outcome == "failed"
-            and result.error_code == "survey_report_missing"
+            and result.error_code in {"survey_report_missing", "survey_contract_violation"}
             and result.return_code == 0
         ):
             artifact_repair_available = False
