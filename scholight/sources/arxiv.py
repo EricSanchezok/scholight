@@ -68,6 +68,19 @@ def canonicalize_arxiv_id(raw: str) -> str | None:
     return f"{prefix}.{suffix}"
 
 
+def arxiv_artifact_stem(arxiv_id: str) -> str | None:
+    """Map one canonical semantic arXiv ID to a traversal-safe filename stem.
+
+    Legacy identifiers retain their semantic slash everywhere except on disk,
+    where ``archive/YYMMNNN`` is stored as ``archive-YYMMNNN``.  An optional
+    citation revision suffix does not change the paper-card filename.
+    """
+    semantic_id = re.sub(r"v\d+$", "", arxiv_id)
+    if canonicalize_arxiv_id(semantic_id) != semantic_id:
+        return None
+    return semantic_id.replace("/", "-")
+
+
 class OAIHarvestError(Exception):
     """OAI-PMH harvesting failed."""
 

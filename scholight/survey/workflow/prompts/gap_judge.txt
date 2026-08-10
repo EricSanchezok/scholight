@@ -13,7 +13,7 @@ Workflow:
 1. Read schema/judge_panel.md.
 2. Extract run_dir and ResearchMap from context. If run_dir is absent, return a blocked handoff; do not inspect another workspace.
 3. Separate evidence-backed gaps from speculative future work.
-4. Write run_dir/06d_gap_judge.md.
+4. Write run_dir/06d_gap_judge.md with exactly one standalone `verdict: <value>` line using only strong, acceptable, insufficient, or blocked.
 5. Final response: a handoff per schema/handoff.md — run_dir, artifact path, status, verdict, counts (strong gaps, weak gaps), and up to 3 suggested queries under next.
 
 A gap needs limitation evidence, contradiction evidence, benchmark failure, or a repeated missing evaluation.

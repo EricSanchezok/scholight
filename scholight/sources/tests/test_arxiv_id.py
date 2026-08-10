@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from scholight.sources.arxiv import canonicalize_arxiv_id
+from scholight.sources.arxiv import arxiv_artifact_stem, canonicalize_arxiv_id
 
 
 class TestCanonicalPassThrough:
@@ -95,3 +95,20 @@ class TestEdgeCases:
         # If callers accidentally pass None, should not crash
         with pytest.raises(AttributeError):
             canonicalize_arxiv_id(None)  # type: ignore[arg-type]
+
+
+class TestArtifactStem:
+    """Semantic arXiv IDs must map to one safe artifact filename."""
+
+    def test_modern_id_is_unchanged(self) -> None:
+        assert arxiv_artifact_stem("2501.12345") == "2501.12345"
+
+    def test_legacy_id_replaces_the_subject_separator(self) -> None:
+        assert arxiv_artifact_stem("cs/0012009") == "cs-0012009"
+
+    @pytest.mark.parametrize(
+        "unsafe_id",
+        ("../2501.12345", "/2501.12345", "cs\\0012009", "bad/1234"),
+    )
+    def test_unsafe_or_noncanonical_id_is_rejected(self, unsafe_id: str) -> None:
+        assert arxiv_artifact_stem(unsafe_id) is None

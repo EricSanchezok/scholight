@@ -49,7 +49,7 @@ its local process concurrency:
 | Queue | Global hard limit | Per-user limit | Per-worker limit |
 | --- | ---: | ---: | ---: |
 | Draft | 64 | 8 | 8 |
-| Full Survey | 16 | 4 | 1 |
+| Full Survey | 16 | 4 | 2 |
 
 The Full Survey daily quota remains 3 by default and is independent from these
 simultaneous-execution limits. A quota override may permit more daily work but
@@ -304,6 +304,36 @@ summary so the partial worker rollout cannot be mistaken for a complete one.
     rollback references for seven days before requesting cleanup.
 
 ## Failure handling
+
+An archived Full Survey that failed only with `survey_contract_violation` may be
+reclassified in place after the corrected application proves the complete
+archive still satisfies every current contract. Run the command inside a
+one-off task cloned from the deployed Survey task definition so it uses the
+reviewed database role, private artifact bucket, and exact release image. The
+command is dry-run by default:
+
+```bash
+scholight survey recover-archived <job-uuid> --json-output
+```
+
+Record the reported `report_sha256`, review the zero-error result, then apply
+the same immutable archive guard:
+
+```bash
+scholight survey recover-archived <job-uuid> \
+  --apply \
+  --expected-report-sha256 <dry-run-report-sha256> \
+  --json-output
+```
+
+Recovery accepts only a finished failed job and aggregate whose error is
+`survey_contract_violation`, whose owner-scoped manifest prefix matches the
+database, and whose bounded Markdown/JSON/image inputs match every manifest
+size and checksum. It reruns deterministic finalization and requires the final
+report and index hashes to remain identical to the immutable archive. The
+database update locks the quota ledger, Survey, job, drafts, and notification in
+the canonical order; a running notification aborts the operation. Repeating an
+already applied recovery is safe and does not consume quota or resend mail.
 
 - A failed image build produces no deployable manifest.
 - A failed database task leaves production application images unchanged.

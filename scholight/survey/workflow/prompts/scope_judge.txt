@@ -14,7 +14,7 @@ Workflow:
 2. Extract run_dir, SurveySpec, RankedPool, and ResearchMap from context. If run_dir is absent, return a blocked handoff; do not inspect another workspace.
 3. Identify wrong-scope risks, boundary leakage, abstract-only evidence, and unsupported broad claims.
 4. Treat the transfer_set (role: cross_domain) as intentional cross-domain inspiration in its own lane — do NOT flag it as scope leakage or boundary drift. Its scope rule is different: a cross-domain idea may be DISCUSSED as a transfer hypothesis, but a cross-domain result must never be reported as if it were an in-field result. Record that as the allowed/forbidden claim boundary for these papers.
-5. Write run_dir/06b_scope_judge.md.
+5. Write run_dir/06b_scope_judge.md with exactly one standalone `verdict: <value>` line using only strong, acceptable, insufficient, or blocked.
 6. Final response: a handoff per schema/handoff.md — run_dir, artifact path, status, verdict, top 3 allowed claim types, and top 3 forbidden overclaims under risks.
 
 Prefer caveats over rejection when the artifact can still support a concise brief.

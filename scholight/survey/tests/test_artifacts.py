@@ -254,6 +254,86 @@ async def test_open_artifact_rejects_path_not_in_manifest(tmp_path: Path) -> Non
 
 
 @pytest.mark.asyncio
+async def test_recovery_restores_only_verified_contract_artifacts(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "cards").mkdir()
+    (source / "cards" / "cs-0012009.md").write_text("legacy card", encoding="utf-8")
+    (source / "00_card_plan.json").write_text("[]", encoding="utf-8")
+    (source / "paper.pdf").write_bytes(b"pdf")
+    (source / "notes.txt").write_text("not a contract input", encoding="utf-8")
+    fake = _FakeS3()
+    store = SurveyArtifactStore(bucket="survey-test", client=fake)
+    archive = await store.archive_run(
+        user_id=42,
+        job_id=uuid4(),
+        run_root=source,
+        run_metadata={"outcome": "failed"},
+    )
+
+    restored = await store.restore_contract_workspace(
+        manifest_key=archive.manifest_key,
+        run_root=tmp_path / "restored",
+    )
+
+    assert set(restored) == {"00_card_plan.json", "cards/cs-0012009.md"}
+    assert (tmp_path / "restored" / "cards" / "cs-0012009.md").read_text() == "legacy card"
+    assert not (tmp_path / "restored" / "paper.pdf").exists()
+    assert not (tmp_path / "restored" / "notes.txt").exists()
+
+
+@pytest.mark.asyncio
+async def test_recovery_rejects_manifest_path_traversal(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "08_survey.md").write_text("# Survey", encoding="utf-8")
+    fake = _FakeS3()
+    store = SurveyArtifactStore(bucket="survey-test", client=fake)
+    archive = await store.archive_run(
+        user_id=42,
+        job_id=uuid4(),
+        run_root=source,
+        run_metadata={"outcome": "failed"},
+    )
+    manifest = json.loads(fake.objects[archive.manifest_key])
+    manifest["files"][0]["path"] = "run/../escaped.md"
+    fake.objects[archive.manifest_key] = json.dumps(manifest).encode()
+
+    with pytest.raises(SurveyArtifactError, match="entry"):
+        await store.restore_contract_workspace(
+            manifest_key=archive.manifest_key,
+            run_root=tmp_path / "restored",
+        )
+
+
+@pytest.mark.asyncio
+async def test_recovery_stops_when_object_exceeds_manifest_size(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "08_survey.md").write_text("# Survey", encoding="utf-8")
+    fake = _FakeS3()
+    store = SurveyArtifactStore(bucket="survey-test", client=fake)
+    archive = await store.archive_run(
+        user_id=42,
+        job_id=uuid4(),
+        run_root=source,
+        run_metadata={"outcome": "failed"},
+    )
+    report_key = next(
+        record["key"]
+        for record in archive.manifest["files"]
+        if record["path"] == "run/08_survey.md"
+    )
+    fake.objects[report_key] += b"unexpected"
+
+    with pytest.raises(SurveyArtifactError, match="does not match"):
+        await store.restore_contract_workspace(
+            manifest_key=archive.manifest_key,
+            run_root=tmp_path / "restored",
+        )
+
+
+@pytest.mark.asyncio
 async def test_report_package_contains_final_markdown_and_images(tmp_path: Path) -> None:
     (tmp_path / "08_survey.md").write_text("# Survey", encoding="utf-8")
     (tmp_path / "08_global_picture.png").write_bytes(b"image")

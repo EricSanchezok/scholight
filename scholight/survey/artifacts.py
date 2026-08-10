@@ -26,6 +26,8 @@ logger = structlog.get_logger(__name__)
 
 _READ_CHUNK_BYTES = 1024 * 1024
 _MANIFEST_MAX_BYTES = 8 * 1024 * 1024
+_RECOVERY_FILE_MAX_BYTES = 16 * 1024 * 1024
+_RECOVERY_TOTAL_MAX_BYTES = 256 * 1024 * 1024
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 _HTML_COMMENT_BYTES_PATTERN = re.compile(rb"<!--.*?-->", re.DOTALL)
 
@@ -440,6 +442,84 @@ class SurveyArtifactStore:
         """Open exactly one manifest-authorized object for bounded streaming."""
         return await asyncio.to_thread(self._open_artifact_sync, manifest_key, path)
 
+    async def restore_contract_workspace(
+        self,
+        *,
+        manifest_key: str,
+        run_root: Path,
+    ) -> dict[str, str]:
+        """Restore only bounded contract inputs into a new private workspace."""
+        return await asyncio.to_thread(
+            self._restore_contract_workspace_sync,
+            manifest_key,
+            run_root,
+        )
+
+    def _restore_contract_workspace_sync(
+        self,
+        manifest_key: str,
+        run_root: Path,
+    ) -> dict[str, str]:
+        manifest = self._read_manifest_sync(manifest_key)
+        records = _validated_records(manifest, manifest_key=manifest_key)
+        selected: list[dict[str, Any]] = []
+        total_size = 0
+        image_suffixes = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+        for record in records:
+            path = PurePosixPath(str(record["path"]))
+            if not path.parts or path.parts[0] != "run":
+                continue
+            relative = PurePosixPath(*path.parts[1:])
+            suffix = relative.suffix.casefold()
+            is_contract_text = suffix in {".md", ".json"}
+            is_contract_image = (
+                len(relative.parts) == 1
+                and relative.stem == "08_global_picture"
+                and suffix in image_suffixes
+            )
+            if not (is_contract_text or is_contract_image):
+                continue
+            size = int(record["size"])
+            if size > _RECOVERY_FILE_MAX_BYTES:
+                raise SurveyArtifactError("Survey recovery artifact exceeds the file limit")
+            total_size += size
+            if total_size > _RECOVERY_TOTAL_MAX_BYTES:
+                raise SurveyArtifactError("Survey recovery workspace exceeds the total limit")
+            selected.append(record)
+
+        try:
+            run_root.mkdir(parents=True, exist_ok=False)
+            resolved_root = run_root.resolve(strict=True)
+        except OSError as exc:
+            raise SurveyArtifactError("Survey recovery workspace could not be created") from exc
+
+        restored: dict[str, str] = {}
+        for record in selected:
+            relative = PurePosixPath(str(record["path"])).relative_to("run")
+            target = resolved_root.joinpath(*relative.parts)
+            try:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                if target.parent.resolve(strict=True) != resolved_root.joinpath(
+                    *relative.parts[:-1]
+                ).resolve(strict=True):
+                    raise SurveyArtifactError("Survey recovery artifact path is unsafe")
+                content = self._read_record_bytes(record)
+                descriptor = os.open(
+                    target,
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+                    0o600,
+                )
+                with os.fdopen(descriptor, "wb") as handle:
+                    handle.write(content)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+            except SurveyArtifactError:
+                raise
+            except OSError as exc:
+                raise SurveyArtifactError("Survey recovery artifact could not be written") from exc
+            restored[relative.as_posix()] = str(record["sha256"])
+        return restored
+
     def _open_artifact_sync(self, manifest_key: str, path: str) -> SurveyArtifactStream:
         manifest = self._read_manifest_sync(manifest_key)
         record = next(
@@ -538,6 +618,8 @@ class SurveyArtifactStore:
             while chunk := body.read(_READ_CHUNK_BYTES):
                 digest.update(chunk)
                 content.write(chunk)
+                if content.tell() > expected_size:
+                    raise SurveyArtifactError("Survey artifact does not match the manifest")
         finally:
             close = getattr(body, "close", None)
             if callable(close):

@@ -13,7 +13,7 @@ Workflow:
 1. Read schema/judge_panel.md.
 2. Extract run_dir and ResearchMap from context. If run_dir is absent, return a blocked handoff; do not inspect another workspace.
 3. Evaluate concept coverage, method coverage, benchmark coverage, comparison coverage, and gap coverage.
-4. Write run_dir/06a_coverage_judge.md.
+4. Write run_dir/06a_coverage_judge.md with exactly one standalone `verdict: <value>` line.
 5. Final response: a handoff per schema/handoff.md — run_dir, artifact path, status, verdict, top 3 risks, and top 3 suggested queries under next.
 
 Use verdict values only: strong, acceptable, insufficient, blocked.

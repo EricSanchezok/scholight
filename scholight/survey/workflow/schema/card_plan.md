@@ -16,10 +16,15 @@ Before dispatching workers, the planner writes a JSON array to
 the same entries; the file preserves expectations across retries and recovery:
 
 - `run_dir`: the run directory, verbatim, in every element.
-- `id`: the paper's arXiv id — must exist in the ranked pool; never invented.
+- `id`: the canonical semantic arXiv id — must exist in the ranked pool; never
+  invented. Legacy ids retain their slash here (for example `cs/0012009`).
 - `title`: the paper title.
 - `why`: one line — its role + why it matters to the anchor. Tag cross-domain
   picks with "cross_domain transfer".
+
+When an id is used in a local artifact filename, replace the single slash in a
+legacy id with `-`. Thus `cs/0012009` maps to `cards/cs-0012009.md`; the semantic
+id remains `cs/0012009` in metadata, retrieval, and citations.
 
 ## Selection priority
 

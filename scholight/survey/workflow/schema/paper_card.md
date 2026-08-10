@@ -4,7 +4,10 @@ A `PaperCard` is a compact, **full-text-grounded** summary of one paper, read
 *with the survey's research anchor in mind*. Cards replace abstract-only notes for
 the papers that matter most, and are the evidence the survey is written from.
 
-One file per paper at `run_dir/cards/<arxiv_id>.md`.
+One file per paper at `run_dir/cards/<artifact_stem>.md`. Modern ids use the id
+unchanged. For a legacy id, replace its single slash with `-` only in filenames:
+`cs/0012009` is stored as `cards/cs-0012009.md` while its header and citations
+remain `cs/0012009`.
 
 ## Required sections
 

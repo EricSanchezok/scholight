@@ -15,6 +15,8 @@ from uuid import UUID
 
 import structlog
 
+from scholight.sources.arxiv import arxiv_artifact_stem, canonicalize_arxiv_id
+
 logger = structlog.get_logger(__name__)
 
 TRACE_FILE = "trajectory.jsonl"
@@ -29,7 +31,6 @@ _MAX_SECTION_PLAN_ITEMS = 128
 _SECRET_KEY = re.compile(r"(?i)(authorization|api[_-]?key|token|secret|password|jwt)")
 _SECRET_VALUE = re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._~-]+|sk_(?:live|test)_[A-Za-z0-9._~-]+")
 _ABSOLUTE_PATH = re.compile(r"(?<![A-Za-z0-9._~-])/(?:[^\s:'\"]+/)+[^\s:'\"]+")
-_SAFE_ARXIV_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 _SAFE_SECTION_PART = re.compile(r"^[A-Za-z0-9-]{1,64}$")
 _SAFE_SECTION_NUMBER = re.compile(r"^\d{2}$")
 _SECTION_FILE = re.compile(r"^(\d+)_.*\.md$")
@@ -39,6 +40,21 @@ _REPORT_REFERENCES_HEADING = re.compile(
     r"^##\s+(?:\d+\s*[.:—-]\s*)?references\b",
     re.IGNORECASE,
 )
+_VERDICTS = frozenset({"strong", "acceptable", "insufficient", "blocked"})
+_JUDGE_VERDICT_ARTIFACTS = {
+    "06a_coverage_judge.md": ("coverage_judge", "verdict"),
+    "06b_scope_judge.md": ("scope_judge", "verdict"),
+    "06c_benchmark_judge.md": ("benchmark_judge", "verdict"),
+    "06d_gap_judge.md": ("gap_judge", "verdict"),
+    "06_judge_panel.md": ("judge_synthesizer", "overall_verdict"),
+}
+
+
+def _card_artifact_path(paper_id: object) -> str | None:
+    if not isinstance(paper_id, str) or canonicalize_arxiv_id(paper_id) != paper_id:
+        return None
+    stem = arxiv_artifact_stem(paper_id)
+    return f"cards/{stem}.md" if stem is not None else None
 
 
 def _normalized_section_heading(line: str) -> tuple[int | None, str] | None:
@@ -415,9 +431,9 @@ class SurveyDiagnostics:
             if not isinstance(raw_item, dict):
                 continue
             if normalized == "spawn_papercard":
-                paper_id = str(raw_item.get("id", ""))
-                if _SAFE_ARXIV_ID.fullmatch(paper_id):
-                    self._dynamic_required[f"cards/{paper_id}.md"] = "paper_card"
+                output = _card_artifact_path(raw_item.get("id"))
+                if output is not None:
+                    self._dynamic_required[output] = "paper_card"
             elif normalized == "spawn_sectionexpander":
                 number = str(raw_item.get("n", ""))
                 slug = str(raw_item.get("slug", ""))
@@ -458,14 +474,14 @@ class SurveyDiagnostics:
                 return None
             if relative_path == "00_card_plan.json":
                 paper_id = raw_item.get("id")
-                if not isinstance(paper_id, str) or not _SAFE_ARXIV_ID.fullmatch(paper_id):
+                output = _card_artifact_path(paper_id)
+                if output is None:
                     return None
                 if not all(
                     isinstance(raw_item.get(field), str) and bool(raw_item[field].strip())
                     for field in ("title", "why")
                 ):
                     return None
-                output = f"cards/{paper_id}.md"
             else:
                 number = raw_item.get("n")
                 slug = raw_item.get("slug")
@@ -481,10 +497,7 @@ class SurveyDiagnostics:
                     )
                     or not isinstance(raw_item.get("transfer_angle"), str)
                     or not isinstance(card_ids, list)
-                    or not all(
-                        isinstance(card_id, str) and _SAFE_ARXIV_ID.fullmatch(card_id)
-                        for card_id in card_ids
-                    )
+                    or not all(_card_artifact_path(card_id) is not None for card_id in card_ids)
                 ):
                     return None
                 output = f"sections/{number}_{slug}.md"
@@ -493,6 +506,28 @@ class SurveyDiagnostics:
             outputs.add(output)
             validated.append(raw_item)
         return validated
+
+    def _audit_judge_verdicts(self) -> None:
+        for relative_path, (component, field) in _JUDGE_VERDICT_ARTIFACTS.items():
+            if not _valid_artifact(self.run_root, relative_path):
+                continue
+            try:
+                lines = (self.run_root / relative_path).read_text(encoding="utf-8").splitlines()
+            except (OSError, UnicodeError):
+                lines = []
+            matches = []
+            prefix = f"{field}:"
+            for line in lines:
+                stripped = line.strip()
+                if stripped.startswith(prefix):
+                    matches.append(stripped.removeprefix(prefix).strip())
+            if len(matches) != 1 or matches[0] not in _VERDICTS:
+                self._record_anomaly(
+                    component=component,
+                    expected_artifact=f"{relative_path}#{field}",
+                    kind="judge_verdict_invalid",
+                    severity="error",
+                )
 
     def _register_durable_plan(self, relative_path: str) -> bool:
         items = self._read_durable_plan(relative_path)
@@ -687,6 +722,7 @@ class SurveyDiagnostics:
                         kind="required_artifact_missing",
                         severity="error",
                     )
+        self._audit_judge_verdicts()
         self._audit_final_report_content()
         for contract in ARTIFACT_CONTRACTS:
             for relative_path in contract.optional:

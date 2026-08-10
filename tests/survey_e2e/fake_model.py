@@ -186,7 +186,9 @@ def _artifact_content(stage: str, path: str) -> str:
         )
     if stage == "research_map":
         return "# Research map\n\nRAG evaluation connects evidence quality and benchmarks.\n"
-    if stage.endswith("judge") or stage == "judge_synthesizer":
+    if stage == "judge_synthesizer":
+        return "# Judge panel\n\noverall_verdict: acceptable\n\nEvidence is sufficient for E2E.\n"
+    if stage.endswith("judge"):
         return f"# {stage}\n\nverdict: acceptable\n\nEvidence is sufficient for E2E.\n"
     if stage == "survey_outline":
         return (

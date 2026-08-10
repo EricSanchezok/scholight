@@ -2,17 +2,18 @@
 
 Judges should be independent and evidence-oriented.
 
-Each judge returns:
+Each judge artifact returns:
 
-- `verdict`: strong, acceptable, insufficient, or blocked.
+- Exactly one standalone `verdict: <value>` line, where `<value>` is one of
+  `strong`, `acceptable`, `insufficient`, or `blocked`.
 - `evidence`: concrete observations from the current artifacts.
 - `risks`: missing coverage, overclaim, benchmark mismatch, or speculative gaps.
 - `required_fixes`: specific actions before final writing.
 - `suggested_queries`: targeted retrieval queries.
 
-The synthesizer returns:
+The synthesizer artifact returns:
 
-- `overall_verdict`
+- Exactly one standalone `overall_verdict: <value>` line using the same enum.
 - `what_is_ready`
 - `what_must_be_caveated`
 - `what_to_expand_next`

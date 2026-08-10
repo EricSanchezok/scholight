@@ -64,7 +64,7 @@ from scholight.survey.workflow_runtime import workflow_file
 
 logger = structlog.get_logger(__name__)
 
-RCM_VERSION = "0.2.12"
+RCM_VERSION = "0.2.13"
 WORKFLOW_VERSION = "scholight-survey-v1"
 _IDLE_SECONDS = 1
 _RECOVERY_SECONDS = 30
