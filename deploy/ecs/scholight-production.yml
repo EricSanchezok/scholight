@@ -56,8 +56,8 @@ Parameters:
     Type: Number
     Default: 1
     MinValue: 1
-    MaxValue: 16
-    Description: Staged Full Survey worker ceiling; raise only after quota and provider validation
+    MaxValue: 8
+    Description: Staged Full Survey worker ceiling; two jobs run per task
 
 Rules:
   SurveyRequiresApplication:
@@ -665,9 +665,8 @@ Resources:
     Type: AWS::ECS::TaskDefinition
     Properties:
       Family: sanchezcloud-scholight-survey
-      Cpu: "2048"
-      Memory: "4096"
-      EphemeralStorage: { SizeInGiB: 40 }
+      Cpu: "1024"
+      Memory: "2048"
       NetworkMode: awsvpc
       RequiresCompatibilities: [FARGATE]
       RuntimePlatform: { CpuArchitecture: X86_64, OperatingSystemFamily: LINUX }
@@ -684,7 +683,7 @@ Resources:
             - { Name: SCHOLIGHT_SURVEY_MCP_URL, Value: !Sub "https://${DomainName}/api/mcp" }
             - { Name: SCHOLIGHT_SURVEY_JOB_GLOBAL_CONCURRENCY, Value: "16" }
             - { Name: SCHOLIGHT_SURVEY_JOB_PER_USER_CONCURRENCY, Value: "4" }
-            - { Name: SCHOLIGHT_SURVEY_JOB_WORKER_CONCURRENCY, Value: "1" }
+            - { Name: SCHOLIGHT_SURVEY_JOB_WORKER_CONCURRENCY, Value: "2" }
             - { Name: SCHOLIGHT_SURVEY_PROVIDER_MAX_ATTEMPTS, Value: "3" }
             - { Name: SCHOLIGHT_SURVEY_PROVIDER_RETRY_BASE_SECONDS, Value: "2" }
             - { Name: SCHOLIGHT_SURVEY_PROVIDER_RETRY_MAX_SECONDS, Value: "30" }
@@ -1012,7 +1011,7 @@ Resources:
       PolicyType: TargetTrackingScaling
       ScalingTargetId: !Ref SurveyFullScalableTarget
       TargetTrackingScalingPolicyConfiguration:
-        TargetValue: 1
+        TargetValue: 2
         ScaleInCooldown: 900
         ScaleOutCooldown: 60
         CustomizedMetricSpecification:
@@ -1538,7 +1537,9 @@ Resources:
             {"type":"metric","x":12,"y":18,"width":12,"height":6,"properties":{"title":"Survey reliability and protection","region":"${AWS::Region}","metrics":[["Scholight/Production","SurveyRuntimeFailure","service","survey-worker"],[".","SurveyProviderThrottled",".","."],[".","SurveyProviderThrottled","service","survey-draft-worker"],[".","SurveyProviderRetry",".","."],[".","SurveyProviderRetry","service","survey-full-worker"],[".","SurveyTaskProtectionFailure","service","survey-draft-worker"],[".",".",".","survey-full-worker"],[".","SurveyEmailNotificationDead","service","survey-worker"]]}},
             {"type":"metric","x":0,"y":24,"width":12,"height":6,"properties":{"title":"Survey database latency","region":"${AWS::Region}","metrics":[["Scholight/Production","SurveyDraftClaimLatency","service","survey-draft-worker",{"stat":"p95"}],[".","SurveyDraftHeartbeatLatency",".",".",{"stat":"p95"}],[".","SurveyJobClaimLatency","service","survey-full-worker",{"stat":"p95"}],[".","SurveyJobHeartbeatLatency",".",".",{"stat":"p95"}]]}},
             {"type":"metric","x":12,"y":24,"width":12,"height":6,"properties":{"title":"PostgreSQL capacity","region":"${AWS::Region}","metrics":[["AWS/RDS","DatabaseConnections","DBInstanceIdentifier","${DatabaseInstanceIdentifier}"],[".","CPUUtilization",".","."],[".","FreeableMemory",".",".",{"yAxis":"right"}]]}},
-            {"type":"log","x":0,"y":30,"width":24,"height":6,"properties":{"title":"Recent errors","region":"${AWS::Region}","query":"SOURCE '/sanchezcloud/scholight/api' | fields @timestamp, level, event, request_id | filter level in ['error','critical'] | sort @timestamp desc | limit 50"}}
+            {"type":"metric","x":0,"y":30,"width":12,"height":6,"properties":{"title":"Full Survey compute","region":"${AWS::Region}","metrics":[["AWS/ECS","CPUUtilization","ServiceName","${SurveyFullServiceName}","ClusterName","${ClusterName}"],[".","MemoryUtilization",".",".",".","."]]}},
+            {"type":"metric","x":12,"y":30,"width":12,"height":6,"properties":{"title":"Full Survey storage","region":"${AWS::Region}","metrics":[["ECS/ContainerInsights","EphemeralStorageUtilized","ClusterName","${ClusterName}","ServiceName","${SurveyFullServiceName}"],[".","EphemeralStorageReserved",".",".",".","."]]}},
+            {"type":"log","x":0,"y":36,"width":24,"height":6,"properties":{"title":"Recent errors","region":"${AWS::Region}","query":"SOURCE '/sanchezcloud/scholight/api' | fields @timestamp, level, event, request_id | filter level in ['error','critical'] | sort @timestamp desc | limit 50"}}
           ]}
         - ApiServiceName: !GetAtt ApiService.Name
           ExtractServiceName: !GetAtt ExtractService.Name

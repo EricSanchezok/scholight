@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import argparse
 
-CAPACITY_STAGES = ((1, 1), (2, 2), (4, 4), (8, 8), (8, 16))
+CAPACITY_STAGES = ((1, 1), (2, 2), (4, 4), (8, 8))
 
 
 def validate_capacity_transition(

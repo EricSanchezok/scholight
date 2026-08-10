@@ -81,22 +81,31 @@ oldest-queue-age, and protection-failure metrics every 30 seconds. These
 metrics contain no user, Survey, topic, or document identifiers.
 
 Autoscaling uses aggregate `outstanding / running ECS tasks` metric math with
-targets of 8 Drafts and 1 Full Survey per task. Scale-out waits 60 seconds;
+targets of 8 Drafts and 2 Full Surveys per task. Each Full worker task has 1
+vCPU, 2 GiB memory, and runs at most two jobs concurrently. The per-user Full
+limit remains 4 and the global Full limit remains 16. Fargate supplies its
+20-GiB minimum ephemeral storage because the template no longer provisions the
+previous 40-GiB override; production samples used less than 1 GiB per task.
+Scale-out waits 60 seconds;
 scale-in waits 15 minutes so short queue gaps do not terminate expensive
 workers. `SurveyDraftMaxTasks` and `SurveyFullMaxTasks` are deployment ceilings,
 not steady-state counts, and both default to 1. Open capacity in the reviewed
-stages `1/1 -> 2/2 -> 4/4 -> 8/8 -> 8/16`. Before the final stage, the Singapore
-RDS instance must be at least `db.t4g.small`, the Fargate On-Demand vCPU quota
-must be at least 64, and the model, image, and mail provider quotas must be
-confirmed. The production workflow checks AWS capacity automatically and
-requires an explicit operator confirmation for external provider capacity.
+stages `1/1 -> 2/2 -> 4/4 -> 8/8`. At `4/4`, the Full pool can run eight jobs;
+at `8/8`, it reaches the global limit of 16. Before the final stage, the Fargate
+On-Demand vCPU quota must be at least 64 and the model, image, and mail provider
+quotas must be confirmed. Database size is governed by observed CPU, memory,
+connection, and latency pressure rather than a fixed instance-class gate. The
+production workflow checks AWS capacity automatically and requires an explicit
+operator confirmation for external provider capacity.
 
 Each stage is an observed capacity release, not a configuration-only change.
 Before raising either ceiling again, confirm that there are no OOM or abnormal
 task stops, provider throttling remains below 1%, RDS CPU stays below 60%, RDS
 freeable memory stays above 500 MiB, and Survey claim/heartbeat p95 latency stays
 below 100 ms. The production Dashboard and alarms expose these checks without
-using user or Survey identifiers.
+using user or Survey identifiers. Dedicated Full Survey panels retain
+service-level CPU, memory, and ephemeral-storage history for later density
+reviews.
 
 The pre-release prototype migrations, including the Survey quota-strength
 change, were squashed into the single `005_survey.sql` baseline. A developer

@@ -20,7 +20,7 @@ def test_survey_concurrency_defaults_are_split_by_scope() -> None:
     assert loaded.survey_draft_per_user_concurrency == 8
     assert loaded.survey_job_per_user_concurrency == 4
     assert loaded.survey_draft_worker_concurrency == 8
-    assert loaded.survey_job_worker_concurrency == 1
+    assert loaded.survey_job_worker_concurrency == 2
     assert loaded.survey_provider_max_attempts == 3
     assert loaded.survey_provider_retry_base_seconds == 2
     assert loaded.survey_provider_retry_max_seconds == 30
@@ -50,7 +50,7 @@ def test_environment_template_uses_only_explicit_concurrency_scopes() -> None:
         ("SCHOLIGHT_SURVEY_DRAFT_PER_USER_CONCURRENCY", 8),
         ("SCHOLIGHT_SURVEY_JOB_PER_USER_CONCURRENCY", 4),
         ("SCHOLIGHT_SURVEY_DRAFT_WORKER_CONCURRENCY", 8),
-        ("SCHOLIGHT_SURVEY_JOB_WORKER_CONCURRENCY", 1),
+        ("SCHOLIGHT_SURVEY_JOB_WORKER_CONCURRENCY", 2),
     ):
         assert f"{name}={value}" in template
     assert "SCHOLIGHT_SURVEY_DRAFT_CONCURRENCY=" not in template

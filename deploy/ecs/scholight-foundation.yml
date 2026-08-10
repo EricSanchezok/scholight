@@ -476,9 +476,6 @@ Resources:
                 Action: cloudwatch:GetMetricStatistics
                 Resource: "*"
               - Effect: Allow
-                Action: rds:DescribeDBInstances
-                Resource: !Sub arn:${AWS::Partition}:rds:${AWS::Region}:${AWS::AccountId}:db:sanchezcloud-pg
-              - Effect: Allow
                 Action: servicequotas:GetServiceQuota
                 Resource: "*"
               - Effect: Allow

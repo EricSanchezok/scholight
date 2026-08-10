@@ -41,9 +41,9 @@ on:
         required: true
         default: 1/1
         type: choice
-        options: [1/1, 2/2, 4/4, 8/8, 8/16]
+        options: [1/1, 2/2, 4/4, 8/8]
       survey_capacity_prerequisites_confirmed:
-        description: Confirm model, image, and mail provider capacity before Full max 16
+        description: Confirm Fargate, model, image, and mail capacity before the final 8/8 stage
         required: true
         default: "false"
         type: choice
@@ -94,7 +94,7 @@ jobs:
             exit 1
           fi
           case "$SURVEY_CAPACITY_STAGE" in
-            1/1|2/2|4/4|8/8|8/16) ;;
+            1/1|2/2|4/4|8/8) ;;
             *)
               echo "Survey capacity must use a reviewed Draft/Full stage" >&2
               exit 1
@@ -104,8 +104,8 @@ jobs:
           survey_full_max_tasks=${SURVEY_CAPACITY_STAGE#*/}
           echo "SURVEY_DRAFT_MAX_TASKS=$survey_draft_max_tasks" >> "$GITHUB_ENV"
           echo "SURVEY_FULL_MAX_TASKS=$survey_full_max_tasks" >> "$GITHUB_ENV"
-          if [[ "$survey_full_max_tasks" == 16 && "$SURVEY_CAPACITY_PREREQUISITES_CONFIRMED" != true ]]; then
-            echo "Full Survey max 16 requires confirmed external provider capacity" >&2
+          if [[ "$SURVEY_CAPACITY_STAGE" == 8/8 && "$SURVEY_CAPACITY_PREREQUISITES_CONFIRMED" != true ]]; then
+            echo "The final Survey 8/8 stage requires confirmed infrastructure and provider capacity" >&2
             exit 1
           fi
       - name: Check out exact release source
@@ -130,20 +130,10 @@ jobs:
             --manifest release-manifest.json \
             --expected-release-sha "$RELEASE_SHA"
       - name: Verify final Survey capacity prerequisites
-        if: inputs.survey_capacity_stage == '8/16'
+        if: inputs.survey_capacity_stage == '8/8'
         env:
           AWS_REGION: ${{ vars.AWS_REGION }}
         run: |
-          db_class=$(aws rds describe-db-instances \
-            --db-instance-identifier sanchezcloud-pg \
-            --query 'DBInstances[0].DBInstanceClass' \
-            --output text)
-          case "$db_class" in
-            *.nano|*.micro)
-              echo "Full Survey max 16 requires RDS db.t4g.small or larger; found $db_class" >&2
-              exit 1
-              ;;
-          esac
           quota=$(aws service-quotas get-service-quota \
             --service-code fargate \
             --quota-code L-3032A538 \
@@ -152,7 +142,7 @@ jobs:
           python - "$quota" <<'PY'
           import sys
           if float(sys.argv[1]) < 64:
-              raise SystemExit("Fargate On-Demand vCPU quota must be at least 64")
+              raise SystemExit("The final Survey 8/8 stage requires a Fargate On-Demand vCPU quota of at least 64")
           PY
       - name: Enforce the reviewed Survey capacity ladder
         env:
