@@ -45,7 +45,7 @@ def _stub_durable_progress_update() -> Iterator[AsyncMock]:
 
 
 def test_worker_expects_pinned_rcm_release() -> None:
-    assert RCM_VERSION == "0.2.12"
+    assert RCM_VERSION == "0.2.13"
 
 
 def _job(
@@ -301,6 +301,14 @@ def _write_complete_workflow_artifacts(run_root: Path) -> None:
         "- year/venue: 2024 arXiv\n",
         encoding="utf-8",
     )
+    for judge in (
+        "06a_coverage_judge.md",
+        "06b_scope_judge.md",
+        "06c_benchmark_judge.md",
+        "06d_gap_judge.md",
+    ):
+        (run_root / judge).write_text("verdict: acceptable\n", encoding="utf-8")
+    (run_root / "06_judge_panel.md").write_text("overall_verdict: acceptable\n", encoding="utf-8")
     (run_root / "08_survey.md").unlink(missing_ok=True)
     (run_root / "index.md").unlink(missing_ok=True)
 

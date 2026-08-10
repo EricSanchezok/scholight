@@ -433,6 +433,54 @@ def diagnose(job_id: str, json_output: bool) -> None:
     click.echo(f"Archive: {payload['manifest_key'] or payload['location']}")
 
 
+@survey_group.command("recover-archived")
+@click.argument("job_id", type=str)
+@click.option("--apply", "apply_recovery", is_flag=True, help="Apply the verified transition.")
+@click.option(
+    "--expected-report-sha256",
+    type=str,
+    help="Required immutable report guard when --apply is used.",
+)
+@click.option("--json-output", "json_output", is_flag=True, help="Emit machine-readable JSON.")
+def recover_archived(
+    job_id: str,
+    apply_recovery: bool,
+    expected_report_sha256: str | None,
+    json_output: bool,
+) -> None:
+    """Verify, then optionally recover, one archived contract failure in place."""
+    from scholight.survey.recovery import recover_archived_survey
+
+    configure_logging()
+    try:
+        parsed_job_id = UUID(job_id)
+    except ValueError as exc:
+        raise click.ClickException("Survey job id must be a UUID") from exc
+
+    async def _run() -> dict[str, object]:
+        await create_pool()
+        try:
+            result = await recover_archived_survey(
+                job_id=parsed_job_id,
+                apply=apply_recovery,
+                expected_report_sha256=expected_report_sha256,
+            )
+            return result.as_dict()
+        finally:
+            await close_pool()
+
+    try:
+        payload = asyncio.run(_run())
+    except Exception as exc:
+        raise click.ClickException("Archived Survey recovery verification failed") from exc
+    if json_output:
+        click.echo(json.dumps(payload, separators=(",", ":"), sort_keys=True))
+        return
+    action = "applied" if payload["applied"] else "dry-run verified"
+    click.echo(f"Archived Survey recovery {action}.")
+    click.echo(f"Report SHA256: {payload['report_sha256']}")
+
+
 @survey_group.command("smoke")
 @click.option("--json-output", "json_output", is_flag=True, help="Emit machine-readable JSON.")
 def smoke(json_output: bool) -> None:

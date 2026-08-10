@@ -24,6 +24,7 @@ from scholight.db.queries_survey import (
     get_survey_progress,
     heartbeat_survey_job,
     mark_survey_workspace_missing,
+    recover_archived_survey_contract_failure,
     recover_expired_survey_jobs,
     settle_survey_execution,
     start_survey,
@@ -461,6 +462,89 @@ async def test_formal_failure_keeps_one_failed_survey_and_releases_quota(
     assert notification["survey_outcome"] == "failed"
     assert notification["status"] == "pending"
     assert await _usage(survey_pool) == (0, 0)
+
+
+@pytest.mark.asyncio
+async def test_verified_archived_contract_failure_recovers_atomically_and_idempotently(
+    survey_pool: asyncpg.Pool,
+) -> None:
+    with (
+        patch("scholight.db.queries_survey.get_pool", return_value=survey_pool),
+        patch("scholight.db.queries_survey_drafts.get_pool", return_value=survey_pool),
+    ):
+        survey_id = await _create()
+        await _complete_next_draft(markdown="# Approved Draft")
+        job_id = uuid4()
+        await start_survey(
+            survey_id=survey_id,
+            user_id=42,
+            job_id=job_id,
+            client_request_id=uuid4(),
+            request_hash="a" * 64,
+            notify_on_completion=True,
+        )
+        worker_id = uuid4()
+        job = await claim_survey_job(worker_id=worker_id, lease_seconds=3600)
+        assert job is not None
+        await settle_survey_execution(
+            job_id=job.id,
+            worker_id=worker_id,
+            outcome="failed",
+            error_code="survey_contract_violation",
+            error_message="An old identifier was misclassified.",
+        )
+        prefix = f"surveys/v1/42/{job.id}"
+        manifest_key = f"{prefix}/manifest.json"
+        await finish_survey_archive(
+            job_id=job.id,
+            worker_id=worker_id,
+            storage_bucket="test-surveys",
+            storage_prefix=prefix,
+            manifest_key=manifest_key,
+        )
+
+        assert await recover_archived_survey_contract_failure(
+            job_id=job.id,
+            expected_manifest_key=manifest_key,
+        )
+        assert not await recover_archived_survey_contract_failure(
+            job_id=job.id,
+            expected_manifest_key=manifest_key,
+        )
+
+    survey = await survey_pool.fetchrow(
+        "SELECT status, quota_state, error_code, error_message FROM scholight.surveys "
+        "WHERE id = $1",
+        survey_id,
+    )
+    recovered_job = await survey_pool.fetchrow(
+        "SELECT status, terminal_outcome, error_code, error_message "
+        "FROM scholight.survey_jobs WHERE id = $1",
+        job_id,
+    )
+    notification = await survey_pool.fetchrow(
+        "SELECT status, survey_outcome FROM scholight.survey_email_notifications "
+        "WHERE survey_id = $1",
+        survey_id,
+    )
+    assert survey is not None and tuple(survey.values()) == (
+        "succeeded",
+        "consumed",
+        None,
+        None,
+    )
+    assert recovered_job is not None and tuple(recovered_job.values()) == (
+        "finished",
+        "succeeded",
+        None,
+        None,
+    )
+    assert notification is not None
+    assert (notification["status"], notification["survey_outcome"]) == (
+        "pending",
+        "succeeded",
+    )
+    assert await _usage(survey_pool) == (0, 1)
 
 
 @pytest.mark.asyncio

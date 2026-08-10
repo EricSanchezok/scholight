@@ -99,6 +99,25 @@ def test_finalizer_expands_grouped_citations_without_treating_labels_as_ids(
     assert "cards/Figure 1.md" not in report
 
 
+def test_finalizer_resolves_legacy_arxiv_citations_to_safe_card_names(tmp_path: Path) -> None:
+    _write_run(tmp_path)
+    (tmp_path / "sections" / "01_introduction.md").write_text(
+        "## Introduction\n\nFoundational evidence [cs/0012009].\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "cards" / "cs-0012009.md").write_text(
+        "# PaperCard\n\n- arxiv_id: cs/0012009\n- title: Legacy Evidence\n",
+        encoding="utf-8",
+    )
+
+    result = finalize_survey(tmp_path)
+
+    report = result.report_path.read_text(encoding="utf-8")
+    assert "- [cs/0012009] **Legacy Evidence.** arXiv:cs/0012009." in report
+    assert result.reference_count == 2
+    assert result.unverified_reference_count == 0
+
+
 def test_finalizer_includes_only_an_existing_safe_figure(tmp_path: Path) -> None:
     _write_run(tmp_path)
     (tmp_path / "08_global_picture.png").write_bytes(b"png")

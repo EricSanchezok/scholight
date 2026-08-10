@@ -20,19 +20,20 @@ from scholight.cli.survey import (
     survey_group,
 )
 from scholight.config import settings
+from scholight.survey.recovery import ArchivedSurveyRecovery
 
 
 def test_installed_rcm_version_accepts_reviewed_binary() -> None:
     completed = subprocess.CompletedProcess(
         args=["/usr/local/bin/accelerate", "--version"],
         returncode=0,
-        stdout="accelerate 0.2.12\n",
+        stdout="accelerate 0.2.13\n",
         stderr="",
     )
     with patch("scholight.cli.survey.subprocess.run", return_value=completed):
         version = _installed_rcm_version()
 
-    assert version == "0.2.12"
+    assert version == "0.2.13"
 
 
 def test_installed_rcm_version_rejects_unreviewed_binary() -> None:
@@ -49,18 +50,52 @@ def test_installed_rcm_version_rejects_unreviewed_binary() -> None:
         _installed_rcm_version()
 
 
-def test_contract_audit_command_reports_known_warnings() -> None:
+def test_contract_audit_command_reports_no_known_warnings() -> None:
     result = CliRunner().invoke(survey_group, ["contract-audit", "--json-output"])
 
     assert result.exit_code == 0
     payload = json.loads(result.output)
-    assert payload["status"] == "warning"
-    assert payload["conflict_count"] == 3
-    assert {conflict["code"] for conflict in payload["conflicts"]} == {
-        "completion_artifact_gap",
-        "judge_verdict_unvalidated",
-        "progress_stream_dependency",
-    }
+    assert payload["status"] == "ok"
+    assert payload["conflict_count"] == 0
+    assert payload["conflicts"] == []
+
+
+def test_archived_recovery_command_is_dry_run_by_default() -> None:
+    job_id = uuid4()
+    survey_id = uuid4()
+    recovery = ArchivedSurveyRecovery(
+        job_id=job_id,
+        survey_id=survey_id,
+        user_id=42,
+        manifest_key=f"surveys/v1/42/{job_id}/manifest.json",
+        report_sha256="a" * 64,
+        index_sha256="b" * 64,
+        verified_file_count=12,
+        contract_warning_count=1,
+        applied=False,
+        changed=False,
+    )
+    with (
+        patch("scholight.cli.survey.create_pool", new_callable=AsyncMock),
+        patch("scholight.cli.survey.close_pool", new_callable=AsyncMock),
+        patch(
+            "scholight.survey.recovery.recover_archived_survey",
+            new_callable=AsyncMock,
+            return_value=recovery,
+        ) as recover,
+    ):
+        result = CliRunner().invoke(
+            survey_group,
+            ["recover-archived", str(job_id), "--json-output"],
+        )
+
+    assert result.exit_code == 0
+    assert json.loads(result.output)["applied"] is False
+    recover.assert_awaited_once_with(
+        job_id=job_id,
+        apply=False,
+        expected_report_sha256=None,
+    )
 
 
 def test_diagnose_reads_active_workspace_without_database(

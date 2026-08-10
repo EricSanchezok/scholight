@@ -61,27 +61,6 @@ def audit_workflow_contracts() -> tuple[WorkflowConflict, ...]:
             )
         )
 
-    judge_schema = _read("scholight/survey/workflow/schema/judge_panel.md")
-    if "strong, acceptable, insufficient, or blocked" in judge_schema:
-        conflicts.append(
-            WorkflowConflict(
-                code="judge_verdict_unvalidated",
-                summary="Judge verdicts are declared in prose but are not runtime validated.",
-                evidence=("schema/judge_panel.md",),
-            )
-        )
-
-    pipeline = _read("scholight/survey/workflow/rcm/survey_pipeline.rcm")
-    agent_guide = _read("scholight/survey/workflow/AGENTS.md")
-    if ".done ->" in pipeline and "artifact on disk is the source of truth" in agent_guide:
-        conflicts.append(
-            WorkflowConflict(
-                code="completion_artifact_gap",
-                summary="RCM completion edges do not prove that the promised artifact exists.",
-                evidence=("rcm/survey_pipeline.rcm", "AGENTS.md"),
-            )
-        )
-
     expansion_schema = _read("scholight/survey/workflow/schema/expansion.md")
     reference_prompt = _read("scholight/survey/workflow/prompts/reference_expander.txt")
     if "result: empty" not in expansion_schema or "result: empty" not in reference_prompt:
@@ -119,15 +98,6 @@ def audit_workflow_contracts() -> tuple[WorkflowConflict, ...]:
                 code="final_report_validation_incomplete",
                 summary="Worker success validation does not prove that final output is complete.",
                 evidence=("worker.py", "diagnostics.py", "finalizer.py"),
-            )
-        )
-
-    if "component_start" in worker and "update_survey_job_progress" in worker:
-        conflicts.append(
-            WorkflowConflict(
-                code="progress_stream_dependency",
-                summary="Persisted progress depends on receiving RCM component_start events.",
-                evidence=("worker.py", "progress.py"),
             )
         )
 

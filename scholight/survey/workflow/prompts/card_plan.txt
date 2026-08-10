@@ -18,7 +18,9 @@ Workflow:
 3. If run_dir/00_card_plan.json exists, read and reuse it. Otherwise select up to
    max_fulltext_papers papers and write run_dir/00_card_plan.json before spawning.
    It is the durable record of the complete selection and follows schema/card_plan.md.
-4. List run_dir/cards. Exclude cards that already exist as non-empty Markdown files,
+4. Derive each artifact stem: modern ids are unchanged; for a legacy id replace
+   its single slash with `-` (for example cs/0012009 -> cs-0012009). List
+   run_dir/cards. Exclude cards that already exist as non-empty Markdown files,
    then call spawn_PaperCard(items=[...], max_parallel=20) for the remaining entries.
    Each item must include:
    {"run_dir": "<run_dir>", "id": "<arxiv_id>", "title": "<title>", "why": "<one line: its role + why it matters to the anchor>"}
@@ -36,3 +38,5 @@ Rules:
 - Ground every claim in the paper. Never fabricate numbers, methods, or results.
 - Never dispatch the same id twice in one call. After one retry call, report any
   remaining missing cards as failed and return a partial handoff.
+- Keep the canonical semantic id unchanged in every spawn item. Apply the legacy
+  slash-to-hyphen mapping only when checking artifact filenames.

@@ -91,7 +91,8 @@ class SurveyTaskProtection:
             self._refresh_at = 0.0
 
     async def _put(self, *, enabled: bool) -> bool:
-        assert self._endpoint is not None
+        if self._endpoint is None:
+            raise RuntimeError("task protection endpoint is not configured")
         owns_client = self._client is None
         client = self._client or httpx.AsyncClient(timeout=httpx.Timeout(2.0))
         try:

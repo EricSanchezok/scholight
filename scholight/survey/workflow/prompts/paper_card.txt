@@ -12,19 +12,22 @@ Workflow:
 
 1. Parse your work item: run_dir, id, title, why. If run_dir is missing, return a
    blocked handoff; do not inspect another workspace.
-2. Use arxiv_download with the id, saving into run_dir/pdfs/<id>.pdf. This is the
+2. Derive artifact_stem from id: modern ids are unchanged; for a legacy id replace
+   its single slash with `-` (for example cs/0012009 -> cs-0012009). Use
+   arxiv_download with the original semantic id, saving into
+   run_dir/pdfs/<artifact_stem>.pdf. This is the
    only allowed network path for paper full text.
-3. Read run_dir/pdfs/<id>.pdf with fs. The fs tool extracts text via pdftotext.
+3. Read run_dir/pdfs/<artifact_stem>.pdf with fs. The fs tool extracts text via pdftotext.
    If download or extraction fails (for example, a scanned or image-only PDF),
    proceed from the supplied metadata and abstract and mark evidence:
    abstract_only.
 4. Read it WITH THE ANCHOR IN MIND (your `why` + the survey topic). Focus on: the
    method in writable detail; the real results and their caveats; and — the key
    value-add — whether the idea could transfer to the anchor's research direction.
-5. Write run_dir/cards/<id>.md per schema/paper_card.md: header, problem, method,
+5. Write run_dir/cards/<artifact_stem>.md per schema/paper_card.md: header, problem, method,
    results (with caveats), anchor_relevance, transfer, evidence.
 6. Final response: a short handoff per schema/handoff.md — run_dir first, the
-   artifact path (run_dir/cards/<id>.md), status, and the evidence level.
+   artifact path (run_dir/cards/<artifact_stem>.md), status, and the evidence level.
 
 Rules:
 

@@ -1040,6 +1040,130 @@ async def recover_expired_survey_jobs(*, limit: int = 20) -> int:
     return recovered
 
 
+async def recover_archived_survey_contract_failure(
+    *,
+    job_id: UUID,
+    expected_manifest_key: str,
+) -> bool:
+    """Atomically reclassify one verified archived contract failure as succeeded.
+
+    Returns ``False`` when the exact recovery was already applied.  Artifact
+    verification is deliberately performed before entering this short database
+    transaction; the manifest key is rechecked here as the database-side guard.
+    """
+    try:
+        async with get_pool().acquire() as connection, connection.transaction():
+            survey_id = await connection.fetchval(
+                "SELECT survey_id FROM scholight.survey_jobs WHERE id = $1", job_id
+            )
+            if survey_id is None:
+                raise SurveyStateError(
+                    "The archived Survey execution does not exist.",
+                    code="survey_recovery_not_found",
+                )
+            locked = await lock_survey_aggregate(connection, survey_id=survey_id)
+            if locked is None or locked.job is None or locked.job["id"] != job_id:
+                raise SurveyStateError(
+                    "The archived Survey execution does not exist.",
+                    code="survey_recovery_not_found",
+                )
+            survey = locked.survey
+            job = locked.job
+            if job["manifest_key"] != expected_manifest_key:
+                raise SurveyStateError(
+                    "The archived Survey manifest changed during recovery.",
+                    code="survey_recovery_manifest_changed",
+                )
+            if (
+                survey["status"] == "succeeded"
+                and survey["quota_state"] == "consumed"
+                and job["status"] == "finished"
+                and job["terminal_outcome"] == "succeeded"
+            ):
+                return False
+            if not (
+                survey["status"] == "failed"
+                and survey["quota_state"] == "released"
+                and survey["error_code"] == "survey_contract_violation"
+                and job["status"] == "finished"
+                and job["terminal_outcome"] == "failed"
+                and job["error_code"] == "survey_contract_violation"
+            ):
+                raise SurveyStateError(
+                    "The archived Survey is not an eligible contract failure.",
+                    code="survey_recovery_ineligible",
+                )
+
+            notification = await connection.fetchrow(
+                "SELECT * FROM scholight.survey_email_notifications "
+                "WHERE survey_id = $1 FOR UPDATE",
+                survey_id,
+            )
+            if notification is not None and notification["status"] == "running":
+                raise SurveyStateError(
+                    "The Survey notification is currently being delivered.",
+                    code="survey_recovery_notification_running",
+                )
+
+            usage = await connection.fetchrow(
+                "UPDATE scholight.survey_daily_usage SET "
+                "succeeded_count = succeeded_count + 1, updated_at = now() "
+                "WHERE user_id = $1 AND usage_date = $2 RETURNING 1",
+                survey["user_id"],
+                survey["quota_date"],
+            )
+            if usage is None:
+                raise SurveyStateError(
+                    "The Survey quota ledger is unavailable.",
+                    code="survey_recovery_quota_missing",
+                )
+            await connection.execute(
+                "UPDATE scholight.surveys SET status = 'succeeded', quota_state = 'consumed', "
+                "error_code = NULL, error_message = NULL, updated_at = now() WHERE id = $1",
+                survey_id,
+            )
+            await connection.execute(
+                "UPDATE scholight.survey_jobs SET terminal_outcome = 'succeeded', "
+                "error_code = NULL, error_message = NULL WHERE id = $1",
+                job_id,
+            )
+            if notification is None:
+                await connection.execute(
+                    "INSERT INTO scholight.survey_email_notifications "
+                    "(id, survey_id, user_id, survey_outcome) "
+                    "SELECT gen_random_uuid(), id, user_id, 'succeeded' "
+                    "FROM scholight.surveys WHERE id = $1 AND notify_on_completion "
+                    "ON CONFLICT (survey_id) DO NOTHING",
+                    survey_id,
+                )
+            elif notification["status"] == "succeeded":
+                await connection.execute(
+                    "UPDATE scholight.survey_email_notifications SET survey_outcome = 'succeeded' "
+                    "WHERE survey_id = $1",
+                    survey_id,
+                )
+            else:
+                await connection.execute(
+                    "UPDATE scholight.survey_email_notifications SET survey_outcome = 'succeeded', "
+                    "status = 'pending', next_attempt_at = now(), lease_owner = NULL, "
+                    "lease_expires_at = NULL, last_error = NULL, finished_at = NULL "
+                    "WHERE survey_id = $1",
+                    survey_id,
+                )
+            logger.info(
+                "survey_archived_contract_failure_recovered",
+                job_id=str(job_id),
+                survey_id=str(survey_id),
+                manifest_key=expected_manifest_key,
+            )
+            return True
+    except SurveyStateError:
+        raise
+    except asyncpg.PostgresError as exc:
+        logger.error("survey_archived_recovery_failed", error_type=type(exc).__name__)
+        raise DBError("Failed to recover archived Survey") from exc
+
+
 async def get_survey_job_counts() -> dict[str, int]:
     counts = {"queued": 0, "running": 0, "archiving": 0, "finished": 0}
     try:
@@ -1074,6 +1198,7 @@ __all__ = [
     "list_surveys",
     "mark_survey_workspace_missing",
     "recover_expired_survey_jobs",
+    "recover_archived_survey_contract_failure",
     "settle_survey_execution",
     "start_survey",
     "update_survey_job_progress",

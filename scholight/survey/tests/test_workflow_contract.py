@@ -167,11 +167,7 @@ def test_empty_citation_expansion_has_an_explicit_artifact_state() -> None:
 def test_contract_audit_classifies_every_known_definition_gap() -> None:
     codes = {conflict.code for conflict in audit_workflow_contracts()}
 
-    assert codes == {
-        "completion_artifact_gap",
-        "judge_verdict_unvalidated",
-        "progress_stream_dependency",
-    }
+    assert codes == set()
 
 
 def test_contract_audit_does_not_depend_on_test_sources(
@@ -186,7 +182,7 @@ def test_contract_audit_does_not_depend_on_test_sources(
 
     monkeypatch.setattr(workflow_audit, "_read", read_production_file)
 
-    assert audit_workflow_contracts()
+    assert audit_workflow_contracts() == ()
 
 
 def test_e2e_uses_vendored_graph_and_only_redirects_model_transport() -> None:

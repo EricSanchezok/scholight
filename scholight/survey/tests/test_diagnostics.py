@@ -7,6 +7,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
+import pytest
+
 from scholight.survey.diagnostics import (
     ARTIFACT_CONTRACTS,
     SurveyDiagnostics,
@@ -305,6 +307,113 @@ def test_spawned_outputs_are_checked_during_final_audit(tmp_path: Path) -> None:
     missing = {anomaly["expected_artifact"] for anomaly in diagnostics.snapshot()["anomalies"]}
     assert "cards/2501.12345.md" in missing
     assert "sections/01_introduction.md" in missing
+
+
+def test_legacy_arxiv_ids_use_safe_card_artifact_names(tmp_path: Path) -> None:
+    (tmp_path / "00_card_plan.json").write_text(
+        json.dumps(
+            [
+                {
+                    "run_dir": ".",
+                    "id": "cs/0012009",
+                    "title": "Legacy paper",
+                    "why": "Foundational evidence",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    diagnostics = SurveyDiagnostics(
+        run_root=tmp_path,
+        job_id=uuid4(),
+        survey_id=uuid4(),
+    )
+
+    diagnostics.observe_artifacts()
+
+    assert diagnostics.snapshot()["expected_dynamic_artifacts"] == ["cards/cs-0012009.md"]
+
+
+@pytest.mark.parametrize("unsafe_id", ("../paper", "/paper", "cs\\0012009", "bad/1234"))
+def test_card_plan_rejects_unsafe_or_noncanonical_ids(tmp_path: Path, unsafe_id: str) -> None:
+    (tmp_path / "00_card_plan.json").write_text(
+        json.dumps(
+            [
+                {
+                    "run_dir": ".",
+                    "id": unsafe_id,
+                    "title": "Unsafe paper",
+                    "why": "Must be rejected",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    diagnostics = SurveyDiagnostics(
+        run_root=tmp_path,
+        job_id=uuid4(),
+        survey_id=uuid4(),
+    )
+
+    diagnostics.finalize_contract_audit()
+
+    assert any(
+        anomaly["kind"] == "plan_artifact_invalid"
+        for anomaly in diagnostics.snapshot()["anomalies"]
+    )
+
+
+def test_final_audit_rejects_missing_or_invalid_judge_verdicts(tmp_path: Path) -> None:
+    judge_files = {
+        "06a_coverage_judge.md": "verdict: acceptable\n",
+        "06b_scope_judge.md": "no verdict here\n",
+        "06c_benchmark_judge.md": "verdict: excellent\n",
+        "06d_gap_judge.md": "verdict: strong\nverdict: blocked\n",
+        "06_judge_panel.md": "overall_verdict: acceptable\n",
+    }
+    for name, content in judge_files.items():
+        (tmp_path / name).write_text(content, encoding="utf-8")
+    diagnostics = SurveyDiagnostics(
+        run_root=tmp_path,
+        job_id=uuid4(),
+        survey_id=uuid4(),
+    )
+
+    diagnostics.finalize_contract_audit()
+
+    verdict_errors = {
+        anomaly["expected_artifact"]
+        for anomaly in diagnostics.snapshot()["anomalies"]
+        if anomaly["kind"] == "judge_verdict_invalid"
+    }
+    assert verdict_errors == {
+        "06b_scope_judge.md#verdict",
+        "06c_benchmark_judge.md#verdict",
+        "06d_gap_judge.md#verdict",
+    }
+
+
+def test_final_audit_accepts_exact_judge_verdict_contract(tmp_path: Path) -> None:
+    for name in (
+        "06a_coverage_judge.md",
+        "06b_scope_judge.md",
+        "06c_benchmark_judge.md",
+        "06d_gap_judge.md",
+    ):
+        (tmp_path / name).write_text("verdict: acceptable\n", encoding="utf-8")
+    (tmp_path / "06_judge_panel.md").write_text("overall_verdict: strong\n", encoding="utf-8")
+    diagnostics = SurveyDiagnostics(
+        run_root=tmp_path,
+        job_id=uuid4(),
+        survey_id=uuid4(),
+    )
+
+    diagnostics.finalize_contract_audit()
+
+    assert not any(
+        anomaly["kind"] == "judge_verdict_invalid"
+        for anomaly in diagnostics.snapshot()["anomalies"]
+    )
 
 
 def test_all_spawned_card_outputs_are_tracked_beyond_log_preview_limit(tmp_path: Path) -> None:

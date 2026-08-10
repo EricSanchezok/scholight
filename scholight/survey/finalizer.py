@@ -9,8 +9,13 @@ from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 
+from scholight.sources.arxiv import arxiv_artifact_stem
+
 _BRACKETED_CITATIONS = re.compile(r"\[([^\]\n]{1,1024})\]")
-_ARXIV_ID = re.compile(r"(?<![A-Za-z0-9.])\d{4}\.\d{4,5}(?:v\d+)?(?![A-Za-z0-9.])")
+_ARXIV_ID = re.compile(
+    r"(?<![A-Za-z0-9.])(?:\d{4}\.\d{4,5}|[a-z][a-z-]+/\d{7})(?:v\d+)?"
+    r"(?![A-Za-z0-9.])"
+)
 _SECTION_FILE = re.compile(r"^\d{2}_[A-Za-z0-9-]+\.md$")
 _OUTLINE_HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*$")
 _CARD_FIELD = re.compile(r"^-\s+(.+?):\s*(.*?)\s*$")
@@ -174,7 +179,12 @@ def _references(run_root: Path, section_texts: list[str]) -> tuple[str, int, int
     unverified_count = 0
     card_root, resolved_card_root = _safe_directory(run_root, "cards")
     for citation_id in citation_ids:
-        card_path = card_root / f"{citation_id}.md"
+        card_stem = arxiv_artifact_stem(citation_id)
+        if card_stem is None:
+            entries.append(_unverified_reference(citation_id))
+            unverified_count += 1
+            continue
+        card_path = card_root / f"{card_stem}.md"
         try:
             card_stat = card_path.lstat()
             resolved_card = card_path.resolve(strict=True)
@@ -194,7 +204,7 @@ def _references(run_root: Path, section_texts: list[str]) -> tuple[str, int, int
         ):
             raise SurveyFinalizationError(f"Cited paper card is invalid: {citation_id}")
         title, authors, year_venue = _card_metadata(
-            _read_text(card_path, label=f"cards/{citation_id}.md")
+            _read_text(card_path, label=f"cards/{card_stem}.md")
         )
         if not title:
             entries.append(_unverified_reference(citation_id))
@@ -226,7 +236,8 @@ def _atomic_write(path: Path, content: str) -> None:
 def finalize_survey(run_root: Path) -> FinalizedSurvey:
     """Build the final report and manifest without another model completion."""
     outline_path = _regular_file(run_root, "00_outline.md")
-    assert outline_path is not None
+    if outline_path is None:
+        raise SurveyFinalizationError("Required artifact is missing: 00_outline.md")
     title, abstract = _outline_fields(_read_text(outline_path, label="00_outline.md"))
 
     sections = _section_files(run_root)
