@@ -12,8 +12,7 @@ from scripts.check_survey_capacity_stage import validate_capacity_transition
         ((1, 1), (2, 2)),
         ((2, 2), (4, 4)),
         ((4, 4), (8, 8)),
-        ((8, 8), (8, 16)),
-        ((8, 16), (4, 4)),
+        ((8, 8), (4, 4)),
     ],
 )
 def test_reviewed_capacity_transition_is_allowed(
@@ -34,6 +33,7 @@ def test_reviewed_capacity_transition_is_allowed(
         ((1, 1), (4, 4)),
         ((2, 2), (8, 8)),
         ((4, 4), (8, 16)),
+        ((8, 16), (4, 4)),
         ((2, 1), (2, 2)),
         ((1, 1), (8, 4)),
     ],

@@ -6,6 +6,7 @@ import json
 import os
 import re
 import stat
+import unicodedata
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -32,11 +33,27 @@ _SAFE_ARXIV_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 _SAFE_SECTION_PART = re.compile(r"^[A-Za-z0-9-]{1,64}$")
 _SAFE_SECTION_NUMBER = re.compile(r"^\d{2}$")
 _SECTION_FILE = re.compile(r"^(\d+)_.*\.md$")
-_REPORT_SECTION_HEADING = re.compile(r"^##\s+0*(\d+)(?:\s*[.:—-]\s*|\s+)")
+_LEVEL_TWO_HEADING = re.compile(r"^##(?!#)\s+(.+?)\s*$")
+_HEADING_NUMBER_PREFIX = re.compile(r"^0*(\d+)(?:\s*[.:—-]\s*|\s+)(.+)$")
 _REPORT_REFERENCES_HEADING = re.compile(
     r"^##\s+(?:\d+\s*[.:—-]\s*)?references\b",
     re.IGNORECASE,
 )
+
+
+def _normalized_section_heading(line: str) -> tuple[int | None, str] | None:
+    """Return a comparable section number/title from one Markdown H2 heading."""
+    match = _LEVEL_TWO_HEADING.match(line.strip())
+    if match is None:
+        return None
+    heading = re.sub(r"\s+#+\s*$", "", match.group(1)).strip()
+    number: int | None = None
+    numbered = _HEADING_NUMBER_PREFIX.match(heading)
+    if numbered is not None:
+        number = int(numbered.group(1))
+        heading = numbered.group(2)
+    normalized = " ".join(unicodedata.normalize("NFKC", heading).split()).casefold()
+    return number, normalized
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,7 +91,7 @@ ARTIFACT_CONTRACTS = (
     ArtifactContract("judge_panel", required=("06_judge_panel.md",)),
     ArtifactContract("image_planner", optional=("08_global_picture.png",)),
     ArtifactContract("survey_outline", required=("00_outline.md", "00_sections.json")),
-    ArtifactContract("survey_assembler", required=("08_survey.md", "index.md")),
+    ArtifactContract("survey_finalizer", required=("08_survey.md", "index.md")),
 )
 _CONTRACT_BY_COMPONENT = {contract.component: contract for contract in ARTIFACT_CONTRACTS}
 _DURABLE_PLANS = {
@@ -90,7 +107,7 @@ _MILESTONE_COMPONENTS = (
     "research_map",
     "judge_synthesizer",
     "survey_outline",
-    "survey_assembler",
+    "survey_finalizer",
 )
 _PIPELINE_STAGES = (
     "anchor",
@@ -103,7 +120,7 @@ _PIPELINE_STAGES = (
     "judge_panel",
     "image_planner",
     "survey_outline",
-    "survey_assembler",
+    "survey_finalizer",
 )
 _COMPONENT_STAGE = {
     "method_scout": "discovery",
@@ -429,7 +446,15 @@ class SurveyDiagnostics:
         validated: list[dict[str, object]] = []
         outputs: set[str] = set()
         for raw_item in payload:
-            if not isinstance(raw_item, dict) or raw_item.get("run_dir") != ".":
+            if not isinstance(raw_item, dict):
+                return None
+            raw_run_dir = raw_item.get("run_dir")
+            if not isinstance(raw_run_dir, str):
+                return None
+            if raw_run_dir != "." and (
+                not Path(raw_run_dir).is_absolute()
+                or Path(raw_run_dir).resolve(strict=False) != self.run_root.resolve(strict=False)
+            ):
                 return None
             if relative_path == "00_card_plan.json":
                 paper_id = raw_item.get("id")
@@ -567,7 +592,7 @@ class SurveyDiagnostics:
         report = self.run_root / "08_survey.md"
         if not _valid_artifact(self.run_root, "08_survey.md"):
             return
-        expected_sections: set[int] = set()
+        expected_sections: dict[int, str | None] = {}
         try:
             for path in (self.run_root / "sections").glob("*.md"):
                 match = _SECTION_FILE.fullmatch(path.name)
@@ -575,35 +600,60 @@ class SurveyDiagnostics:
                     self.run_root,
                     str(path.relative_to(self.run_root)),
                 ):
-                    expected_sections.add(int(match.group(1)))
+                    expected_heading = next(
+                        (
+                            heading
+                            for line in path.read_text(encoding="utf-8").splitlines()
+                            if (heading := _normalized_section_heading(line)) is not None
+                        ),
+                        None,
+                    )
+                    expected_sections[int(match.group(1))] = (
+                        expected_heading[1] if expected_heading is not None else None
+                    )
             observed_sections: set[int] = set()
+            observed_titles: set[str] = set()
             has_references = False
             with report.open(encoding="utf-8") as handle:
                 for line in handle:
                     stripped = line.strip()
-                    section_match = _REPORT_SECTION_HEADING.match(stripped)
-                    if section_match is not None:
-                        observed_sections.add(int(section_match.group(1)))
                     if _REPORT_REFERENCES_HEADING.match(stripped):
                         has_references = True
+                        continue
+                    section_heading = _normalized_section_heading(stripped)
+                    if section_heading is not None:
+                        section_number, section_title = section_heading
+                        if section_number is not None:
+                            observed_sections.add(section_number)
+                        if section_title:
+                            observed_titles.add(section_title)
         except (OSError, UnicodeError):
             self._record_anomaly(
-                component="survey_assembler",
+                component="survey_finalizer",
                 expected_artifact="08_survey.md",
                 kind="final_report_unreadable",
                 severity="error",
             )
             return
-        for section_number in sorted(expected_sections - observed_sections):
+        missing_sections = (
+            section_number
+            for section_number, section_title in expected_sections.items()
+            if (
+                section_title not in observed_titles
+                if section_title is not None
+                else section_number not in observed_sections
+            )
+        )
+        for section_number in sorted(missing_sections):
             self._record_anomaly(
-                component="survey_assembler",
+                component="survey_finalizer",
                 expected_artifact=f"08_survey.md#section-{section_number:02d}",
                 kind="section_missing_from_final_report",
                 severity="error",
             )
         if expected_sections and not has_references:
             self._record_anomaly(
-                component="survey_assembler",
+                component="survey_finalizer",
                 expected_artifact="08_survey.md#references",
                 kind="references_missing_from_final_report",
                 severity="error",

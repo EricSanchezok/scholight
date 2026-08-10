@@ -179,7 +179,7 @@ class Settings(BaseSettings):
     survey_draft_per_user_concurrency: int = Field(default=8, ge=1, le=64)
     survey_job_per_user_concurrency: int = Field(default=4, ge=1, le=16)
     survey_draft_worker_concurrency: int = Field(default=8, ge=1, le=64)
-    survey_job_worker_concurrency: int = Field(default=1, ge=1, le=16)
+    survey_job_worker_concurrency: int = Field(default=2, ge=1, le=16)
     survey_heartbeat_seconds: int = Field(default=15, ge=5, le=60)
     survey_lease_seconds: int = Field(default=120, ge=30, le=600)
 

@@ -87,7 +87,7 @@ _COMPONENT_STAGES: dict[str, ExecutionProgressStage] = {
     "image_planner": "structuring_report",
     "survey_outline": "structuring_report",
     "section_expander": "writing_report",
-    "survey_assembler": "finalizing",
+    "survey_finalizer": "finalizing",
 }
 
 

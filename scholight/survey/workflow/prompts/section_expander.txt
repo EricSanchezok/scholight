@@ -22,8 +22,9 @@ Workflow:
      connect it to neighbouring families.
    - Weave in the transfer_angle as a genuine cross-domain insight: could this
      transfer to the anchor's research direction, and what would block it?
-   - Cite papers inline by (Author, year) or [arxiv_id]; the assembler builds the
-     reference list.
+   - Cite every paper inline with its exact [arxiv_id]. You may also include
+     (Author, year) for readability. The application finalizer uses the identifiers
+     to build the reference list.
 4. Final response: a short handoff per schema/handoff.md — run_dir first, the
    artifact path (run_dir/sections/<n>_<slug>.md), status, and an approximate word
    count.
@@ -34,5 +35,6 @@ Rules:
   Ground every claim in the cards; never fabricate. Prefer a caveat over an
   overclaim when evidence is abstract-only.
 - Self-contained prose: never name internal stages/objects (see schema/survey.md).
-- Start the file with `## <title>` (the assembler orders sections by file name).
+- Start the file with `## <title>` (the application finalizer orders sections by
+  file name).
 - Write only your section file.

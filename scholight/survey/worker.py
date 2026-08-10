@@ -8,7 +8,7 @@ import re
 import shutil
 import stat
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
@@ -41,6 +41,7 @@ from scholight.survey.cleanup_worker import serve_artifact_cleanup
 from scholight.survey.contracts import SurveyLeaseLostError
 from scholight.survey.diagnostics import SurveyDiagnostics
 from scholight.survey.email_notifications import AliyunSurveyEmailSender
+from scholight.survey.finalizer import SurveyFinalizationError, finalize_survey
 from scholight.survey.metrics import is_provider_throttled
 from scholight.survey.notification_worker import SurveyEmailSender, serve_email_notifications
 from scholight.survey.process import (
@@ -54,7 +55,11 @@ from scholight.survey.process import (
 )
 from scholight.survey.progress import stage_for_component
 from scholight.survey.runtime import survey_environment
-from scholight.survey.workflow_resources import WorkflowResourceError, stage_workflow_schema
+from scholight.survey.workflow_resources import (
+    WorkflowResourceError,
+    prepare_workflow_workspace,
+    stage_workflow_schema,
+)
 from scholight.survey.workflow_runtime import workflow_file
 
 logger = structlog.get_logger(__name__)
@@ -445,6 +450,7 @@ async def _execute_survey_once(
         workflow_version=WORKFLOW_VERSION,
     )
     try:
+        workspace_resources = prepare_workflow_workspace(run_root)
         workflow_resources = stage_workflow_schema(run_root)
     except WorkflowResourceError as exc:
         diagnostics.record(
@@ -477,7 +483,7 @@ async def _execute_survey_once(
     diagnostics.record(
         "workflow.resources_staged",
         status="completed",
-        resource_count=len(workflow_resources),
+        resource_count=len(workflow_resources) + len(workspace_resources),
     )
     try:
         process = await asyncio.create_subprocess_exec(
@@ -621,6 +627,29 @@ async def _execute_survey_once(
                 stderr_tail=stderr_tail or None,
                 diagnostics=diagnostic_summary,
             )
+        try:
+            if job.lease_owner is not None:
+                await update_survey_job_progress(
+                    job_id=job.id,
+                    worker_id=job.lease_owner,
+                    stage="finalizing",
+                )
+            finalized = finalize_survey(run_root)
+            diagnostics.component_finished("survey_finalizer", status="completed")
+            logger.info(
+                "survey_report_finalized",
+                job_id=str(job.id),
+                section_count=finalized.section_count,
+                reference_count=finalized.reference_count,
+                unverified_reference_count=finalized.unverified_reference_count,
+            )
+        except SurveyFinalizationError as exc:
+            logger.error(
+                "survey_report_finalization_failed",
+                job_id=str(job.id),
+                error_type=type(exc).__name__,
+                reason=str(exc),
+            )
         if not _valid_final_report(run_root):
             diagnostic_summary = _finish_diagnostics(
                 diagnostics,
@@ -743,26 +772,65 @@ async def execute_survey(
     *,
     control: ProcessControl | None = None,
 ) -> SurveyExecutionResult:
-    """Run Survey with bounded retries for transient provider failures only."""
+    """Run Survey with bounded provider retries and one same-workspace repair pass."""
     control = control or ProcessControl()
-    for attempt in range(1, settings.survey_provider_max_attempts + 1):
+    provider_attempt = 1
+    artifact_repair_available = True
+    artifact_repair_failure: SurveyExecutionResult | None = None
+    while provider_attempt <= settings.survey_provider_max_attempts:
         result = await _execute_survey_once(job, run_root, control=control)
+        if artifact_repair_failure is not None and result.outcome == "failed":
+            result = replace(
+                result,
+                started_at=artifact_repair_failure.started_at,
+                stderr_tail=result.stderr_tail or artifact_repair_failure.stderr_tail,
+                diagnostics=result.diagnostics or artifact_repair_failure.diagnostics,
+            )
+        if (
+            artifact_repair_available
+            and result.outcome == "failed"
+            and result.error_code in {"survey_report_missing", "survey_contract_violation"}
+            and result.return_code == 0
+        ):
+            artifact_repair_available = False
+            artifact_repair_failure = result
+            logger.warning(
+                "survey_artifact_repair_scheduled",
+                job_id=str(job.id),
+                provider_attempt=provider_attempt,
+            )
+            emit_emf(
+                service="survey-full-worker",
+                metrics={"SurveyArtifactRepair": (1, "Count")},
+            )
+            if control.lease_lost.is_set():
+                raise SurveyLeaseLostError("Survey execution lease is no longer owned")
+            if control.cancel_requested.is_set():
+                return SurveyExecutionResult(
+                    outcome="cancelled",
+                    error_code=None,
+                    error_message=None,
+                    started_at=result.started_at,
+                    finished_at=datetime.now(UTC),
+                    termination_reason="cancelled_before_artifact_repair",
+                )
+            continue
         if (
             result.outcome != "failed"
             or not is_transient_rcm_error(result.error_code)
-            or attempt >= settings.survey_provider_max_attempts
+            or provider_attempt >= settings.survey_provider_max_attempts
         ):
             return result
         delay = provider_retry_delay_seconds(
-            attempt,
+            provider_attempt,
             base=settings.survey_provider_retry_base_seconds,
             maximum=settings.survey_provider_retry_max_seconds,
         )
         logger.warning(
             "survey_provider_retry_scheduled",
             job_id=str(job.id),
-            attempt=attempt,
-            next_attempt=attempt + 1,
+            attempt=provider_attempt,
+            next_attempt=provider_attempt + 1,
             delay_seconds=delay,
             error_code=result.error_code,
         )
@@ -795,6 +863,9 @@ async def execute_survey(
             )
         shutil.rmtree(run_root, ignore_errors=True)
         run_root.mkdir(parents=True, exist_ok=True)
+        provider_attempt += 1
+        artifact_repair_available = True
+        artifact_repair_failure = None
     raise AssertionError("unreachable")
 
 

@@ -88,7 +88,7 @@ def test_completed_component_records_missing_primary_artifact(tmp_path: Path) ->
         "judge_panel",
         "image_planner",
         "survey_outline",
-        "survey_assembler",
+        "survey_finalizer",
     ]
 
 
@@ -126,6 +126,65 @@ def test_optional_image_is_a_warning_only_at_final_audit(tmp_path: Path) -> None
         "kind": "optional_artifact_missing",
         "severity": "warning",
     } in anomalies
+
+
+def test_final_audit_accepts_matching_unnumbered_section_headings(tmp_path: Path) -> None:
+    sections = tmp_path / "sections"
+    sections.mkdir()
+    (sections / "01_introduction.md").write_text(
+        "## Introduction: The Reliability Problem\n\nBody.",
+        encoding="utf-8",
+    )
+    (sections / "02_research_arc.md").write_text(
+        "## Research Arc — From Heuristics to Evaluation\n\nBody.",
+        encoding="utf-8",
+    )
+    (tmp_path / "08_survey.md").write_text(
+        "# Survey\n\n"
+        "## Introduction: The Reliability Problem\n\nBody.\n\n"
+        "## Research Arc — From Heuristics to Evaluation\n\nBody.\n\n"
+        "## References\n\n1. Paper.\n",
+        encoding="utf-8",
+    )
+    diagnostics = SurveyDiagnostics(
+        run_root=tmp_path,
+        job_id=uuid4(),
+        survey_id=uuid4(),
+    )
+
+    diagnostics.finalize_contract_audit()
+
+    assert not any(
+        anomaly["kind"] == "section_missing_from_final_report"
+        for anomaly in diagnostics.snapshot()["anomalies"]
+    )
+
+
+def test_final_audit_rejects_changed_unnumbered_section_heading(tmp_path: Path) -> None:
+    sections = tmp_path / "sections"
+    sections.mkdir()
+    (sections / "01_introduction.md").write_text(
+        "## Introduction: The Reliability Problem\n\nBody.",
+        encoding="utf-8",
+    )
+    (tmp_path / "08_survey.md").write_text(
+        "# Survey\n\n## A Different Introduction\n\nBody.\n\n## References\n\n1. Paper.\n",
+        encoding="utf-8",
+    )
+    diagnostics = SurveyDiagnostics(
+        run_root=tmp_path,
+        job_id=uuid4(),
+        survey_id=uuid4(),
+    )
+
+    diagnostics.finalize_contract_audit()
+
+    assert {
+        "component": "survey_finalizer",
+        "expected_artifact": "08_survey.md#section-01",
+        "kind": "section_missing_from_final_report",
+        "severity": "error",
+    } in diagnostics.snapshot()["anomalies"]
 
 
 def test_final_audit_infers_last_component_from_artifacts_when_events_are_missing(
@@ -178,7 +237,7 @@ def test_required_anomaly_precedes_optional_warning(tmp_path: Path) -> None:
     diagnostics.finalize_contract_audit()
 
     assert diagnostics.snapshot()["first_anomaly"] == {
-        "component": "survey_assembler",
+        "component": "survey_finalizer",
         "expected_artifact": "08_survey.md",
         "kind": "required_artifact_missing",
         "severity": "error",
@@ -307,6 +366,31 @@ def test_durable_plans_restore_spawn_expectations_without_runtime_events(tmp_pat
         "cards/2501.12345.md",
         "sections/01_introduction.md",
     ]
+
+
+def test_durable_plan_accepts_the_exact_absolute_run_directory(tmp_path: Path) -> None:
+    (tmp_path / "00_card_plan.json").write_text(
+        json.dumps(
+            [
+                {
+                    "run_dir": str(tmp_path),
+                    "id": "2501.12345",
+                    "title": "Paper",
+                    "why": "Core evidence",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    diagnostics = SurveyDiagnostics(
+        run_root=tmp_path,
+        job_id=uuid4(),
+        survey_id=uuid4(),
+    )
+
+    diagnostics.observe_artifacts()
+
+    assert diagnostics.snapshot()["expected_dynamic_artifacts"] == ["cards/2501.12345.md"]
 
 
 def test_invalid_durable_plan_is_a_contract_error(tmp_path: Path) -> None:

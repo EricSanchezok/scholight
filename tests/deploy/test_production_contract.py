@@ -181,7 +181,10 @@ def test_survey_capacity_contract_is_explicit_and_staged() -> None:
     assert 'SCHOLIGHT_PG_POOL_MAX_SIZE, Value: "4"' in draft_task
     assert 'SCHOLIGHT_SURVEY_JOB_GLOBAL_CONCURRENCY, Value: "16"' in full_task
     assert 'SCHOLIGHT_SURVEY_JOB_PER_USER_CONCURRENCY, Value: "4"' in full_task
-    assert 'SCHOLIGHT_SURVEY_JOB_WORKER_CONCURRENCY, Value: "1"' in full_task
+    assert 'Cpu: "1024"' in full_task
+    assert 'Memory: "2048"' in full_task
+    assert "EphemeralStorage:" not in full_task
+    assert 'SCHOLIGHT_SURVEY_JOB_WORKER_CONCURRENCY, Value: "2"' in full_task
     assert 'SCHOLIGHT_SURVEY_MCP_URL, Value: !Sub "https://${DomainName}/api/mcp"' in full_task
     assert 'SCHOLIGHT_PG_POOL_MIN_SIZE, Value: "1"' in full_task
     assert 'SCHOLIGHT_PG_POOL_MAX_SIZE, Value: "2"' in full_task
@@ -191,11 +194,17 @@ def test_survey_capacity_contract_is_explicit_and_staged() -> None:
     assert "SurveyDraftMaxTasks:" in runtime
     assert "MaxValue: 8" in runtime
     assert "SurveyFullMaxTasks:" in runtime
-    assert "MaxValue: 16" in runtime
+    assert (
+        runtime.split("  SurveyFullMaxTasks:", maxsplit=1)[1]
+        .split("\n\nRules:", maxsplit=1)[0]
+        .count("MaxValue: 8")
+        == 1
+    )
     assert example["SurveyDraftMaxTasks"] == 1
     assert example["SurveyFullMaxTasks"] == 1
-    assert "options: [1/1, 2/2, 4/4, 8/8, 8/16]" in workflow
-    assert "1/1|2/2|4/4|8/8|8/16" in workflow
+    assert "options: [1/1, 2/2, 4/4, 8/8]" in workflow
+    assert "1/1|2/2|4/4|8/8" in workflow
+    assert "8/16" not in workflow
     assert "scripts/check_survey_capacity_stage.py" in workflow
 
 
@@ -211,7 +220,7 @@ def test_survey_worker_autoscaling_and_protection_are_bounded() -> None:
     )[0]
     assert "TargetValue: 8" in draft_scaling
     assert "SurveyDraftOutstanding" in draft_scaling
-    assert "TargetValue: 1" in full_scaling
+    assert "TargetValue: 2" in full_scaling
     assert "SurveyJobOutstanding" in full_scaling
     for policy in (draft_scaling, full_scaling):
         assert "ScaleOutCooldown: 60" in policy
@@ -228,7 +237,7 @@ def test_survey_worker_autoscaling_and_protection_are_bounded() -> None:
         "  DatabaseDeployRole:", maxsplit=1
     )[0]
     assert "cloudwatch:GetMetricStatistics" in deploy_role
-    assert "rds:DescribeDBInstances" in deploy_role
+    assert "rds:DescribeDBInstances" not in deploy_role
     assert "servicequotas:GetServiceQuota" in deploy_role
 
 
@@ -257,6 +266,9 @@ def test_survey_capacity_observability_has_no_identifier_dimensions() -> None:
     assert "Threshold: 524288000" in runtime
     assert "SurveyDraftNoTasksAlarm:" in runtime
     assert "SurveyFullNoTasksAlarm:" in runtime
+    assert '"title":"Full Survey compute"' in runtime
+    assert "EphemeralStorageUtilized" in runtime
+    assert "EphemeralStorageReserved" in runtime
     dashboard = runtime.split("  Dashboard:", maxsplit=1)[1]
     for forbidden in ("user_id", "survey_id", "topic", "document"):
         assert forbidden not in dashboard
@@ -271,7 +283,8 @@ def test_release_defers_active_worker_images_and_gates_final_capacity() -> None:
     assert "SURVEY WORKERS IDLE" in workflow
     assert "survey_capacity_prerequisites_confirmed" in workflow
     assert "L-3032A538" in workflow
-    assert "db.t4g.small or larger" in workflow
+    assert "inputs.survey_capacity_stage == '8/8'" in workflow
+    assert "db.t4g.small or larger" not in workflow
 
 
 def test_large_runtime_template_uses_bounded_s3_staging_permissions() -> None:

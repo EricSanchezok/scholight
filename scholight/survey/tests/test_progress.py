@@ -9,7 +9,8 @@ def test_internal_components_map_to_stable_public_stages() -> None:
     assert stage_for_component("PaperCard") == "reviewing_evidence"
     assert stage_for_component("survey_outline") == "structuring_report"
     assert stage_for_component("SectionExpander") == "writing_report"
-    assert stage_for_component("survey_assembler") == "finalizing"
+    assert stage_for_component("survey_finalizer") == "finalizing"
+    assert stage_for_component("survey_assembler") is None
 
 
 def test_unknown_component_does_not_invent_progress() -> None:

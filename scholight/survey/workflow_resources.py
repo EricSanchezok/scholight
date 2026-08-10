@@ -10,6 +10,7 @@ import tempfile
 from pathlib import Path
 
 _SCHEMA_REFERENCE = re.compile(r"(?<![A-Za-z0-9_./-])schema/([A-Za-z0-9_.-]+\.md)\b")
+_WORKSPACE_DIRECTORIES = ("pdfs", "cards", "sections")
 
 
 class WorkflowResourceError(RuntimeError):
@@ -122,8 +123,43 @@ def stage_workflow_schema(
     return references
 
 
+def prepare_workflow_workspace(run_root: Path) -> tuple[Path, ...]:
+    """Create the writable paths that RCM agents are contractually allowed to list.
+
+    Some model tool clients treat listing a missing directory as a terminal tool
+    failure.  These directories are part of the workflow contract, so the host
+    creates them before RCM starts.  Artifact files remain model-owned because the
+    RCM filesystem write operation is create-only and must not encounter host
+    placeholders at their contract paths.
+    """
+    try:
+        resolved_run_root = run_root.resolve(strict=True)
+    except OSError as exc:
+        raise WorkflowResourceError("Survey run workspace is unavailable") from exc
+    if not resolved_run_root.is_dir() or run_root.is_symlink():
+        raise WorkflowResourceError("Survey run workspace is unavailable")
+
+    prepared: list[Path] = []
+    try:
+        for name in _WORKSPACE_DIRECTORIES:
+            destination = resolved_run_root / name
+            if destination.is_symlink():
+                raise WorkflowResourceError(f"Survey workspace {name} cannot be a symbolic link")
+            if destination.exists() and not destination.is_dir():
+                raise WorkflowResourceError(f"Survey workspace {name} path is not a directory")
+            destination.mkdir(mode=0o755, exist_ok=True)
+            prepared.append(destination)
+
+    except (OSError, WorkflowResourceError) as exc:
+        if isinstance(exc, WorkflowResourceError):
+            raise
+        raise WorkflowResourceError("Survey workflow workspace preparation failed") from exc
+    return tuple(prepared)
+
+
 __all__ = [
     "WorkflowResourceError",
+    "prepare_workflow_workspace",
     "referenced_schema_paths",
     "stage_workflow_schema",
 ]
