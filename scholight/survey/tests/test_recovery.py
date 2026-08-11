@@ -169,6 +169,45 @@ async def test_dry_run_verifies_legacy_ids_without_mutating_database(tmp_path: P
 
 
 @pytest.mark.asyncio
+async def test_dry_run_accepts_historical_intermediate_contracts(tmp_path: Path) -> None:
+    job_id, row, store, report_sha = _fixture(tmp_path)
+    legacy_artifacts = {
+        "00_card_plan.json": json.dumps({"papers": ["cs/0012009"]}),
+        "00_sections.json": json.dumps({"sections": ["introduction"]}),
+        "06a_coverage_judge.md": "# Coverage\n\nDecision: acceptable\n",
+        "06b_scope_judge.md": "# Scope\n\nDecision: acceptable\n",
+        "06c_benchmark_judge.md": "# Benchmark\n\nDecision: acceptable\n",
+        "06d_gap_judge.md": "# Gaps\n\nDecision: acceptable\n",
+        "06_judge_panel.md": "# Panel\n\nDecision: acceptable\n",
+    }
+    for relative_path, content in legacy_artifacts.items():
+        artifact = store.source / relative_path
+        artifact.write_text(content, encoding="utf-8")
+        manifest_path = f"run/{relative_path}"
+        for record in store.manifest["files"]:
+            if record["path"] == manifest_path:
+                record["sha256"] = _digest(artifact)
+                break
+
+    with (
+        patch("scholight.survey.recovery.get_pool", return_value=_Pool(row)),
+        patch(
+            "scholight.survey.recovery.recover_archived_survey_contract_failure",
+            new_callable=AsyncMock,
+        ) as apply_recovery,
+    ):
+        result = await recover_archived_survey(
+            job_id=job_id,
+            expected_report_sha256=report_sha,
+            artifact_store=store,  # type: ignore[arg-type]
+        )
+
+    assert result.report_sha256 == report_sha
+    assert not result.applied
+    apply_recovery.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_apply_requires_and_forwards_the_verified_report_guard(tmp_path: Path) -> None:
     job_id, row, store, report_sha = _fixture(tmp_path)
     with pytest.raises(ArchivedSurveyRecoveryError, match="requires"):
