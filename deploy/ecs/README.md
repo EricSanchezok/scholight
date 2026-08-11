@@ -307,8 +307,11 @@ summary so the partial worker rollout cannot be mistaken for a complete one.
 
 An archived Full Survey that failed only with `survey_contract_violation` may be
 reclassified in place after the corrected application proves the complete
-archive still satisfies every current contract. Run the command inside a
-one-off task cloned from the deployed Survey task definition so it uses the
+archive can still produce the exact immutable final report and index. Historical
+plan and Judge intermediates are interpreted under the schema that produced the
+archive rather than retroactively rejected by newer workflow-only contracts;
+new runs still receive the current strict contract audit. Run the command inside
+a one-off task cloned from the deployed Survey task definition so it uses the
 reviewed database role, private artifact bucket, and exact release image. The
 command is dry-run by default:
 

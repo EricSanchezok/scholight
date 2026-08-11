@@ -743,6 +743,37 @@ class SurveyDiagnostics:
                 )
         self._write_checkpoint_best_effort()
 
+    def finalize_recovery_audit(self) -> None:
+        """Audit rebuilt final artifacts without applying newer intermediate contracts.
+
+        Archived runs can predate durable-plan and Judge verdict schemas. Recovery
+        proves safety by restoring manifest-verified inputs, rebuilding the final
+        artifacts, and comparing their immutable hashes; revalidating historical
+        intermediate files against the current workflow schema would create false
+        contract failures unrelated to the archived report.
+        """
+        self.observe_artifacts()
+        final_contract = _CONTRACT_BY_COMPONENT["survey_finalizer"]
+        for relative_path in final_contract.required:
+            if not _valid_artifact(self.run_root, relative_path):
+                self._record_anomaly(
+                    component=final_contract.component,
+                    expected_artifact=relative_path,
+                    kind="required_artifact_missing",
+                    severity="error",
+                )
+        self._audit_final_report_content()
+        for contract in ARTIFACT_CONTRACTS:
+            for relative_path in contract.optional:
+                if not _valid_artifact(self.run_root, relative_path):
+                    self._record_anomaly(
+                        component=contract.component,
+                        expected_artifact=relative_path,
+                        kind="optional_artifact_missing",
+                        severity="warning",
+                    )
+        self._write_checkpoint_best_effort()
+
     def snapshot(self) -> dict[str, Any]:
         """Return the bounded summary persisted during execution and copied into run.json."""
         first_anomaly = self._anomalies[0] if self._anomalies else None

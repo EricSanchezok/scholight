@@ -146,7 +146,7 @@ async def recover_archived_survey(
             job_id=job_id,
             survey_id=survey_id,
         )
-        diagnostics.finalize_contract_audit()
+        diagnostics.finalize_recovery_audit()
         anomalies = diagnostics.snapshot()["anomalies"]
         errors = [item for item in anomalies if item.get("severity") == "error"]
         warnings = [item for item in anomalies if item.get("severity") == "warning"]
