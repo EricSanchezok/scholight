@@ -270,6 +270,20 @@ Resources:
         PasswordLength: 64
         ExcludePunctuation: true
 
+  McpDelegationSecret:
+    Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Name: /sanchezcloud/scholight/production/mcp-delegation
+      Description: Shared Scholight issuer and Scholens verifier MCP delegation trust anchor
+      KmsKeyId: !GetAtt ConfigurationKey.Arn
+      GenerateSecretString:
+        SecretStringTemplate: '{}'
+        GenerateStringKey: mcp_delegation_jwt_secret
+        PasswordLength: 64
+        ExcludePunctuation: true
+
   SearchProvidersSecret:
     Type: AWS::SecretsManager::Secret
     DeletionPolicy: Retain
@@ -571,6 +585,9 @@ Outputs:
   CoreSecretArn:
     Value: !Ref CoreSecret
     Export: { Name: sanchezcloud-scholight-core-secret-arn }
+  McpDelegationSecretArn:
+    Value: !Ref McpDelegationSecret
+    Export: { Name: sanchezcloud-scholight-mcp-delegation-secret-arn }
   SearchProvidersSecretArn:
     Value: !Ref SearchProvidersSecret
     Export: { Name: sanchezcloud-scholight-search-secret-arn }

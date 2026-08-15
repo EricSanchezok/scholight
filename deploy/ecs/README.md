@@ -200,7 +200,11 @@ Fill every required field before publishing a production release:
 - `/sanchezcloud/database/scholight-migrator`: the independent migrator
   credential;
 - `/sanchezcloud/scholight/production/core`: independent high-entropy values for
-  every HMAC/JWT/internal-token field;
+  the application-only HMAC/JWT/internal-token fields other than MCP
+  delegation;
+- `/sanchezcloud/scholight/production/mcp-delegation`: the retained, generated
+  MCP delegation trust anchor shared only by the Scholight issuer and Scholens
+  verifier. Never copy its value into GitHub, another secret, or a local file;
 - `/sanchezcloud/scholight/production/search-providers`: Zilliz, embedding,
   and MinerU endpoint/model/credential fields;
 - `/sanchezcloud/scholight/production/survey-providers`: Survey model and image
@@ -212,6 +216,31 @@ Fill every required field before publishing a production release:
 Never reuse the Identity signing secret, a database password, or an old EC2
 environment value as an application HMAC secret. Never print or download a
 production secret during routine deployment.
+
+### Scholight to Scholens delegation-secret migration
+
+The cross-product rollout order is strict because the foundation generates the
+trust anchor and CloudFormation exports its exact secret and KMS-key ARNs:
+
+1. Deploy the Scholight foundation so it creates the retained
+   `/sanchezcloud/scholight/production/mcp-delegation` secret and exports
+   `sanchezcloud-scholight-mcp-delegation-secret-arn` and
+   `sanchezcloud-scholight-configuration-key-arn`.
+2. Deploy Scholight production so the API injects
+   `SCHOLIGHT_MCP_DELEGATION_JWT_SECRET` from that new secret. Wait for the old
+   API task revision to drain completely. Delegation tokens are short-lived,
+   so a coordinated rotation may be used during this cutover, but the secret
+   value must never be manually copied between containers or secrets.
+3. Deploy the Scholens foundation and runtime using those two exports. Scholens
+   receives read/decrypt permission for this one trust anchor; it does not read
+   the Scholight core secret.
+
+The legacy `mcp_delegation_jwt_secret` field in the Scholight core secret is
+intentionally retained during the rollout. It may be removed only after the
+new Scholight task revision is stable, all old API tasks have drained, Scholens
+is reading the independent secret, and a repository/account search confirms no
+remaining consumer. Removing the unused field is a later reviewed rotation,
+not part of the first cross-product release.
 
 ## GitHub environments
 
