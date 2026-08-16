@@ -229,5 +229,33 @@ describe("SurveyHubPage", () => {
     expect(
       await screen.findByText(/Research finished, but the final report could not be assembled/),
     ).toBeVisible();
+    expect(screen.getByRole("link", { name: "Review draft →" })).toHaveAttribute(
+      "href",
+      `/survey/${failed.id}/draft`,
+    );
+    expect(screen.getByRole("button", { name: "Delete" })).toBeVisible();
+  });
+
+  it("links a failed survey without a ready draft to its preserved request", async () => {
+    const failed: SurveySummary = {
+      ...completedSurvey,
+      id: "00000000-0000-0000-0000-000000000009",
+      status: "failed",
+      latest_draft_revision: null,
+      report_available: false,
+      error_code: "survey_draft_failed",
+      error_message: "The research brief could not be prepared.",
+      progress: { ...completedSurvey.progress, status: "failed", stage: "failed" },
+    };
+    vi.mocked(surveyApi.list).mockImplementation((view) =>
+      Promise.resolve(view === "completed" ? { ...emptyList, items: [failed] } : emptyList),
+    );
+
+    renderHub(authenticated);
+
+    expect(await screen.findByRole("link", { name: "View request →" })).toHaveAttribute(
+      "href",
+      `/survey/${failed.id}/draft`,
+    );
   });
 });

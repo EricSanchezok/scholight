@@ -106,7 +106,10 @@ ARTIFACT_CONTRACTS = (
     ArtifactContract("judge_synthesizer", required=("06_judge_panel.md",)),
     ArtifactContract("judge_panel", required=("06_judge_panel.md",)),
     ArtifactContract("image_planner", optional=("08_global_picture.png",)),
-    ArtifactContract("survey_outline", required=("00_outline.md", "00_sections.json")),
+    ArtifactContract(
+        "survey_outline",
+        required=("00_outline.json", "00_outline.md", "00_sections.json"),
+    ),
     ArtifactContract("survey_finalizer", required=("08_survey.md", "index.md")),
 )
 _CONTRACT_BY_COMPONENT = {contract.component: contract for contract in ARTIFACT_CONTRACTS}
@@ -447,7 +450,10 @@ class SurveyDiagnostics:
                 if _SAFE_SECTION_PART.fullmatch(number) and _SAFE_SECTION_PART.fullmatch(slug):
                     self._dynamic_required[f"sections/{number}_{slug}.md"] = "section_expander"
 
-    def _read_durable_plan(self, relative_path: str) -> list[dict[str, object]] | None:
+    def read_durable_plan(self, relative_path: str) -> list[dict[str, object]] | None:
+        """Return one validated bounded fan-out plan, or None when it is unsafe."""
+        if relative_path not in _DURABLE_PLANS:
+            return None
         candidate = self.run_root / relative_path
         if not _valid_artifact(self.run_root, relative_path):
             return None
@@ -514,6 +520,26 @@ class SurveyDiagnostics:
             validated.append(raw_item)
         return validated
 
+    def missing_durable_plan_items(
+        self,
+        relative_path: str,
+    ) -> tuple[dict[str, object], ...] | None:
+        """Return only safely planned items whose expected artifact is absent."""
+        items = self.read_durable_plan(relative_path)
+        if items is None:
+            return None
+        missing: list[dict[str, object]] = []
+        for item in items:
+            if relative_path == "00_card_plan.json":
+                output = _card_artifact_path(item.get("id"))
+                if output is None:
+                    return None
+            else:
+                output = f"sections/{item['n']}_{item['slug']}.md"
+            if not _valid_artifact(self.run_root, output):
+                missing.append(item)
+        return tuple(missing)
+
     def _audit_judge_verdicts(self) -> None:
         for relative_path, (component, field) in _JUDGE_VERDICT_ARTIFACTS.items():
             if not _valid_artifact(self.run_root, relative_path):
@@ -537,7 +563,7 @@ class SurveyDiagnostics:
                 )
 
     def _register_durable_plan(self, relative_path: str) -> bool:
-        items = self._read_durable_plan(relative_path)
+        items = self.read_durable_plan(relative_path)
         if items is None:
             return False
         _component, spawn_tool = _DURABLE_PLANS[relative_path]

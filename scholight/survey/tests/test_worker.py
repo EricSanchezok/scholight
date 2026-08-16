@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
@@ -24,6 +25,7 @@ from scholight.survey.worker import (
     _collect_stage_timings,
     _emit_result_metrics,
     _heartbeat,
+    _repair_workflows,
     _run_claimed_job,
     _run_metadata,
     execute_survey,
@@ -45,7 +47,7 @@ def _stub_durable_progress_update() -> Iterator[AsyncMock]:
 
 
 def test_worker_expects_pinned_rcm_release() -> None:
-    assert RCM_VERSION == "0.2.13"
+    assert RCM_VERSION == "0.2.14"
 
 
 def _job(
@@ -199,7 +201,7 @@ async def test_zero_exit_finalization_failure_does_not_rerun_the_workflow(
 
 
 @pytest.mark.asyncio
-async def test_zero_exit_contract_violation_gets_one_same_workspace_repair(
+async def test_zero_exit_contract_violation_uses_targeted_repair_without_full_rerun(
     tmp_path: Path,
 ) -> None:
     job = _job(job_id=uuid4(), worker_id=uuid4(), status="running")
@@ -225,16 +227,75 @@ async def test_zero_exit_contract_violation_gets_one_same_workspace_repair(
         termination_reason="completed",
     )
 
-    with patch(
-        "scholight.survey.worker._execute_survey_once",
-        new_callable=AsyncMock,
-        side_effect=(incomplete, succeeded),
-    ) as execute:
+    with (
+        patch(
+            "scholight.survey.worker._execute_survey_once",
+            new_callable=AsyncMock,
+            return_value=incomplete,
+        ) as execute,
+        patch(
+            "scholight.survey.worker._repair_survey_artifacts",
+            new_callable=AsyncMock,
+            return_value=succeeded,
+        ) as repair,
+    ):
         result = await execute_survey(job, tmp_path)
 
     assert result.outcome == "succeeded"
-    assert execute.await_count == 2
+    assert execute.await_count == 1
+    repair.assert_awaited_once()
     assert complete_report.read_text(encoding="utf-8") == "# Complete report\n"
+
+
+def test_targeted_repair_selects_only_missing_items_from_valid_plans(tmp_path: Path) -> None:
+    (tmp_path / "cards").mkdir()
+    (tmp_path / "sections").mkdir()
+    (tmp_path / "cards" / "2401.12345.md").write_text("existing", encoding="utf-8")
+    (tmp_path / "00_card_plan.json").write_text(
+        json.dumps(
+            [
+                {
+                    "run_dir": ".",
+                    "id": "2401.12345",
+                    "title": "Existing",
+                    "why": "evidence",
+                },
+                {
+                    "run_dir": ".",
+                    "id": "2402.54321",
+                    "title": "Missing",
+                    "why": "evidence",
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "00_sections.json").write_text(
+        json.dumps(
+            [
+                {
+                    "run_dir": ".",
+                    "n": "01",
+                    "slug": "introduction",
+                    "title": "Introduction",
+                    "thesis": "Establish scope",
+                    "card_ids": ["2401.12345"],
+                    "transfer_angle": "",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    diagnostics = SurveyDiagnostics(
+        run_root=tmp_path,
+        job_id=uuid4(),
+        survey_id=uuid4(),
+    )
+
+    assert _repair_workflows(diagnostics) == (
+        ("00_card_plan.json", "card_repair.rcm"),
+        ("00_sections.json", "section_repair.rcm"),
+    )
 
 
 @pytest.mark.asyncio
@@ -811,6 +872,31 @@ async def test_stage_collector_classifies_image_failure_without_persisting_conte
         "outcome": "failed",
         "metrics": {"SurveyImageGenerationCount": (1, "Count")},
     }
+
+
+@pytest.mark.asyncio
+async def test_stage_collector_consumes_stable_rcm_image_error_fields(tmp_path: Path) -> None:
+    stream = asyncio.StreamReader()
+    stream.feed_data(
+        b'{"type":"tool_error","tool":"image_gen","call_id":"image-2",'
+        b'"error":"image_gen_error code=image_provider_unavailable retryable=true '
+        b'provider_code=timeout"}\n'
+    )
+    stream.feed_eof()
+    diagnostics = SurveyDiagnostics(
+        run_root=tmp_path,
+        job_id=uuid4(),
+        survey_id=uuid4(),
+    )
+
+    await _collect_stage_timings(stream, diagnostics=diagnostics)
+
+    assert diagnostics.snapshot()["last_image_error"] == {
+        "error_code": "image_provider_unavailable",
+        "retryable": True,
+    }
+    trace = (tmp_path / "trajectory.jsonl").read_text(encoding="utf-8")
+    assert "provider_code" not in trace
 
 
 @pytest.mark.asyncio

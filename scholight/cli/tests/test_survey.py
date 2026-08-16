@@ -15,6 +15,7 @@ from click.testing import CliRunner
 from scholight.cli.survey import (
     _diagnostic_projection,
     _installed_rcm_version,
+    _run_image_canary,
     _verify_diagnostic_workspace,
     _verify_survey_runtime_schema,
     survey_group,
@@ -27,13 +28,13 @@ def test_installed_rcm_version_accepts_reviewed_binary() -> None:
     completed = subprocess.CompletedProcess(
         args=["/usr/local/bin/accelerate", "--version"],
         returncode=0,
-        stdout="accelerate 0.2.13\n",
+        stdout="accelerate 0.2.14\n",
         stderr="",
     )
     with patch("scholight.cli.survey.subprocess.run", return_value=completed):
         version = _installed_rcm_version()
 
-    assert version == "0.2.13"
+    assert version == "0.2.14"
 
 
 def test_installed_rcm_version_rejects_unreviewed_binary() -> None:
@@ -67,7 +68,11 @@ def test_archived_recovery_command_is_dry_run_by_default() -> None:
         job_id=job_id,
         survey_id=survey_id,
         user_id=42,
+        source_manifest_key=f"surveys/v1/42/{job_id}/manifest.json",
+        source_manifest_sha256="c" * 64,
         manifest_key=f"surveys/v1/42/{job_id}/manifest.json",
+        recovery_type="exact_report_reclassification",
+        expected_manifest={"schema_version": 1},
         report_sha256="a" * 64,
         index_sha256="b" * 64,
         verified_file_count=12,
@@ -94,8 +99,89 @@ def test_archived_recovery_command_is_dry_run_by_default() -> None:
     recover.assert_awaited_once_with(
         job_id=job_id,
         apply=False,
+        expected_source_manifest_sha256=None,
         expected_report_sha256=None,
     )
+
+
+def test_image_canary_reports_verified_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "data_root", str(tmp_path))
+
+    def _run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        del kwargs
+        output = Path(args[-1])
+        output.write_bytes(b"verified-image")
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=0,
+            stdout=json.dumps({"status": "ok", "size": len(b"verified-image")}),
+            stderr="",
+        )
+
+    with (
+        patch("scholight.cli.survey.subprocess.run", side_effect=_run),
+        patch("scholight.cli.survey.emit_emf"),
+    ):
+        payload = _run_image_canary()
+
+    assert payload["status"] == "ok"
+    assert payload["size"] == len(b"verified-image")
+    assert payload["provider_reason"] is None
+
+
+def test_image_canary_exposes_only_sanitized_gateway_reason(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "data_root", str(tmp_path))
+    completed = subprocess.CompletedProcess(
+        args=["accelerate", "image-canary"],
+        returncode=1,
+        stdout="",
+        stderr=(
+            "Error: image_gen_error code=image_request_rejected retryable=false "
+            "http_status=400 provider_code=unsupported_parameter "
+            "provider_reason=invalid_jwt sensitive-body"
+        ),
+    )
+    with (
+        patch("scholight.cli.survey.subprocess.run", return_value=completed),
+        patch("scholight.cli.survey.emit_emf"),
+    ):
+        result = CliRunner().invoke(survey_group, ["image-canary", "--json-output"])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.output)
+    assert payload["error_code"] == "image_request_rejected"
+    assert payload["http_status"] == 400
+    assert payload["retryable"] is False
+    assert payload["provider_code"] == "unsupported_parameter"
+    assert payload["provider_reason"] == "invalid_jwt"
+    assert "sensitive-body" not in result.output
+
+
+def test_image_canary_timeout_is_a_structured_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "data_root", str(tmp_path))
+    with (
+        patch(
+            "scholight.cli.survey.subprocess.run",
+            side_effect=subprocess.TimeoutExpired(["accelerate", "image-canary"], 780),
+        ),
+        patch("scholight.cli.survey.emit_emf") as emit,
+    ):
+        result = CliRunner().invoke(survey_group, ["image-canary", "--json-output"])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.output)
+    assert payload["error_code"] == "image_canary_timeout"
+    assert payload["retryable"] is True
+    assert payload["provider_reason"] is None
+    emit.assert_called_once()
 
 
 def test_diagnose_reads_active_workspace_without_database(

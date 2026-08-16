@@ -152,6 +152,8 @@ def test_fan_out_plans_are_durable_and_restart_safe() -> None:
     assert "Exclude cards that already exist" in card_plan
     assert "one retry call" in card_plan
     assert "write run_dir/00_sections.json before spawning" in normalized_section_plan
+    assert "write run_dir/00_outline.json before" in normalized_section_plan
+    assert "schema/outline.md" in section_plan
     assert "Exclude section files that already exist" in section_plan
     assert "one retry call" in section_plan
 

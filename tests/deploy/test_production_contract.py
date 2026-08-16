@@ -188,6 +188,10 @@ def test_survey_capacity_contract_is_explicit_and_staged() -> None:
     assert 'SCHOLIGHT_SURVEY_MCP_URL, Value: !Sub "https://${DomainName}/api/mcp"' in full_task
     assert 'SCHOLIGHT_PG_POOL_MIN_SIZE, Value: "1"' in full_task
     assert 'SCHOLIGHT_PG_POOL_MAX_SIZE, Value: "2"' in full_task
+    assert "IMAGE_GEN_API_URL, Value: !Ref ImageGenApiUrl" in full_task
+    assert "IMAGE_GEN_TRUSTED_HOSTS, Value: !Ref ImageGenTrustedHosts" in full_task
+    assert example["ImageGenApiUrl"] == ""
+    assert example["ImageGenTrustedHosts"] == ""
     assert re.search(r"Name: SCHOLIGHT_SURVEY_DRAFT_CONCURRENCY(?:,|\s*})", runtime) is None
     assert re.search(r"Name: SCHOLIGHT_SURVEY_JOB_CONCURRENCY(?:,|\s*})", runtime) is None
 
@@ -531,8 +535,8 @@ def test_survey_image_pins_verified_rcm_release() -> None:
     dockerfile = (ROOT / "docker/scholight-api/Dockerfile").read_text(encoding="utf-8")
     workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
 
-    assert "ARG RCM_VERSION=v0.2.13" in dockerfile
-    assert "f0bfb84900ce61daf3af8654406fcc98afd932f487244636d176c930b4524b04" in dockerfile
+    assert "ARG RCM_VERSION=v0.2.15" in dockerfile
+    assert "df436430359bed623ca4c8a9a7eb982a4470a50327a567b49f4ff71c56dc4e14" in dockerfile
     assert "sha256sum --check" in dockerfile
     assert "COPY --from=survey-builder /app/bin/accelerate /usr/local/bin/accelerate" in dockerfile
     assert "/releases/latest/" not in dockerfile

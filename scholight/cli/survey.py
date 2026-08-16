@@ -5,10 +5,12 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 
 # Only a fixed, image-owned executable is invoked below.
 import subprocess  # nosec B404
 import tempfile
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -26,11 +28,17 @@ from scholight.db.queries_survey import get_survey_job_counts
 from scholight.db.queries_survey_cleanup import get_artifact_cleanup_status
 from scholight.db.queries_survey_notifications import get_email_notification_status
 from scholight.logging import configure_logging
+from scholight.logging.emf import emit_emf
 from scholight.survey.process import classify_rcm_error
+from scholight.survey.runtime import image_canary_environment
 from scholight.survey.worker import RCM_VERSION, serve_survey_worker
 from scholight.survey.workflow_audit import workflow_audit_payload
 
 _DIAGNOSTIC_JSON_MAX_BYTES = 2 * 1024 * 1024
+_IMAGE_CANARY_FIELD = re.compile(
+    r"\b(code|http_status|retryable|provider_code|provider_reason)="
+    r"([A-Za-z0-9_.-]{1,128})\b"
+)
 
 
 def _echo_concurrency(concurrency: object) -> None:
@@ -60,6 +68,102 @@ def _installed_rcm_version() -> str:
     if version != RCM_VERSION:
         raise RuntimeError("Installed RCM version does not match the reviewed release")
     return version
+
+
+def _run_image_canary() -> dict[str, object]:
+    """Run the fixed RCM canary and return only bounded diagnostic fields."""
+    started_at = time.perf_counter()
+    with tempfile.TemporaryDirectory(
+        prefix=".survey-image-canary-",
+        dir=settings.data_root,
+    ) as directory:
+        output = Path(directory) / "canary.png"
+        try:
+            completed = subprocess.run(  # nosec B603
+                [
+                    "/usr/local/bin/accelerate",
+                    "image-canary",
+                    "--output",
+                    str(output),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=13 * 60,
+                env=image_canary_environment(),
+            )
+        except subprocess.TimeoutExpired:
+            completed = None
+        duration_ms = max(0, round((time.perf_counter() - started_at) * 1000))
+        if completed is None:
+            result: dict[str, object] = {
+                "schema_version": 1,
+                "status": "failed",
+                "error_code": "image_canary_timeout",
+                "http_status": None,
+                "retryable": True,
+                "provider_code": "timeout",
+                "provider_reason": None,
+                "duration_ms": duration_ms,
+                "size": None,
+            }
+        elif completed.returncode == 0:
+            try:
+                payload = json.loads(completed.stdout)
+                size = output.stat().st_size
+            except (OSError, json.JSONDecodeError):
+                payload = None
+                size = 0
+            if not (
+                isinstance(payload, dict)
+                and payload.get("status") == "ok"
+                and size > 0
+                and payload.get("size") == size
+            ):
+                result = {
+                    "schema_version": 1,
+                    "status": "failed",
+                    "error_code": "image_canary_invalid_result",
+                    "http_status": None,
+                    "retryable": False,
+                    "provider_code": "invalid_success_result",
+                    "provider_reason": None,
+                    "duration_ms": duration_ms,
+                    "size": None,
+                }
+            else:
+                result = {
+                    "schema_version": 1,
+                    "status": "ok",
+                    "error_code": None,
+                    "http_status": None,
+                    "retryable": None,
+                    "provider_code": None,
+                    "provider_reason": None,
+                    "duration_ms": duration_ms,
+                    "size": size,
+                }
+        else:
+            fields = dict(_IMAGE_CANARY_FIELD.findall(completed.stderr))
+            result = {
+                "schema_version": 1,
+                "status": "failed",
+                "error_code": fields.get("code", "image_canary_failed"),
+                "http_status": (
+                    int(fields["http_status"]) if fields.get("http_status", "").isdigit() else None
+                ),
+                "retryable": (fields["retryable"] == "true" if "retryable" in fields else None),
+                "provider_code": fields.get("provider_code"),
+                "provider_reason": fields.get("provider_reason"),
+                "duration_ms": duration_ms,
+                "size": None,
+            }
+    emit_emf(
+        service="survey-image-canary",
+        outcome=str(result["status"]),
+        metrics={"SurveyImageCanaryCount": (1, "Count")},
+    )
+    return result
 
 
 def _verify_diagnostic_workspace(data_root: Path) -> None:
@@ -437,6 +541,11 @@ def diagnose(job_id: str, json_output: bool) -> None:
 @click.argument("job_id", type=str)
 @click.option("--apply", "apply_recovery", is_flag=True, help="Apply the verified transition.")
 @click.option(
+    "--expected-source-manifest-sha256",
+    type=str,
+    help="Required immutable source manifest guard when --apply is used.",
+)
+@click.option(
     "--expected-report-sha256",
     type=str,
     help="Required immutable report guard when --apply is used.",
@@ -445,6 +554,7 @@ def diagnose(job_id: str, json_output: bool) -> None:
 def recover_archived(
     job_id: str,
     apply_recovery: bool,
+    expected_source_manifest_sha256: str | None,
     expected_report_sha256: str | None,
     json_output: bool,
 ) -> None:
@@ -463,6 +573,7 @@ def recover_archived(
             result = await recover_archived_survey(
                 job_id=parsed_job_id,
                 apply=apply_recovery,
+                expected_source_manifest_sha256=expected_source_manifest_sha256,
                 expected_report_sha256=expected_report_sha256,
             )
             return result.as_dict()
@@ -478,7 +589,33 @@ def recover_archived(
         return
     action = "applied" if payload["applied"] else "dry-run verified"
     click.echo(f"Archived Survey recovery {action}.")
+    click.echo(f"Recovery type: {payload['recovery_type']}")
+    click.echo(f"Source manifest SHA256: {payload['source_manifest_sha256']}")
     click.echo(f"Report SHA256: {payload['report_sha256']}")
+    click.echo(f"Expected manifest: {payload['manifest_key']}")
+
+
+@survey_group.command("image-canary")
+@click.option("--json-output", "json_output", is_flag=True, help="Emit machine-readable JSON.")
+def image_canary(json_output: bool) -> None:
+    """Generate one fixed, non-sensitive image and report sanitized diagnostics."""
+    configure_logging()
+    try:
+        payload = _run_image_canary()
+    except (OSError, subprocess.SubprocessError, RuntimeError) as exc:
+        raise click.ClickException("Image canary could not be executed") from exc
+    if json_output:
+        click.echo(json.dumps(payload, separators=(",", ":"), sort_keys=True))
+    else:
+        click.echo(f"Image canary: {payload['status']}")
+        click.echo(f"Error code: {payload['error_code'] or 'none'}")
+        click.echo(f"HTTP status: {payload['http_status'] or 'none'}")
+        click.echo(f"Retryable: {payload['retryable']}")
+        click.echo(f"Provider code: {payload['provider_code'] or 'none'}")
+        click.echo(f"Provider reason: {payload['provider_reason'] or 'none'}")
+        click.echo(f"Duration: {payload['duration_ms']} ms")
+    if payload["status"] != "ok":
+        raise click.exceptions.Exit(1)
 
 
 @survey_group.command("smoke")

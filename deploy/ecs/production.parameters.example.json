@@ -10,6 +10,8 @@
   "ApplicationEnabled": "false",
   "SurveyRuntimeEnabled": "false",
   "SurveyPublicMode": "off",
+  "ImageGenApiUrl": "",
+  "ImageGenTrustedHosts": "",
   "SurveyDraftMaxTasks": 1,
   "SurveyFullMaxTasks": 1,
   "SchedulerState": "DISABLED"

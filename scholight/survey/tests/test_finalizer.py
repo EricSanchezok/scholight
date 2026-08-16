@@ -1,5 +1,6 @@
 """Deterministic Survey final assembly contracts."""
 
+import json
 from pathlib import Path
 
 import pytest
@@ -117,6 +118,56 @@ def test_finalizer_exposes_stable_outline_error_code(tmp_path: Path) -> None:
         finalize_survey(tmp_path)
 
     assert captured.value.code == "survey_outline_metadata_invalid"
+
+
+def test_finalizer_prefers_structured_outline_metadata(tmp_path: Path) -> None:
+    _write_run(tmp_path)
+    (tmp_path / "00_outline.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "title": "The Structured Title",
+                "abstract": "The structured abstract wins.",
+                "through_line": "Evidence before conclusions.",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = finalize_survey(tmp_path)
+
+    assert result.report_path.read_text(encoding="utf-8").startswith(
+        "# The Structured Title\n\n## Abstract\n\nThe structured abstract wins."
+    )
+
+
+@pytest.mark.parametrize(
+    "outline_json",
+    [
+        "not json",
+        json.dumps({"schema_version": 1, "title": "Missing fields"}),
+        json.dumps(
+            {
+                "schema_version": 2,
+                "title": "Wrong version",
+                "abstract": "Ignored",
+                "through_line": "Ignored",
+            }
+        ),
+    ],
+)
+def test_finalizer_falls_back_to_markdown_when_outline_json_is_invalid(
+    tmp_path: Path,
+    outline_json: str,
+) -> None:
+    _write_run(tmp_path)
+    (tmp_path / "00_outline.json").write_text(outline_json, encoding="utf-8")
+
+    result = finalize_survey(tmp_path)
+
+    assert result.report_path.read_text(encoding="utf-8").startswith(
+        "# A Reliable Survey\n\n## Abstract\n\nThis is the first sentence"
+    )
 
 
 def test_finalizer_expands_grouped_citations_without_treating_labels_as_ids(

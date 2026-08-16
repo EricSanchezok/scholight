@@ -6,10 +6,9 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { surveyApi } from "../../api/domain";
 import { ApiError } from "../../api/errors";
-import type { SurveyDraft } from "../../api/types";
 import { queryKeys } from "../../app/queryKeys";
 import { contentSwapMotion } from "../../app/motion";
-import { routes } from "../../app/routes";
+import { routes, surveyDraftPath } from "../../app/routes";
 import { SurveyDetailSkeleton } from "../../components/EditorialSkeleton";
 import { formatRelativeTime } from "../../i18n/format";
 import { useI18n } from "../../i18n/I18nProvider";
@@ -18,15 +17,8 @@ import { SurveyStartDialog } from "./SurveyDialogs";
 import { SurveyDraftHistory } from "./SurveyDraftHistory";
 import { SurveyDraftLoading } from "./SurveyDraftLoading";
 import { SurveyMarkdown } from "./SurveyMarkdown";
-import { queueAhead, SURVEY_POLL_INTERVAL, surveyTitle } from "./survey";
-
-function newestDraft(drafts: SurveyDraft[]): SurveyDraft | undefined {
-  return [...drafts].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))[0];
-}
-
-function mutationMessage(error: unknown, fallback: string): string {
-  return error instanceof ApiError ? error.message : fallback;
-}
+import { SurveyReuseSection } from "./SurveyReuseSection";
+import { mutationMessage, queueAhead, SURVEY_POLL_INTERVAL, surveyTitle } from "./survey";
 
 export function SurveyDraftPage() {
   const surveyId = useParams().surveyId ?? "";
@@ -41,6 +33,7 @@ export function SurveyDraftPage() {
   const [notifyOnCompletion, setNotifyOnCompletion] = useState(true);
   const revisionId = useRef<string | undefined>(undefined);
   const manualId = useRef<string | undefined>(undefined);
+  const replacementId = useRef<string | undefined>(undefined);
   const startRequest = useRef<{ clientRequestId: string; notifyOnCompletion: boolean } | undefined>(
     undefined,
   );
@@ -80,7 +73,7 @@ export function SurveyDraftPage() {
   );
   const current = [...readyDrafts].sort((a, b) => (b.revision ?? 0) - (a.revision ?? 0))[0];
   const selected = readyDrafts.find((draft) => draft.id === selectedId) ?? current;
-  const latest = newestDraft(values);
+  const latest = [...values].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))[0];
   const active = latest?.status === "queued" || latest?.status === "running" ? latest : undefined;
   const failed = latest?.status === "failed" ? latest : undefined;
   const viewingHistory = Boolean(selected && current && selected.id !== current.id);
@@ -94,6 +87,7 @@ export function SurveyDraftPage() {
   useEffect(() => {
     setNotifyOnCompletion(true);
     startRequest.current = undefined;
+    replacementId.current = undefined;
   }, [surveyId]);
 
   const refresh = async () => {
@@ -153,6 +147,25 @@ export function SurveyDraftPage() {
       if (!(error instanceof ApiError) || !error.retryable) startRequest.current = undefined;
     },
   });
+  const createReplacement = useMutation({
+    mutationFn: () => {
+      const initialRequest = survey.data?.initial_request.trim();
+      if (!initialRequest) throw new Error("The original request is unavailable.");
+      replacementId.current ??= crypto.randomUUID();
+      return surveyApi.create({
+        initial_request: initialRequest,
+        client_request_id: replacementId.current,
+      });
+    },
+    onSuccess: (replacement) => {
+      replacementId.current = undefined;
+      void queryClient.invalidateQueries({ queryKey: queryKeys.surveyRoot });
+      navigate(surveyDraftPath(replacement.id));
+    },
+    onError: (error) => {
+      if (!(error instanceof ApiError) || !error.retryable) replacementId.current = undefined;
+    },
+  });
 
   if (survey.isPending || drafts.isPending || progress.isPending) return <SurveyDetailSkeleton />;
   if (!survey.data || survey.error || drafts.error || progress.error) {
@@ -170,8 +183,12 @@ export function SurveyDraftPage() {
     );
   }
 
-  const statusLine =
-    active?.status === "queued"
+  const canEdit = survey.data.status === "drafting";
+  const canReuse = survey.data.status === "failed" || survey.data.status === "cancelled";
+
+  const statusLine = canReuse
+    ? `${survey.data.status === "cancelled" ? "Survey cancelled" : "Survey failed"}  ·  Draft and original request preserved`
+    : active?.status === "queued"
       ? `Waiting to refine  ·  ${queueAhead(progress.data)} requests ahead  ·  ${progress.data.queue ? `Queued ${formatRelativeTime(progress.data.queue.queued_at, locale)}` : "Queued"}`
       : active
         ? "Generating draft"
@@ -244,7 +261,7 @@ export function SurveyDraftPage() {
                         Return to current
                       </button>
                     </div>
-                  ) : editing ? (
+                  ) : canEdit && editing ? (
                     <div className={styles.surveyDraftActions}>
                       <button
                         type="button"
@@ -265,7 +282,7 @@ export function SurveyDraftPage() {
                         {save.isPending ? "Saving…" : "Save"}
                       </button>
                     </div>
-                  ) : (
+                  ) : canEdit ? (
                     <div className={styles.surveyDraftActions}>
                       <button
                         type="button"
@@ -285,7 +302,7 @@ export function SurveyDraftPage() {
                         Approve &amp; start
                       </button>
                     </div>
-                  )}
+                  ) : null}
                   {(save.error || revise.error) && (
                     <p className={styles.surveyInlineError} role="alert">
                       {mutationMessage(save.error ?? revise.error, "Unable to save this revision.")}
@@ -302,7 +319,21 @@ export function SurveyDraftPage() {
             </AnimatePresence>
           </div>
 
-          {!active && current && !editing && !viewingHistory && !atLimit && (
+          {canReuse && !viewingHistory && (
+            <SurveyReuseSection
+              busy={createReplacement.isPending}
+              error={
+                createReplacement.error
+                  ? mutationMessage(
+                      createReplacement.error,
+                      "Unable to prepare a new survey from this request.",
+                    )
+                  : undefined
+              }
+              onReuse={() => createReplacement.mutate()}
+            />
+          )}
+          {canEdit && !active && current && !editing && !viewingHistory && !atLimit && (
             <section className={styles.surveyRefineSection}>
               <h2>Refine this draft</h2>
               <p>
@@ -326,7 +357,7 @@ export function SurveyDraftPage() {
               </button>
             </section>
           )}
-          {atLimit && (
+          {canEdit && atLimit && (
             <p className={styles.surveyRevisionLimit}>
               This draft has reached v10. You can still edit it or approve the survey.
             </p>
@@ -336,6 +367,8 @@ export function SurveyDraftPage() {
           drafts={values}
           currentId={current?.id}
           selectedId={selectedId}
+          initialRequest={survey.data.initial_request}
+          readOnly={!canEdit}
           locale={locale}
           onSelect={(id) => {
             setEditing(false);

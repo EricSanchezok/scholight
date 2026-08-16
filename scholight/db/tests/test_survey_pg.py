@@ -502,14 +502,23 @@ async def test_verified_archived_contract_failure_recovers_atomically_and_idempo
             storage_prefix=prefix,
             manifest_key=manifest_key,
         )
+        await survey_pool.execute(
+            "UPDATE scholight.survey_email_notifications SET status = 'succeeded', "
+            "attempts = 3, finished_at = now() WHERE survey_id = $1",
+            survey_id,
+        )
 
         assert await recover_archived_survey_contract_failure(
             job_id=job.id,
             expected_manifest_key=manifest_key,
+            expected_error_code="survey_contract_violation",
+            replacement_manifest_key=None,
         )
         assert not await recover_archived_survey_contract_failure(
             job_id=job.id,
             expected_manifest_key=manifest_key,
+            expected_error_code="survey_contract_violation",
+            replacement_manifest_key=None,
         )
 
     survey = await survey_pool.fetchrow(
@@ -523,7 +532,7 @@ async def test_verified_archived_contract_failure_recovers_atomically_and_idempo
         job_id,
     )
     notification = await survey_pool.fetchrow(
-        "SELECT status, survey_outcome FROM scholight.survey_email_notifications "
+        "SELECT status, survey_outcome, attempts FROM scholight.survey_email_notifications "
         "WHERE survey_id = $1",
         survey_id,
     )
@@ -544,6 +553,68 @@ async def test_verified_archived_contract_failure_recovers_atomically_and_idempo
         "pending",
         "succeeded",
     )
+    assert notification["attempts"] == 0
+    assert await _usage(survey_pool) == (0, 1)
+
+
+@pytest.mark.asyncio
+async def test_archived_report_recovery_switches_manifest_once(
+    survey_pool: asyncpg.Pool,
+) -> None:
+    with (
+        patch("scholight.db.queries_survey.get_pool", return_value=survey_pool),
+        patch("scholight.db.queries_survey_drafts.get_pool", return_value=survey_pool),
+    ):
+        survey_id = await _create()
+        await _complete_next_draft(markdown="# Approved Draft")
+        await start_survey(
+            survey_id=survey_id,
+            user_id=42,
+            job_id=uuid4(),
+            client_request_id=uuid4(),
+            request_hash="b" * 64,
+            notify_on_completion=True,
+        )
+        worker_id = uuid4()
+        job = await claim_survey_job(worker_id=worker_id, lease_seconds=3600)
+        assert job is not None
+        await settle_survey_execution(
+            job_id=job.id,
+            worker_id=worker_id,
+            outcome="failed",
+            error_code="survey_report_missing",
+            error_message="The report could not be assembled.",
+        )
+        prefix = f"surveys/v1/42/{job.id}"
+        source_manifest_key = f"{prefix}/manifest.json"
+        replacement_manifest_key = f"{prefix}/recoveries/{'a' * 64}/manifest.json"
+        await finish_survey_archive(
+            job_id=job.id,
+            worker_id=worker_id,
+            storage_bucket="test-surveys",
+            storage_prefix=prefix,
+            manifest_key=source_manifest_key,
+        )
+
+        assert await recover_archived_survey_contract_failure(
+            job_id=job.id,
+            expected_manifest_key=source_manifest_key,
+            expected_error_code="survey_report_missing",
+            replacement_manifest_key=replacement_manifest_key,
+        )
+        assert not await recover_archived_survey_contract_failure(
+            job_id=job.id,
+            expected_manifest_key=source_manifest_key,
+            expected_error_code="survey_report_missing",
+            replacement_manifest_key=replacement_manifest_key,
+        )
+
+    recovered_job = await survey_pool.fetchrow(
+        "SELECT terminal_outcome, manifest_key FROM scholight.survey_jobs WHERE id = $1",
+        job.id,
+    )
+    assert recovered_job is not None
+    assert tuple(recovered_job.values()) == ("succeeded", replacement_manifest_key)
     assert await _usage(survey_pool) == (0, 1)
 
 

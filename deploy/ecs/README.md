@@ -340,6 +340,32 @@ least three image calls fail with no success in a six-hour window. Any finalizer
 failure alerts immediately because it means paid research completed without a
 deliverable report.
 
+Run the fixed provider canary from a one-off task cloned from the Survey task
+definition; it bypasses model completion and never prints its prompt, key, or
+response body:
+
+```bash
+scholight survey image-canary --json-output
+```
+
+The output contains only `error_code`, HTTP status, retryability, elapsed time,
+and the provider's sanitized code/reason classification. Raw response text is
+never returned. Use `ImageGenApiUrl` only for a reviewed gateway override. If
+successful URL responses use another public HTTPS host, add its exact hostname
+to `ImageGenTrustedHosts`; private addresses, redirects, MIME/signature
+mismatches, and files above 20 MiB remain rejected.
+Listing the configured image model through a general `/v1/models` endpoint is
+not an image authorization check: an image canary that returns HTTP 401 or 403
+blocks the release until the provider grants image-generation access to the
+configured credential. A successful, signature-validated canary is required
+before deploying a new RCM pin to production.
+
+The 2026-08-16 production canary returned HTTP 401 with the sanitized reason
+`invalid_jwt`; the gateway's image route rejected the configured non-JWT key
+before generation even though the same key could list `gpt-image-2`. Replace it
+with a credential issued for that route, or have the provider align image-route
+authentication. Do not treat model listing as resolution of this incident.
+
 Survey artifact readers accept both the original manifest v1 and the additive
 manifest v2 recovery overlay. A v2 manifest must live below the same
 owner-scoped job prefix, reference the exact v1 manifest and its SHA-256, and
@@ -349,6 +375,15 @@ layers. This reader compatibility must be deployed and retained as the stable
 rollback release before any recovery command is allowed to write v2 manifests.
 
 ## Failure handling
+
+Runtime artifact repair never replays the complete research graph. A
+deterministic finalizer error is returned immediately with its stable code. For
+a zero-exit contract violation, the worker validates `00_card_plan.json` and
+`00_sections.json`; when either valid plan has missing outputs, it runs only the
+corresponding missing-card or missing-section repair graph and then reruns local
+finalization. Existing cards and sections are excluded, image output is never a
+repair condition, and invalid plans or unrelated structural errors are not
+retried.
 
 An archived Full Survey that failed only with `survey_contract_violation` may be
 reclassified in place after the corrected application proves the complete
@@ -364,24 +399,29 @@ command is dry-run by default:
 scholight survey recover-archived <job-uuid> --json-output
 ```
 
-Record the reported `report_sha256`, review the zero-error result, then apply
-the same immutable archive guard:
+Record the reported `source_manifest_sha256`, `report_sha256`, recovery type,
+and expected manifest, review the zero-error result, then apply both immutable
+archive guards:
 
 ```bash
 scholight survey recover-archived <job-uuid> \
   --apply \
+  --expected-source-manifest-sha256 <dry-run-source-manifest-sha256> \
   --expected-report-sha256 <dry-run-report-sha256> \
   --json-output
 ```
 
-Recovery accepts only a finished failed job and aggregate whose error is
-`survey_contract_violation`, whose owner-scoped manifest prefix matches the
-database, and whose bounded Markdown/JSON/image inputs match every manifest
-size and checksum. It reruns deterministic finalization and requires the final
-report and index hashes to remain identical to the immutable archive. The
-database update locks the quota ledger, Survey, job, drafts, and notification in
-the canonical order; a running notification aborts the operation. Repeating an
-already applied recovery is safe and does not consume quota or resend mail.
+Recovery accepts a finished `survey_contract_violation` only when deterministic
+finalization reproduces the exact archived report and index hashes. A missing
+report finalization failure additionally requires complete validated card and
+section plans; its newly assembled `08_survey.md` and `index.md` are written as
+an append-only manifest v2 overlay referencing the exact v1 source hash. The
+database update validates the original manifest, status, error, ownership, and
+replacement prefix while locking the quota ledger, Survey, job, drafts, and
+notification in canonical order. It then switches the manifest pointer,
+consumes quota once, and resets the completion notification to a zero-attempt
+success delivery. A running notification aborts the operation; repeating an
+already applied recovery neither consumes quota nor resends mail.
 
 - A failed image build produces no deployable manifest.
 - A failed database task leaves production application images unchanged.

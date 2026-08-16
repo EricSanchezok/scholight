@@ -61,6 +61,15 @@ class SurveyArchive:
 
 
 @dataclass(frozen=True, slots=True)
+class SurveyRecoveryOverlay:
+    source_manifest_key: str
+    source_manifest_sha256: str
+    storage_prefix: str
+    manifest_key: str
+    manifest: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
 class SurveyArtifactStream:
     path: str
     size: int
@@ -436,6 +445,21 @@ class SurveyArtifactStore:
     async def read_manifest(self, *, manifest_key: str) -> dict[str, Any]:
         return await asyncio.to_thread(self._read_manifest_sync, manifest_key)
 
+    async def read_manifest_with_sha256(
+        self,
+        *,
+        manifest_key: str,
+    ) -> tuple[dict[str, Any], str]:
+        payload, raw = await asyncio.to_thread(
+            self._read_manifest_document_sync,
+            manifest_key,
+        )
+        return payload, hashlib.sha256(raw).hexdigest()
+
+    async def validate_manifest(self, *, manifest_key: str) -> None:
+        """Validate ownership, paths, and any v2 parent link without issuing URLs."""
+        await asyncio.to_thread(self._resolve_manifest_sync, manifest_key)
+
     def _read_manifest_sync(self, manifest_key: str) -> dict[str, Any]:
         payload, _raw = self._read_manifest_document_sync(manifest_key)
         return payload
@@ -525,6 +549,172 @@ class SurveyArtifactStore:
             records=list(merged.values()),
             deletion_records=[*parent_records, *overrides],
             manifest_keys=(parent_key, manifest_key),
+        )
+
+    async def create_recovery_overlay(
+        self,
+        *,
+        source_manifest_key: str,
+        expected_source_sha256: str,
+        report_path: Path,
+        index_path: Path,
+    ) -> SurveyRecoveryOverlay:
+        """Append one verified report/index overlay without mutating its v1 source."""
+        return await asyncio.to_thread(
+            self._create_recovery_overlay_sync,
+            source_manifest_key,
+            expected_source_sha256,
+            report_path,
+            index_path,
+            True,
+        )
+
+    async def plan_recovery_overlay(
+        self,
+        *,
+        source_manifest_key: str,
+        expected_source_sha256: str,
+        report_path: Path,
+        index_path: Path,
+    ) -> SurveyRecoveryOverlay:
+        """Build and validate the exact v2 overlay without writing any objects."""
+        return await asyncio.to_thread(
+            self._create_recovery_overlay_sync,
+            source_manifest_key,
+            expected_source_sha256,
+            report_path,
+            index_path,
+            False,
+        )
+
+    def _create_recovery_overlay_sync(
+        self,
+        source_manifest_key: str,
+        expected_source_sha256: str,
+        report_path: Path,
+        index_path: Path,
+        write: bool,
+    ) -> SurveyRecoveryOverlay:
+        if _SHA256_PATTERN.fullmatch(expected_source_sha256) is None:
+            raise SurveyArtifactError("Survey recovery source checksum is invalid")
+        source_manifest, source_raw = self._read_manifest_document_sync(source_manifest_key)
+        location = _manifest_location(source_manifest_key)
+        if location.recovery_sha256 is not None:
+            raise SurveyArtifactError("Survey recovery source manifest is invalid")
+        _validated_records(source_manifest, manifest_key=source_manifest_key)
+        source_sha256 = hashlib.sha256(source_raw).hexdigest()
+        if source_sha256 != expected_source_sha256:
+            raise SurveyArtifactError("Survey recovery source checksum changed")
+
+        outputs = (
+            ("run/08_survey.md", report_path, "08_survey.md"),
+            ("run/index.md", index_path, "index.md"),
+        )
+        content_by_path: dict[str, bytes] = {}
+        for relative_path, path, expected_name in outputs:
+            try:
+                path_stat = path.lstat()
+            except OSError as exc:
+                raise SurveyArtifactError("Survey recovery output is unavailable") from exc
+            if (
+                path.name != expected_name
+                or not stat.S_ISREG(path_stat.st_mode)
+                or path.is_symlink()
+                or path_stat.st_size <= 0
+                or path_stat.st_size > _RECOVERY_FILE_MAX_BYTES
+            ):
+                raise SurveyArtifactError("Survey recovery output is invalid")
+            flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+            try:
+                descriptor = os.open(path, flags)
+                with os.fdopen(descriptor, "rb") as handle:
+                    content = handle.read(_RECOVERY_FILE_MAX_BYTES + 1)
+            except OSError as exc:
+                raise SurveyArtifactError("Survey recovery output is unreadable") from exc
+            if len(content) != path_stat.st_size or len(content) > _RECOVERY_FILE_MAX_BYTES:
+                raise SurveyArtifactError("Survey recovery output changed while reading")
+            content_by_path[relative_path] = content
+
+        report_sha256 = hashlib.sha256(content_by_path["run/08_survey.md"]).hexdigest()
+        recovery_prefix = f"{location.base_prefix}/recoveries/{report_sha256}"
+        manifest_key = f"{recovery_prefix}/manifest.json"
+        records: list[dict[str, Any]] = []
+        for relative_path, _path, _expected_name in outputs:
+            content = content_by_path[relative_path]
+            key = f"{recovery_prefix}/{relative_path}"
+            if write:
+                self._put_append_only(
+                    key=key,
+                    content=content,
+                    content_type="text/markdown",
+                )
+            records.append(
+                {
+                    "path": relative_path,
+                    "key": key,
+                    "size": len(content),
+                    "sha256": hashlib.sha256(content).hexdigest(),
+                    "mime": "text/markdown",
+                }
+            )
+        manifest: dict[str, Any] = {
+            "schema_version": 2,
+            "job_id": str(location.job_id),
+            "user_id": location.user_id,
+            "parent_manifest": {
+                "key": source_manifest_key,
+                "sha256": source_sha256,
+            },
+            "files": records,
+        }
+        manifest_body = json.dumps(
+            manifest,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+        if write:
+            self._put_append_only(
+                key=manifest_key,
+                content=manifest_body,
+                content_type="application/json",
+            )
+        return SurveyRecoveryOverlay(
+            source_manifest_key=source_manifest_key,
+            source_manifest_sha256=source_sha256,
+            storage_prefix=location.base_prefix,
+            manifest_key=manifest_key,
+            manifest=manifest,
+        )
+
+    def _put_append_only(self, *, key: str, content: bytes, content_type: str) -> None:
+        try:
+            self._client.put_object(
+                Bucket=self._bucket,
+                Key=key,
+                Body=content,
+                ContentType=content_type,
+                IfNoneMatch="*",
+            )
+        except ClientError as exc:
+            code = str(exc.response.get("Error", {}).get("Code", ""))
+            if code not in {"PreconditionFailed", "412", "ConditionalRequestConflict"}:
+                raise
+            response = self._client.get_object(Bucket=self._bucket, Key=key)
+            body = response["Body"]
+            try:
+                existing = body.read(len(content) + 1)
+            finally:
+                close = getattr(body, "close", None)
+                if callable(close):
+                    close()
+            if existing != content:
+                raise SurveyArtifactError("Survey recovery append-only object changed") from exc
+            return
+        self._verify_object(
+            key=key,
+            expected_size=len(content),
+            expected_sha256=hashlib.sha256(content).hexdigest(),
         )
 
     async def presigned_artifacts(
@@ -855,4 +1045,5 @@ __all__ = [
     "SurveyArtifactNotFoundError",
     "SurveyArtifactStream",
     "SurveyArtifactStore",
+    "SurveyRecoveryOverlay",
 ]

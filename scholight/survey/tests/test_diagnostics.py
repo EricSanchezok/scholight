@@ -200,11 +200,17 @@ def test_final_audit_infers_last_component_from_artifacts_when_events_are_missin
         "04_ranked_pool.md",
         "05_research_map.md",
         "06_judge_panel.md",
+        "00_outline.json",
         "00_outline.md",
         "00_card_plan.json",
         "00_sections.json",
     ):
         content = "[]" if name.endswith(".json") else "observed"
+        if name == "00_outline.json":
+            content = (
+                '{"schema_version":1,"title":"Observed","abstract":"Observed",'
+                '"through_line":"Observed"}'
+            )
         (tmp_path / name).write_text(content, encoding="utf-8")
     diagnostics = SurveyDiagnostics(
         run_root=tmp_path,
