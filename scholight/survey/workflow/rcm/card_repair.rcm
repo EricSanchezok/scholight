@@ -1,0 +1,13 @@
+name = "Scholight Survey Missing Card Repair"
+
+use "./card_repair_plan.rcm" as CardRepairPlan
+use "./paper_card.rcm" as PaperCard
+
+graph {
+    accelerator repair = CardRepairPlan { spawns = ["PaperCard"] }
+
+    input.purpose -> repair.purpose
+    repair.done -> output.done
+    repair.context -> output.context
+    repair.purpose -> output.purpose
+}

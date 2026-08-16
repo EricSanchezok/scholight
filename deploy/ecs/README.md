@@ -350,6 +350,15 @@ rollback release before any recovery command is allowed to write v2 manifests.
 
 ## Failure handling
 
+Runtime artifact repair never replays the complete research graph. A
+deterministic finalizer error is returned immediately with its stable code. For
+a zero-exit contract violation, the worker validates `00_card_plan.json` and
+`00_sections.json`; when either valid plan has missing outputs, it runs only the
+corresponding missing-card or missing-section repair graph and then reruns local
+finalization. Existing cards and sections are excluded, image output is never a
+repair condition, and invalid plans or unrelated structural errors are not
+retried.
+
 An archived Full Survey that failed only with `survey_contract_violation` may be
 reclassified in place after the corrected application proves the complete
 archive can still produce the exact immutable final report and index. Historical
