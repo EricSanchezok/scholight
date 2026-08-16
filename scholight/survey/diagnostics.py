@@ -296,6 +296,7 @@ class SurveyDiagnostics:
         self._tool_counts = {"started": 0, "finished": 0, "failed": 0}
         self._model_counts = {"started": 0, "finished": 0, "failed": 0}
         self._last_model_error: dict[str, object] | None = None
+        self._last_image_error: dict[str, object] | None = None
         self._anomalies: list[dict[str, str]] = []
         self._anomaly_keys: set[tuple[str, str, str]] = set()
         self._observed_artifacts: dict[str, dict[str, object]] = {}
@@ -358,6 +359,12 @@ class SurveyDiagnostics:
                     for key in ("error_code", "timeout_seconds", "http_status")
                     if key in sanitized
                 }
+        if event_type == "tool.failed" and sanitized.get("tool") == "image_gen":
+            self._last_image_error = {
+                key: sanitized[key]
+                for key in ("error_code", "http_status", "retryable", "duration_ms")
+                if key in sanitized
+            }
         try:
             serialized = json.dumps(sanitized, ensure_ascii=False, separators=(",", ":"))
             with (self.run_root / TRACE_FILE).open("a", encoding="utf-8") as handle:
@@ -559,12 +566,18 @@ class SurveyDiagnostics:
             **fields,
         )
         if status in {"finished", "failed"}:
+            log_fields = {
+                key: fields[key]
+                for key in ("error_code", "http_status", "retryable", "duration_ms")
+                if key in fields
+            }
             logger.info(
                 "survey_tool_finished",
                 job_id=str(self.job_id),
                 component=component,
                 tool=tool,
                 status=status,
+                **log_fields,
             )
 
     def model_event(self, *, status: str, **fields: object) -> None:
@@ -795,6 +808,7 @@ class SurveyDiagnostics:
             "tool_counts": dict(self._tool_counts),
             "model_counts": dict(self._model_counts),
             "last_model_error": self._last_model_error,
+            "last_image_error": self._last_image_error,
             "anomaly_count": len(self._anomalies),
             "first_anomaly": first_anomaly,
             "affected_components": affected_components,

@@ -542,6 +542,8 @@ async def test_survey_list_returns_aggregate_projection_and_quota(
         started_at=None,
         finished_at=None,
         latest_draft_revision=2,
+        error_code="survey_outline_metadata_invalid",
+        error_message="Survey research finished, but the final report could not be assembled.",
         progress=SurveyProgressSnapshot(
             survey_id=survey_id,
             status="queued",
@@ -574,6 +576,10 @@ async def test_survey_list_returns_aggregate_projection_and_quota(
     assert payload["items"][0]["title"] == "A focused topic"
     assert payload["items"][0]["progress"]["stage"] == "waiting_for_execution"
     assert payload["items"][0]["progress"]["queue"]["position"] == 3
+    assert payload["items"][0]["error_code"] == "survey_outline_metadata_invalid"
+    assert payload["items"][0]["error_message"] == (
+        "Survey research finished, but the final report could not be assembled."
+    )
     assert payload["quota"] == {
         "daily_limit": 5,
         "reserved": 1,

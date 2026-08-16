@@ -29,7 +29,10 @@ that produced it.
 The article must argue, not enumerate. Required spine:
 
 - `title` and a 4-6 sentence `abstract` that states the problem, the organizing
-  thesis, and what the reader will take away.
+  thesis, and what the reader will take away. In `00_outline.md`, these values
+  must appear below literal `## Title` and `## Abstract` machine headings even
+  when their content is written in another language. The application finalizer
+  retains read compatibility with localized headings from archived runs.
 - `global_picture` (when available): immediately after the abstract, embed the
   generated landscape figure `08_global_picture.png` with a relative-path image
   link and a sentence orienting the reader. Omit cleanly if the figure was not

@@ -60,6 +60,8 @@ const completedSurvey: SurveySummary = {
   started_at: "2026-08-02T06:10:00Z",
   finished_at: "2026-08-02T07:00:00Z",
   latest_draft_revision: 1,
+  error_code: null,
+  error_message: null,
   progress: {
     survey_id: "00000000-0000-0000-0000-000000000001",
     status: "succeeded",
@@ -207,5 +209,25 @@ describe("SurveyHubPage", () => {
     renderHub(authenticated);
 
     expect(await screen.findByText("Preview evidence about token efficiency.")).toBeVisible();
+  });
+
+  it("shows the safe failure reason for a survey without a report", async () => {
+    const failed: SurveySummary = {
+      ...completedSurvey,
+      status: "failed",
+      report_available: false,
+      error_code: "survey_outline_metadata_invalid",
+      error_message: "Research finished, but the final report could not be assembled.",
+      progress: { ...completedSurvey.progress, status: "failed", stage: "failed" },
+    };
+    vi.mocked(surveyApi.list).mockImplementation((view) =>
+      Promise.resolve(view === "completed" ? { ...emptyList, items: [failed] } : emptyList),
+    );
+
+    renderHub(authenticated);
+
+    expect(
+      await screen.findByText(/Research finished, but the final report could not be assembled/),
+    ).toBeVisible();
   });
 });

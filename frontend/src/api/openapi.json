@@ -2382,6 +2382,28 @@
             "title": "Created At",
             "type": "string"
           },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
           "finished_at": {
             "anyOf": [
               {
@@ -2452,6 +2474,8 @@
           "started_at",
           "finished_at",
           "latest_draft_revision",
+          "error_code",
+          "error_message",
           "progress",
           "report_available",
           "artifacts_available"

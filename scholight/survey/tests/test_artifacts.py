@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import zipfile
@@ -69,6 +70,52 @@ class _FakeS3:
             "Contents": [{"Key": key} for key in sorted(self.objects) if key.startswith(prefix)],
             "IsTruncated": False,
         }
+
+
+def _install_manifest_v2_overlay(
+    *,
+    fake: _FakeS3,
+    archive: Any,
+    report: bytes = b"# Recovered Survey",
+    index: bytes = b"# Recovered Survey\n\n[Open report](08_survey.md)",
+) -> str:
+    report_sha256 = hashlib.sha256(report).hexdigest()
+    recovery_prefix = f"{archive.storage_prefix}/recoveries/{report_sha256}"
+    records = []
+    for path, content in (
+        ("run/08_survey.md", report),
+        ("run/index.md", index),
+    ):
+        key = f"{recovery_prefix}/{path}"
+        fake.objects[key] = content
+        records.append(
+            {
+                "path": path,
+                "key": key,
+                "size": len(content),
+                "sha256": hashlib.sha256(content).hexdigest(),
+                "mime": "text/markdown",
+            }
+        )
+    parent_body = fake.objects[archive.manifest_key]
+    manifest = {
+        "schema_version": 2,
+        "job_id": archive.manifest["job_id"],
+        "user_id": archive.manifest["user_id"],
+        "parent_manifest": {
+            "key": archive.manifest_key,
+            "sha256": hashlib.sha256(parent_body).hexdigest(),
+        },
+        "files": records,
+    }
+    manifest_key = f"{recovery_prefix}/manifest.json"
+    fake.objects[manifest_key] = json.dumps(
+        manifest,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return manifest_key
 
 
 @pytest.mark.asyncio
@@ -150,6 +197,125 @@ async def test_delete_can_preserve_manifest_until_database_row_is_removed(tmp_pa
 
     assert list(fake.objects) == [archive.manifest_key]
     await store.delete_manifest(manifest_key=archive.manifest_key)
+    assert fake.objects == {}
+
+
+@pytest.mark.asyncio
+async def test_manifest_v2_overlays_report_without_hiding_v1_artifacts(tmp_path: Path) -> None:
+    (tmp_path / "00_outline.md").write_text("## Title\nOriginal", encoding="utf-8")
+    fake = _FakeS3()
+    store = SurveyArtifactStore(bucket="survey-test", client=fake)
+    archive = await store.archive_run(
+        user_id=42,
+        job_id=uuid4(),
+        run_root=tmp_path,
+        run_metadata={"outcome": "failed"},
+    )
+    manifest_key = _install_manifest_v2_overlay(fake=fake, archive=archive)
+
+    artifacts = await store.presigned_artifacts(manifest_key=manifest_key)
+    report = await store.open_artifact(
+        manifest_key=manifest_key,
+        path="run/08_survey.md",
+    )
+
+    assert {artifact["path"] for artifact in artifacts} == {
+        "run/00_outline.md",
+        "run.json",
+        "run/08_survey.md",
+        "run/index.md",
+    }
+    assert b"".join([chunk async for chunk in report.chunks()]) == b"# Recovered Survey"
+
+    package = await store.build_report_package(manifest_key=manifest_key)
+    package_body = b"".join([chunk async for chunk in package.chunks()])
+    with zipfile.ZipFile(io.BytesIO(package_body)) as report_zip:
+        assert report_zip.read("08_survey.md") == b"# Recovered Survey"
+
+
+@pytest.mark.asyncio
+async def test_manifest_v2_rejects_parent_checksum_mismatch(tmp_path: Path) -> None:
+    (tmp_path / "00_outline.md").write_text("## Title\nOriginal", encoding="utf-8")
+    fake = _FakeS3()
+    store = SurveyArtifactStore(bucket="survey-test", client=fake)
+    archive = await store.archive_run(
+        user_id=42,
+        job_id=uuid4(),
+        run_root=tmp_path,
+        run_metadata={"outcome": "failed"},
+    )
+    manifest_key = _install_manifest_v2_overlay(fake=fake, archive=archive)
+    manifest = json.loads(fake.objects[manifest_key])
+    manifest["parent_manifest"]["sha256"] = "0" * 64
+    fake.objects[manifest_key] = json.dumps(manifest).encode()
+
+    with pytest.raises(SurveyArtifactError, match="parent checksum"):
+        await store.presigned_artifacts(manifest_key=manifest_key)
+
+
+@pytest.mark.asyncio
+async def test_manifest_v2_rejects_unsafe_or_non_report_overrides(tmp_path: Path) -> None:
+    (tmp_path / "00_outline.md").write_text("## Title\nOriginal", encoding="utf-8")
+    fake = _FakeS3()
+    store = SurveyArtifactStore(bucket="survey-test", client=fake)
+    archive = await store.archive_run(
+        user_id=42,
+        job_id=uuid4(),
+        run_root=tmp_path,
+        run_metadata={"outcome": "failed"},
+    )
+    manifest_key = _install_manifest_v2_overlay(fake=fake, archive=archive)
+    manifest = json.loads(fake.objects[manifest_key])
+    manifest["files"][0]["path"] = "run/cards/../../secret.md"
+    fake.objects[manifest_key] = json.dumps(manifest).encode()
+
+    with pytest.raises(SurveyArtifactError, match="overlay entry"):
+        await store.presigned_artifacts(manifest_key=manifest_key)
+
+
+@pytest.mark.asyncio
+async def test_manifest_v2_cleanup_deletes_overlay_and_parent_only(tmp_path: Path) -> None:
+    (tmp_path / "00_outline.md").write_text("## Title\nOriginal", encoding="utf-8")
+    fake = _FakeS3()
+    store = SurveyArtifactStore(bucket="survey-test", client=fake)
+    job_id = uuid4()
+    archive = await store.archive_run(
+        user_id=42,
+        job_id=job_id,
+        run_root=tmp_path,
+        run_metadata={"outcome": "failed"},
+    )
+    manifest_key = _install_manifest_v2_overlay(fake=fake, archive=archive)
+    unrelated_key = f"surveys/v1/42/{uuid4()}/run/keep.md"
+    fake.objects[unrelated_key] = b"keep"
+
+    await store.cleanup_archive(
+        user_id=42,
+        job_id=job_id,
+        storage_prefix=archive.storage_prefix,
+        manifest_key=manifest_key,
+    )
+
+    assert fake.objects == {unrelated_key: b"keep"}
+
+
+@pytest.mark.asyncio
+async def test_manifest_v2_preserved_manifests_are_deleted_together(tmp_path: Path) -> None:
+    (tmp_path / "00_outline.md").write_text("## Title\nOriginal", encoding="utf-8")
+    fake = _FakeS3()
+    store = SurveyArtifactStore(bucket="survey-test", client=fake)
+    archive = await store.archive_run(
+        user_id=42,
+        job_id=uuid4(),
+        run_root=tmp_path,
+        run_metadata={"outcome": "failed"},
+    )
+    manifest_key = _install_manifest_v2_overlay(fake=fake, archive=archive)
+
+    await store.delete_archive(manifest_key=manifest_key, preserve_manifest=True)
+
+    assert set(fake.objects) == {archive.manifest_key, manifest_key}
+    await store.delete_manifest(manifest_key=manifest_key)
     assert fake.objects == {}
 
 

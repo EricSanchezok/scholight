@@ -12,7 +12,7 @@ import { formatDurationBetween, formatFullDateTime } from "../../i18n/format";
 import { useI18n } from "../../i18n/I18nProvider";
 import { styles } from "../../styles/classes";
 import { SurveyMarkdown } from "./SurveyMarkdown";
-import { archiveFilename, artifactUrlMap, surveyTitle } from "./survey";
+import { archiveFilename, artifactUrlMap, hasOpeningFigure, surveyTitle } from "./survey";
 
 export function SurveyReportPage() {
   const surveyId = useParams().surveyId ?? "";
@@ -40,6 +40,7 @@ export function SurveyReportPage() {
     () => artifactUrlMap(artifacts.data?.items ?? []),
     [artifacts.data?.items],
   );
+  const openingFigureAvailable = hasOpeningFigure(artifacts.data?.items ?? []);
   const remove = useMutation({
     mutationFn: () => surveyApi.remove(surveyId),
     onSuccess: () => {
@@ -151,8 +152,18 @@ export function SurveyReportPage() {
               <dd>{formatDurationBetween(survey.data.started_at, survey.data.finished_at)}</dd>
             </div>
             <div>
+              <dt>Opening figure</dt>
+              <dd>
+                {artifacts.isPending
+                  ? "Checking…"
+                  : openingFigureAvailable
+                    ? "Available"
+                    : "Unavailable"}
+              </dd>
+            </div>
+            <div>
               <dt>Format</dt>
-              <dd>Markdown + images (.zip)</dd>
+              <dd>{openingFigureAvailable ? "Markdown + images (.zip)" : "Markdown (.zip)"}</dd>
             </div>
           </dl>
           {packageDownload.error && (

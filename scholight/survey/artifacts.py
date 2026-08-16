@@ -79,6 +79,22 @@ class SurveyArtifactStream:
                 await asyncio.to_thread(close)
 
 
+@dataclass(frozen=True, slots=True)
+class _ManifestLocation:
+    user_id: int
+    job_id: UUID
+    base_prefix: str
+    recovery_sha256: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class _ResolvedManifest:
+    manifest: dict[str, Any]
+    records: list[dict[str, Any]]
+    deletion_records: list[dict[str, Any]]
+    manifest_keys: tuple[str, ...]
+
+
 def _sha256_stream(stream: Any) -> str:
     digest = hashlib.sha256()
     while chunk := stream.read(_READ_CHUNK_BYTES):
@@ -126,47 +142,74 @@ def _safe_files(run_root: Path) -> tuple[list[Path], list[str]]:
     return files, excluded
 
 
-def _validated_records(
-    manifest: dict[str, Any],
-    *,
-    manifest_key: str,
-) -> list[dict[str, Any]]:
+def _manifest_location(manifest_key: str) -> _ManifestLocation:
     parts = manifest_key.split("/")
-    if len(parts) != 5 or parts[:2] != ["surveys", "v1"] or parts[4] != "manifest.json":
+    is_v1 = len(parts) == 5 and parts[4] == "manifest.json"
+    is_v2 = (
+        len(parts) == 7
+        and parts[4] == "recoveries"
+        and _SHA256_PATTERN.fullmatch(parts[5]) is not None
+        and parts[6] == "manifest.json"
+    )
+    if parts[:2] != ["surveys", "v1"] or not (is_v1 or is_v2):
         raise SurveyArtifactError("Survey artifact manifest key is invalid")
     try:
-        expected_user_id = int(parts[2])
-        expected_job_id = UUID(parts[3])
+        user_id = int(parts[2])
+        job_id = UUID(parts[3])
     except (TypeError, ValueError) as exc:
         raise SurveyArtifactError("Survey artifact manifest key is invalid") from exc
-    if manifest.get("user_id") != expected_user_id or manifest.get("job_id") != str(
-        expected_job_id
+    return _ManifestLocation(
+        user_id=user_id,
+        job_id=job_id,
+        base_prefix="/".join(parts[:4]),
+        recovery_sha256=parts[5] if is_v2 else None,
+    )
+
+
+def _validate_manifest_owner(
+    manifest: dict[str, Any],
+    *,
+    location: _ManifestLocation,
+) -> None:
+    if manifest.get("user_id") != location.user_id or manifest.get("job_id") != str(
+        location.job_id
     ):
         raise SurveyArtifactError("Survey artifact manifest ownership is invalid")
 
-    prefix = "/".join(parts[:4])
+
+def _validated_record_list(
+    files: list[Any],
+    *,
+    object_prefix: str,
+    manifest_key: str,
+    allowed_paths: set[str] | None = None,
+    error_label: str = "entry",
+) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    for record in manifest["files"]:
+    seen_keys: set[str] = set()
+    seen_paths: set[str] = set()
+    for record in files:
         if not isinstance(record, dict):
-            raise SurveyArtifactError("Survey artifact manifest entry is invalid")
+            raise SurveyArtifactError(f"Survey artifact manifest {error_label} is invalid")
         key = record.get("key")
         path = record.get("path")
         size = record.get("size")
         sha256 = record.get("sha256")
         mime = record.get("mime")
         path_parts = PurePosixPath(path).parts if isinstance(path, str) else ()
-        expected_key = f"{prefix}/{path}" if isinstance(path, str) else None
+        expected_key = f"{object_prefix}/{path}" if isinstance(path, str) else None
         if (
             not isinstance(key, str)
             or key != expected_key
             or key == manifest_key
-            or key in seen
+            or key in seen_keys
             or not isinstance(path, str)
             or not path
+            or path in seen_paths
             or path.startswith("/")
             or ".." in path_parts
             or (path != "run.json" and (not path_parts or path_parts[0] != "run"))
+            or (allowed_paths is not None and path not in allowed_paths)
             or not isinstance(size, int)
             or isinstance(size, bool)
             or size < 0
@@ -174,10 +217,27 @@ def _validated_records(
             or _SHA256_PATTERN.fullmatch(sha256) is None
             or not isinstance(mime, str)
         ):
-            raise SurveyArtifactError("Survey artifact manifest entry is invalid")
-        seen.add(key)
+            raise SurveyArtifactError(f"Survey artifact manifest {error_label} is invalid")
+        seen_keys.add(key)
+        seen_paths.add(path)
         records.append(record)
     return records
+
+
+def _validated_records(
+    manifest: dict[str, Any],
+    *,
+    manifest_key: str,
+) -> list[dict[str, Any]]:
+    location = _manifest_location(manifest_key)
+    if location.recovery_sha256 is not None or manifest.get("schema_version") != 1:
+        raise SurveyArtifactError("Survey artifact manifest is invalid")
+    _validate_manifest_owner(manifest, location=location)
+    return _validated_record_list(
+        manifest["files"],
+        object_prefix=location.base_prefix,
+        manifest_key=manifest_key,
+    )
 
 
 class SurveyArtifactStore:
@@ -377,6 +437,13 @@ class SurveyArtifactStore:
         return await asyncio.to_thread(self._read_manifest_sync, manifest_key)
 
     def _read_manifest_sync(self, manifest_key: str) -> dict[str, Any]:
+        payload, _raw = self._read_manifest_document_sync(manifest_key)
+        return payload
+
+    def _read_manifest_document_sync(
+        self,
+        manifest_key: str,
+    ) -> tuple[dict[str, Any], bytes]:
         response = self._client.get_object(Bucket=self._bucket, Key=manifest_key)
         body = response["Body"]
         try:
@@ -393,11 +460,72 @@ class SurveyArtifactStore:
             raise SurveyArtifactError("Survey artifact manifest is invalid") from exc
         if (
             not isinstance(payload, dict)
-            or payload.get("schema_version") != 1
+            or payload.get("schema_version") not in {1, 2}
             or not isinstance(payload.get("files"), list)
         ):
             raise SurveyArtifactError("Survey artifact manifest is invalid")
-        return payload
+        return payload, raw
+
+    def _resolve_manifest_sync(self, manifest_key: str) -> _ResolvedManifest:
+        manifest, _raw = self._read_manifest_document_sync(manifest_key)
+        location = _manifest_location(manifest_key)
+        _validate_manifest_owner(manifest, location=location)
+        if location.recovery_sha256 is None:
+            records = _validated_records(manifest, manifest_key=manifest_key)
+            return _ResolvedManifest(
+                manifest=manifest,
+                records=records,
+                deletion_records=records,
+                manifest_keys=(manifest_key,),
+            )
+        if manifest.get("schema_version") != 2:
+            raise SurveyArtifactError("Survey artifact manifest is invalid")
+
+        parent = manifest.get("parent_manifest")
+        parent_key = parent.get("key") if isinstance(parent, dict) else None
+        parent_sha256 = parent.get("sha256") if isinstance(parent, dict) else None
+        expected_parent_key = f"{location.base_prefix}/manifest.json"
+        if (
+            parent_key != expected_parent_key
+            or not isinstance(parent_sha256, str)
+            or _SHA256_PATTERN.fullmatch(parent_sha256) is None
+        ):
+            raise SurveyArtifactError("Survey artifact parent manifest is invalid")
+        parent_manifest, parent_raw = self._read_manifest_document_sync(parent_key)
+        if hashlib.sha256(parent_raw).hexdigest() != parent_sha256:
+            raise SurveyArtifactError("Survey artifact parent checksum is invalid")
+        parent_location = _manifest_location(parent_key)
+        if parent_manifest.get("schema_version") != 1:
+            raise SurveyArtifactError("Survey artifact parent manifest is invalid")
+        _validate_manifest_owner(parent_manifest, location=parent_location)
+        parent_records = _validated_records(parent_manifest, manifest_key=parent_key)
+
+        recovery_prefix = f"{location.base_prefix}/recoveries/{location.recovery_sha256}"
+        overrides = _validated_record_list(
+            manifest["files"],
+            object_prefix=recovery_prefix,
+            manifest_key=manifest_key,
+            allowed_paths={"run/08_survey.md", "run/index.md"},
+            error_label="overlay entry",
+        )
+        if {record["path"] for record in overrides} != {
+            "run/08_survey.md",
+            "run/index.md",
+        }:
+            raise SurveyArtifactError("Survey artifact manifest overlay entry is invalid")
+        report = next(record for record in overrides if record["path"] == "run/08_survey.md")
+        if report["sha256"] != location.recovery_sha256:
+            raise SurveyArtifactError("Survey artifact manifest overlay entry is invalid")
+
+        merged = {str(record["path"]): record for record in parent_records}
+        for record in overrides:
+            merged[str(record["path"])] = record
+        return _ResolvedManifest(
+            manifest=manifest,
+            records=list(merged.values()),
+            deletion_records=[*parent_records, *overrides],
+            manifest_keys=(parent_key, manifest_key),
+        )
 
     async def presigned_artifacts(
         self,
@@ -405,22 +533,20 @@ class SurveyArtifactStore:
         manifest_key: str,
         expires_seconds: int = 300,
     ) -> list[dict[str, Any]]:
-        manifest = await self.read_manifest(manifest_key=manifest_key)
+        resolved = await asyncio.to_thread(self._resolve_manifest_sync, manifest_key)
         return await asyncio.to_thread(
             self._presigned_artifacts_sync,
-            manifest,
-            manifest_key,
+            resolved.records,
             expires_seconds,
         )
 
     def _presigned_artifacts_sync(
         self,
-        manifest: dict[str, Any],
-        manifest_key: str,
+        records: list[dict[str, Any]],
         expires_seconds: int,
     ) -> list[dict[str, Any]]:
         artifacts: list[dict[str, Any]] = []
-        for record in _validated_records(manifest, manifest_key=manifest_key):
+        for record in records:
             artifacts.append(
                 {
                     **record,
@@ -460,8 +586,7 @@ class SurveyArtifactStore:
         manifest_key: str,
         run_root: Path,
     ) -> dict[str, str]:
-        manifest = self._read_manifest_sync(manifest_key)
-        records = _validated_records(manifest, manifest_key=manifest_key)
+        records = self._resolve_manifest_sync(manifest_key).records
         selected: list[dict[str, Any]] = []
         total_size = 0
         image_suffixes = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
@@ -521,13 +646,9 @@ class SurveyArtifactStore:
         return restored
 
     def _open_artifact_sync(self, manifest_key: str, path: str) -> SurveyArtifactStream:
-        manifest = self._read_manifest_sync(manifest_key)
+        records = self._resolve_manifest_sync(manifest_key).records
         record = next(
-            (
-                candidate
-                for candidate in _validated_records(manifest, manifest_key=manifest_key)
-                if candidate["path"] == path
-            ),
+            (candidate for candidate in records if candidate["path"] == path),
             None,
         )
         if record is None:
@@ -552,8 +673,7 @@ class SurveyArtifactStore:
         return await asyncio.to_thread(self._build_report_package_sync, manifest_key)
 
     def _build_report_package_sync(self, manifest_key: str) -> SurveyArtifactStream:
-        manifest = self._read_manifest_sync(manifest_key)
-        records = _validated_records(manifest, manifest_key=manifest_key)
+        records = self._resolve_manifest_sync(manifest_key).records
         report = next(
             (record for record in records if record["path"] == "run/08_survey.md"),
             None,
@@ -633,23 +753,21 @@ class SurveyArtifactStore:
         return content.getvalue()
 
     async def delete_archive(self, *, manifest_key: str, preserve_manifest: bool = False) -> None:
-        manifest = await self.read_manifest(manifest_key=manifest_key)
+        resolved = await asyncio.to_thread(self._resolve_manifest_sync, manifest_key)
         await asyncio.to_thread(
             self._delete_archive_sync,
-            manifest,
-            manifest_key,
+            resolved,
             preserve_manifest,
         )
 
     def _delete_archive_sync(
         self,
-        manifest: dict[str, Any],
-        manifest_key: str,
+        resolved: _ResolvedManifest,
         preserve_manifest: bool,
     ) -> None:
-        keys = [record["key"] for record in _validated_records(manifest, manifest_key=manifest_key)]
+        keys = list({record["key"] for record in resolved.deletion_records})
         if not preserve_manifest:
-            keys.append(manifest_key)
+            keys.extend(resolved.manifest_keys)
         for offset in range(0, len(keys), 1000):
             batch = keys[offset : offset + 1000]
             response = self._client.delete_objects(
@@ -661,11 +779,13 @@ class SurveyArtifactStore:
 
     async def delete_manifest(self, *, manifest_key: str) -> None:
         """Delete the retained manifest after the owner-scoped database row is gone."""
-        await asyncio.to_thread(
-            self._client.delete_object,
-            Bucket=self._bucket,
-            Key=manifest_key,
-        )
+        resolved = await asyncio.to_thread(self._resolve_manifest_sync, manifest_key)
+        for key in resolved.manifest_keys:
+            await asyncio.to_thread(
+                self._client.delete_object,
+                Bucket=self._bucket,
+                Key=key,
+            )
 
     async def cleanup_archive(
         self,
@@ -677,7 +797,16 @@ class SurveyArtifactStore:
     ) -> None:
         """Delete exact manifest objects, or the server-generated job prefix if absent."""
         expected_prefix = self.prefix(user_id=user_id, job_id=job_id)
-        if storage_prefix != expected_prefix or manifest_key != f"{expected_prefix}/manifest.json":
+        try:
+            location = _manifest_location(manifest_key)
+        except SurveyArtifactError as exc:
+            raise SurveyArtifactError("Survey artifact cleanup scope is invalid") from exc
+        if (
+            storage_prefix != expected_prefix
+            or location.base_prefix != expected_prefix
+            or location.user_id != user_id
+            or location.job_id != job_id
+        ):
             raise SurveyArtifactError("Survey artifact cleanup scope is invalid")
         try:
             await self.delete_archive(manifest_key=manifest_key)

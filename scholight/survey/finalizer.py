@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 import stat
+import unicodedata
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,7 +23,11 @@ _CARD_FIELD = re.compile(r"^-\s+(.+?):\s*(.*?)\s*$")
 
 
 class SurveyFinalizationError(RuntimeError):
-    """Raised when deterministic final assembly cannot prove its inputs are complete."""
+    """A stable, client-safe deterministic finalization failure."""
+
+    def __init__(self, message: str, *, code: str = "survey_artifact_contract_invalid") -> None:
+        super().__init__(message)
+        self.code = code
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,7 +41,13 @@ class FinalizedSurvey:
     unverified_reference_count: int
 
 
-def _regular_file(root: Path, relative_path: str, *, required: bool = True) -> Path | None:
+def _regular_file(
+    root: Path,
+    relative_path: str,
+    *,
+    required: bool = True,
+    error_code: str = "survey_artifact_contract_invalid",
+) -> Path | None:
     candidate = root / relative_path
     try:
         candidate_stat = candidate.lstat()
@@ -45,7 +56,8 @@ def _regular_file(root: Path, relative_path: str, *, required: bool = True) -> P
     except OSError as exc:
         if required:
             raise SurveyFinalizationError(
-                f"Required artifact is unavailable: {relative_path}"
+                f"Required artifact is unavailable: {relative_path}",
+                code=error_code,
             ) from exc
         return None
     if (
@@ -55,7 +67,10 @@ def _regular_file(root: Path, relative_path: str, *, required: bool = True) -> P
         or candidate_stat.st_size <= 0
     ):
         if required:
-            raise SurveyFinalizationError(f"Required artifact is invalid: {relative_path}")
+            raise SurveyFinalizationError(
+                f"Required artifact is invalid: {relative_path}",
+                code=error_code,
+            )
         return None
     return candidate
 
@@ -95,7 +110,7 @@ def _outline_fields(outline: str) -> tuple[str, str]:
     for line in outline.splitlines():
         heading = _OUTLINE_HEADING.match(line.strip())
         if heading is not None:
-            active = heading.group(1).strip().casefold()
+            active = _outline_heading_key(heading.group(1))
             sections.setdefault(active, [])
             continue
         if active is not None:
@@ -106,8 +121,24 @@ def _outline_fields(outline: str) -> tuple[str, str]:
     title = re.sub(r"^\*\*(.*?)\*\*$", r"\1", title).strip()
     abstract = "\n".join(sections.get("abstract", [])).strip()
     if not title or not abstract:
-        raise SurveyFinalizationError("Outline must contain non-empty Title and Abstract sections")
+        raise SurveyFinalizationError(
+            "Outline must contain non-empty Title and Abstract sections",
+            code="survey_outline_metadata_invalid",
+        )
     return title, abstract
+
+
+def _outline_heading_key(value: str) -> str:
+    normalized = " ".join(unicodedata.normalize("NFKC", value).split()).strip()
+    normalized = re.sub(r"\s+#+\s*$", "", normalized).strip(" *_:-")
+    base = re.split(r"\s*\(", normalized, maxsplit=1)[0].strip().casefold()
+    aliases = {
+        "title": "title",
+        "标题": "title",
+        "abstract": "abstract",
+        "摘要": "abstract",
+    }
+    return aliases.get(base, base)
 
 
 def _section_files(run_root: Path) -> list[Path]:
@@ -135,7 +166,10 @@ def _section_files(run_root: Path) -> list[Path]:
             raise SurveyFinalizationError(f"Invalid section artifact: {candidate.name}")
         paths.append(candidate)
     if not paths:
-        raise SurveyFinalizationError("No completed section artifacts were found")
+        raise SurveyFinalizationError(
+            "No completed section artifacts were found",
+            code="survey_section_contract_invalid",
+        )
     return paths
 
 
@@ -172,7 +206,10 @@ def _references(run_root: Path, section_texts: list[str]) -> tuple[str, int, int
                 if citation_id not in citation_ids:
                     citation_ids.append(citation_id)
     if not citation_ids:
-        raise SurveyFinalizationError("Completed sections contain no auditable citations")
+        raise SurveyFinalizationError(
+            "Completed sections contain no auditable citations",
+            code="survey_reference_contract_invalid",
+        )
 
     entries: list[str] = []
     verified_count = 0
@@ -215,7 +252,10 @@ def _references(run_root: Path, section_texts: list[str]) -> tuple[str, int, int
         entries.append(f"- [{citation_id}] **{title}.**{suffix} arXiv:{citation_id}.")
         verified_count += 1
     if verified_count == 0:
-        raise SurveyFinalizationError("Completed sections contain no verified paper cards")
+        raise SurveyFinalizationError(
+            "Completed sections contain no verified paper cards",
+            code="survey_reference_contract_invalid",
+        )
     return "\n".join(entries), len(entries), unverified_count
 
 
@@ -230,14 +270,24 @@ def _atomic_write(path: Path, content: str) -> None:
     except OSError as exc:
         with suppress(OSError):
             temporary.unlink(missing_ok=True)
-        raise SurveyFinalizationError(f"Unable to write final artifact: {path.name}") from exc
+        raise SurveyFinalizationError(
+            f"Unable to write final artifact: {path.name}",
+            code="survey_finalization_write_failed",
+        ) from exc
 
 
 def finalize_survey(run_root: Path) -> FinalizedSurvey:
     """Build the final report and manifest without another model completion."""
-    outline_path = _regular_file(run_root, "00_outline.md")
+    outline_path = _regular_file(
+        run_root,
+        "00_outline.md",
+        error_code="survey_outline_metadata_invalid",
+    )
     if outline_path is None:
-        raise SurveyFinalizationError("Required artifact is missing: 00_outline.md")
+        raise SurveyFinalizationError(
+            "Required artifact is missing: 00_outline.md",
+            code="survey_outline_metadata_invalid",
+        )
     title, abstract = _outline_fields(_read_text(outline_path, label="00_outline.md"))
 
     sections = _section_files(run_root)

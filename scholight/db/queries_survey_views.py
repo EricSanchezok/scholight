@@ -41,6 +41,8 @@ class SurveySummary:
     started_at: datetime | None
     finished_at: datetime | None
     latest_draft_revision: int | None
+    error_code: str | None
+    error_message: str | None
     progress: SurveyProgressSnapshot
     report_available: bool
     artifacts_available: bool
@@ -112,7 +114,8 @@ async def list_survey_summaries(
             "(s.created_at, s.id) < ($3, $4::uuid)) ORDER BY s.created_at DESC, s.id DESC "
             "LIMIT $5), item_rows AS (SELECT s.id, s.title, s.initial_request, s.status, "
             "s.created_at, "
-            "s.updated_at, s.started_at, s.finished_at, j.progress_stage, "
+            "s.updated_at, s.started_at, s.finished_at, s.error_code, s.error_message, "
+            "j.progress_stage, "
             "j.progress_updated_at, j.heartbeat_at, j.cancel_requested_at, "
             "d.status AS draft_status, d.queued_at AS draft_queued_at, "
             "j.queued_at AS job_queued_at, dr.position AS draft_position, "
@@ -215,6 +218,10 @@ async def list_survey_summaries(
                     int(item["latest_draft_revision"])
                     if item["latest_draft_revision"] is not None
                     else None
+                ),
+                error_code=(str(item["error_code"]) if item["error_code"] is not None else None),
+                error_message=(
+                    str(item["error_message"]) if item["error_message"] is not None else None
                 ),
                 progress=snapshot,
                 report_available=bool(item["report_available"]),
