@@ -272,7 +272,11 @@ async def recover_archived_survey(
                 ("00_card_plan.json", _MAX_LEGACY_RECOVERY_CARD_PLAN_ITEMS),
                 ("00_sections.json", None),
             ):
-                missing = diagnostics.missing_durable_plan_items(plan, max_items=max_items)
+                missing = diagnostics.missing_durable_plan_items(
+                    plan,
+                    accept_archived_run_dir=True,
+                    max_items=max_items,
+                )
                 if missing is None or missing:
                     raise ArchivedSurveyRecoveryError(
                         "The archived Survey does not have complete validated plans"

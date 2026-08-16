@@ -454,9 +454,15 @@ class SurveyDiagnostics:
         self,
         relative_path: str,
         *,
+        accept_archived_run_dir: bool = False,
         max_items: int | None = None,
     ) -> list[dict[str, object]] | None:
-        """Return one validated bounded fan-out plan, or None when it is unsafe."""
+        """Return one validated bounded fan-out plan, or None when it is unsafe.
+
+        Historical recovery may accept a stale absolute ``run_dir`` because it
+        never dereferences that value and derives every expected artifact from
+        validated IDs. Live execution keeps requiring the current run root.
+        """
         if relative_path not in _DURABLE_PLANS:
             return None
         candidate = self.run_root / relative_path
@@ -490,7 +496,11 @@ class SurveyDiagnostics:
                 return None
             if raw_run_dir != "." and (
                 not Path(raw_run_dir).is_absolute()
-                or Path(raw_run_dir).resolve(strict=False) != self.run_root.resolve(strict=False)
+                or (
+                    not accept_archived_run_dir
+                    and Path(raw_run_dir).resolve(strict=False)
+                    != self.run_root.resolve(strict=False)
+                )
             ):
                 return None
             if relative_path == "00_card_plan.json":
@@ -532,10 +542,15 @@ class SurveyDiagnostics:
         self,
         relative_path: str,
         *,
+        accept_archived_run_dir: bool = False,
         max_items: int | None = None,
     ) -> tuple[dict[str, object], ...] | None:
         """Return only safely planned items whose expected artifact is absent."""
-        items = self.read_durable_plan(relative_path, max_items=max_items)
+        items = self.read_durable_plan(
+            relative_path,
+            accept_archived_run_dir=accept_archived_run_dir,
+            max_items=max_items,
+        )
         if items is None:
             return None
         missing: list[dict[str, object]] = []

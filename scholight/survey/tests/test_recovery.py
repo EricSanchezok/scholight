@@ -354,7 +354,9 @@ async def test_report_missing_dry_run_plans_v2_without_writes(tmp_path: Path) ->
 
 
 @pytest.mark.asyncio
-async def test_report_missing_accepts_complete_legacy_card_plan(tmp_path: Path) -> None:
+async def test_report_missing_accepts_complete_legacy_card_plan_and_run_dir(
+    tmp_path: Path,
+) -> None:
     job_id, row, store, _report_sha = _fixture(tmp_path)
     row["job_error_code"] = "survey_report_missing"
     row["survey_error_code"] = "survey_report_missing"
@@ -366,7 +368,7 @@ async def test_report_missing_accepts_complete_legacy_card_plan(tmp_path: Path) 
 
     plan = [
         {
-            "run_dir": ".",
+            "run_dir": "/tmp/archived-survey-run",
             "id": f"2501.{index:05d}",
             "title": f"Archived paper {index}",
             "why": "Archived evidence",

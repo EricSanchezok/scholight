@@ -418,8 +418,12 @@ an append-only manifest v2 overlay referencing the exact v1 source hash. The
 normal runtime card-plan limit remains 100. Recovery alone accepts at most 256
 historical card-plan entries so early archives that legitimately completed more
 cards can be verified without weakening the current workflow limit; every
-planned card must still be present and pass the same path and content checks. The
-database update validates the original manifest, status, error, ownership, and
+planned card must still be present and pass the same path and content checks.
+Recovery also accepts an archived absolute `run_dir` value because it never
+dereferences that stale container path: expected card and section paths are
+derived again from validated IDs, numbers, and slugs inside the owner-scoped
+restored workspace. Live execution and repair still require the current run
+directory. The database update validates the original manifest, status, error, ownership, and
 replacement prefix while locking the quota ledger, Survey, job, drafts, and
 notification in canonical order. It then switches the manifest pointer,
 consumes quota once, and resets the completion notification to a zero-attempt
