@@ -52,6 +52,30 @@ def _duration(notification: SurveyEmailNotification) -> str | None:
     return f"{minutes}m"
 
 
+def _failure_message(error_code: str | None) -> str:
+    if error_code in {
+        "survey_report_missing",
+        "survey_contract_violation",
+        "survey_artifact_contract_invalid",
+        "survey_outline_metadata_invalid",
+        "survey_section_contract_invalid",
+        "survey_reference_contract_invalid",
+        "survey_finalization_write_failed",
+        "survey_finalization_output_invalid",
+    }:
+        return (
+            "The research materials were saved, but Scholight could not assemble the final "
+            "report. The run can be reviewed for recovery."
+        )
+    if error_code in {
+        "survey_model_rate_limited",
+        "survey_provider_unavailable",
+        "survey_timed_out",
+    }:
+        return "The survey stopped because a research provider was temporarily unavailable."
+    return "The survey ended before a report was created. Open Scholight to review its status."
+
+
 def build_survey_email(
     notification: SurveyEmailNotification,
     *,
@@ -72,9 +96,7 @@ def build_survey_email(
     else:
         subject = "Your Scholight survey could not be completed"
         eyebrow = "SURVEY UPDATE"
-        message = (
-            "The survey ended before a report was created. Open Scholight to review its status."
-        )
+        message = _failure_message(notification.survey_error_code)
         action = "Review survey"
         action_url = f"{base}/survey?view=completed"
     safe_url = html.escape(action_url, quote=True)

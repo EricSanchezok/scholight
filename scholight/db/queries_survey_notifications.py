@@ -30,6 +30,7 @@ class SurveyEmailNotification:
     survey_title: str
     started_at: datetime | None
     finished_at: datetime
+    survey_error_code: str | None
     status: NotificationStatus
     attempts: int
     lease_owner: UUID | None
@@ -61,6 +62,9 @@ def _notification(row: asyncpg.Record | dict[str, Any]) -> SurveyEmailNotificati
         survey_title=str(row["survey_title"]),
         started_at=row["survey_started_at"],
         finished_at=finished_at,
+        survey_error_code=(
+            str(row["survey_error_code"]) if row.get("survey_error_code") is not None else None
+        ),
         status=row["status"],
         attempts=int(row["attempts"]),
         lease_owner=row["lease_owner"],
@@ -80,7 +84,8 @@ async def claim_email_notification(
                 "users.email_verified_at IS NOT NULL AS recipient_verified, "
                 "coalesce(nullif(btrim(surveys.title), ''), 'Your research survey') "
                 "AS survey_title, surveys.started_at AS survey_started_at, "
-                "surveys.finished_at AS survey_finished_at "
+                "surveys.finished_at AS survey_finished_at, "
+                "surveys.error_code AS survey_error_code "
                 "FROM scholight.survey_email_notifications AS notifications "
                 "JOIN scholight.surveys AS surveys ON surveys.id = notifications.survey_id "
                 "JOIN auth.users AS users ON users.id = notifications.user_id "

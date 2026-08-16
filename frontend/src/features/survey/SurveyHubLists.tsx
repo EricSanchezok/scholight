@@ -230,8 +230,10 @@ export function CompletedSurveyList({
               <div>
                 <h3>{survey.title}</h3>
                 <p>
-                  {survey.status === "cancelled" ? "Cancelled" : "Research did not complete"} ·{" "}
-                  {formatRelativeTime(survey.updated_at, locale)}
+                  {survey.status === "cancelled"
+                    ? "Cancelled"
+                    : (survey.error_message ?? "Research did not complete")}{" "}
+                  · {formatRelativeTime(survey.updated_at, locale)}
                 </p>
               </div>
               <button type="button" onClick={() => onDelete(survey)}>

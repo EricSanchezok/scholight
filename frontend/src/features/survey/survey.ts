@@ -109,6 +109,12 @@ export function artifactUrlMap(items: SurveyArtifact[]): Map<string, string> {
   return new Map(items.map((item) => [item.path, item.download_url]));
 }
 
+export function hasOpeningFigure(items: SurveyArtifact[]): boolean {
+  return items.some(
+    (item) => item.path === "run/08_global_picture.png" && item.content_type.startsWith("image/"),
+  );
+}
+
 export function resolveReportImage(url: string, artifacts: Map<string, string>): string | null {
   if (/^[a-z][a-z0-9+.-]*:/i.test(url) || url.startsWith("//") || url.startsWith("/")) return null;
   const clean = url.split(/[?#]/, 1)[0] ?? "";

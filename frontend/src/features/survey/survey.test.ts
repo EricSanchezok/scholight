@@ -4,6 +4,7 @@ import type { SurveyArtifact, SurveyProgress } from "../../api/types";
 import {
   archiveFilename,
   artifactUrlMap,
+  hasOpeningFigure,
   markdownFilename,
   queueAhead,
   resolveReportImage,
@@ -85,6 +86,18 @@ describe("Survey presentation helpers", () => {
     expect(resolveReportImage("images/evidence.png", artifacts)).toBe(item.download_url);
     expect(resolveReportImage("../../secret.png", artifacts)).toBeNull();
     expect(resolveReportImage("https://tracker.example/pixel.png", artifacts)).toBeNull();
+  });
+
+  it("reports whether the optional opening figure is actually archived", () => {
+    const figure: SurveyArtifact = {
+      path: "run/08_global_picture.png",
+      size: 10,
+      sha256: "abc",
+      content_type: "image/png",
+      download_url: "https://signed.example/figure.png",
+    };
+    expect(hasOpeningFigure([figure])).toBe(true);
+    expect(hasOpeningFigure([{ ...figure, path: "run/other.png" }])).toBe(false);
   });
 
   it("creates a filesystem-safe Markdown filename", () => {

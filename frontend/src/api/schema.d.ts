@@ -1818,6 +1818,10 @@ export interface components {
        * Format: date-time
        */
       created_at: string;
+      /** Error Code */
+      error_code: string | null;
+      /** Error Message */
+      error_message: string | null;
       /** Finished At */
       finished_at: string | null;
       /**

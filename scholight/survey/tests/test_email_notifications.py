@@ -18,7 +18,11 @@ from scholight.survey.notification_worker import process_email_notification
 
 
 def _notification(
-    *, outcome: str = "succeeded", attempts: int = 1, verified: bool = True
+    *,
+    outcome: str = "succeeded",
+    attempts: int = 1,
+    verified: bool = True,
+    error_code: str | None = None,
 ) -> SurveyEmailNotification:
     now = datetime(2026, 8, 3, 6, 30, tzinfo=UTC)
     return SurveyEmailNotification(
@@ -31,6 +35,7 @@ def _notification(
         survey_title='<script>alert("x")</script> 思维链压缩',
         started_at=datetime(2026, 8, 3, 4, 30, tzinfo=UTC),
         finished_at=now,
+        survey_error_code=error_code,
         status="running",
         attempts=attempts,
         lease_owner=uuid4(),
@@ -62,6 +67,16 @@ def test_failure_email_links_to_completed_surveys_without_internal_error() -> No
     assert "https://scholight.example/survey?view=completed" in message.html_body
     assert "Review survey" in message.text_body
     assert "traceback" not in message.html_body.lower()
+
+
+def test_finalization_failure_email_explains_that_research_materials_were_saved() -> None:
+    message = build_survey_email(
+        _notification(outcome="failed", error_code="survey_outline_metadata_invalid"),
+        public_web_url="https://scholight.example",
+    )
+
+    assert "research materials were saved" in message.text_body
+    assert "reviewed for recovery" in message.text_body
 
 
 def test_email_rejects_non_http_public_url() -> None:

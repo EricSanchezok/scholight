@@ -193,6 +193,8 @@ class SurveySummaryResponse(BaseModel):
     started_at: datetime | None
     finished_at: datetime | None
     latest_draft_revision: int | None
+    error_code: str | None
+    error_message: str | None
     progress: SurveyProgressResponse
     report_available: bool
     artifacts_available: bool
@@ -346,6 +348,8 @@ def _summary_response(summary: SurveySummary) -> SurveySummaryResponse:
         started_at=summary.started_at,
         finished_at=summary.finished_at,
         latest_draft_revision=summary.latest_draft_revision,
+        error_code=summary.error_code,
+        error_message=summary.error_message,
         progress=_progress_response(summary.progress),
         report_available=summary.report_available,
         artifacts_available=summary.artifacts_available,
