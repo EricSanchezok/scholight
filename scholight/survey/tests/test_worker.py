@@ -170,7 +170,7 @@ async def test_full_survey_retries_transient_provider_failure_from_clean_workspa
 
 
 @pytest.mark.asyncio
-async def test_zero_exit_incomplete_run_gets_one_same_workspace_repair(
+async def test_zero_exit_finalization_failure_does_not_rerun_the_workflow(
     tmp_path: Path,
 ) -> None:
     job = _job(job_id=uuid4(), worker_id=uuid4(), status="running")
@@ -186,25 +186,15 @@ async def test_zero_exit_incomplete_run_gets_one_same_workspace_repair(
         return_code=0,
         termination_reason="report_missing",
     )
-    succeeded = SurveyExecutionResult(
-        outcome="succeeded",
-        error_code=None,
-        error_message=None,
-        started_at=now,
-        finished_at=now,
-        return_code=0,
-        termination_reason="completed",
-    )
-
     with patch(
         "scholight.survey.worker._execute_survey_once",
         new_callable=AsyncMock,
-        side_effect=(incomplete, succeeded),
+        return_value=incomplete,
     ) as execute:
         result = await execute_survey(job, tmp_path)
 
-    assert result.outcome == "succeeded"
-    assert execute.await_count == 2
+    assert result.outcome == "failed"
+    assert execute.await_count == 1
     assert partial.read_text(encoding="utf-8") == "keep for repair"
 
 
@@ -480,7 +470,7 @@ async def test_zero_exit_missing_cited_card_is_finalization_failure(
             tmp_path,
         )
 
-    assert result.error_code == "survey_report_missing"
+    assert result.error_code == "survey_reference_contract_invalid"
 
 
 @pytest.mark.asyncio
@@ -574,7 +564,7 @@ async def test_zero_exit_missing_report_retains_runtime_diagnostics(
             tmp_path,
         )
 
-    assert result.error_code == "survey_report_missing"
+    assert result.error_code == "survey_outline_metadata_invalid"
     assert result.return_code == 0
     assert result.stderr_tail == "rank_pool completed without its output\n"
     assert result.diagnostics is not None

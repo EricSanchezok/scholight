@@ -627,6 +627,7 @@ async def _execute_survey_once(
                 stderr_tail=stderr_tail or None,
                 diagnostics=diagnostic_summary,
             )
+        finalization_error: SurveyFinalizationError | None = None
         try:
             if job.lease_owner is not None:
                 await update_survey_job_progress(
@@ -644,18 +645,25 @@ async def _execute_survey_once(
                 unverified_reference_count=finalized.unverified_reference_count,
             )
         except SurveyFinalizationError as exc:
+            finalization_error = exc
             logger.error(
                 "survey_report_finalization_failed",
                 job_id=str(job.id),
+                error_code=exc.code,
                 error_type=type(exc).__name__,
                 reason=str(exc),
             )
         if not _valid_final_report(run_root):
+            error_code = (
+                finalization_error.code
+                if finalization_error is not None
+                else "survey_finalization_output_invalid"
+            )
             diagnostic_summary = _finish_diagnostics(
                 diagnostics,
                 outcome="failed",
                 return_code=return_code,
-                termination_reason="report_missing",
+                termination_reason="finalization_failed",
                 audit_contract=True,
             )
             logger.error(
@@ -667,13 +675,13 @@ async def _execute_survey_once(
             )
             return SurveyExecutionResult(
                 outcome="failed",
-                error_code="survey_report_missing",
-                error_message="Survey generation did not produce a final report.",
+                error_code=error_code,
+                error_message="Survey research finished, but the final report could not be assembled.",
                 started_at=started_at,
                 finished_at=datetime.now(UTC),
                 stage_timings=stage_timings,
                 return_code=return_code,
-                termination_reason="report_missing",
+                termination_reason="finalization_failed",
                 stderr_tail=stderr_tail or None,
                 diagnostics=diagnostic_summary,
             )
@@ -789,7 +797,7 @@ async def execute_survey(
         if (
             artifact_repair_available
             and result.outcome == "failed"
-            and result.error_code in {"survey_report_missing", "survey_contract_violation"}
+            and result.error_code == "survey_contract_violation"
             and result.return_code == 0
         ):
             artifact_repair_available = False

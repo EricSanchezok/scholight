@@ -25,8 +25,11 @@ Workflow:
    research map's cross_domain_transfer is non-empty — what ideas from adjacent
    fields could transfer into this field, argued as hypotheses, never as in-field
    results), open problems, conclusion.
-4. Write run_dir/00_outline.md: the title; the abstract; one short paragraph that
-   names the through-line explicitly (the spine every section advances); and the
+4. Write run_dir/00_outline.md. The metadata headings are a machine contract:
+   write the title below a literal `## Title` heading and the abstract below a
+   literal `## Abstract` heading, even when their content and the rest of the
+   survey use another language. Then write one short paragraph that names the
+   through-line explicitly (the spine every section advances), followed by the
    ordered section list with, for each section, its thesis, the card ids it should
    draw on, and a cross-domain transfer angle to weave in.
 5. If run_dir/00_sections.json already exists, read and reuse it. Otherwise write

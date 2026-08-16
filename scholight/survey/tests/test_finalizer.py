@@ -77,6 +77,48 @@ def test_finalizer_accepts_title_and_abstract_below_document_heading(
     assert "run_dir" not in report
 
 
+@pytest.mark.parametrize(
+    ("title_heading", "abstract_heading"),
+    [
+        ("标题", "摘要"),
+        ("标题\uff08Title\uff09", "摘要\uff08abstract\uff0c4\u20136 句\uff09"),
+        ("TITLE", "ABSTRACT (4-6 sentences)"),
+    ],
+)
+def test_finalizer_accepts_localized_outline_metadata_headings(
+    tmp_path: Path,
+    title_heading: str,
+    abstract_heading: str,
+) -> None:
+    _write_run(tmp_path)
+    (tmp_path / "00_outline.md").write_text(
+        "# SurveyOutline\n\n"
+        f"## {title_heading}\n\n可靠的中文综述\n\n"
+        f"## {abstract_heading}\n\n这是一个完整摘要。\n\n"
+        "## 主线\n\n证据优先。\n",
+        encoding="utf-8",
+    )
+
+    result = finalize_survey(tmp_path)
+
+    assert result.report_path.read_text(encoding="utf-8").startswith(
+        "# 可靠的中文综述\n\n## Abstract\n\n这是一个完整摘要。"
+    )
+
+
+def test_finalizer_exposes_stable_outline_error_code(tmp_path: Path) -> None:
+    _write_run(tmp_path)
+    (tmp_path / "00_outline.md").write_text(
+        "# SurveyOutline\n\n## Through-line\n\nEvidence first.\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SurveyFinalizationError) as captured:
+        finalize_survey(tmp_path)
+
+    assert captured.value.code == "survey_outline_metadata_invalid"
+
+
 def test_finalizer_expands_grouped_citations_without_treating_labels_as_ids(
     tmp_path: Path,
 ) -> None:
