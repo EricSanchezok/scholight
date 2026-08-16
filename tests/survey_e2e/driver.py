@@ -129,6 +129,7 @@ async def _assert_database_and_archive(s3: Any, survey_id: str) -> tuple[str, st
             "run/05_research_map.md",
             "run/06_judge_panel.md",
             "run/00_outline.md",
+            "run/00_outline.json",
             "run/sections/01_introduction.md",
             "run/08_survey.md",
             "run/index.md",

@@ -375,6 +375,23 @@ async def completion(request: Request, path: str) -> Any:
                 _write(outline, _artifact_content(stage, outline)),
                 finish_reason="tool_calls",
             )
+        if "00_outline.json" not in written_paths:
+            return _response(
+                _write(
+                    "00_outline.json",
+                    json.dumps(
+                        {
+                            "schema_version": 1,
+                            "title": "Retrieval-Augmented Generation Survey",
+                            "abstract": (
+                                "This deterministic report verifies the real Survey graph."
+                            ),
+                            "through_line": ("Evaluation evidence determines retrieval quality."),
+                        }
+                    ),
+                ),
+                finish_reason="tool_calls",
+            )
         if "00_sections.json" not in written_paths:
             return _response(
                 _write(
