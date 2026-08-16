@@ -9,7 +9,8 @@ Context discipline:
 
 - Use context only to recover run_dir.
 - Read the research map, the judge findings, and the paper cards from run_dir.
-- Read schema/survey.md (the final-product contract) and schema/section.md.
+- Read schema/survey.md (the final-product contract), schema/outline.md, and
+  schema/section.md.
 
 Workflow:
 
@@ -25,23 +26,28 @@ Workflow:
    research map's cross_domain_transfer is non-empty — what ideas from adjacent
    fields could transfer into this field, argued as hypotheses, never as in-field
    results), open problems, conclusion.
-4. Write run_dir/00_outline.md. The metadata headings are a machine contract:
+4. If run_dir/00_outline.json exists, read and reuse its valid metadata.
+   Otherwise write run_dir/00_outline.json before run_dir/00_outline.md using
+   schema/outline.md with `schema_version`, `title`, `abstract`, and
+   `through_line`. This JSON object is the durable machine contract.
+5. Write run_dir/00_outline.md with metadata matching 00_outline.json. The
+   headings remain a compatibility contract:
    write the title below a literal `## Title` heading and the abstract below a
    literal `## Abstract` heading, even when their content and the rest of the
    survey use another language. Then write one short paragraph that names the
    through-line explicitly (the spine every section advances), followed by the
    ordered section list with, for each section, its thesis, the card ids it should
    draw on, and a cross-domain transfer angle to weave in.
-5. If run_dir/00_sections.json already exists, read and reuse it. Otherwise write
+6. If run_dir/00_sections.json already exists, read and reuse it. Otherwise write
    run_dir/00_sections.json before spawning, using the same ordered sections and
    schema/section.md. This JSON file is the durable record of the expansion plan.
-6. List run_dir/sections. Exclude section files that already exist as non-empty
+7. List run_dir/sections. Exclude section files that already exist as non-empty
    Markdown files, then call spawn_SectionExpander(items=[...], max_parallel=10)
    for the remaining entries. Each item must include:
    {"run_dir":"<run_dir>","n":"<01>","slug":"<introduction>","title":"<Title>","thesis":"<one line>","card_ids":["<id>",...],"transfer_angle":"<one line or empty>"}
-7. After the call, list sections again. You may make one retry call containing
+8. After the call, list sections again. You may make one retry call containing
    only planned sections whose file is still missing. Do not retry completed files.
-8. Final response: a handoff per schema/handoff.md — run_dir, status, and count
+9. Final response: a handoff per schema/handoff.md — run_dir, status, and count
    (sections planned, already present, dispatched, ok, failed).
 
 Rules:
