@@ -583,6 +583,15 @@ def test_runtime_secret_documents_cover_every_external_provider() -> None:
     production = (ECS / "scholight-production.yml").read_text(encoding="utf-8")
 
     assert "GenerateStringKey: auth_jwt_secret" in foundation
+    delegation_secret = foundation.split("McpDelegationSecret:", maxsplit=1)[1].split(
+        "SearchProvidersSecret:", maxsplit=1
+    )[0]
+    assert "DeletionPolicy: Retain" in delegation_secret
+    assert "UpdateReplacePolicy: Retain" in delegation_secret
+    assert "GenerateStringKey: mcp_delegation_jwt_secret" in delegation_secret
+    assert "KmsKeyId: !GetAtt ConfigurationKey.Arn" in delegation_secret
+    assert "sanchezcloud-scholight-mcp-delegation-secret-arn" in foundation
+    assert "sanchezcloud-scholight-configuration-key-arn" in foundation
     survey_secret = foundation.split("SurveyProvidersSecret:", maxsplit=1)[1].split(
         "MailProvidersSecret:", maxsplit=1
     )[0]
@@ -627,3 +636,19 @@ def test_runtime_secret_documents_cover_every_external_provider() -> None:
         "SCHOLIGHT_MINERU_API_KEY",
     ):
         assert variable in production
+
+
+def test_api_injects_mcp_delegation_from_independent_retained_secret() -> None:
+    foundation = (ECS / "scholight-foundation.yml").read_text(encoding="utf-8")
+    production = (ECS / "scholight-production.yml").read_text(encoding="utf-8")
+    execution_policy = production.split("PolicyName: ReadScholightRuntimeSecrets", maxsplit=1)[
+        1
+    ].split("ApiTaskRole:", maxsplit=1)[0]
+    delegation_line = next(
+        line for line in production.splitlines() if "SCHOLIGHT_MCP_DELEGATION_JWT_SECRET" in line
+    )
+
+    assert "sanchezcloud-scholight-mcp-delegation-secret-arn" in execution_policy
+    assert "sanchezcloud-scholight-mcp-delegation-secret-arn" in delegation_line
+    assert "sanchezcloud-scholight-core-secret-arn" not in delegation_line
+    assert "Export: { Name: sanchezcloud-scholight-mcp-delegation-secret-arn }" in foundation

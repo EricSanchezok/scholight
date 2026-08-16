@@ -285,6 +285,7 @@ Resources:
                   - !ImportValue sanchezcloud-scholight-database-runtime-secret-arn
                   - !ImportValue sanchezcloud-scholight-database-migrator-secret-arn
                   - !ImportValue sanchezcloud-scholight-core-secret-arn
+                  - !ImportValue sanchezcloud-scholight-mcp-delegation-secret-arn
                   - !ImportValue sanchezcloud-scholight-search-secret-arn
                   - !ImportValue sanchezcloud-scholight-survey-secret-arn
                   - !ImportValue sanchezcloud-scholight-mail-secret-arn
@@ -496,7 +497,7 @@ Resources:
             - { Name: SCHOLIGHT_AUTH_JWT_SECRET, ValueFrom: !Sub ["${Secret}:auth_jwt_secret::", { Secret: !ImportValue sanchezcloud-scholight-core-secret-arn }] }
             - { Name: SCHOLIGHT_ANONYMOUS_QUOTA_HMAC_SECRET, ValueFrom: !Sub ["${Secret}:anonymous_quota_hmac_secret::", { Secret: !ImportValue sanchezcloud-scholight-core-secret-arn }] }
             - { Name: SCHOLIGHT_ACCESS_KEY_HMAC_SECRET, ValueFrom: !Sub ["${Secret}:access_key_hmac_secret::", { Secret: !ImportValue sanchezcloud-scholight-core-secret-arn }] }
-            - { Name: SCHOLIGHT_MCP_DELEGATION_JWT_SECRET, ValueFrom: !Sub ["${Secret}:mcp_delegation_jwt_secret::", { Secret: !ImportValue sanchezcloud-scholight-core-secret-arn }] }
+            - { Name: SCHOLIGHT_MCP_DELEGATION_JWT_SECRET, ValueFrom: !Sub ["${Secret}:mcp_delegation_jwt_secret::", { Secret: !ImportValue sanchezcloud-scholight-mcp-delegation-secret-arn }] }
             - { Name: SCHOLIGHT_EXTRACT_INTERNAL_TOKEN, ValueFrom: !Sub ["${Secret}:extract_internal_token::", { Secret: !ImportValue sanchezcloud-scholight-core-secret-arn }] }
             - { Name: SCHOLIGHT_SURVEY_MCP_JWT_SECRET, ValueFrom: !Sub ["${Secret}:survey_mcp_jwt_secret::", { Secret: !ImportValue sanchezcloud-scholight-core-secret-arn }] }
             - { Name: SCHOLIGHT_ZILLIZ_URI, ValueFrom: !Sub ["${Secret}:zilliz_uri::", { Secret: !ImportValue sanchezcloud-scholight-search-secret-arn }] }
