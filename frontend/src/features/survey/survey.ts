@@ -1,9 +1,14 @@
+import { ApiError } from "../../api/errors";
 import type { SurveyArtifact, SurveyProgress, SurveySummary } from "../../api/types";
 import { formatElapsed, formatRelativeTime } from "../../i18n/format";
 import type { AppLocale } from "../../i18n/I18nProvider";
 
 export const SURVEY_POLL_INTERVAL = 5_000;
 export const REPORT_PATH = "run/08_survey.md";
+
+export function mutationMessage(error: unknown, fallback: string): string {
+  return error instanceof ApiError ? error.message : fallback;
+}
 
 const USUAL_SURVEY_DURATION_SECONDS = 6 * 60 * 60;
 const RECENT_ACTIVITY_WINDOW_MS = 30 * 60 * 1_000;

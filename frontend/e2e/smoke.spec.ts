@@ -453,6 +453,153 @@ test("completed survey cards render a stable live Markdown preview", async ({ pa
   await expect(page.getByText("Chain-of-thought compression and evaluation")).toHaveCount(1);
 });
 
+test("a failed survey preserves its draft and original request for reuse", async ({ page }) => {
+  await mockSurveyAvailable(page);
+  await mockAuthenticated(page);
+  const failedId = "05544f18-fa64-4663-b085-62a76d96b308";
+  const replacementId = "00000000-0000-0000-0000-000000000010";
+  const initialRequest = [
+    "数字生命构建：从 Agent 到自主互联网实体",
+    "",
+    "调研长期记忆、身份持久化、工具自主性和经济行为，区分已有证据与推测，并比较开放网络中的主要架构路线。",
+  ].join("\n");
+  const failedSurvey = {
+    id: failedId,
+    title: "数字生命构建：从Agent到自主互联网实体",
+    initial_request: initialRequest,
+    status: "failed",
+    quota_state: "released",
+    error_code: "survey_report_missing",
+    error_message: "Research finished, but the final report could not be assembled.",
+    created_at: "2026-08-16T09:31:46Z",
+    updated_at: "2026-08-16T11:19:44Z",
+    started_at: "2026-08-16T09:40:00Z",
+    finished_at: "2026-08-16T11:19:44Z",
+  };
+  const progress = {
+    survey_id: failedId,
+    status: "failed",
+    stage: "failed",
+    percent: 100,
+    step: 8,
+    total_steps: 8,
+    queue: null,
+    elapsed_seconds: 5984,
+    started_at: "2026-08-16T09:40:00Z",
+    finished_at: "2026-08-16T11:19:44Z",
+    last_activity_at: "2026-08-16T11:19:44Z",
+  };
+  await page.route("**/api/surveys?*", (route) =>
+    route.fulfill({
+      json: {
+        items: [
+          {
+            ...failedSurvey,
+            latest_draft_revision: 1,
+            progress,
+            report_available: false,
+            artifacts_available: true,
+          },
+        ],
+        quota: { daily_limit: 3, reserved: 0, succeeded: 0, remaining: 3 },
+        next_cursor: null,
+      },
+    }),
+  );
+  await page.route(`**/api/surveys/${failedId}`, (route) => route.fulfill({ json: failedSurvey }));
+  await page.route(`**/api/surveys/${failedId}/drafts`, (route) =>
+    route.fulfill({
+      json: [
+        {
+          id: "00000000-0000-0000-0000-000000000002",
+          revision: 1,
+          source: "generated",
+          user_message: initialRequest,
+          markdown:
+            "# Research brief\n\n## Scope\n\nMap the path from agents to persistent autonomous internet entities.",
+          status: "ready",
+          based_on_revision: null,
+          error_code: null,
+          error_message: null,
+          created_at: "2026-08-16T09:31:46Z",
+          started_at: "2026-08-16T09:32:00Z",
+          finished_at: "2026-08-16T09:38:00Z",
+        },
+      ],
+    }),
+  );
+  await page.route(`**/api/surveys/${failedId}/progress`, (route) =>
+    route.fulfill({ json: progress }),
+  );
+  let replacementBody: unknown;
+  await page.route("**/api/surveys", async (route) => {
+    replacementBody = route.request().postDataJSON();
+    await route.fulfill({
+      status: 201,
+      json: {
+        ...failedSurvey,
+        id: replacementId,
+        status: "drafting",
+        quota_state: "reserved",
+        error_code: null,
+        error_message: null,
+        created_at: "2026-08-17T02:00:00Z",
+        updated_at: "2026-08-17T02:00:00Z",
+        started_at: null,
+        finished_at: null,
+      },
+    });
+  });
+  await page.route(`**/api/surveys/${replacementId}`, (route) =>
+    route.fulfill({
+      json: {
+        ...failedSurvey,
+        id: replacementId,
+        status: "drafting",
+        quota_state: "reserved",
+        error_code: null,
+        error_message: null,
+        started_at: null,
+        finished_at: null,
+      },
+    }),
+  );
+  await page.route(`**/api/surveys/${replacementId}/drafts`, (route) =>
+    route.fulfill({ json: [] }),
+  );
+  await page.route(`**/api/surveys/${replacementId}/progress`, (route) =>
+    route.fulfill({
+      json: { ...progress, survey_id: replacementId, status: "drafting", stage: "drafting" },
+    }),
+  );
+
+  await page.goto("/survey?view=completed");
+  await page.getByRole("link", { name: "Review draft →" }).click();
+
+  await expect(page.getByText(/Original request/)).toBeVisible();
+  await expect(page.getByText(/Draft and original request preserved/)).toBeVisible();
+  await expect(page.locator(".surveyOriginalRequest").getByText(/调研长期记忆/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Approve & start" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Edit draft" })).toHaveCount(0);
+  await settleMotion(page);
+
+  const pageWidth = await page.locator("html").evaluate((element) => ({
+    client: element.clientWidth,
+    scroll: element.scrollWidth,
+  }));
+  expect(pageWidth.scroll).toBe(pageWidth.client);
+  expect(
+    (await new AxeBuilder({ page }).analyze()).violations.filter((item) =>
+      ["serious", "critical"].includes(item.impact ?? ""),
+    ),
+  ).toEqual([]);
+
+  await page.getByRole("button", { name: "Use request again" }).click();
+  await expect(page).toHaveURL(new RegExp(`/survey/${replacementId}/draft$`));
+  expect(replacementBody).toMatchObject({ initial_request: initialRequest });
+  expect(replacementBody).toHaveProperty("client_request_id");
+});
+
 test("a completed report downloads as a Markdown and image package", async ({ page }) => {
   await mockSurveyAvailable(page);
   await mockAuthenticated(page);

@@ -1,0 +1,83 @@
+.surveyTerminalList article > div:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.surveyTerminalActions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 20px;
+  white-space: nowrap;
+}
+
+.surveyTerminalActions a {
+  color: var(--brand-link);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.surveyOriginalRequest {
+  margin-bottom: 36px;
+  padding: 18px 0;
+  border-top: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.surveyOriginalRequest summary {
+  color: var(--brand-link);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.surveyOriginalRequest p {
+  margin: 16px 0 2px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.surveyReuseSection {
+  margin-top: 52px;
+  padding-top: 28px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.surveyReuseSection h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 24px;
+  line-height: 1.35;
+}
+
+.surveyReuseSection > p {
+  max-width: 68ch;
+  margin: 6px 0 20px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.surveyReuseSection > button {
+  min-height: 44px;
+  padding: 0 22px;
+}
+
+.surveyReuseSection .surveyInlineError {
+  margin-top: 14px;
+}
+
+@media (max-width: 700px) {
+  .surveyTerminalList article {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .surveyTerminalActions {
+    width: 100%;
+    justify-content: space-between;
+  }
+}

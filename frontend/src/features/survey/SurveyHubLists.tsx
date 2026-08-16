@@ -236,9 +236,14 @@ export function CompletedSurveyList({
                   · {formatRelativeTime(survey.updated_at, locale)}
                 </p>
               </div>
-              <button type="button" onClick={() => onDelete(survey)}>
-                Delete
-              </button>
+              <div className={styles.surveyTerminalActions}>
+                <Link to={surveyDraftPath(survey.id)}>
+                  {survey.latest_draft_revision ? "Review draft" : "View request"} →
+                </Link>
+                <button type="button" onClick={() => onDelete(survey)}>
+                  Delete
+                </button>
+              </div>
             </article>
           ))}
         </section>

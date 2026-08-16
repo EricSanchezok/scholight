@@ -16,6 +16,7 @@ vi.mock("../../api/domain", () => ({
     get: vi.fn(),
     drafts: vi.fn(),
     progress: vi.fn(),
+    create: vi.fn(),
     reviseDraft: vi.fn(),
     saveManualDraft: vi.fn(),
     start: vi.fn(),
@@ -85,6 +86,10 @@ describe("SurveyDraftPage", () => {
     vi.mocked(surveyApi.get).mockResolvedValue(survey);
     vi.mocked(surveyApi.drafts).mockResolvedValue([draft]);
     vi.mocked(surveyApi.progress).mockResolvedValue(progress);
+    vi.mocked(surveyApi.create).mockResolvedValue({
+      ...survey,
+      id: "00000000-0000-0000-0000-000000000010",
+    });
     vi.mocked(surveyApi.saveManualDraft).mockResolvedValue({ ...draft, revision: 2 });
     vi.mocked(surveyApi.start).mockResolvedValue({ ...survey, status: "queued" });
   });
@@ -237,5 +242,51 @@ describe("SurveyDraftPage", () => {
     expect(
       screen.getByRole("checkbox", { name: "Email me when this survey finishes" }),
     ).toBeDisabled();
+  });
+
+  it("shows the original request and recreates a failed survey as a new draft", async () => {
+    const user = userEvent.setup();
+    const originalRequest =
+      "数字生命构建：从 Agent 到自主互联网实体\n\n比较长期记忆、身份持久化和自主经济行为。";
+    vi.mocked(surveyApi.get).mockResolvedValue({
+      ...survey,
+      status: "failed",
+      initial_request: originalRequest,
+      error_code: "survey_report_missing",
+      error_message: "Survey generation did not produce a final report.",
+    });
+    renderDraft();
+
+    expect(await screen.findByText(/数字生命构建：从 Agent 到自主互联网实体/)).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Approve & start" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit draft" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Use request again" }));
+
+    expect(surveyApi.create).toHaveBeenCalledWith({
+      initial_request: originalRequest,
+      client_request_id: expect.any(String),
+    });
+  });
+
+  it("reuses the replacement idempotency key after a retryable error", async () => {
+    const user = userEvent.setup();
+    vi.mocked(surveyApi.get).mockResolvedValue({ ...survey, status: "failed" });
+    vi.mocked(surveyApi.create)
+      .mockRejectedValueOnce(new ApiError(503, "Try again", "temporary", true))
+      .mockResolvedValueOnce({
+        ...survey,
+        id: "00000000-0000-0000-0000-000000000011",
+      });
+    renderDraft();
+
+    await user.click(await screen.findByRole("button", { name: "Use request again" }));
+    expect(await screen.findByText("Try again")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Use request again" }));
+
+    await waitFor(() => expect(surveyApi.create).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(surveyApi.create).mock.calls[1]).toEqual(
+      vi.mocked(surveyApi.create).mock.calls[0],
+    );
   });
 });
