@@ -65,7 +65,7 @@ from scholight.survey.workflow_runtime import workflow_file
 logger = structlog.get_logger(__name__)
 
 RCM_VERSION = "0.2.13"
-WORKFLOW_VERSION = "scholight-survey-v1"
+WORKFLOW_VERSION = "scholight-survey-v2"
 _IDLE_SECONDS = 1
 _RECOVERY_SECONDS = 30
 _EVENT_READ_BYTES = 64 * 1024
@@ -74,7 +74,9 @@ _STAGE_RECORD_LIMIT = 512
 _ARTIFACT_OBSERVE_SECONDS = 5
 _ACTIVITY_METRIC_SECONDS = 60
 _MODEL_TIMEOUT = re.compile(r"(?:timed out after|timeout(?: after)?)\s+(\d+)\s*s", re.I)
-_IMAGE_HTTP_STATUS = re.compile(r"\bHTTP\s+([45]\d\d)\b", re.I)
+_IMAGE_HTTP_STATUS = re.compile(r"\b(?:HTTP\s+|http_status=)([45]\d\d)\b", re.I)
+_IMAGE_ERROR_CODE = re.compile(r"\bcode=([a-z0-9_]+)\b", re.I)
+_IMAGE_RETRYABLE = re.compile(r"\bretryable=(true|false)\b", re.I)
 _FINALIZATION_ERROR_CODES = frozenset(
     {
         "survey_report_missing",
@@ -119,7 +121,26 @@ def _classify_image_tool_error(error: object) -> dict[str, object]:
     normalized = error.casefold() if isinstance(error, str) else ""
     status_match = _IMAGE_HTTP_STATUS.search(error) if isinstance(error, str) else None
     http_status = int(status_match.group(1)) if status_match is not None else None
-    if http_status == 429 or "rate limit" in normalized:
+    code_match = _IMAGE_ERROR_CODE.search(error) if isinstance(error, str) else None
+    declared_code = code_match.group(1).casefold() if code_match is not None else None
+    retryable_match = _IMAGE_RETRYABLE.search(error) if isinstance(error, str) else None
+    declared_retryable = (
+        retryable_match.group(1).casefold() == "true" if retryable_match is not None else None
+    )
+    stable_codes = {
+        "image_rate_limited",
+        "image_authentication_failed",
+        "image_provider_unavailable",
+        "image_request_rejected",
+        "image_response_invalid",
+        "image_response_too_large",
+        "image_url_rejected",
+        "image_configuration_invalid",
+    }
+    if declared_code in stable_codes:
+        code = declared_code
+        retryable = bool(declared_retryable)
+    elif http_status == 429 or "rate limit" in normalized:
         code = "image_rate_limited"
         retryable = True
     elif http_status in {401, 403} or any(
@@ -852,55 +873,198 @@ async def _execute_survey_once(
         )
 
 
+def _repair_workflows(diagnostics: SurveyDiagnostics) -> tuple[tuple[str, str], ...]:
+    """Select bounded repair graphs only when a valid durable plan has gaps."""
+    selected: list[tuple[str, str]] = []
+    for plan, workflow in (
+        ("00_card_plan.json", "card_repair.rcm"),
+        ("00_sections.json", "section_repair.rcm"),
+    ):
+        missing = diagnostics.missing_durable_plan_items(plan)
+        if missing:
+            selected.append((plan, workflow))
+    return tuple(selected)
+
+
+async def _run_repair_workflow(
+    *,
+    job: SurveyJob,
+    run_root: Path,
+    plan: str,
+    workflow: str,
+    control: ProcessControl,
+) -> bool:
+    """Run one missing-only repair graph without replaying upstream research."""
+    process = await asyncio.create_subprocess_exec(
+        "accelerate",
+        "run",
+        str(workflow_file(workflow, mcp_url=settings.survey_mcp_url)),
+        "--stream",
+        "--purpose-stdin",
+        "--run-dir",
+        str(run_root),
+        env=_child_environment(user_id=job.user_id, job_id=job.id),
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        start_new_session=True,
+    )
+    await control.attach(process)
+    collector = asyncio.create_task(_collect_stage_timings(process.stdout))
+    stderr_task = asyncio.create_task(read_sanitized_tail(process.stderr))
+    try:
+        await write_stdin(
+            process,
+            json.dumps(
+                {"run_dir": ".", "repair": "missing_only", "plan": plan},
+                separators=(",", ":"),
+                sort_keys=True,
+            ),
+        )
+        try:
+            return_code = await asyncio.wait_for(
+                process.wait(),
+                timeout=settings.survey_job_timeout_seconds,
+            )
+        except TimeoutError:
+            await terminate_process_group(process)
+            logger.warning(
+                "survey_artifact_repair_failed",
+                job_id=str(job.id),
+                plan=plan,
+                error_code="survey_repair_timed_out",
+            )
+            return False
+        await collector
+        stderr_tail = await stderr_task
+        if control.lease_lost.is_set():
+            raise SurveyLeaseLostError("Survey execution lease is no longer owned")
+        if control.cancel_requested.is_set():
+            return False
+        if return_code != 0:
+            error_code, _message = classify_rcm_error(stderr_tail)
+            logger.warning(
+                "survey_artifact_repair_failed",
+                job_id=str(job.id),
+                plan=plan,
+                error_code=error_code,
+            )
+            return False
+        return True
+    finally:
+        if process.returncode is None:
+            await terminate_process_group(process)
+        for task in (collector, stderr_task):
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(collector, stderr_task, return_exceptions=True)
+
+
+async def _repair_survey_artifacts(
+    job: SurveyJob,
+    run_root: Path,
+    *,
+    original: SurveyExecutionResult,
+    control: ProcessControl,
+) -> SurveyExecutionResult | None:
+    diagnostics = SurveyDiagnostics(
+        run_root=run_root,
+        job_id=job.id,
+        survey_id=job.survey_id,
+    )
+    repairs = _repair_workflows(diagnostics)
+    if not repairs:
+        return None
+    logger.warning(
+        "survey_artifact_repair_scheduled",
+        job_id=str(job.id),
+        repair_count=len(repairs),
+        plans=[plan for plan, _workflow in repairs],
+    )
+    emit_emf(
+        service="survey-full-worker",
+        metrics={"SurveyArtifactRepair": (1, "Count")},
+    )
+    for plan, workflow in repairs:
+        if control.lease_lost.is_set():
+            raise SurveyLeaseLostError("Survey execution lease is no longer owned")
+        if control.cancel_requested.is_set():
+            return replace(
+                original,
+                outcome="cancelled",
+                error_code=None,
+                error_message=None,
+                finished_at=datetime.now(UTC),
+                termination_reason="cancelled_before_artifact_repair",
+            )
+        if not await _run_repair_workflow(
+            job=job,
+            run_root=run_root,
+            plan=plan,
+            workflow=workflow,
+            control=control,
+        ):
+            return None
+
+    try:
+        finalized = finalize_survey(run_root)
+    except SurveyFinalizationError as exc:
+        logger.warning(
+            "survey_artifact_repair_failed",
+            job_id=str(job.id),
+            error_code=exc.code,
+        )
+        return None
+    diagnostics.component_finished("survey_finalizer", status="completed")
+    diagnostics.finalize_contract_audit()
+    snapshot = diagnostics.snapshot()
+    anomalies = snapshot.get("anomalies")
+    if isinstance(anomalies, list) and any(
+        isinstance(anomaly, dict) and anomaly.get("severity") == "error" for anomaly in anomalies
+    ):
+        return None
+    logger.info(
+        "survey_artifact_repair_finished",
+        job_id=str(job.id),
+        section_count=finalized.section_count,
+        reference_count=finalized.reference_count,
+    )
+    return SurveyExecutionResult(
+        outcome="succeeded",
+        error_code=None,
+        error_message=None,
+        started_at=original.started_at,
+        finished_at=datetime.now(UTC),
+        stage_timings=original.stage_timings,
+        return_code=0,
+        termination_reason="targeted_artifact_repair",
+        diagnostics=snapshot,
+    )
+
+
 async def execute_survey(
     job: SurveyJob,
     run_root: Path,
     *,
     control: ProcessControl | None = None,
 ) -> SurveyExecutionResult:
-    """Run Survey with bounded provider retries and one same-workspace repair pass."""
+    """Run Survey with bounded provider retries and missing-only artifact repair."""
     control = control or ProcessControl()
     provider_attempt = 1
-    artifact_repair_available = True
-    artifact_repair_failure: SurveyExecutionResult | None = None
     while provider_attempt <= settings.survey_provider_max_attempts:
         result = await _execute_survey_once(job, run_root, control=control)
-        if artifact_repair_failure is not None and result.outcome == "failed":
-            result = replace(
-                result,
-                started_at=artifact_repair_failure.started_at,
-                stderr_tail=result.stderr_tail or artifact_repair_failure.stderr_tail,
-                diagnostics=result.diagnostics or artifact_repair_failure.diagnostics,
-            )
         if (
-            artifact_repair_available
-            and result.outcome == "failed"
+            result.outcome == "failed"
             and result.error_code == "survey_contract_violation"
             and result.return_code == 0
         ):
-            artifact_repair_available = False
-            artifact_repair_failure = result
-            logger.warning(
-                "survey_artifact_repair_scheduled",
-                job_id=str(job.id),
-                provider_attempt=provider_attempt,
+            repaired = await _repair_survey_artifacts(
+                job,
+                run_root,
+                original=result,
+                control=control,
             )
-            emit_emf(
-                service="survey-full-worker",
-                metrics={"SurveyArtifactRepair": (1, "Count")},
-            )
-            if control.lease_lost.is_set():
-                raise SurveyLeaseLostError("Survey execution lease is no longer owned")
-            if control.cancel_requested.is_set():
-                return SurveyExecutionResult(
-                    outcome="cancelled",
-                    error_code=None,
-                    error_message=None,
-                    started_at=result.started_at,
-                    finished_at=datetime.now(UTC),
-                    termination_reason="cancelled_before_artifact_repair",
-                )
-            continue
+            return repaired or result
         if (
             result.outcome != "failed"
             or not is_transient_rcm_error(result.error_code)
@@ -950,8 +1114,6 @@ async def execute_survey(
         shutil.rmtree(run_root, ignore_errors=True)
         run_root.mkdir(parents=True, exist_ok=True)
         provider_attempt += 1
-        artifact_repair_available = True
-        artifact_repair_failure = None
     raise AssertionError("unreachable")
 
 

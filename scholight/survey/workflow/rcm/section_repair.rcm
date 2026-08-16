@@ -1,0 +1,13 @@
+name = "Scholight Survey Missing Section Repair"
+
+use "./section_repair_plan.rcm" as SectionRepairPlan
+use "./section_expander.rcm" as SectionExpander
+
+graph {
+    accelerator repair = SectionRepairPlan { spawns = ["SectionExpander"] }
+
+    input.purpose -> repair.purpose
+    repair.done -> output.done
+    repair.context -> output.context
+    repair.purpose -> output.purpose
+}
