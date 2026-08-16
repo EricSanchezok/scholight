@@ -535,8 +535,8 @@ def test_survey_image_pins_verified_rcm_release() -> None:
     dockerfile = (ROOT / "docker/scholight-api/Dockerfile").read_text(encoding="utf-8")
     workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
 
-    assert "ARG RCM_VERSION=v0.2.13" in dockerfile
-    assert "f0bfb84900ce61daf3af8654406fcc98afd932f487244636d176c930b4524b04" in dockerfile
+    assert "ARG RCM_VERSION=v0.2.14" in dockerfile
+    assert "90ea9168381527d4cc56768cdafff6666382fcc903301f4251b098a86b10fa82" in dockerfile
     assert "sha256sum --check" in dockerfile
     assert "COPY --from=survey-builder /app/bin/accelerate /usr/local/bin/accelerate" in dockerfile
     assert "/releases/latest/" not in dockerfile

@@ -353,6 +353,11 @@ and the provider's sanitized code. Use `ImageGenApiUrl` only for a reviewed
 gateway override. If successful URL responses use another public HTTPS host,
 add its exact hostname to `ImageGenTrustedHosts`; private addresses, redirects,
 MIME/signature mismatches, and files above 20 MiB remain rejected.
+Listing the configured image model through a general `/v1/models` endpoint is
+not an image authorization check: an image canary that returns HTTP 401 or 403
+blocks the release until the provider grants image-generation access to the
+configured credential. A successful, signature-validated canary is required
+before deploying a new RCM pin to production.
 
 Survey artifact readers accept both the original manifest v1 and the additive
 manifest v2 recovery overlay. A v2 manifest must live below the same
