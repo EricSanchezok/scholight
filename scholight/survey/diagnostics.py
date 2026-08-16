@@ -106,7 +106,10 @@ ARTIFACT_CONTRACTS = (
     ArtifactContract("judge_synthesizer", required=("06_judge_panel.md",)),
     ArtifactContract("judge_panel", required=("06_judge_panel.md",)),
     ArtifactContract("image_planner", optional=("08_global_picture.png",)),
-    ArtifactContract("survey_outline", required=("00_outline.md", "00_sections.json")),
+    ArtifactContract(
+        "survey_outline",
+        required=("00_outline.json", "00_outline.md", "00_sections.json"),
+    ),
     ArtifactContract("survey_finalizer", required=("08_survey.md", "index.md")),
 )
 _CONTRACT_BY_COMPONENT = {contract.component: contract for contract in ARTIFACT_CONTRACTS}

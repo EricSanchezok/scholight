@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import stat
@@ -10,7 +11,11 @@ from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 
+import structlog
+
 from scholight.sources.arxiv import arxiv_artifact_stem
+
+logger = structlog.get_logger(__name__)
 
 _BRACKETED_CITATIONS = re.compile(r"\[([^\]\n]{1,1024})\]")
 _ARXIV_ID = re.compile(
@@ -20,6 +25,7 @@ _ARXIV_ID = re.compile(
 _SECTION_FILE = re.compile(r"^\d{2}_[A-Za-z0-9-]+\.md$")
 _OUTLINE_HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*$")
 _CARD_FIELD = re.compile(r"^-\s+(.+?):\s*(.*?)\s*$")
+_OUTLINE_JSON_MAX_BYTES = 1024 * 1024
 
 
 class SurveyFinalizationError(RuntimeError):
@@ -126,6 +132,42 @@ def _outline_fields(outline: str) -> tuple[str, str]:
             code="survey_outline_metadata_invalid",
         )
     return title, abstract
+
+
+def _structured_outline_fields(run_root: Path) -> tuple[str, str] | None:
+    outline_path = _regular_file(run_root, "00_outline.json", required=False)
+    if outline_path is None:
+        logger.warning("survey_outline_json_fallback", warning_code="outline_json_missing")
+        return None
+    try:
+        if outline_path.stat().st_size > _OUTLINE_JSON_MAX_BYTES:
+            raise ValueError("outline JSON exceeds limit")
+        payload = json.loads(outline_path.read_bytes())
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
+        logger.warning("survey_outline_json_fallback", warning_code="outline_json_invalid")
+        return None
+    if not isinstance(payload, dict) or payload.get("schema_version") != 1:
+        logger.warning("survey_outline_json_fallback", warning_code="outline_json_invalid")
+        return None
+    title = payload.get("title")
+    abstract = payload.get("abstract")
+    through_line = payload.get("through_line")
+    if (
+        not isinstance(title, str)
+        or not title.strip()
+        or not isinstance(abstract, str)
+        or not abstract.strip()
+        or not isinstance(through_line, str)
+        or not through_line.strip()
+    ):
+        logger.warning("survey_outline_json_fallback", warning_code="outline_json_invalid")
+        return None
+    normalized_title = " ".join(title.split())
+    normalized_abstract = abstract.strip()
+    if len(normalized_title) > 500 or len(normalized_abstract) > 20_000:
+        logger.warning("survey_outline_json_fallback", warning_code="outline_json_invalid")
+        return None
+    return normalized_title, normalized_abstract
 
 
 def _outline_heading_key(value: str) -> str:
@@ -288,7 +330,9 @@ def finalize_survey(run_root: Path) -> FinalizedSurvey:
             "Required artifact is missing: 00_outline.md",
             code="survey_outline_metadata_invalid",
         )
-    title, abstract = _outline_fields(_read_text(outline_path, label="00_outline.md"))
+    title, abstract = _structured_outline_fields(run_root) or _outline_fields(
+        _read_text(outline_path, label="00_outline.md")
+    )
 
     sections = _section_files(run_root)
     section_texts = [_read_text(path, label=f"sections/{path.name}").strip() for path in sections]
@@ -314,6 +358,8 @@ def finalize_survey(run_root: Path) -> FinalizedSurvey:
         "- [Expanded sections](sections/)",
         "- [Paper cards](cards/)",
     ]
+    if _regular_file(run_root, "00_outline.json", required=False) is not None:
+        index_items.insert(2, "- [Structured survey outline](00_outline.json)")
     if _regular_file(run_root, "08_global_picture.png", required=False) is not None:
         index_items.append("- [Global picture](08_global_picture.png)")
     index = "# Survey artifacts\n\n" + "\n".join(index_items) + "\n"
