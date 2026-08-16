@@ -255,10 +255,14 @@ def test_survey_capacity_observability_has_no_identifier_dimensions() -> None:
         "SurveyJobHeartbeatLatency",
         "SurveyTaskProtectionFailure",
         "SurveyProviderThrottled",
+        "SurveyFinalizationFailure",
+        "SurveyImageGenerationCount",
     ):
         assert metric in runtime
     assert "SurveyDraftProviderThrottleAlarm:" in runtime
     assert "SurveyFullProviderThrottleAlarm:" in runtime
+    assert "SurveyFinalizationFailureAlarm:" in runtime
+    assert "SurveyImageGenerationFailureAlarm:" in runtime
     assert "IF(jobs>0,100*throttled/jobs,0)" in runtime
     assert runtime.count("Threshold: 100") >= 2
     assert "MetricName: CPUUtilization" in runtime

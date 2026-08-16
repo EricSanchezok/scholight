@@ -332,6 +332,14 @@ summary so the partial worker rollout cannot be mistaken for a complete one.
 14. Observe Search for 24 hours and retain the old EC2 and Hong Kong database
     rollback references for seven days before requesting cleanup.
 
+Survey runtime logs are retained in `/sanchezcloud/scholight/survey`. Image tool
+events retain only a stable error code, HTTP status, retryability, and duration;
+prompts, credentials, and provider response bodies are never archived. The
+production dashboard separates image successes and failures, and alerts when at
+least three image calls fail with no success in a six-hour window. Any finalizer
+failure alerts immediately because it means paid research completed without a
+deliverable report.
+
 ## Failure handling
 
 An archived Full Survey that failed only with `survey_contract_violation` may be

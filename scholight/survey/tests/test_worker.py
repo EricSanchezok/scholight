@@ -776,6 +776,44 @@ async def test_stage_collector_understands_native_rcm_tool_events(tmp_path: Path
 
 
 @pytest.mark.asyncio
+async def test_stage_collector_classifies_image_failure_without_persisting_content(
+    tmp_path: Path,
+) -> None:
+    stream = asyncio.StreamReader()
+    stream.feed_data(
+        b'{"type":"tool_call","tool":"image_gen","call_id":"image-1",'
+        b'"arguments":{"prompt":"private research prompt","filePath":"figure.png",'
+        b'"size":"1536x1024"}}\n'
+        b'{"type":"tool_error","tool":"image_gen","call_id":"image-1",'
+        b'"error":"image generation failed: HTTP 429 -- private provider detail",'
+        b'"retryable":true}\n'
+    )
+    stream.feed_eof()
+    diagnostics = SurveyDiagnostics(
+        run_root=tmp_path,
+        job_id=uuid4(),
+        survey_id=uuid4(),
+    )
+
+    with patch("scholight.survey.worker.emit_emf") as emit:
+        await _collect_stage_timings(stream, diagnostics=diagnostics)
+
+    last_image_error = diagnostics.snapshot()["last_image_error"]
+    assert last_image_error["error_code"] == "image_rate_limited"
+    assert last_image_error["http_status"] == 429
+    assert last_image_error["retryable"] is True
+    assert isinstance(last_image_error["duration_ms"], int)
+    trace = (tmp_path / "trajectory.jsonl").read_text(encoding="utf-8")
+    assert "private research prompt" not in trace
+    assert "private provider detail" not in trace
+    assert emit.call_args.kwargs == {
+        "service": "survey-full-worker",
+        "outcome": "failed",
+        "metrics": {"SurveyImageGenerationCount": (1, "Count")},
+    }
+
+
+@pytest.mark.asyncio
 async def test_stage_collector_classifies_model_timeout_without_persisting_content(
     tmp_path: Path,
 ) -> None:
@@ -897,6 +935,7 @@ def test_result_metrics_use_only_low_cardinality_dimensions() -> None:
     assert "job_id" not in failure_call.kwargs
     assert failure_call.kwargs["metrics"] == {
         "SurveyContractAnomaly": (1, "Count"),
+        "SurveyFinalizationFailure": (1, "Count"),
         "SurveyRuntimeFailure": (1, "Count"),
         "SurveyProviderThrottled": (0, "Count"),
         "SurveyToolFailure": (2, "Count"),

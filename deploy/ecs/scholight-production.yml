@@ -1263,6 +1263,60 @@ Resources:
       TreatMissingData: notBreaching
       AlarmActions: [!ImportValue sanchezcloud-scholight-alert-topic-arn]
 
+  SurveyFinalizationFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: RunSurveyWorkers
+    Properties:
+      AlarmName: sanchezcloud-scholight-survey-finalization-failure
+      Namespace: Scholight/Production
+      MetricName: SurveyFinalizationFailure
+      Dimensions: [{ Name: service, Value: survey-worker }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!ImportValue sanchezcloud-scholight-alert-topic-arn]
+
+  SurveyImageGenerationFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: RunSurveyWorkers
+    Properties:
+      AlarmName: sanchezcloud-scholight-survey-image-generation-failure
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      EvaluationPeriods: 1
+      Threshold: 3
+      TreatMissingData: notBreaching
+      Metrics:
+        - Id: failed
+          MetricStat:
+            Metric:
+              Namespace: Scholight/Production
+              MetricName: SurveyImageGenerationCount
+              Dimensions:
+                - { Name: service, Value: survey-full-worker }
+                - { Name: outcome, Value: failed }
+            Period: 21600
+            Stat: Sum
+          ReturnData: false
+        - Id: succeeded
+          MetricStat:
+            Metric:
+              Namespace: Scholight/Production
+              MetricName: SurveyImageGenerationCount
+              Dimensions:
+                - { Name: service, Value: survey-full-worker }
+                - { Name: outcome, Value: succeeded }
+            Period: 21600
+            Stat: Sum
+          ReturnData: false
+        - Id: all_failed
+          Expression: IF((failed+succeeded)>=3,IF(succeeded==0,failed,0),0)
+          Label: Image generations failed with no successes
+          ReturnData: true
+      AlarmActions: [!ImportValue sanchezcloud-scholight-alert-topic-arn]
+
   SurveyEmailDeadAlarm:
     Type: AWS::CloudWatch::Alarm
     Condition: RunSurveyWorkers
@@ -1540,7 +1594,8 @@ Resources:
             {"type":"metric","x":12,"y":24,"width":12,"height":6,"properties":{"title":"PostgreSQL capacity","region":"${AWS::Region}","metrics":[["AWS/RDS","DatabaseConnections","DBInstanceIdentifier","${DatabaseInstanceIdentifier}"],[".","CPUUtilization",".","."],[".","FreeableMemory",".",".",{"yAxis":"right"}]]}},
             {"type":"metric","x":0,"y":30,"width":12,"height":6,"properties":{"title":"Full Survey compute","region":"${AWS::Region}","metrics":[["AWS/ECS","CPUUtilization","ServiceName","${SurveyFullServiceName}","ClusterName","${ClusterName}"],[".","MemoryUtilization",".",".",".","."]]}},
             {"type":"metric","x":12,"y":30,"width":12,"height":6,"properties":{"title":"Full Survey storage","region":"${AWS::Region}","metrics":[["ECS/ContainerInsights","EphemeralStorageUtilized","ClusterName","${ClusterName}","ServiceName","${SurveyFullServiceName}"],[".","EphemeralStorageReserved",".",".",".","."]]}},
-            {"type":"log","x":0,"y":36,"width":24,"height":6,"properties":{"title":"Recent errors","region":"${AWS::Region}","query":"SOURCE '/sanchezcloud/scholight/api' | fields @timestamp, level, event, request_id | filter level in ['error','critical'] | sort @timestamp desc | limit 50"}}
+            {"type":"metric","x":0,"y":36,"width":24,"height":6,"properties":{"title":"Survey finalization and image generation","region":"${AWS::Region}","metrics":[["Scholight/Production","SurveyFinalizationFailure","service","survey-worker"],[".","SurveyImageGenerationCount","service","survey-full-worker","outcome","succeeded"],[".","SurveyImageGenerationCount",".",".",".","failed"]]}},
+            {"type":"log","x":0,"y":42,"width":24,"height":6,"properties":{"title":"Recent errors","region":"${AWS::Region}","query":"SOURCE '/sanchezcloud/scholight/api' | fields @timestamp, level, event, request_id | filter level in ['error','critical'] | sort @timestamp desc | limit 50"}}
           ]}
         - ApiServiceName: !GetAtt ApiService.Name
           ExtractServiceName: !GetAtt ExtractService.Name

@@ -74,6 +74,18 @@ _STAGE_RECORD_LIMIT = 512
 _ARTIFACT_OBSERVE_SECONDS = 5
 _ACTIVITY_METRIC_SECONDS = 60
 _MODEL_TIMEOUT = re.compile(r"(?:timed out after|timeout(?: after)?)\s+(\d+)\s*s", re.I)
+_IMAGE_HTTP_STATUS = re.compile(r"\bHTTP\s+([45]\d\d)\b", re.I)
+_FINALIZATION_ERROR_CODES = frozenset(
+    {
+        "survey_report_missing",
+        "survey_artifact_contract_invalid",
+        "survey_outline_metadata_invalid",
+        "survey_section_contract_invalid",
+        "survey_reference_contract_invalid",
+        "survey_finalization_write_failed",
+        "survey_finalization_output_invalid",
+    }
+)
 
 
 def _classify_model_hitch(preview: object) -> dict[str, object] | None:
@@ -97,6 +109,47 @@ def _classify_model_hitch(preview: object) -> dict[str, object] | None:
         result = {"error_code": "model_authentication_failed"}
     else:
         result = {"error_code": "model_completion_failed"}
+    if http_status is not None:
+        result["http_status"] = http_status
+    return result
+
+
+def _classify_image_tool_error(error: object) -> dict[str, object]:
+    """Map one provider/tool error to bounded metadata without retaining its text."""
+    normalized = error.casefold() if isinstance(error, str) else ""
+    status_match = _IMAGE_HTTP_STATUS.search(error) if isinstance(error, str) else None
+    http_status = int(status_match.group(1)) if status_match is not None else None
+    if http_status == 429 or "rate limit" in normalized:
+        code = "image_rate_limited"
+        retryable = True
+    elif http_status in {401, 403} or any(
+        marker in normalized for marker in ("unauthorized", "authentication", "invalid api key")
+    ):
+        code = "image_authentication_failed"
+        retryable = False
+    elif (
+        http_status == 408
+        or (http_status is not None and http_status >= 500)
+        or any(marker in normalized for marker in ("timed out", "request failed", "connect"))
+    ):
+        code = "image_provider_unavailable"
+        retryable = True
+    elif "image_gen_api_key" in normalized and "not set" in normalized:
+        code = "image_configuration_missing"
+        retryable = False
+    elif any(
+        marker in normalized
+        for marker in ("b64_json", "parse image response", "decode image", "content type")
+    ):
+        code = "image_response_invalid"
+        retryable = False
+    elif any(marker in normalized for marker in ("create output directory", "write image")):
+        code = "image_artifact_write_failed"
+        retryable = False
+    else:
+        code = "image_generation_failed"
+        retryable = False
+    result: dict[str, object] = {"error_code": code, "retryable": retryable}
     if http_status is not None:
         result["http_status"] = http_status
     return result
@@ -162,6 +215,7 @@ async def _collect_stage_timings(
     buffer = bytearray()
     discard_until_newline = False
     active: dict[tuple[str, str, int], tuple[datetime, float]] = {}
+    active_tools: dict[str, float] = {}
     records: list[dict[str, object]] = []
     last_progress_stage: str | None = None
 
@@ -232,8 +286,12 @@ async def _collect_stage_timings(
                 if classification is not None:
                     diagnostics.model_event(status="failed", **classification)
                     continue
-            if tool_status is not None and diagnostics is not None:
+            if tool_status is not None:
                 tool_name = event.get("tool") or event.get("name")
+                tool_name = str(tool_name or "unknown")
+                call_id = str(event.get("call_id") or "")
+                if tool_status == "started" and call_id:
+                    active_tools[call_id] = time.monotonic()
                 diagnostic_fields: dict[str, object] = {}
                 for field in (
                     "call_id",
@@ -245,13 +303,29 @@ async def _collect_stage_timings(
                 ):
                     if field in event:
                         diagnostic_fields[field] = event[field]
-                diagnostics.tool_event(
-                    tool=str(tool_name or "unknown"),
-                    status=tool_status,
-                    component=event.get("component"),
-                    arguments=event.get("arguments", event.get("args")),
-                    **diagnostic_fields,
-                )
+                started_tool = active_tools.pop(call_id, None) if tool_status != "started" else None
+                if started_tool is not None and "duration_ms" not in diagnostic_fields:
+                    diagnostic_fields["duration_ms"] = max(
+                        0,
+                        round((time.monotonic() - started_tool) * 1000),
+                    )
+                if tool_name.casefold() == "image_gen":
+                    if tool_status == "failed":
+                        diagnostic_fields.update(_classify_image_tool_error(event.get("error")))
+                    if tool_status in {"finished", "failed"}:
+                        emit_emf(
+                            service="survey-full-worker",
+                            outcome="succeeded" if tool_status == "finished" else "failed",
+                            metrics={"SurveyImageGenerationCount": (1, "Count")},
+                        )
+                if diagnostics is not None:
+                    diagnostics.tool_event(
+                        tool=tool_name,
+                        status=tool_status,
+                        component=event.get("component"),
+                        arguments=event.get("arguments", event.get("args")),
+                        **diagnostic_fields,
+                    )
                 continue
             if not isinstance(name, str) or not isinstance(kind, str) or not isinstance(index, int):
                 if diagnostics is not None:
@@ -393,6 +467,10 @@ def _emit_result_metrics(result: SurveyExecutionResult) -> None:
         service="survey-worker",
         metrics={
             "SurveyContractAnomaly": (contract_errors, "Count"),
+            "SurveyFinalizationFailure": (
+                1 if result.error_code in _FINALIZATION_ERROR_CODES else 0,
+                "Count",
+            ),
             "SurveyRuntimeFailure": (1 if result.outcome == "failed" else 0, "Count"),
             "SurveyProviderThrottled": (
                 1 if is_provider_throttled(result.error_code) else 0,
