@@ -55,10 +55,34 @@ def survey_environment(
     }
     if include_image and settings.image_gen_api_key:
         environment["IMAGE_GEN_API_KEY"] = settings.image_gen_api_key
+        if settings.image_gen_api_url:
+            environment["IMAGE_GEN_API_URL"] = settings.image_gen_api_url
+        if settings.image_gen_trusted_hosts:
+            environment["IMAGE_GEN_TRUSTED_HOSTS"] = settings.image_gen_trusted_hosts
     for name in ("SSL_CERT_DIR", "SSL_CERT_FILE", "TZ"):
         if value := os.environ.get(name):
             environment[name] = value
     return environment
 
 
-__all__ = ["delegated_authorization", "survey_environment"]
+def image_canary_environment() -> dict[str, str]:
+    """Return only the process settings needed by the fixed image canary."""
+    environment = {
+        "HOME": os.environ.get("HOME", "/home/scholight"),
+        "LANG": os.environ.get("LANG", "C.UTF-8"),
+        "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
+    }
+    for name, value in (
+        ("IMAGE_GEN_API_KEY", settings.image_gen_api_key),
+        ("IMAGE_GEN_API_URL", settings.image_gen_api_url),
+        ("IMAGE_GEN_TRUSTED_HOSTS", settings.image_gen_trusted_hosts),
+    ):
+        if value:
+            environment[name] = value
+    for name in ("SSL_CERT_DIR", "SSL_CERT_FILE", "TZ"):
+        if env_value := os.environ.get(name):
+            environment[name] = env_value
+    return environment
+
+
+__all__ = ["delegated_authorization", "image_canary_environment", "survey_environment"]

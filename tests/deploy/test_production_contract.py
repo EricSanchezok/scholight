@@ -188,6 +188,10 @@ def test_survey_capacity_contract_is_explicit_and_staged() -> None:
     assert 'SCHOLIGHT_SURVEY_MCP_URL, Value: !Sub "https://${DomainName}/api/mcp"' in full_task
     assert 'SCHOLIGHT_PG_POOL_MIN_SIZE, Value: "1"' in full_task
     assert 'SCHOLIGHT_PG_POOL_MAX_SIZE, Value: "2"' in full_task
+    assert "IMAGE_GEN_API_URL, Value: !Ref ImageGenApiUrl" in full_task
+    assert "IMAGE_GEN_TRUSTED_HOSTS, Value: !Ref ImageGenTrustedHosts" in full_task
+    assert example["ImageGenApiUrl"] == ""
+    assert example["ImageGenTrustedHosts"] == ""
     assert re.search(r"Name: SCHOLIGHT_SURVEY_DRAFT_CONCURRENCY(?:,|\s*})", runtime) is None
     assert re.search(r"Name: SCHOLIGHT_SURVEY_JOB_CONCURRENCY(?:,|\s*})", runtime) is None
 

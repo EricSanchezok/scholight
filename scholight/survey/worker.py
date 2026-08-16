@@ -136,6 +136,7 @@ def _classify_image_tool_error(error: object) -> dict[str, object]:
         "image_response_too_large",
         "image_url_rejected",
         "image_configuration_invalid",
+        "image_configuration_missing",
     }
     if declared_code in stable_codes:
         code = declared_code
