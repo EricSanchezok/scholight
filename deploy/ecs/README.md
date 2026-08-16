@@ -360,11 +360,10 @@ blocks the release until the provider grants image-generation access to the
 configured credential. A successful, signature-validated canary is required
 before deploying a new RCM pin to production.
 
-The 2026-08-16 production canary returned HTTP 401 with the sanitized reason
-`invalid_jwt`; the gateway's image route rejected the configured non-JWT key
-before generation even though the same key could list `gpt-image-2`. Replace it
-with a credential issued for that route, or have the provider align image-route
-authentication. Do not treat model listing as resolution of this incident.
+The 2026-08-17 production canary succeeded after the image-route credential was
+updated. It returned a signature-validated PNG through the configured
+`gpt-image-2` route. Continue to use the real canary, rather than model listing,
+as the release and incident-resolution check.
 
 Survey artifact readers accept both the original manifest v1 and the additive
 manifest v2 recovery overlay. A v2 manifest must live below the same
@@ -416,6 +415,10 @@ finalization reproduces the exact archived report and index hashes. A missing
 report finalization failure additionally requires complete validated card and
 section plans; its newly assembled `08_survey.md` and `index.md` are written as
 an append-only manifest v2 overlay referencing the exact v1 source hash. The
+normal runtime card-plan limit remains 100. Recovery alone accepts at most 256
+historical card-plan entries so early archives that legitimately completed more
+cards can be verified without weakening the current workflow limit; every
+planned card must still be present and pass the same path and content checks. The
 database update validates the original manifest, status, error, ownership, and
 replacement prefix while locking the quota ledger, Survey, job, drafts, and
 notification in canonical order. It then switches the manifest pointer,

@@ -450,7 +450,12 @@ class SurveyDiagnostics:
                 if _SAFE_SECTION_PART.fullmatch(number) and _SAFE_SECTION_PART.fullmatch(slug):
                     self._dynamic_required[f"sections/{number}_{slug}.md"] = "section_expander"
 
-    def read_durable_plan(self, relative_path: str) -> list[dict[str, object]] | None:
+    def read_durable_plan(
+        self,
+        relative_path: str,
+        *,
+        max_items: int | None = None,
+    ) -> list[dict[str, object]] | None:
         """Return one validated bounded fan-out plan, or None when it is unsafe."""
         if relative_path not in _DURABLE_PLANS:
             return None
@@ -464,12 +469,15 @@ class SurveyDiagnostics:
             payload = json.loads(candidate.read_text(encoding="utf-8"))
         except (OSError, UnicodeError, json.JSONDecodeError):
             return None
-        max_items = (
+        default_max_items = (
             _MAX_CARD_PLAN_ITEMS
             if relative_path == "00_card_plan.json"
             else _MAX_SECTION_PLAN_ITEMS
         )
-        if not isinstance(payload, list) or len(payload) > max_items:
+        item_limit = default_max_items if max_items is None else max_items
+        if not 0 <= item_limit <= _MAX_EXPECTED_OUTPUTS:
+            return None
+        if not isinstance(payload, list) or len(payload) > item_limit:
             return None
 
         validated: list[dict[str, object]] = []
@@ -523,9 +531,11 @@ class SurveyDiagnostics:
     def missing_durable_plan_items(
         self,
         relative_path: str,
+        *,
+        max_items: int | None = None,
     ) -> tuple[dict[str, object], ...] | None:
         """Return only safely planned items whose expected artifact is absent."""
-        items = self.read_durable_plan(relative_path)
+        items = self.read_durable_plan(relative_path, max_items=max_items)
         if items is None:
             return None
         missing: list[dict[str, object]] = []

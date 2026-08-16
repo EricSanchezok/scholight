@@ -31,6 +31,7 @@ _REPORT_MISSING_CODES = frozenset(
         "survey_finalization_output_invalid",
     }
 )
+_MAX_LEGACY_RECOVERY_CARD_PLAN_ITEMS = 256
 RecoveryType = Literal["exact_report_reclassification", "deterministic_finalization"]
 
 
@@ -267,8 +268,11 @@ async def recover_archived_survey(
             survey_id=survey_id,
         )
         if recovery_type == "deterministic_finalization":
-            for plan in ("00_card_plan.json", "00_sections.json"):
-                missing = diagnostics.missing_durable_plan_items(plan)
+            for plan, max_items in (
+                ("00_card_plan.json", _MAX_LEGACY_RECOVERY_CARD_PLAN_ITEMS),
+                ("00_sections.json", None),
+            ):
+                missing = diagnostics.missing_durable_plan_items(plan, max_items=max_items)
                 if missing is None or missing:
                     raise ArchivedSurveyRecoveryError(
                         "The archived Survey does not have complete validated plans"
