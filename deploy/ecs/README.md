@@ -384,6 +384,15 @@ finalization. Existing cards and sections are excluded, image output is never a
 repair condition, and invalid plans or unrelated structural errors are not
 retried.
 
+Component-finish artifact observations are provisional because a streamed
+completion event can precede the final filesystem flush. The final contract
+audit removes only an earlier missing-artifact or invalid-plan anomaly that the
+final validated filesystem state disproves; unresolved anomalies remain fatal.
+Section-plan card references must use canonical ids from `00_card_plan.json`.
+For legacy slash ids, diagnostics may normalize an artifact stem such as
+`math-0208020` back to `math/0208020` only when the validated card plan provides
+one unique match. No arbitrary or ambiguous alias is accepted.
+
 An archived Full Survey that failed only with `survey_contract_violation` may be
 reclassified in place after the corrected application proves the complete
 archive can still produce the exact immutable final report and index. Historical

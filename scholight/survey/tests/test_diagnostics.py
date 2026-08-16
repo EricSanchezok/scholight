@@ -110,6 +110,25 @@ def test_contract_observation_never_stops_later_components(tmp_path: Path) -> No
     assert snapshot["anomaly_count"] == 1
 
 
+def test_final_audit_drops_resolved_component_missing_anomaly(tmp_path: Path) -> None:
+    diagnostics = SurveyDiagnostics(
+        run_root=tmp_path,
+        job_id=uuid4(),
+        survey_id=uuid4(),
+    )
+    diagnostics.component_finished("gap_judge", status="completed")
+    (tmp_path / "06d_gap_judge.md").write_text("verdict: acceptable\n", encoding="utf-8")
+
+    diagnostics.finalize_contract_audit()
+
+    assert not any(
+        anomaly["component"] == "gap_judge"
+        and anomaly["expected_artifact"] == "06d_gap_judge.md"
+        and anomaly["kind"] == "required_artifact_missing"
+        for anomaly in diagnostics.snapshot()["anomalies"]
+    )
+
+
 def test_optional_image_is_a_warning_only_at_final_audit(tmp_path: Path) -> None:
     (tmp_path / "08_survey.md").write_text("# Survey", encoding="utf-8")
     (tmp_path / "index.md").write_text("# Survey", encoding="utf-8")
@@ -506,6 +525,48 @@ def test_durable_plan_accepts_the_exact_absolute_run_directory(tmp_path: Path) -
     diagnostics.observe_artifacts()
 
     assert diagnostics.snapshot()["expected_dynamic_artifacts"] == ["cards/2501.12345.md"]
+
+
+def test_section_plan_normalizes_unique_legacy_card_artifact_stem(tmp_path: Path) -> None:
+    (tmp_path / "00_card_plan.json").write_text(
+        json.dumps(
+            [
+                {
+                    "run_dir": ".",
+                    "id": "math/0208020",
+                    "title": "Legacy paper",
+                    "why": "Foundational evidence",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "00_sections.json").write_text(
+        json.dumps(
+            [
+                {
+                    "run_dir": ".",
+                    "n": "01",
+                    "slug": "introduction",
+                    "title": "Introduction",
+                    "thesis": "Establish the problem.",
+                    "card_ids": ["math-0208020"],
+                    "transfer_angle": "",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    diagnostics = SurveyDiagnostics(
+        run_root=tmp_path,
+        job_id=uuid4(),
+        survey_id=uuid4(),
+    )
+
+    plan = diagnostics.read_durable_plan("00_sections.json")
+
+    assert plan is not None
+    assert plan[0]["card_ids"] == ["math/0208020"]
 
 
 def test_invalid_durable_plan_is_a_contract_error(tmp_path: Path) -> None:
