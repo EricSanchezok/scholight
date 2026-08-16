@@ -354,6 +354,54 @@ async def test_report_missing_dry_run_plans_v2_without_writes(tmp_path: Path) ->
 
 
 @pytest.mark.asyncio
+async def test_report_missing_accepts_complete_legacy_card_plan(tmp_path: Path) -> None:
+    job_id, row, store, _report_sha = _fixture(tmp_path)
+    row["job_error_code"] = "survey_report_missing"
+    row["survey_error_code"] = "survey_report_missing"
+    for name in ("08_survey.md", "index.md"):
+        (store.source / name).unlink()
+        store.manifest["files"] = [
+            record for record in store.manifest["files"] if record["path"] != f"run/{name}"
+        ]
+
+    plan = [
+        {
+            "run_dir": ".",
+            "id": f"2501.{index:05d}",
+            "title": f"Archived paper {index}",
+            "why": "Archived evidence",
+        }
+        for index in range(135)
+    ]
+    plan_path = store.source / "00_card_plan.json"
+    plan_path.write_text(json.dumps(plan), encoding="utf-8")
+    for record in store.manifest["files"]:
+        if record["path"] == "run/00_card_plan.json":
+            record["sha256"] = _digest(plan_path)
+            break
+    for item in plan:
+        card_path = store.source / "cards" / f"{item['id']}.md"
+        card_path.write_text(f"# Card\n\n- title: {item['title']}\n", encoding="utf-8")
+        store.manifest["files"].append(
+            {"path": f"run/cards/{card_path.name}", "sha256": _digest(card_path)}
+        )
+    store.manifest_body = json.dumps(
+        store.manifest,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode()
+
+    with patch("scholight.survey.recovery.get_pool", return_value=_Pool(row)):
+        result = await recover_archived_survey(
+            job_id=job_id,
+            artifact_store=store,  # type: ignore[arg-type]
+        )
+
+    assert result.recovery_type == "deterministic_finalization"
+    assert result.expected_manifest["schema_version"] == 2
+
+
+@pytest.mark.asyncio
 async def test_report_missing_apply_requires_both_hashes_and_switches_to_v2(
     tmp_path: Path,
 ) -> None:
