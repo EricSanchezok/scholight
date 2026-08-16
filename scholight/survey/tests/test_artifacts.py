@@ -35,6 +35,8 @@ class _FakeS3:
         self.operations.append(("upload_fileobj", key))
 
     def put_object(self, **kwargs: Any) -> None:
+        if kwargs.get("IfNoneMatch") == "*" and kwargs["Key"] in self.objects:
+            raise ClientError({"Error": {"Code": "PreconditionFailed"}}, "PutObject")
         self.objects[kwargs["Key"]] = kwargs["Body"]
         self.operations.append(("put_object", kwargs["Key"]))
 
@@ -254,6 +256,34 @@ async def test_manifest_v2_rejects_parent_checksum_mismatch(tmp_path: Path) -> N
 
 
 @pytest.mark.asyncio
+async def test_manifest_v2_rejects_a_circular_parent_manifest(tmp_path: Path) -> None:
+    (tmp_path / "00_outline.md").write_text("## Title\nOriginal", encoding="utf-8")
+    fake = _FakeS3()
+    store = SurveyArtifactStore(bucket="survey-test", client=fake)
+    archive = await store.archive_run(
+        user_id=42,
+        job_id=uuid4(),
+        run_root=tmp_path,
+        run_metadata={"outcome": "failed"},
+    )
+    manifest_key = _install_manifest_v2_overlay(fake=fake, archive=archive)
+    parent = json.loads(fake.objects[archive.manifest_key])
+    parent["schema_version"] = 2
+    parent["parent_manifest"] = {
+        "key": archive.manifest_key,
+        "sha256": "0" * 64,
+    }
+    parent_body = json.dumps(parent).encode()
+    fake.objects[archive.manifest_key] = parent_body
+    overlay = json.loads(fake.objects[manifest_key])
+    overlay["parent_manifest"]["sha256"] = hashlib.sha256(parent_body).hexdigest()
+    fake.objects[manifest_key] = json.dumps(overlay).encode()
+
+    with pytest.raises(SurveyArtifactError, match="parent manifest"):
+        await store.presigned_artifacts(manifest_key=manifest_key)
+
+
+@pytest.mark.asyncio
 async def test_manifest_v2_rejects_unsafe_or_non_report_overrides(tmp_path: Path) -> None:
     (tmp_path / "00_outline.md").write_text("## Title\nOriginal", encoding="utf-8")
     fake = _FakeS3()
@@ -317,6 +347,79 @@ async def test_manifest_v2_preserved_manifests_are_deleted_together(tmp_path: Pa
     assert set(fake.objects) == {archive.manifest_key, manifest_key}
     await store.delete_manifest(manifest_key=manifest_key)
     assert fake.objects == {}
+
+
+@pytest.mark.asyncio
+async def test_recovery_overlay_writer_is_append_only_and_readable(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "00_outline.md").write_text("## Title\nRecovered", encoding="utf-8")
+    recovered = tmp_path / "recovered"
+    recovered.mkdir()
+    report_path = recovered / "08_survey.md"
+    index_path = recovered / "index.md"
+    report_path.write_text("# Recovered Survey\n", encoding="utf-8")
+    index_path.write_text("# Index\n", encoding="utf-8")
+    fake = _FakeS3()
+    store = SurveyArtifactStore(bucket="survey-test", client=fake)
+    archive = await store.archive_run(
+        user_id=42,
+        job_id=uuid4(),
+        run_root=source,
+        run_metadata={"outcome": "failed"},
+    )
+    source_sha256 = hashlib.sha256(fake.objects[archive.manifest_key]).hexdigest()
+
+    overlay = await store.create_recovery_overlay(
+        source_manifest_key=archive.manifest_key,
+        expected_source_sha256=source_sha256,
+        report_path=report_path,
+        index_path=index_path,
+    )
+    repeated = await store.create_recovery_overlay(
+        source_manifest_key=archive.manifest_key,
+        expected_source_sha256=source_sha256,
+        report_path=report_path,
+        index_path=index_path,
+    )
+    report = await store.open_artifact(
+        manifest_key=overlay.manifest_key,
+        path="run/08_survey.md",
+    )
+
+    assert overlay == repeated
+    assert overlay.manifest["schema_version"] == 2
+    assert overlay.source_manifest_sha256 == source_sha256
+    assert b"".join([chunk async for chunk in report.chunks()]) == b"# Recovered Survey\n"
+
+
+@pytest.mark.asyncio
+async def test_recovery_overlay_writer_rejects_source_hash_change(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "00_outline.md").write_text("## Title\nRecovered", encoding="utf-8")
+    recovered = tmp_path / "recovered"
+    recovered.mkdir()
+    report_path = recovered / "08_survey.md"
+    index_path = recovered / "index.md"
+    report_path.write_text("# Recovered Survey\n", encoding="utf-8")
+    index_path.write_text("# Index\n", encoding="utf-8")
+    fake = _FakeS3()
+    store = SurveyArtifactStore(bucket="survey-test", client=fake)
+    archive = await store.archive_run(
+        user_id=42,
+        job_id=uuid4(),
+        run_root=source,
+        run_metadata={"outcome": "failed"},
+    )
+
+    with pytest.raises(SurveyArtifactError, match="source checksum"):
+        await store.create_recovery_overlay(
+            source_manifest_key=archive.manifest_key,
+            expected_source_sha256="0" * 64,
+            report_path=report_path,
+            index_path=index_path,
+        )
 
 
 @pytest.mark.asyncio

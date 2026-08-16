@@ -340,6 +340,20 @@ least three image calls fail with no success in a six-hour window. Any finalizer
 failure alerts immediately because it means paid research completed without a
 deliverable report.
 
+Run the fixed provider canary from a one-off task cloned from the Survey task
+definition; it bypasses model completion and never prints its prompt, key, or
+response body:
+
+```bash
+scholight survey image-canary --json-output
+```
+
+The output contains only `error_code`, HTTP status, retryability, elapsed time,
+and the provider's sanitized code. Use `ImageGenApiUrl` only for a reviewed
+gateway override. If successful URL responses use another public HTTPS host,
+add its exact hostname to `ImageGenTrustedHosts`; private addresses, redirects,
+MIME/signature mismatches, and files above 20 MiB remain rejected.
+
 Survey artifact readers accept both the original manifest v1 and the additive
 manifest v2 recovery overlay. A v2 manifest must live below the same
 owner-scoped job prefix, reference the exact v1 manifest and its SHA-256, and
@@ -373,24 +387,29 @@ command is dry-run by default:
 scholight survey recover-archived <job-uuid> --json-output
 ```
 
-Record the reported `report_sha256`, review the zero-error result, then apply
-the same immutable archive guard:
+Record the reported `source_manifest_sha256`, `report_sha256`, recovery type,
+and expected manifest, review the zero-error result, then apply both immutable
+archive guards:
 
 ```bash
 scholight survey recover-archived <job-uuid> \
   --apply \
+  --expected-source-manifest-sha256 <dry-run-source-manifest-sha256> \
   --expected-report-sha256 <dry-run-report-sha256> \
   --json-output
 ```
 
-Recovery accepts only a finished failed job and aggregate whose error is
-`survey_contract_violation`, whose owner-scoped manifest prefix matches the
-database, and whose bounded Markdown/JSON/image inputs match every manifest
-size and checksum. It reruns deterministic finalization and requires the final
-report and index hashes to remain identical to the immutable archive. The
-database update locks the quota ledger, Survey, job, drafts, and notification in
-the canonical order; a running notification aborts the operation. Repeating an
-already applied recovery is safe and does not consume quota or resend mail.
+Recovery accepts a finished `survey_contract_violation` only when deterministic
+finalization reproduces the exact archived report and index hashes. A missing
+report finalization failure additionally requires complete validated card and
+section plans; its newly assembled `08_survey.md` and `index.md` are written as
+an append-only manifest v2 overlay referencing the exact v1 source hash. The
+database update validates the original manifest, status, error, ownership, and
+replacement prefix while locking the quota ledger, Survey, job, drafts, and
+notification in canonical order. It then switches the manifest pointer,
+consumes quota once, and resets the completion notification to a zero-attempt
+success delivery. A running notification aborts the operation; repeating an
+already applied recovery neither consumes quota nor resends mail.
 
 - A failed image build produces no deployable manifest.
 - A failed database task leaves production application images unchanged.

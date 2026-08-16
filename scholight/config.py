@@ -159,6 +159,11 @@ class Settings(BaseSettings):
     survey_title_api_url: str = "https://api.deepseek.com/chat/completions"
     survey_title_timeout_seconds: float = Field(default=15.0, ge=1.0, le=60.0)
     image_gen_api_key: str = Field(default="", validation_alias="IMAGE_GEN_API_KEY")
+    image_gen_api_url: str = Field(default="", validation_alias="IMAGE_GEN_API_URL")
+    image_gen_trusted_hosts: str = Field(
+        default="",
+        validation_alias="IMAGE_GEN_TRUSTED_HOSTS",
+    )
     survey_mcp_jwt_secret: str = ""
     survey_mcp_url: str = "http://api:8000/mcp"
     survey_s3_bucket: str = ""

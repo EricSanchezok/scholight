@@ -8,7 +8,7 @@ import jwt
 import pytest
 
 from scholight.config import settings
-from scholight.survey.runtime import delegated_authorization
+from scholight.survey.runtime import delegated_authorization, image_canary_environment
 
 
 def test_survey_delegation_carries_job_correlation_without_provider_secrets(
@@ -49,3 +49,21 @@ def test_draft_delegation_omits_survey_job_correlation(
     )
 
     assert "survey_job_id" not in claims
+
+
+def test_image_canary_environment_excludes_model_and_database_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "image_gen_api_key", "image-secret")
+    monkeypatch.setattr(settings, "image_gen_api_url", "https://gateway.example/v1/images")
+    monkeypatch.setattr(settings, "image_gen_trusted_hosts", "images.example")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "must-not-pass")
+    monkeypatch.setenv("SCHOLIGHT_PG_PASSWORD", "must-not-pass")
+
+    environment = image_canary_environment()
+
+    assert environment["IMAGE_GEN_API_KEY"] == "image-secret"
+    assert environment["IMAGE_GEN_API_URL"] == "https://gateway.example/v1/images"
+    assert environment["IMAGE_GEN_TRUSTED_HOSTS"] == "images.example"
+    assert "DEEPSEEK_API_KEY" not in environment
+    assert "SCHOLIGHT_PG_PASSWORD" not in environment

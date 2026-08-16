@@ -12,7 +12,9 @@ import pytest
 
 from scholight.db.queries_survey import (
     SurveyQuotaExceededError,
+    SurveyStateError,
     create_survey,
+    recover_archived_survey_contract_failure,
     settle_survey_execution,
 )
 from scholight.db.queries_survey_views import SurveyQuotaSnapshot, get_survey_quota_snapshot
@@ -274,3 +276,20 @@ async def test_failed_execution_releases_reservation_without_creating_another_su
     assert job.terminal_outcome == "failed"
     statements = [call.args[0] for call in connection.execute.await_args_list]
     assert all("INSERT INTO scholight.surveys" not in sql for sql in statements)
+
+
+@pytest.mark.asyncio
+async def test_archived_recovery_rejects_non_finalization_error_before_database_access() -> None:
+    with (
+        patch("scholight.db.queries_survey.get_pool") as get_pool,
+        pytest.raises(SurveyStateError) as error,
+    ):
+        await recover_archived_survey_contract_failure(
+            job_id=uuid4(),
+            expected_manifest_key="surveys/v1/42/job/manifest.json",
+            expected_error_code="survey_worker_lost",
+            replacement_manifest_key=None,
+        )
+
+    assert error.value.code == "survey_recovery_ineligible"
+    get_pool.assert_not_called()

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Any, Literal
@@ -20,6 +21,17 @@ from scholight.survey.contracts import (
 from scholight.survey.progress import EXECUTION_PROGRESS_STAGES, ExecutionProgressStage
 
 logger = structlog.get_logger(__name__)
+
+_RECOVERABLE_SURVEY_FINALIZATION_CODES = frozenset(
+    {
+        "survey_contract_violation",
+        "survey_report_missing",
+        "survey_outline_metadata_invalid",
+        "survey_section_contract_invalid",
+        "survey_reference_contract_invalid",
+        "survey_finalization_output_invalid",
+    }
+)
 
 SurveyStatus = Literal[
     "drafting", "queued", "running", "archiving", "succeeded", "failed", "cancelled"
@@ -1044,13 +1056,20 @@ async def recover_archived_survey_contract_failure(
     *,
     job_id: UUID,
     expected_manifest_key: str,
+    expected_error_code: str,
+    replacement_manifest_key: str | None,
 ) -> bool:
-    """Atomically reclassify one verified archived contract failure as succeeded.
+    """Atomically recover one verified archived finalization failure.
 
     Returns ``False`` when the exact recovery was already applied.  Artifact
     verification is deliberately performed before entering this short database
     transaction; the manifest key is rechecked here as the database-side guard.
     """
+    if expected_error_code not in _RECOVERABLE_SURVEY_FINALIZATION_CODES:
+        raise SurveyStateError(
+            "The archived Survey error is not recoverable.",
+            code="survey_recovery_ineligible",
+        )
     try:
         async with get_pool().acquire() as connection, connection.transaction():
             survey_id = await connection.fetchval(
@@ -1069,28 +1088,56 @@ async def recover_archived_survey_contract_failure(
                 )
             survey = locked.survey
             job = locked.job
-            if job["manifest_key"] != expected_manifest_key:
-                raise SurveyStateError(
-                    "The archived Survey manifest changed during recovery.",
-                    code="survey_recovery_manifest_changed",
-                )
+            expected_active_manifest = replacement_manifest_key or expected_manifest_key
             if (
                 survey["status"] == "succeeded"
                 and survey["quota_state"] == "consumed"
                 and job["status"] == "finished"
                 and job["terminal_outcome"] == "succeeded"
             ):
+                if job["manifest_key"] != expected_active_manifest:
+                    raise SurveyStateError(
+                        "The recovered Survey manifest does not match.",
+                        code="survey_recovery_manifest_changed",
+                    )
                 return False
+            if job["manifest_key"] != expected_manifest_key:
+                raise SurveyStateError(
+                    "The archived Survey manifest changed during recovery.",
+                    code="survey_recovery_manifest_changed",
+                )
+            storage_prefix = str(job["storage_prefix"] or "")
+            expected_storage_prefix = f"surveys/v1/{survey['user_id']}/{job_id}"
+            if (
+                storage_prefix != expected_storage_prefix
+                or expected_manifest_key != f"{storage_prefix}/manifest.json"
+            ):
+                raise SurveyStateError(
+                    "The archived Survey ownership prefix is invalid.",
+                    code="survey_recovery_manifest_changed",
+                )
+            if (
+                replacement_manifest_key is not None
+                and re.fullmatch(
+                    rf"{re.escape(storage_prefix)}/recoveries/[0-9a-f]{{64}}/manifest\.json",
+                    replacement_manifest_key,
+                )
+                is None
+            ):
+                raise SurveyStateError(
+                    "The recovered Survey manifest ownership is invalid.",
+                    code="survey_recovery_manifest_changed",
+                )
             if not (
                 survey["status"] == "failed"
                 and survey["quota_state"] == "released"
-                and survey["error_code"] == "survey_contract_violation"
+                and survey["error_code"] == expected_error_code
                 and job["status"] == "finished"
                 and job["terminal_outcome"] == "failed"
-                and job["error_code"] == "survey_contract_violation"
+                and job["error_code"] == expected_error_code
             ):
                 raise SurveyStateError(
-                    "The archived Survey is not an eligible contract failure.",
+                    "The archived Survey is not an eligible finalization failure.",
                     code="survey_recovery_ineligible",
                 )
 
@@ -1124,8 +1171,10 @@ async def recover_archived_survey_contract_failure(
             )
             await connection.execute(
                 "UPDATE scholight.survey_jobs SET terminal_outcome = 'succeeded', "
-                "error_code = NULL, error_message = NULL WHERE id = $1",
+                "error_code = NULL, error_message = NULL, "
+                "manifest_key = COALESCE($2, manifest_key) WHERE id = $1",
                 job_id,
+                replacement_manifest_key,
             )
             if notification is None:
                 await connection.execute(
@@ -1136,16 +1185,10 @@ async def recover_archived_survey_contract_failure(
                     "ON CONFLICT (survey_id) DO NOTHING",
                     survey_id,
                 )
-            elif notification["status"] == "succeeded":
-                await connection.execute(
-                    "UPDATE scholight.survey_email_notifications SET survey_outcome = 'succeeded' "
-                    "WHERE survey_id = $1",
-                    survey_id,
-                )
             else:
                 await connection.execute(
                     "UPDATE scholight.survey_email_notifications SET survey_outcome = 'succeeded', "
-                    "status = 'pending', next_attempt_at = now(), lease_owner = NULL, "
+                    "status = 'pending', attempts = 0, next_attempt_at = now(), lease_owner = NULL, "
                     "lease_expires_at = NULL, last_error = NULL, finished_at = NULL "
                     "WHERE survey_id = $1",
                     survey_id,
@@ -1154,7 +1197,8 @@ async def recover_archived_survey_contract_failure(
                 "survey_archived_contract_failure_recovered",
                 job_id=str(job_id),
                 survey_id=str(survey_id),
-                manifest_key=expected_manifest_key,
+                source_manifest_key=expected_manifest_key,
+                manifest_key=expected_active_manifest,
             )
             return True
     except SurveyStateError:

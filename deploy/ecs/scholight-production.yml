@@ -42,6 +42,16 @@ Parameters:
     Type: String
     Default: "off"
     AllowedValues: ["off", "all"]
+  ImageGenApiUrl:
+    Type: String
+    Default: ""
+    AllowedPattern: "^$|^https://[A-Za-z0-9._~:/?#@!$&'()*+,;=%-]+$"
+    Description: Optional reviewed image gateway override; empty uses the pinned RCM default
+  ImageGenTrustedHosts:
+    Type: String
+    Default: ""
+    AllowedPattern: "^$|^[A-Za-z0-9.-]+(,[A-Za-z0-9.-]+)*$"
+    Description: Exact comma-separated HTTPS image result hosts beyond the gateway host
   SchedulerState:
     Type: String
     Default: DISABLED
@@ -688,6 +698,8 @@ Resources:
             - { Name: SCHOLIGHT_SURVEY_PROVIDER_MAX_ATTEMPTS, Value: "3" }
             - { Name: SCHOLIGHT_SURVEY_PROVIDER_RETRY_BASE_SECONDS, Value: "2" }
             - { Name: SCHOLIGHT_SURVEY_PROVIDER_RETRY_MAX_SECONDS, Value: "30" }
+            - { Name: IMAGE_GEN_API_URL, Value: !Ref ImageGenApiUrl }
+            - { Name: IMAGE_GEN_TRUSTED_HOSTS, Value: !Ref ImageGenTrustedHosts }
             - { Name: SCHOLIGHT_PG_POOL_MIN_SIZE, Value: "1" }
             - { Name: SCHOLIGHT_PG_POOL_MAX_SIZE, Value: "2" }
             - { Name: SCHOLIGHT_SURVEY_S3_BUCKET, Value: !ImportValue sanchezcloud-scholight-artifact-bucket-name }
@@ -1594,7 +1606,7 @@ Resources:
             {"type":"metric","x":12,"y":24,"width":12,"height":6,"properties":{"title":"PostgreSQL capacity","region":"${AWS::Region}","metrics":[["AWS/RDS","DatabaseConnections","DBInstanceIdentifier","${DatabaseInstanceIdentifier}"],[".","CPUUtilization",".","."],[".","FreeableMemory",".",".",{"yAxis":"right"}]]}},
             {"type":"metric","x":0,"y":30,"width":12,"height":6,"properties":{"title":"Full Survey compute","region":"${AWS::Region}","metrics":[["AWS/ECS","CPUUtilization","ServiceName","${SurveyFullServiceName}","ClusterName","${ClusterName}"],[".","MemoryUtilization",".",".",".","."]]}},
             {"type":"metric","x":12,"y":30,"width":12,"height":6,"properties":{"title":"Full Survey storage","region":"${AWS::Region}","metrics":[["ECS/ContainerInsights","EphemeralStorageUtilized","ClusterName","${ClusterName}","ServiceName","${SurveyFullServiceName}"],[".","EphemeralStorageReserved",".",".",".","."]]}},
-            {"type":"metric","x":0,"y":36,"width":24,"height":6,"properties":{"title":"Survey finalization and image generation","region":"${AWS::Region}","metrics":[["Scholight/Production","SurveyFinalizationFailure","service","survey-worker"],[".","SurveyImageGenerationCount","service","survey-full-worker","outcome","succeeded"],[".","SurveyImageGenerationCount",".",".",".","failed"]]}},
+            {"type":"metric","x":0,"y":36,"width":24,"height":6,"properties":{"title":"Survey finalization and image generation","region":"${AWS::Region}","metrics":[["Scholight/Production","SurveyFinalizationFailure","service","survey-worker"],[".","SurveyImageGenerationCount","service","survey-full-worker","outcome","succeeded"],[".","SurveyImageGenerationCount",".",".",".","failed"],[".","SurveyImageCanaryCount","service","survey-image-canary","outcome","ok"],[".","SurveyImageCanaryCount",".",".",".","failed"]]}},
             {"type":"log","x":0,"y":42,"width":24,"height":6,"properties":{"title":"Recent errors","region":"${AWS::Region}","query":"SOURCE '/sanchezcloud/scholight/api' | fields @timestamp, level, event, request_id | filter level in ['error','critical'] | sort @timestamp desc | limit 50"}}
           ]}
         - ApiServiceName: !GetAtt ApiService.Name
