@@ -41,6 +41,9 @@ Workflow:
 6. If run_dir/00_sections.json already exists, read and reuse it. Otherwise write
    run_dir/00_sections.json before spawning, using the same ordered sections and
    schema/section.md. This JSON file is the durable record of the expansion plan.
+   In every `card_ids` list, copy the exact canonical `id` values from
+   `00_card_plan.json`. Preserve legacy slashes such as `math/0208020`; never use
+   artifact filenames or stems such as `math-0208020`.
 7. List run_dir/sections. Exclude section files that already exist as non-empty
    Markdown files, then call spawn_SectionExpander(items=[...], max_parallel=10)
    for the remaining entries. Each item must include:

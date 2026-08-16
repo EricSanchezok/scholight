@@ -17,7 +17,10 @@ recovery. Each element:
 - `slug`: short kebab id, e.g. `"feedback-alignment"`.
 - `title`: the section heading.
 - `thesis`: one-line claim the section argues (its part of the through-line).
-- `card_ids`: arXiv ids (present in `run_dir/cards/`) the section draws on.
+- `card_ids`: exact canonical arXiv `id` values copied from
+  `run_dir/00_card_plan.json` for the cards the section draws on. Preserve legacy
+  slash ids such as `math/0208020`; do not substitute artifact stems such as
+  `math-0208020`.
 - `transfer_angle`: a one-line cross-domain / anchor-transfer idea to weave in
   (may be empty).
 

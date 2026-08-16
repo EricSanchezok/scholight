@@ -411,6 +411,44 @@ class SurveyDiagnostics:
             severity=severity,
         )
 
+    def _reconcile_resolved_anomalies(self) -> None:
+        """Drop provisional artifact alarms that the final filesystem state disproves."""
+        retained: list[dict[str, str]] = []
+        resolved: list[dict[str, str]] = []
+        for anomaly in self._anomalies:
+            expected_artifact = anomaly["expected_artifact"]
+            kind = anomaly["kind"]
+            artifact_now_valid = (
+                kind == "required_artifact_missing"
+                and "#" not in expected_artifact
+                and _valid_artifact(self.run_root, expected_artifact)
+            )
+            plan_now_valid = (
+                kind == "plan_artifact_invalid"
+                and expected_artifact in _DURABLE_PLANS
+                and self.read_durable_plan(expected_artifact) is not None
+            )
+            if artifact_now_valid or plan_now_valid:
+                resolved.append(anomaly)
+            else:
+                retained.append(anomaly)
+        if not resolved:
+            return
+        self._anomalies = retained
+        self._anomaly_keys = {
+            (anomaly["component"], anomaly["expected_artifact"], anomaly["kind"])
+            for anomaly in retained
+        }
+        for anomaly in resolved:
+            self.record("contract.anomaly_resolved", **anomaly)
+            logger.info(
+                "survey_contract_anomaly_resolved",
+                job_id=str(self.job_id),
+                component=anomaly["component"],
+                expected_artifact=anomaly["expected_artifact"],
+                kind=anomaly["kind"],
+            )
+
     def component_finished(self, component: str, *, status: str) -> None:
         """Record completion and observe its declared outputs without changing control flow."""
         self.record("component.finished", component=component, status=status)
@@ -486,6 +524,26 @@ class SurveyDiagnostics:
         if not isinstance(payload, list) or len(payload) > item_limit:
             return None
 
+        legacy_card_aliases: dict[str, str] = {}
+        if relative_path == "00_sections.json":
+            card_plan = self.read_durable_plan(
+                "00_card_plan.json",
+                accept_archived_run_dir=accept_archived_run_dir,
+            )
+            alias_candidates: dict[str, set[str]] = {}
+            for card in card_plan or []:
+                card_id = card.get("id")
+                if not isinstance(card_id, str):
+                    continue
+                artifact_stem = arxiv_artifact_stem(card_id)
+                if artifact_stem is not None and artifact_stem != card_id:
+                    alias_candidates.setdefault(artifact_stem, set()).add(card_id)
+            legacy_card_aliases = {
+                alias: next(iter(card_ids))
+                for alias, card_ids in alias_candidates.items()
+                if len(card_ids) == 1
+            }
+
         validated: list[dict[str, object]] = []
         outputs: set[str] = set()
         for raw_item in payload:
@@ -528,9 +586,20 @@ class SurveyDiagnostics:
                     )
                     or not isinstance(raw_item.get("transfer_angle"), str)
                     or not isinstance(card_ids, list)
-                    or not all(_card_artifact_path(card_id) is not None for card_id in card_ids)
                 ):
                     return None
+                normalized_card_ids: list[str] = []
+                for card_id in card_ids:
+                    if isinstance(card_id, str) and _card_artifact_path(card_id) is not None:
+                        normalized_card_ids.append(card_id)
+                        continue
+                    canonical_id = (
+                        legacy_card_aliases.get(card_id) if isinstance(card_id, str) else None
+                    )
+                    if canonical_id is None:
+                        return None
+                    normalized_card_ids.append(canonical_id)
+                raw_item = {**raw_item, "card_ids": normalized_card_ids}
                 output = f"sections/{number}_{slug}.md"
             if output in outputs:
                 return None
@@ -761,6 +830,7 @@ class SurveyDiagnostics:
     def finalize_contract_audit(self) -> None:
         """Take a final diagnostic snapshot after the existing workflow has stopped."""
         self.observe_artifacts()
+        self._reconcile_resolved_anomalies()
         for relative_path, (component, _spawn_tool) in _DURABLE_PLANS.items():
             if _valid_artifact(self.run_root, relative_path) and not self._register_durable_plan(
                 relative_path
