@@ -128,6 +128,7 @@ def test_image_canary_reports_verified_success(
 
     assert payload["status"] == "ok"
     assert payload["size"] == len(b"verified-image")
+    assert payload["provider_reason"] is None
 
 
 def test_image_canary_exposes_only_sanitized_gateway_reason(
@@ -141,7 +142,8 @@ def test_image_canary_exposes_only_sanitized_gateway_reason(
         stdout="",
         stderr=(
             "Error: image_gen_error code=image_request_rejected retryable=false "
-            "http_status=400 provider_code=unsupported_parameter sensitive-body"
+            "http_status=400 provider_code=unsupported_parameter "
+            "provider_reason=invalid_jwt sensitive-body"
         ),
     )
     with (
@@ -156,6 +158,7 @@ def test_image_canary_exposes_only_sanitized_gateway_reason(
     assert payload["http_status"] == 400
     assert payload["retryable"] is False
     assert payload["provider_code"] == "unsupported_parameter"
+    assert payload["provider_reason"] == "invalid_jwt"
     assert "sensitive-body" not in result.output
 
 
@@ -177,6 +180,7 @@ def test_image_canary_timeout_is_a_structured_failure(
     payload = json.loads(result.output)
     assert payload["error_code"] == "image_canary_timeout"
     assert payload["retryable"] is True
+    assert payload["provider_reason"] is None
     emit.assert_called_once()
 
 

@@ -36,7 +36,8 @@ from scholight.survey.workflow_audit import workflow_audit_payload
 
 _DIAGNOSTIC_JSON_MAX_BYTES = 2 * 1024 * 1024
 _IMAGE_CANARY_FIELD = re.compile(
-    r"\b(code|http_status|retryable|provider_code)=([A-Za-z0-9_.-]{1,128})\b"
+    r"\b(code|http_status|retryable|provider_code|provider_reason)="
+    r"([A-Za-z0-9_.-]{1,128})\b"
 )
 
 
@@ -102,6 +103,7 @@ def _run_image_canary() -> dict[str, object]:
                 "http_status": None,
                 "retryable": True,
                 "provider_code": "timeout",
+                "provider_reason": None,
                 "duration_ms": duration_ms,
                 "size": None,
             }
@@ -125,6 +127,7 @@ def _run_image_canary() -> dict[str, object]:
                     "http_status": None,
                     "retryable": False,
                     "provider_code": "invalid_success_result",
+                    "provider_reason": None,
                     "duration_ms": duration_ms,
                     "size": None,
                 }
@@ -136,6 +139,7 @@ def _run_image_canary() -> dict[str, object]:
                     "http_status": None,
                     "retryable": None,
                     "provider_code": None,
+                    "provider_reason": None,
                     "duration_ms": duration_ms,
                     "size": size,
                 }
@@ -150,6 +154,7 @@ def _run_image_canary() -> dict[str, object]:
                 ),
                 "retryable": (fields["retryable"] == "true" if "retryable" in fields else None),
                 "provider_code": fields.get("provider_code"),
+                "provider_reason": fields.get("provider_reason"),
                 "duration_ms": duration_ms,
                 "size": None,
             }
@@ -607,6 +612,7 @@ def image_canary(json_output: bool) -> None:
         click.echo(f"HTTP status: {payload['http_status'] or 'none'}")
         click.echo(f"Retryable: {payload['retryable']}")
         click.echo(f"Provider code: {payload['provider_code'] or 'none'}")
+        click.echo(f"Provider reason: {payload['provider_reason'] or 'none'}")
         click.echo(f"Duration: {payload['duration_ms']} ms")
     if payload["status"] != "ok":
         raise click.exceptions.Exit(1)

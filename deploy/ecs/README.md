@@ -349,15 +349,22 @@ scholight survey image-canary --json-output
 ```
 
 The output contains only `error_code`, HTTP status, retryability, elapsed time,
-and the provider's sanitized code. Use `ImageGenApiUrl` only for a reviewed
-gateway override. If successful URL responses use another public HTTPS host,
-add its exact hostname to `ImageGenTrustedHosts`; private addresses, redirects,
-MIME/signature mismatches, and files above 20 MiB remain rejected.
+and the provider's sanitized code/reason classification. Raw response text is
+never returned. Use `ImageGenApiUrl` only for a reviewed gateway override. If
+successful URL responses use another public HTTPS host, add its exact hostname
+to `ImageGenTrustedHosts`; private addresses, redirects, MIME/signature
+mismatches, and files above 20 MiB remain rejected.
 Listing the configured image model through a general `/v1/models` endpoint is
 not an image authorization check: an image canary that returns HTTP 401 or 403
 blocks the release until the provider grants image-generation access to the
 configured credential. A successful, signature-validated canary is required
 before deploying a new RCM pin to production.
+
+The 2026-08-16 production canary returned HTTP 401 with the sanitized reason
+`invalid_jwt`; the gateway's image route rejected the configured non-JWT key
+before generation even though the same key could list `gpt-image-2`. Replace it
+with a credential issued for that route, or have the provider align image-route
+authentication. Do not treat model listing as resolution of this incident.
 
 Survey artifact readers accept both the original manifest v1 and the additive
 manifest v2 recovery overlay. A v2 manifest must live below the same
