@@ -37,6 +37,7 @@ def _s3_client(endpoint_url: str | None) -> Any:
         "s3",
         endpoint_url=endpoint_url,
         config=Config(
+            signature_version="s3v4",
             connect_timeout=3,
             read_timeout=30,
             retries={"max_attempts": 3, "mode": "standard"},
