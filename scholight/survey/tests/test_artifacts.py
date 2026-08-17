@@ -13,6 +13,7 @@ from uuid import uuid4
 import pytest
 from botocore.exceptions import ClientError
 
+from scholight.survey import artifacts as artifacts_module
 from scholight.survey.artifacts import SurveyArtifactError, SurveyArtifactStore
 
 
@@ -72,6 +73,24 @@ class _FakeS3:
             "Contents": [{"Key": key} for key in sorted(self.objects) if key.startswith(prefix)],
             "IsTruncated": False,
         }
+
+
+def test_s3_client_enforces_signature_v4(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+    expected_client = object()
+
+    def fake_client(service_name: str, **kwargs: Any) -> object:
+        captured["service_name"] = service_name
+        captured.update(kwargs)
+        return expected_client
+
+    monkeypatch.setattr("scholight.survey.artifacts.boto3.client", fake_client)
+
+    client = artifacts_module._s3_client(None)
+
+    assert client is expected_client
+    assert captured["service_name"] == "s3"
+    assert captured["config"].signature_version == "s3v4"
 
 
 def _install_manifest_v2_overlay(
