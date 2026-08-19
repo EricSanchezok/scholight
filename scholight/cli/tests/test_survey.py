@@ -191,6 +191,9 @@ def test_model_canary_reports_protocol_success_without_model_text() -> None:
         args=["accelerate", "run"],
         returncode=0,
         stdout=(
+            '{"type":"completion_end","outcome":"success","duration_ms":12}\n'
+            '{"type":"tool_call","tool":"fs"}\n'
+            '{"type":"tool_result","tool":"fs"}\n'
             '{"type":"appended","preview":"private model text"}\n'
             '{"type":"completion_end","outcome":"success","duration_ms":12}\n'
         ),
@@ -205,6 +208,42 @@ def test_model_canary_reports_protocol_success_without_model_text() -> None:
     assert payload["status"] == "ok"
     assert payload["error_code"] is None
     assert "private" not in json.dumps(payload)
+
+
+@pytest.mark.parametrize(
+    ("stdout", "returncode"),
+    [
+        (
+            '{"type":"completion_end","outcome":"success"}\n'
+            '{"type":"completion_end","outcome":"success"}\n',
+            0,
+        ),
+        (
+            '{"type":"completion_end","outcome":"success"}\n'
+            '{"type":"tool_call","tool":"fs"}\n'
+            '{"type":"completion_end","outcome":"success"}\n',
+            0,
+        ),
+    ],
+)
+def test_model_canary_rejects_runs_without_a_complete_tool_roundtrip(
+    stdout: str,
+    returncode: int,
+) -> None:
+    completed = subprocess.CompletedProcess(
+        args=["accelerate", "run"],
+        returncode=returncode,
+        stdout=stdout,
+        stderr="",
+    )
+    with (
+        patch("scholight.cli.survey.subprocess.run", return_value=completed),
+        patch("scholight.cli.survey.emit_emf"),
+    ):
+        payload = _run_model_canary()
+
+    assert payload["status"] == "failed"
+    assert payload["error_code"] == "model_canary_tool_roundtrip_missing"
 
 
 def test_model_canary_exposes_only_structured_provider_failure() -> None:
