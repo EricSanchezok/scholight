@@ -186,21 +186,35 @@ def test_image_canary_timeout_is_a_structured_failure(
     emit.assert_called_once()
 
 
-def test_model_canary_reports_protocol_success_without_model_text() -> None:
+def test_model_canary_reports_mixed_tool_protocol_success_without_model_text(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "data_root", str(tmp_path))
+
+    def run_canary(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        cwd = Path(str(kwargs["cwd"]))
+        assert (cwd / "model-canary-input.txt").read_text(encoding="utf-8") == "CANARY INPUT\n"
+        (cwd / "model-canary-output.txt").write_text("CANARY COMPLETE\n", encoding="utf-8")
+        return completed
+
     completed = subprocess.CompletedProcess(
         args=["accelerate", "run"],
         returncode=0,
         stdout=(
-            '{"type":"completion_end","outcome":"success","duration_ms":12}\n'
+            '{"type":"completion_end","outcome":"success","fragments":1,"duration_ms":12}\n'
             '{"type":"tool_call","tool":"fs"}\n'
             '{"type":"tool_result","tool":"fs"}\n'
             '{"type":"appended","preview":"private model text"}\n'
-            '{"type":"completion_end","outcome":"success","duration_ms":12}\n'
+            '{"type":"completion_end","outcome":"success","fragments":2,"duration_ms":12}\n'
+            '{"type":"tool_call","tool":"fs"}\n'
+            '{"type":"tool_result","tool":"fs"}\n'
+            '{"type":"completion_end","outcome":"success","fragments":1,"duration_ms":12}\n'
         ),
         stderr="private provider response",
     )
     with (
-        patch("scholight.cli.survey.subprocess.run", return_value=completed),
+        patch("scholight.cli.survey.subprocess.run", side_effect=run_canary),
         patch("scholight.cli.survey.emit_emf"),
     ):
         payload = _run_model_canary()
@@ -211,28 +225,36 @@ def test_model_canary_reports_protocol_success_without_model_text() -> None:
 
 
 @pytest.mark.parametrize(
-    ("stdout", "returncode"),
+    ("stdout", "expected_error"),
     [
         (
             '{"type":"completion_end","outcome":"success"}\n'
+            '{"type":"completion_end","outcome":"success","fragments":2}\n'
             '{"type":"completion_end","outcome":"success"}\n',
-            0,
+            "model_canary_tool_roundtrip_missing",
         ),
         (
-            '{"type":"completion_end","outcome":"success"}\n'
+            '{"type":"completion_end","outcome":"success","fragments":1}\n'
             '{"type":"tool_call","tool":"fs"}\n'
-            '{"type":"completion_end","outcome":"success"}\n',
-            0,
+            '{"type":"tool_result","tool":"fs"}\n'
+            '{"type":"completion_end","outcome":"success","fragments":1}\n'
+            '{"type":"tool_call","tool":"fs"}\n'
+            '{"type":"tool_result","tool":"fs"}\n'
+            '{"type":"completion_end","outcome":"success","fragments":1}\n',
+            "model_canary_mixed_tool_turn_missing",
         ),
     ],
 )
-def test_model_canary_rejects_runs_without_a_complete_tool_roundtrip(
+def test_model_canary_rejects_incomplete_mixed_tool_protocol(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
     stdout: str,
-    returncode: int,
+    expected_error: str,
 ) -> None:
+    monkeypatch.setattr(settings, "data_root", str(tmp_path))
     completed = subprocess.CompletedProcess(
         args=["accelerate", "run"],
-        returncode=returncode,
+        returncode=0,
         stdout=stdout,
         stderr="",
     )
@@ -243,7 +265,7 @@ def test_model_canary_rejects_runs_without_a_complete_tool_roundtrip(
         payload = _run_model_canary()
 
     assert payload["status"] == "failed"
-    assert payload["error_code"] == "model_canary_tool_roundtrip_missing"
+    assert payload["error_code"] == expected_error
 
 
 def test_model_canary_exposes_only_structured_provider_failure() -> None:

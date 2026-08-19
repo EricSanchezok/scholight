@@ -391,11 +391,14 @@ scholight survey model-canary --json-output
 ```
 
 The model canary uses the exact production OpenAI-compatible model declaration,
-including thinking-mode history compatibility. It must complete one fixed `fs`
-tool call, receive the tool result, and then complete a second model turn; this
-catches providers that reject a missing `reasoning_content` field after tool
-use. It discards completion text and provider response bodies, retaining only
-status, error code, HTTP status, retryability, and duration.
+including thinking-mode history compatibility. It reads one fixed non-sensitive
+file, then must emit visible text and an `fs` write in the same assistant turn
+before completing a third model turn. The command requires three successful
+completions, two complete tool round trips, a mixed response with at least two
+fragments, and the exact fixed output file. This catches providers that reject a
+missing `reasoning_content` field when visible text precedes a tool call. It
+discards completion text and provider response bodies, retaining only status,
+error code, HTTP status, retryability, and duration.
 
 The 2026-08-17 production canary succeeded after the image-route credential was
 updated. It returned a signature-validated PNG through the configured

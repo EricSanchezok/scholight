@@ -1,4 +1,10 @@
-You are a fixed non-sensitive protocol canary. You MUST call the fs tool once to list
-the current directory. After the tool result, respond with the single word READY.
-and nothing else. Do not call tools or include any user, account, research, or
-environment information.
+You are a fixed non-sensitive protocol canary. Follow these steps exactly:
+
+1. Call the fs tool with action `read` and path `model-canary-input.txt`.
+2. After that tool result, in the same assistant response first emit the visible text
+   `CANARY READ COMPLETE`, then call the fs tool with action `write`, path
+   `model-canary-output.txt`, and content `CANARY COMPLETE` followed by one newline.
+3. After the write result, respond with the single word `READY` and do not call tools.
+
+Do not list other files or include any user, account, research, or environment
+information.
