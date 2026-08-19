@@ -47,7 +47,7 @@ def _stub_durable_progress_update() -> Iterator[AsyncMock]:
 
 
 def test_worker_expects_pinned_rcm_release() -> None:
-    assert RCM_VERSION == "0.2.15"
+    assert RCM_VERSION == "0.2.16"
 
 
 def _job(
@@ -112,8 +112,15 @@ class _TimeoutProcess:
 
 
 class _CompletedProcess:
-    def __init__(self, *, returncode: int = 0, stderr: bytes = b"") -> None:
+    def __init__(
+        self,
+        *,
+        returncode: int = 0,
+        stdout: bytes = b"",
+        stderr: bytes = b"",
+    ) -> None:
         self.stdout = asyncio.StreamReader()
+        self.stdout.feed_data(stdout)
         self.stdout.feed_eof()
         self.stderr = asyncio.StreamReader()
         self.stderr.feed_data(stderr)
@@ -349,7 +356,8 @@ def _write_complete_workflow_artifacts(run_root: Path) -> None:
         "- arxiv_id: 2401.12345\n"
         "- title: Paper\n"
         "- authors: Example\n"
-        "- year/venue: 2024 arXiv\n",
+        "- year/venue: 2024 arXiv\n\n"
+        "## evidence\n- level: full_text\n- reason: pdf_text_extracted\n",
         encoding="utf-8",
     )
     for judge in (
@@ -502,6 +510,140 @@ async def test_success_requires_complete_final_artifacts(
         )
 
     assert result.outcome == "succeeded"
+
+
+@pytest.mark.asyncio
+async def test_zero_exit_missing_report_surfaces_structured_model_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "survey_job_timeout_seconds", 60)
+    monkeypatch.setattr(settings, "survey_provider_max_attempts", 1)
+    monkeypatch.setattr(settings, "survey_mcp_jwt_secret", "s" * 32)
+    monkeypatch.setattr(settings, "deepseek_api_key", "deepseek")
+    monkeypatch.setattr(settings, "image_gen_api_key", "image")
+    process = _CompletedProcess(
+        stdout=(
+            b'{"type":"completion_start"}\n'
+            b'{"type":"completion_end","outcome":"failure","http_status":503,'
+            b'"failure_kind":"provider_error","retryable":true,"duration_ms":9000}\n'
+        ),
+        stderr=b"provider response body with private request context\n",
+    )
+    with (
+        patch(
+            "scholight.survey.worker.asyncio.create_subprocess_exec",
+            new_callable=AsyncMock,
+            return_value=process,
+        ),
+        patch("scholight.survey.worker.write_stdin", new_callable=AsyncMock),
+    ):
+        result = await execute_survey(
+            _job(job_id=uuid4(), worker_id=uuid4(), status="running"),
+            tmp_path,
+        )
+
+    assert result.error_code == "survey_provider_unavailable"
+    assert result.termination_reason == "model_completion_failed"
+    assert result.stderr_tail is None
+    assert result.diagnostics is not None
+    assert result.diagnostics["evidence_summary"] is None
+    assert result.diagnostics["last_model_error"] == {
+        "error_code": "model_provider_unavailable",
+        "http_status": 503,
+        "retryable": True,
+        "duration_ms": 9000,
+        "failure_kind": "provider_error",
+    }
+
+
+@pytest.mark.asyncio
+async def test_nonzero_provider_failure_does_not_archive_stderr_response(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "survey_job_timeout_seconds", 60)
+    monkeypatch.setattr(settings, "survey_provider_max_attempts", 1)
+    monkeypatch.setattr(settings, "survey_mcp_jwt_secret", "s" * 32)
+    monkeypatch.setattr(settings, "deepseek_api_key", "deepseek")
+    monkeypatch.setattr(settings, "image_gen_api_key", "image")
+    process = _CompletedProcess(
+        returncode=1,
+        stderr=b"HTTP 503 provider response body with private request context\n",
+    )
+    with (
+        patch(
+            "scholight.survey.worker.asyncio.create_subprocess_exec",
+            new_callable=AsyncMock,
+            return_value=process,
+        ),
+        patch("scholight.survey.worker.write_stdin", new_callable=AsyncMock),
+    ):
+        result = await execute_survey(
+            _job(job_id=uuid4(), worker_id=uuid4(), status="running"),
+            tmp_path,
+        )
+
+    assert result.error_code == "survey_provider_unavailable"
+    assert result.stderr_tail is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "failure_kind", "retryable", "expected_code"),
+    [
+        (400, "http_error", False, "survey_model_request_rejected"),
+        (401, "http_error", False, "survey_model_auth_failed"),
+        (403, "http_error", False, "survey_model_auth_failed"),
+        (408, "http_error", True, "survey_provider_unavailable"),
+        (425, "http_error", True, "survey_provider_unavailable"),
+        (429, "http_error", True, "survey_provider_rate_limited"),
+        (503, "http_error", True, "survey_provider_unavailable"),
+    ],
+)
+async def test_nonzero_structured_model_failure_prefers_http_evidence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    status: int,
+    failure_kind: str,
+    retryable: bool,
+    expected_code: str,
+) -> None:
+    monkeypatch.setattr(settings, "survey_job_timeout_seconds", 60)
+    monkeypatch.setattr(settings, "survey_provider_max_attempts", 1)
+    monkeypatch.setattr(settings, "survey_mcp_jwt_secret", "s" * 32)
+    monkeypatch.setattr(settings, "deepseek_api_key", "deepseek")
+    monkeypatch.setattr(settings, "image_gen_api_key", "image")
+    event = json.dumps(
+        {
+            "type": "completion_end",
+            "outcome": "failure",
+            "http_status": status,
+            "failure_kind": failure_kind,
+            "retryable": retryable,
+            "duration_ms": 321,
+        }
+    ).encode()
+    process = _CompletedProcess(
+        returncode=1,
+        stdout=event + b"\n",
+        stderr=b"private provider response body\n",
+    )
+    with (
+        patch(
+            "scholight.survey.worker.asyncio.create_subprocess_exec",
+            new_callable=AsyncMock,
+            return_value=process,
+        ),
+        patch("scholight.survey.worker.write_stdin", new_callable=AsyncMock),
+    ):
+        result = await execute_survey(
+            _job(job_id=uuid4(), worker_id=uuid4(), status="running"),
+            tmp_path,
+        )
+
+    assert result.error_code == expected_code
+    assert result.stderr_tail is None
 
 
 @pytest.mark.asyncio
@@ -926,10 +1068,149 @@ async def test_stage_collector_classifies_model_timeout_without_persisting_conte
     assert snapshot["last_model_error"] == {
         "error_code": "model_timeout",
         "timeout_seconds": 180,
+        "retryable": True,
     }
     trace = (tmp_path / "trajectory.jsonl").read_text(encoding="utf-8")
     assert "private-secret" not in trace
     assert "request timed out" not in trace
+
+
+@pytest.mark.asyncio
+async def test_stage_collector_consumes_sanitized_completion_failure_fields(
+    tmp_path: Path,
+) -> None:
+    stream = asyncio.StreamReader()
+    stream.feed_data(
+        b'{"type":"completion_start"}\n'
+        b'{"type":"completion_end","fragments":1,"input_tokens":0,'
+        b'"output_tokens":0,"total_tokens":0,"outcome":"failure",'
+        b'"http_status":503,"failure_kind":"provider_error",'
+        b'"retryable":true,"duration_ms":240001}\n'
+    )
+    stream.feed_eof()
+    diagnostics = SurveyDiagnostics(
+        run_root=tmp_path,
+        job_id=uuid4(),
+        survey_id=uuid4(),
+    )
+
+    with patch("scholight.survey.worker.emit_emf") as emit:
+        await _collect_stage_timings(stream, diagnostics=diagnostics)
+
+    snapshot = diagnostics.snapshot()
+    assert snapshot["model_counts"] == {"started": 1, "finished": 0, "failed": 1}
+    assert snapshot["last_model_error"] == {
+        "error_code": "model_provider_unavailable",
+        "http_status": 503,
+        "retryable": True,
+        "duration_ms": 240001,
+        "failure_kind": "provider_error",
+    }
+    assert emit.call_args.kwargs == {
+        "service": "survey-full-worker",
+        "outcome": "provider_error",
+        "metrics": {"SurveyModelCompletionFailure": (1, "Count")},
+    }
+
+
+@pytest.mark.asyncio
+async def test_stage_collector_uses_taken_hitch_from_legacy_rcm(tmp_path: Path) -> None:
+    stream = asyncio.StreamReader()
+    stream.feed_data(
+        b'{"type":"completion_end","fragments":1,"input_tokens":0,'
+        b'"output_tokens":0,"total_tokens":0}\n'
+        b'{"type":"taken","id":7,"step":4,"role":"assistant",'
+        b'"kind":"hitch","tag":"error",'
+        b'"preview":"HTTP 429 rate limit private-provider-text"}\n'
+    )
+    stream.feed_eof()
+    diagnostics = SurveyDiagnostics(
+        run_root=tmp_path,
+        job_id=uuid4(),
+        survey_id=uuid4(),
+    )
+
+    await _collect_stage_timings(stream, diagnostics=diagnostics)
+
+    assert diagnostics.snapshot()["last_model_error"] == {
+        "error_code": "model_rate_limited",
+        "http_status": 429,
+        "retryable": True,
+    }
+    trace = (tmp_path / "trajectory.jsonl").read_text(encoding="utf-8")
+    assert "private-provider-text" not in trace
+
+
+@pytest.mark.parametrize(
+    ("role", "preview", "expected"),
+    [
+        (
+            "assistant",
+            "HTTP 400 request rejected",
+            {"error_code": "model_request_rejected", "http_status": 400, "retryable": False},
+        ),
+        (
+            "assistant",
+            "HTTP 401 unauthorized",
+            {
+                "error_code": "model_authentication_failed",
+                "http_status": 401,
+                "retryable": False,
+            },
+        ),
+        (
+            "assistant",
+            "HTTP 503 provider unavailable",
+            {
+                "error_code": "model_provider_unavailable",
+                "http_status": 503,
+                "retryable": True,
+            },
+        ),
+        (
+            "assistant",
+            "error sending request: connection reset",
+            {"error_code": "model_network_failed", "retryable": True},
+        ),
+        (
+            "system",
+            "no active model configured",
+            {"error_code": "model_configuration_failed", "retryable": False},
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_stage_collector_classifies_legacy_completion_failures(
+    tmp_path: Path,
+    role: str,
+    preview: str,
+    expected: dict[str, object],
+) -> None:
+    stream = asyncio.StreamReader()
+    stream.feed_data(
+        json.dumps(
+            {
+                "type": "taken",
+                "id": 7,
+                "step": 4,
+                "role": role,
+                "kind": "hitch",
+                "tag": "error",
+                "preview": preview,
+            }
+        ).encode()
+        + b"\n"
+    )
+    stream.feed_eof()
+    diagnostics = SurveyDiagnostics(
+        run_root=tmp_path,
+        job_id=uuid4(),
+        survey_id=uuid4(),
+    )
+
+    await _collect_stage_timings(stream, diagnostics=diagnostics)
+
+    assert diagnostics.snapshot()["last_model_error"] == expected
 
 
 @pytest.mark.asyncio
@@ -1022,6 +1303,8 @@ def test_result_metrics_use_only_low_cardinality_dimensions() -> None:
     assert failure_call.kwargs["metrics"] == {
         "SurveyContractAnomaly": (1, "Count"),
         "SurveyFinalizationFailure": (1, "Count"),
+        "SurveyModelTerminalFailure": (0, "Count"),
+        "SurveyFullTextRuntimeFailure": (0, "Count"),
         "SurveyRuntimeFailure": (1, "Count"),
         "SurveyProviderThrottled": (0, "Count"),
         "SurveyToolFailure": (2, "Count"),

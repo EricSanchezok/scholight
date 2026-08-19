@@ -16,7 +16,9 @@ from scholight.cli.survey import (
     _diagnostic_projection,
     _installed_rcm_version,
     _run_image_canary,
+    _run_model_canary,
     _verify_diagnostic_workspace,
+    _verify_full_text_runtime,
     _verify_survey_runtime_schema,
     survey_group,
 )
@@ -28,13 +30,13 @@ def test_installed_rcm_version_accepts_reviewed_binary() -> None:
     completed = subprocess.CompletedProcess(
         args=["/usr/local/bin/accelerate", "--version"],
         returncode=0,
-        stdout="accelerate 0.2.15\n",
+        stdout="accelerate 0.2.16\n",
         stderr="",
     )
     with patch("scholight.cli.survey.subprocess.run", return_value=completed):
         version = _installed_rcm_version()
 
-    assert version == "0.2.15"
+    assert version == "0.2.16"
 
 
 def test_installed_rcm_version_rejects_unreviewed_binary() -> None:
@@ -184,6 +186,51 @@ def test_image_canary_timeout_is_a_structured_failure(
     emit.assert_called_once()
 
 
+def test_model_canary_reports_protocol_success_without_model_text() -> None:
+    completed = subprocess.CompletedProcess(
+        args=["accelerate", "run"],
+        returncode=0,
+        stdout=(
+            '{"type":"appended","preview":"private model text"}\n'
+            '{"type":"completion_end","outcome":"success","duration_ms":12}\n'
+        ),
+        stderr="private provider response",
+    )
+    with (
+        patch("scholight.cli.survey.subprocess.run", return_value=completed),
+        patch("scholight.cli.survey.emit_emf"),
+    ):
+        payload = _run_model_canary()
+
+    assert payload["status"] == "ok"
+    assert payload["error_code"] is None
+    assert "private" not in json.dumps(payload)
+
+
+def test_model_canary_exposes_only_structured_provider_failure() -> None:
+    completed = subprocess.CompletedProcess(
+        args=["accelerate", "run"],
+        returncode=1,
+        stdout=(
+            '{"type":"completion_end","outcome":"failure","http_status":503,'
+            '"failure_kind":"provider_error","retryable":true,"duration_ms":120000}\n'
+        ),
+        stderr="private provider response body and key",
+    )
+    with (
+        patch("scholight.cli.survey.subprocess.run", return_value=completed),
+        patch("scholight.cli.survey.emit_emf"),
+    ):
+        result = CliRunner().invoke(survey_group, ["model-canary", "--json-output"])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.output)
+    assert payload["error_code"] == "model_provider_unavailable"
+    assert payload["http_status"] == 503
+    assert payload["retryable"] is True
+    assert "private" not in result.output
+
+
 def test_diagnose_reads_active_workspace_without_database(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -258,6 +305,118 @@ def test_smoke_diagnostic_workspace_probe_cleans_up(tmp_path: Path) -> None:
     _verify_diagnostic_workspace(tmp_path)
 
     assert list(tmp_path.iterdir()) == []
+
+
+def test_full_text_runtime_requires_accelerate_and_pdftotext() -> None:
+    with (
+        patch(
+            "scholight.cli.survey.shutil.which",
+            side_effect=lambda command: f"/usr/bin/{command}" if command == "accelerate" else None,
+        ),
+        pytest.raises(RuntimeError, match="pdftotext"),
+    ):
+        _verify_full_text_runtime()
+
+
+def test_fulltext_canary_emits_only_status_and_character_count(tmp_path: Path) -> None:
+    response = AsyncMock()
+    response.content = b"%PDF-1.4 fixed public fixture"
+    response.raise_for_status = lambda: None
+
+    def _extract(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        del kwargs
+        Path(args[-1]).write_text("evidence " * 2_000, encoding="utf-8")
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+
+    with (
+        patch.object(settings, "data_root", str(tmp_path)),
+        patch("scholight.cli.survey.httpx.get", return_value=response),
+        patch(
+            "scholight.cli.survey._verify_full_text_runtime",
+            return_value="/usr/bin/pdftotext",
+        ),
+        patch("scholight.cli.survey.subprocess.run", side_effect=_extract),
+        patch("scholight.cli.survey.emit_emf") as emit,
+    ):
+        result = CliRunner().invoke(survey_group, ["fulltext-canary", "--json-output"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["status"] == "ok"
+    assert payload["characters"] >= 10_000
+    assert set(payload) == {
+        "characters",
+        "duration_ms",
+        "error_code",
+        "schema_version",
+        "status",
+    }
+    assert "evidence" not in result.output
+    emit.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    ("body", "extract_side_effect", "expected_error"),
+    [
+        (b"not a pdf", None, "fulltext_canary_pdf_invalid"),
+        (
+            b"%PDF-1.4 fixed public fixture",
+            subprocess.TimeoutExpired(["pdftotext"], 60),
+            "fulltext_canary_extraction_timeout",
+        ),
+    ],
+)
+def test_fulltext_canary_classifies_invalid_pdf_and_extraction_timeout(
+    tmp_path: Path,
+    body: bytes,
+    extract_side_effect: BaseException | None,
+    expected_error: str,
+) -> None:
+    response = AsyncMock()
+    response.content = body
+    response.raise_for_status = lambda: None
+    with (
+        patch.object(settings, "data_root", str(tmp_path)),
+        patch("scholight.cli.survey.httpx.get", return_value=response),
+        patch(
+            "scholight.cli.survey._verify_full_text_runtime",
+            return_value="/usr/bin/pdftotext",
+        ),
+        patch("scholight.cli.survey.subprocess.run", side_effect=extract_side_effect),
+        patch("scholight.cli.survey.emit_emf"),
+    ):
+        result = CliRunner().invoke(survey_group, ["fulltext-canary", "--json-output"])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.output)
+    assert payload["error_code"] == expected_error
+    assert payload["characters"] is None
+
+
+def test_fulltext_canary_rejects_empty_extracted_text(tmp_path: Path) -> None:
+    response = AsyncMock()
+    response.content = b"%PDF-1.4 fixed public fixture"
+    response.raise_for_status = lambda: None
+
+    def _empty_extract(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        del kwargs
+        Path(args[-1]).write_text("", encoding="utf-8")
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+
+    with (
+        patch.object(settings, "data_root", str(tmp_path)),
+        patch("scholight.cli.survey.httpx.get", return_value=response),
+        patch(
+            "scholight.cli.survey._verify_full_text_runtime",
+            return_value="/usr/bin/pdftotext",
+        ),
+        patch("scholight.cli.survey.subprocess.run", side_effect=_empty_extract),
+        patch("scholight.cli.survey.emit_emf"),
+    ):
+        result = CliRunner().invoke(survey_group, ["fulltext-canary", "--json-output"])
+
+    assert result.exit_code == 1
+    assert json.loads(result.output)["error_code"] == "fulltext_canary_text_too_short"
 
 
 def _runtime_schema_query() -> str:

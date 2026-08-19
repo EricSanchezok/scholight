@@ -24,16 +24,30 @@ remain `cs/0012009`.
   the anchor's direction? how, and what would block it?* This is the payoff of
   reading the full text through the anchor lens. If there is no clear transfer,
   say so in one line.
-- `evidence`: `html` | `full_text` | `partial` | `abstract_only` — be honest about
+- `evidence`: declare both `level` and a stable `reason`. `level` is
+  `html` | `full_text` | `partial` | `abstract_only` — be honest about
   how much of the body you actually read and parsed. `html` means the arXiv HTML
   rendering was used (best structure, some formula residue); `full_text` means PDF
   text extraction was used (no structure, possible column-order issues); `partial`
   means only part of the paper was read.
 
+Use this exact shape:
+
+```markdown
+## evidence
+- level: full_text
+- reason: pdf_text_extracted
+```
+
+Allowed reasons are `html_text_extracted`, `pdf_text_extracted`,
+`pdf_text_truncated`, `scanned_pdf`, `pdf_download_failed`, `pdf_text_empty`,
+and `pdf_extraction_failed`.
+
 ## Rules
 
 - Ground every claim in the paper. Never fabricate numbers, methods, or results.
 - If neither the HTML nor the PDF could be read, set `evidence: abstract_only`
-  and say so under `results` — do not pretend to have read the body.
+  with the applicable stable reason — do not pretend to have read the body and
+  do not expose system dependency details in reader-facing prose.
 - Keep it compact (≈ a long abstract plus the transfer note), not a reproduction
   of the paper.

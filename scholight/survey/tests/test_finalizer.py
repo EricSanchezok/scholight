@@ -52,7 +52,34 @@ def test_finalizer_preserves_sections_and_deduplicates_references(tmp_path: Path
     assert result.section_count == 2
     assert result.reference_count == 1
     assert result.unverified_reference_count == 0
+    assert result.evidence_coverage_percent == 100.0
+    assert report.count("## Evidence coverage") == 1
+    assert "Full or partial text was reviewed for 1 of 1 cited sources." in report
     assert result.index_path.read_text(encoding="utf-8").count("08_survey.md") == 1
+
+
+@pytest.mark.parametrize("location", ["abstract", "section"])
+def test_finalizer_rejects_internal_runtime_details_from_reader_text(
+    tmp_path: Path,
+    location: str,
+) -> None:
+    _write_run(tmp_path)
+    if location == "abstract":
+        (tmp_path / "00_outline.md").write_text(
+            "# Survey Outline\n\n# Title\n\nA Reliable Survey\n\n"
+            "# Abstract\n\nThe environment is missing pdftotext.\n",
+            encoding="utf-8",
+        )
+    else:
+        (tmp_path / "sections" / "01_introduction.md").write_text(
+            "## Introduction\n\nRun metadata says pdftotext was unavailable [2501.12345].\n",
+            encoding="utf-8",
+        )
+
+    with pytest.raises(SurveyFinalizationError) as captured:
+        finalize_survey(tmp_path)
+
+    assert captured.value.code == "survey_report_internal_metadata_leaked"
 
 
 def test_finalizer_accepts_title_and_abstract_below_document_heading(
@@ -251,7 +278,8 @@ def test_finalizer_marks_missing_cited_card_as_unverified(tmp_path: Path) -> Non
     report = result.report_path.read_text(encoding="utf-8")
     assert result.reference_count == 2
     assert result.unverified_reference_count == 1
-    assert "PaperCard metadata was unavailable" in report
+    assert "Bibliographic details could not be verified" in report
+    assert "PaperCard" not in report
     assert "arXiv:2606.19544" in report
 
 
@@ -271,7 +299,8 @@ def test_finalizer_marks_incomplete_cited_card_as_unverified(tmp_path: Path) -> 
     report = result.report_path.read_text(encoding="utf-8")
     assert result.reference_count == 2
     assert result.unverified_reference_count == 1
-    assert "PaperCard metadata was unavailable or incomplete" in report
+    assert "Bibliographic details could not be verified" in report
+    assert "PaperCard" not in report
     assert "arXiv:1904.06505" in report
 
 

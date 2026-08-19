@@ -300,6 +300,7 @@ class SurveyDiagnostics:
         self._model_counts = {"started": 0, "finished": 0, "failed": 0}
         self._last_model_error: dict[str, object] | None = None
         self._last_image_error: dict[str, object] | None = None
+        self._evidence_summary: dict[str, object] | None = None
         self._anomalies: list[dict[str, str]] = []
         self._anomaly_keys: set[tuple[str, str, str]] = set()
         self._observed_artifacts: dict[str, dict[str, object]] = {}
@@ -359,7 +360,14 @@ class SurveyDiagnostics:
             if status == "failed":
                 self._last_model_error = {
                     key: sanitized[key]
-                    for key in ("error_code", "timeout_seconds", "http_status")
+                    for key in (
+                        "error_code",
+                        "timeout_seconds",
+                        "http_status",
+                        "failure_kind",
+                        "retryable",
+                        "duration_ms",
+                    )
                     if key in sanitized
                 }
         if event_type == "tool.failed" and sanitized.get("tool") == "image_gen":
@@ -704,6 +712,23 @@ class SurveyDiagnostics:
         """Record completion metadata without retaining model input or output content."""
         self.record(f"model.{status}", status=status, **fields)
 
+    def evidence_summary(
+        self,
+        *,
+        card_count: int,
+        counts: dict[str, int],
+        reviewed_count: int,
+        coverage_percent: float,
+    ) -> None:
+        """Retain aggregate evidence coverage without paper content."""
+        self._evidence_summary = {
+            "card_count": card_count,
+            "counts": dict(counts),
+            "reviewed_count": reviewed_count,
+            "coverage_percent": coverage_percent,
+        }
+        self.record("evidence.audited", status="completed", **self._evidence_summary)
+
     def _write_checkpoint_best_effort(self) -> None:
         try:
             self._write_checkpoint()
@@ -930,6 +955,7 @@ class SurveyDiagnostics:
             "model_counts": dict(self._model_counts),
             "last_model_error": self._last_model_error,
             "last_image_error": self._last_image_error,
+            "evidence_summary": self._evidence_summary,
             "anomaly_count": len(self._anomalies),
             "first_anomaly": first_anomaly,
             "affected_components": affected_components,

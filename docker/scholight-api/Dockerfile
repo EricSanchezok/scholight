@@ -54,8 +54,8 @@ RUN uv pip install --no-deps /app
 
 FROM survey-python-builder AS survey-builder
 
-ARG RCM_VERSION=v0.2.15
-ARG RCM_LINUX_X86_64_SHA256=df436430359bed623ca4c8a9a7eb982a4470a50327a567b49f4ff71c56dc4e14
+ARG RCM_VERSION=v0.2.16
+ARG RCM_LINUX_X86_64_SHA256=cea74a709cab99450fe0ffff82045930acfda594d9fa9fec822731e628a353dc
 ARG TARGETARCH
 
 RUN test "${TARGETARCH}" = amd64 \
@@ -134,6 +134,11 @@ CMD ["scholight", "scheduler", "drain-ingest"]
 
 FROM runtime-base AS survey
 
+USER root
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends poppler-utils \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --from=survey-builder /app/.venv/ /app/.venv/
 COPY --from=survey-builder /app/migrations/ /app/migrations/
 COPY --from=survey-builder /app/bin/accelerate /usr/local/bin/accelerate
@@ -143,4 +148,5 @@ ENV PATH=/app/.venv/bin:${PATH}
 ENV SCHOLIGHT_DATA_ROOT=/data
 ENV SCHOLIGHT_PG_SSL_ROOT_CERT=/etc/ssl/certs/global-bundle.pem
 
+USER scholight
 CMD ["scholight", "survey", "serve-worker"]

@@ -42,7 +42,8 @@ def test_every_survey_model_allows_at_least_thirty_minutes() -> None:
     model_files = [
         path
         for path in sorted((_WORKFLOW / "rcm").glob("*.rcm"))
-        if re.search(r"(?m)^model\s+", path.read_text(encoding="utf-8"))
+        if not path.stem.endswith("_canary")
+        and re.search(r"(?m)^model\s+", path.read_text(encoding="utf-8"))
     ]
 
     assert model_files
@@ -52,6 +53,12 @@ def test_every_survey_model_allows_at_least_thirty_minutes() -> None:
         model_count = len(re.findall(r"(?m)^model\s+", source))
         assert len(timeouts) == model_count, f"{path.name} must set every model timeout"
         assert min(timeouts) >= 1_800, f"{path.name} model timeout is below 30 minutes"
+
+
+def test_model_canary_has_a_short_bounded_timeout() -> None:
+    source = (_WORKFLOW / "rcm" / "model_canary.rcm").read_text(encoding="utf-8")
+
+    assert re.findall(r'(?m)^\s*timeout\s*=\s*"(\d+)"', source) == ["120"]
 
 
 def test_draft_workflow_is_single_node_mcp_only() -> None:

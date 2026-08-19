@@ -25,6 +25,12 @@ the extraction engine or require Playwright, Chromium, or `markdownify`; CI
 builds the minimal API image on every pull request and verifies that boundary
 inside the resulting container.
 
+The `survey` image now installs `poppler-utils`. A Full Survey worker verifies
+both the pinned `accelerate` executable and `pdftotext` before it opens the
+database or claims work. A missing reader is therefore a startup failure, never
+an implicit downgrade to abstract-only research. The API and Extract targets
+remain free of this dependency; Ingest retains its separate PDF fallback reader.
+
 The Web service joins the shared Service Connect namespace as a client, while
 the API and Extract services publish the `api` and `extract` discovery names.
 Nginx therefore reaches `http://api:8000` through Service Connect without a
@@ -340,6 +346,14 @@ least three image calls fail with no success in a six-hour window. Any finalizer
 failure alerts immediately because it means paid research completed without a
 deliverable report.
 
+RCM completion failures are likewise content-free. RCM 0.2.16 emits only the
+completion outcome, HTTP status, stable failure kind, retryability, and elapsed
+time; Scholight also recognizes the legacy `taken` hitch shape during a rolling
+upgrade without archiving its text. Terminal model failures and full-text
+runtime failures have one-event alarms. The Dashboard shows their stable codes,
+full/partial/abstract evidence counts, and aggregate full-text coverage without
+paper, topic, user, or Survey dimensions.
+
 Run the fixed provider canary from a one-off task cloned from the Survey task
 definition; it bypasses model completion and never prints its prompt, key, or
 response body:
@@ -360,6 +374,26 @@ blocks the release until the provider grants image-generation access to the
 configured credential. A successful, signature-validated canary is required
 before deploying a new RCM pin to production.
 
+Run the fixed full-text canary from the same candidate Survey task. It downloads
+one fixed public PDF, verifies the PDF signature, executes `pdftotext`, and
+requires a minimum extracted character count:
+
+```bash
+scholight survey fulltext-canary --json-output
+```
+
+The result contains only status, a stable error code, duration, and character
+count; it never returns paper text. Both image and full-text canaries must pass,
+along with the fixed DeepSeek protocol canary, before the Survey image may be released:
+
+```bash
+scholight survey model-canary --json-output
+```
+
+The model canary uses the exact production OpenAI-compatible model declaration
+with a 64-token ceiling. It discards completion text and provider response bodies,
+retaining only status, error code, HTTP status, retryability, and duration.
+
 The 2026-08-17 production canary succeeded after the image-route credential was
 updated. It returned a signature-validated PNG through the configured
 `gpt-image-2` route. Continue to use the real canary, rather than model listing,
@@ -374,6 +408,22 @@ layers. This reader compatibility must be deployed and retained as the stable
 rollback release before any recovery command is allowed to write v2 manifests.
 
 ## Failure handling
+
+Paper cards must declare one evidence level and its matching stable reason:
+`html/html_text_extracted`, `full_text/pdf_text_extracted`,
+`partial/pdf_text_truncated`, or `abstract_only` with a genuine scan, download,
+empty-text, or extraction failure. PDF reads page through bounded output until
+EOF; hitting the extraction cap is `partial`, not `full_text`. Completion fails
+closed if every card is abstract-only, if the evidence declarations disagree,
+or if any card exposes missing-`pdftotext` infrastructure text. Reports expose
+one aggregate evidence-coverage paragraph and must not reproduce workflow,
+PaperCard, or runtime metadata in reader-facing prose.
+
+Model failures take precedence over a secondary missing-report symptom. HTTP
+429, 408, 425, 5xx, network, and timeout failures use the existing maximum of
+three clean-workspace attempts. Authentication, other 4xx responses,
+configuration faults, evidence-contract failures, and deterministic finalizer
+errors never replay the complete research graph.
 
 Runtime artifact repair never replays the complete research graph. A
 deterministic finalizer error is returned immediately with its stable code. For

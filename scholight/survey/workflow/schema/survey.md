@@ -70,7 +70,10 @@ expanded section.
 Final assembly is application-owned and deterministic. After the research workflow
 finishes, Scholight orders the completed section files, preserves their content, derives
 the reference list only from cited paper cards, and atomically writes `08_survey.md` and
-`index.md`. No model completion is allowed to own this mechanical delivery boundary.
+`index.md`. No model completion is allowed to own this mechanical delivery boundary. The
+application adds exactly one concise evidence-coverage summary before the references;
+sections and references must not expose `PaperCard`, `run metadata`, tool names, missing
+system packages, or other runtime implementation details.
 
 ## Evidence rules
 
@@ -81,3 +84,7 @@ the reference list only from cited paper cards, and atomically writes `08_survey
   evidence supports, and fold that limitation into the prose — do not pretend to
   coverage you do not have.
 - Do not invent citations, results, or papers absent from the artifacts.
+- A cited card counts as body-reviewed only when its evidence level is `html`,
+  `full_text`, or `partial` with the matching stable reason from the PaperCard
+  contract. Abstract-only evidence must remain explicit and must never be
+  described as full-text verification.

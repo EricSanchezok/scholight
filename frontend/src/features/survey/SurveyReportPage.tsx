@@ -1,11 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { surveyApi } from "../../api/domain";
 import { ApiError } from "../../api/errors";
 import { queryKeys } from "../../app/queryKeys";
-import { routes, withQuery } from "../../app/routes";
+import { routes, surveyDraftPath, withQuery } from "../../app/routes";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { SurveyDetailSkeleton } from "../../components/EditorialSkeleton";
 import { formatDurationBetween, formatFullDateTime } from "../../i18n/format";
@@ -20,6 +20,7 @@ export function SurveyReportPage() {
   const queryClient = useQueryClient();
   const { locale } = useI18n();
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const replacementId = useRef<string | undefined>(undefined);
   const survey = useQuery({
     queryKey: queryKeys.survey(surveyId),
     queryFn: () => surveyApi.get(surveyId),
@@ -52,6 +53,25 @@ export function SurveyReportPage() {
   const packageDownload = useMutation({
     mutationFn: () => surveyApi.downloadPackage(surveyId),
   });
+  const runAgain = useMutation({
+    mutationFn: () => {
+      const initialRequest = survey.data?.initial_request.trim();
+      if (!initialRequest) throw new Error("The original request is unavailable.");
+      replacementId.current ??= crypto.randomUUID();
+      return surveyApi.create({
+        initial_request: initialRequest,
+        client_request_id: replacementId.current,
+      });
+    },
+    onSuccess: (replacement) => {
+      replacementId.current = undefined;
+      void queryClient.invalidateQueries({ queryKey: queryKeys.surveyRoot });
+      navigate(surveyDraftPath(replacement.id));
+    },
+    onError: (error) => {
+      if (!(error instanceof ApiError) || !error.retryable) replacementId.current = undefined;
+    },
+  });
 
   useEffect(() => {
     if (survey.data)
@@ -63,28 +83,52 @@ export function SurveyReportPage() {
     const error = survey.error ?? report.error;
     const pending = error instanceof ApiError && error.code === "survey_archive_pending";
     return (
-      <main className={styles.surveyPage}>
-        <Link
-          className={styles.surveyBackLink}
-          to={withQuery(routes.survey.path, { view: "completed" })}
-        >
-          ← Back to completed reports
-        </Link>
-        <div className={styles.surveyErrorState} role="alert">
-          <h1>{pending ? "Saving report" : "Unable to open this report"}</h1>
-          <p>
-            {error instanceof ApiError ? error.message : "The report is temporarily unavailable."}
-          </p>
-          <button
-            type="button"
-            onClick={() =>
-              void Promise.all([survey.refetch(), report.refetch(), artifacts.refetch()])
-            }
+      <>
+        <main className={styles.surveyPage}>
+          <Link
+            className={styles.surveyBackLink}
+            to={withQuery(routes.survey.path, { view: "completed" })}
           >
-            Retry
-          </button>
-        </div>
-      </main>
+            ← Back to completed reports
+          </Link>
+          <div className={styles.surveyErrorState} role="alert">
+            <h1>{pending ? "Saving report" : "Unable to open this report"}</h1>
+            <p>
+              {error instanceof ApiError ? error.message : "The report is temporarily unavailable."}
+            </p>
+            <div className={styles.surveyErrorActions}>
+              <button
+                type="button"
+                onClick={() =>
+                  void Promise.all([survey.refetch(), report.refetch(), artifacts.refetch()])
+                }
+              >
+                Retry
+              </button>
+              {survey.data && (
+                <button
+                  className={styles.dangerButton}
+                  type="button"
+                  onClick={() => setDeleteOpen(true)}
+                >
+                  Delete
+                </button>
+              )}
+            </div>
+          </div>
+        </main>
+        <ConfirmDialog
+          open={deleteOpen}
+          title="Delete this report?"
+          description="This permanently removes the survey report and its archived research artifacts. This action cannot be undone."
+          busy={remove.isPending}
+          error={remove.error instanceof Error ? remove.error.message : undefined}
+          confirmLabel="Delete"
+          busyLabel="Deleting…"
+          onOpenChange={setDeleteOpen}
+          onConfirm={() => remove.mutate()}
+        />
+      </>
     );
   }
 
@@ -115,6 +159,14 @@ export function SurveyReportPage() {
       <div className={styles.surveyReportHeader}>
         <h1>{title}</h1>
         <div>
+          <button
+            className={styles.secondaryButton}
+            type="button"
+            disabled={runAgain.isPending}
+            onClick={() => runAgain.mutate()}
+          >
+            {runAgain.isPending ? "Preparing…" : "Run again"}
+          </button>
           <button
             className={styles.secondaryButton}
             type="button"
@@ -171,6 +223,13 @@ export function SurveyReportPage() {
               {packageDownload.error instanceof Error
                 ? packageDownload.error.message
                 : "The report package is temporarily unavailable."}
+            </p>
+          )}
+          {runAgain.error && (
+            <p className={styles.surveyInlineError} role="alert">
+              {runAgain.error instanceof Error
+                ? runAgain.error.message
+                : "Unable to prepare a new survey."}
             </p>
           )}
           {artifacts.error && <p>Embedded images are temporarily unavailable.</p>}

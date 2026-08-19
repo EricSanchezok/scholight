@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 import re
+import shutil
 
 # Only a fixed, image-owned executable is invoked below.
 import subprocess  # nosec B404
@@ -17,6 +18,7 @@ from typing import Any
 from uuid import UUID
 
 import click
+import httpx
 
 from scholight.config import (
     settings,
@@ -28,7 +30,7 @@ from scholight.db.queries_survey import get_survey_job_counts
 from scholight.db.queries_survey_cleanup import get_artifact_cleanup_status
 from scholight.db.queries_survey_notifications import get_email_notification_status
 from scholight.logging import configure_logging
-from scholight.logging.emf import emit_emf
+from scholight.logging.emf import MetricUnit, emit_emf
 from scholight.survey.process import classify_rcm_error
 from scholight.survey.runtime import image_canary_environment
 from scholight.survey.worker import RCM_VERSION, serve_survey_worker
@@ -39,6 +41,12 @@ _IMAGE_CANARY_FIELD = re.compile(
     r"\b(code|http_status|retryable|provider_code|provider_reason)="
     r"([A-Za-z0-9_.-]{1,128})\b"
 )
+_FULLTEXT_CANARY_URL = "https://arxiv.org/pdf/1706.03762"
+_FULLTEXT_CANARY_MAX_PDF_BYTES = 20 * 1024 * 1024
+_FULLTEXT_CANARY_MAX_TEXT_BYTES = 5 * 1024 * 1024
+_FULLTEXT_CANARY_MIN_CHARACTERS = 10_000
+_MODEL_CANARY_PURPOSE = "Return the single word READY. This is a non-sensitive protocol check."
+_MODEL_CANARY_TIMEOUT_SECONDS = 180
 
 
 def _echo_concurrency(concurrency: object) -> None:
@@ -68,6 +76,186 @@ def _installed_rcm_version() -> str:
     if version != RCM_VERSION:
         raise RuntimeError("Installed RCM version does not match the reviewed release")
     return version
+
+
+def _verify_full_text_runtime() -> str:
+    """Require both reviewed RCM and PDF extraction executables before claiming work."""
+    if shutil.which("accelerate") is None:
+        raise RuntimeError("Survey runtime executable accelerate is unavailable")
+    pdftotext = shutil.which("pdftotext")
+    if pdftotext is None:
+        raise RuntimeError("Survey full-text executable pdftotext is unavailable")
+    return pdftotext
+
+
+def _model_canary_workflow() -> Path:
+    return Path(__file__).parents[1] / "survey" / "workflow" / "rcm" / "model_canary.rcm"
+
+
+def _classify_model_canary_failure(event: dict[str, object]) -> tuple[str, bool]:
+    status = event.get("http_status")
+    http_status = status if isinstance(status, int) else None
+    kind = event.get("failure_kind")
+    failure_kind = kind if isinstance(kind, str) else "unknown"
+    if http_status == 429:
+        return "model_rate_limited", True
+    if (
+        http_status == 408
+        or http_status == 425
+        or (http_status is not None and 500 <= http_status <= 599)
+    ):
+        return "model_provider_unavailable", True
+    if http_status in {401, 403}:
+        return "model_authentication_failed", False
+    if http_status is not None and 400 <= http_status <= 499:
+        return "model_request_rejected", False
+    mapping = {
+        "rate_limited": ("model_rate_limited", True),
+        "timeout": ("model_provider_unavailable", True),
+        "provider_unavailable": ("model_provider_unavailable", True),
+        "provider_error": ("model_provider_unavailable", True),
+        "network": ("model_provider_unavailable", True),
+        "authentication": ("model_authentication_failed", False),
+        "invalid_request": ("model_request_rejected", False),
+        "configuration": ("model_configuration_failed", False),
+    }
+    return mapping.get(failure_kind, ("model_canary_failed", False))
+
+
+def _run_model_canary() -> dict[str, object]:
+    """Exercise the production completion protocol without retaining model text."""
+    started_at = time.perf_counter()
+    error_code: str | None = None
+    http_status: int | None = None
+    retryable = False
+    try:
+        completed = subprocess.run(  # nosec B603
+            [
+                "/usr/local/bin/accelerate",
+                "run",
+                str(_model_canary_workflow()),
+                "--stream",
+                "--purpose-stdin",
+            ],
+            input=_MODEL_CANARY_PURPOSE,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=_MODEL_CANARY_TIMEOUT_SECONDS,
+        )
+        completion: dict[str, object] | None = None
+        for line in completed.stdout.splitlines():
+            try:
+                candidate = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(candidate, dict) and candidate.get("type") == "completion_end":
+                completion = candidate
+        if completion is None:
+            error_code = "model_canary_invalid_result"
+        elif completion.get("outcome") != "success" or completed.returncode != 0:
+            error_code, retryable = _classify_model_canary_failure(completion)
+            status = completion.get("http_status")
+            http_status = status if isinstance(status, int) and 100 <= status <= 599 else None
+    except subprocess.TimeoutExpired:
+        error_code = "model_canary_timeout"
+        retryable = True
+    except OSError:
+        error_code = "model_canary_runtime_unavailable"
+    duration_ms = max(0, round((time.perf_counter() - started_at) * 1000))
+    canary_status = "ok" if error_code is None else "failed"
+    result: dict[str, object] = {
+        "schema_version": 1,
+        "status": canary_status,
+        "error_code": error_code,
+        "http_status": http_status,
+        "retryable": retryable,
+        "duration_ms": duration_ms,
+    }
+    emit_emf(
+        service="survey-model-canary",
+        outcome=canary_status,
+        metrics={"SurveyModelCanaryCount": (1, "Count")},
+    )
+    return result
+
+
+def _run_fulltext_canary() -> dict[str, object]:
+    """Verify a fixed public PDF download and extraction without returning its text."""
+    started_at = time.perf_counter()
+    characters: int | None = None
+    error_code: str | None = None
+    try:
+        pdftotext = _verify_full_text_runtime()
+        response = httpx.get(
+            _FULLTEXT_CANARY_URL,
+            follow_redirects=True,
+            timeout=httpx.Timeout(120),
+            headers={"User-Agent": "Scholight-FullText-Canary/1.0"},
+        )
+        response.raise_for_status()
+        body = response.content
+        if len(body) > _FULLTEXT_CANARY_MAX_PDF_BYTES:
+            error_code = "fulltext_canary_pdf_too_large"
+        elif not body.startswith(b"%PDF-"):
+            error_code = "fulltext_canary_pdf_invalid"
+        else:
+            with tempfile.TemporaryDirectory(
+                prefix=".survey-fulltext-canary-",
+                dir=settings.data_root,
+            ) as directory:
+                root = Path(directory)
+                pdf_path = root / "canary.pdf"
+                text_path = root / "canary.txt"
+                pdf_path.write_bytes(body)
+                try:
+                    completed = subprocess.run(  # nosec B603
+                        [pdftotext, "-q", str(pdf_path), str(text_path)],
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                        timeout=60,
+                    )
+                except subprocess.TimeoutExpired:
+                    completed = None
+                    error_code = "fulltext_canary_extraction_timeout"
+                if completed is not None and completed.returncode != 0:
+                    error_code = "fulltext_canary_extraction_failed"
+                elif completed is not None:
+                    try:
+                        if text_path.stat().st_size > _FULLTEXT_CANARY_MAX_TEXT_BYTES:
+                            error_code = "fulltext_canary_text_too_large"
+                        else:
+                            characters = len(text_path.read_text(encoding="utf-8").strip())
+                    except (OSError, UnicodeError):
+                        error_code = "fulltext_canary_text_invalid"
+                    if characters is not None and characters < _FULLTEXT_CANARY_MIN_CHARACTERS:
+                        error_code = "fulltext_canary_text_too_short"
+    except RuntimeError:
+        error_code = "fulltext_runtime_unavailable"
+    except httpx.HTTPStatusError as exc:
+        http_status = exc.response.status_code
+        error_code = (
+            "fulltext_canary_download_retryable"
+            if http_status == 429 or http_status >= 500
+            else "fulltext_canary_download_rejected"
+        )
+    except httpx.HTTPError:
+        error_code = "fulltext_canary_download_failed"
+    duration_ms = max(0, round((time.perf_counter() - started_at) * 1000))
+    canary_status = "ok" if error_code is None else "failed"
+    result: dict[str, object] = {
+        "schema_version": 1,
+        "status": canary_status,
+        "error_code": error_code,
+        "duration_ms": duration_ms,
+        "characters": characters if canary_status == "ok" else None,
+    }
+    metrics: dict[str, tuple[int | float, MetricUnit]] = {"SurveyFullTextCanaryCount": (1, "Count")}
+    if characters is not None:
+        metrics["SurveyFullTextCanaryCharacters"] = (characters, "Count")
+    emit_emf(service="survey-fulltext-canary", outcome=canary_status, metrics=metrics)
+    return result
 
 
 def _run_image_canary() -> dict[str, object]:
@@ -208,6 +396,11 @@ def serve_worker() -> None:
         validate_survey_worker_settings()
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc
+    try:
+        _installed_rcm_version()
+        _verify_full_text_runtime()
+    except (OSError, subprocess.SubprocessError, RuntimeError) as exc:
+        raise click.ClickException("Survey full-text runtime checks did not pass") from exc
 
     async def _run() -> None:
         await create_pool()
@@ -618,6 +811,43 @@ def image_canary(json_output: bool) -> None:
         raise click.exceptions.Exit(1)
 
 
+@survey_group.command("model-canary")
+@click.option("--json-output", "json_output", is_flag=True, help="Emit machine-readable JSON.")
+def model_canary(json_output: bool) -> None:
+    """Run one fixed DeepSeek protocol completion and emit bounded diagnostics."""
+    configure_logging()
+    payload = _run_model_canary()
+    if json_output:
+        click.echo(json.dumps(payload, separators=(",", ":"), sort_keys=True))
+    else:
+        click.echo(f"Model canary: {payload['status']}")
+        click.echo(f"Error code: {payload['error_code'] or 'none'}")
+        click.echo(f"HTTP status: {payload['http_status'] or 'none'}")
+        click.echo(f"Duration: {payload['duration_ms']} ms")
+    if payload["status"] != "ok":
+        raise click.exceptions.Exit(1)
+
+
+@survey_group.command("fulltext-canary")
+@click.option("--json-output", "json_output", is_flag=True, help="Emit machine-readable JSON.")
+def fulltext_canary(json_output: bool) -> None:
+    """Extract text from one fixed public PDF and report bounded diagnostics."""
+    configure_logging()
+    try:
+        payload = _run_fulltext_canary()
+    except (OSError, subprocess.SubprocessError, RuntimeError) as exc:
+        raise click.ClickException("Full-text canary could not be executed") from exc
+    if json_output:
+        click.echo(json.dumps(payload, separators=(",", ":"), sort_keys=True))
+    else:
+        click.echo(f"Full-text canary: {payload['status']}")
+        click.echo(f"Error code: {payload['error_code'] or 'none'}")
+        click.echo(f"Duration: {payload['duration_ms']} ms")
+        click.echo(f"Characters: {payload['characters'] or 'none'}")
+    if payload["status"] != "ok":
+        raise click.exceptions.Exit(1)
+
+
 @survey_group.command("smoke")
 @click.option("--json-output", "json_output", is_flag=True, help="Emit machine-readable JSON.")
 def smoke(json_output: bool) -> None:
@@ -632,6 +862,7 @@ def smoke(json_output: bool) -> None:
         from scholight.survey.artifacts import SurveyArtifactStore
 
         installed_rcm_version = await asyncio.to_thread(_installed_rcm_version)
+        pdftotext = await asyncio.to_thread(_verify_full_text_runtime)
         await asyncio.to_thread(_verify_diagnostic_workspace, Path(settings.data_root))
         await create_pool()
         try:
@@ -647,6 +878,7 @@ def smoke(json_output: bool) -> None:
             return {
                 "ok": True,
                 "rcm_version": installed_rcm_version,
+                "full_text_runtime": Path(pdftotext).name,
                 "runtime_schema": "compatible",
                 "cleanup_dead": cleanup.dead,
                 "diagnostics_writable": True,

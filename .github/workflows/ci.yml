@@ -253,7 +253,6 @@ jobs:
           load: true
           tags: scholight-ingest:ci
       - name: Build Survey image
-        if: github.event_name != 'pull_request'
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
@@ -269,7 +268,7 @@ jobs:
           context: .
           file: docker/scholight-extract/Dockerfile
           push: false
-      - name: Verify component image boundaries
+      - name: Verify Ingest image boundary
         if: github.event_name != 'pull_request'
         run: |
           docker run --rm --user 0 --entrypoint /bin/sh scholight-ingest:ci -ec '
@@ -283,15 +282,22 @@ jobs:
             pdftotext /tmp/fallback.pdf /tmp/fallback.txt
             grep -F "Scholight PDF fallback" /tmp/fallback.txt >/dev/null
           '
-          docker run --rm --user 0 --entrypoint /bin/sh scholight-survey:ci -ec '
+      - name: Verify Survey full-text image boundary
+        run: |
+          docker run --rm --user 0 \
+            -v "$PWD/tests/fixtures:/tmp/scholight-fixtures:ro" \
+            --entrypoint /bin/sh scholight-survey:ci -ec '
             test ! -e /opt/scholight-package
             scholight survey --help >/dev/null
             python -c "from scholight.db.client import create_pool; from scholight.logging import configure_logging; from scholight.survey.email_notifications import AliyunSurveyEmailSender"
             test -x /usr/local/bin/accelerate
-            /usr/local/bin/accelerate --help >/dev/null
+            test "$(/usr/local/bin/accelerate --version)" = "accelerate 0.2.16"
             ! command -v uvicorn >/dev/null
             ! command -v pandoc >/dev/null
-            ! command -v pdftotext >/dev/null
+            command -v pdftotext >/dev/null
+            /app/.venv/bin/python /tmp/scholight-fixtures/create_text_pdf.py /tmp/survey.pdf
+            pdftotext /tmp/survey.pdf /tmp/survey.txt
+            grep -F "Scholight full text runtime" /tmp/survey.txt >/dev/null
           '
       - name: Run hermetic Survey E2E
         if: github.event_name != 'pull_request'
