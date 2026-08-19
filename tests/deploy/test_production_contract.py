@@ -545,13 +545,14 @@ def test_survey_image_pins_verified_rcm_release() -> None:
     worker = (ROOT / "scholight/survey/worker.py").read_text(encoding="utf-8")
     workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
 
-    assert "ARG RCM_VERSION=v0.2.17" in dockerfile
-    assert 'RCM_VERSION = "0.2.17"' in worker
-    assert "415108bfe189d8be81bf91378b65a735d3d953a16c1c69d06dff422fe05e8dc7" in dockerfile
+    assert "ARG RCM_VERSION=v0.2.18" in dockerfile
+    assert 'RCM_VERSION = "0.2.18"' in worker
+    assert "dd36c00b11262f4196ba40cc8ba13cee1fe6e258d4a765529fafea1e800a7d37" in dockerfile
     assert "sha256sum --check" in dockerfile
     assert "COPY --from=survey-builder /app/bin/accelerate /usr/local/bin/accelerate" in dockerfile
     assert "/releases/latest/" not in dockerfile
     assert "test -x /usr/local/bin/accelerate" in workflow
+    assert '"accelerate 0.2.18"' in workflow
 
 
 def test_pull_request_ci_builds_and_executes_survey_fulltext_image() -> None:
