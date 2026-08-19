@@ -47,7 +47,7 @@ def _stub_durable_progress_update() -> Iterator[AsyncMock]:
 
 
 def test_worker_expects_pinned_rcm_release() -> None:
-    assert RCM_VERSION == "0.2.18"
+    assert RCM_VERSION == "0.2.19"
 
 
 def _job(
