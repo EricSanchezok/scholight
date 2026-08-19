@@ -686,6 +686,99 @@ async def test_report_streams_manifest_authorized_markdown_for_owner(
     )
 
 
+async def test_report_accepts_sha256_recovery_overlay_for_owner(
+    api_app: FastAPI,
+    api_client: httpx.AsyncClient,
+    active_user: UserRecord,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _authenticate(api_app, active_user)
+    monkeypatch.setattr(settings, "survey_runtime_enabled", True)
+    monkeypatch.setattr(settings, "survey_public_mode", "all")
+    survey_id = uuid4()
+    job_id = uuid4()
+    storage_prefix = f"surveys/v1/{active_user.id}/{job_id}"
+    overlay = f"{storage_prefix}/recoveries/{'a' * 64}/manifest.json"
+    reference = SurveyArtifactReference(
+        survey_id=survey_id,
+        user_id=active_user.id,
+        job_id=job_id,
+        survey_status="succeeded",
+        job_status="finished",
+        terminal_outcome="succeeded",
+        storage_bucket="private-bucket",
+        storage_prefix=storage_prefix,
+        manifest_key=overlay,
+    )
+    stream = SurveyArtifactStream(
+        path="run/08_survey.md",
+        size=8,
+        sha256="b" * 64,
+        content_type="text/markdown",
+        _body=io.BytesIO(b"# Report"),
+    )
+    store = AsyncMock()
+    store.open_artifact.return_value = stream
+    with (
+        patch(
+            "scholight.api.routes.survey.get_survey_artifact_reference",
+            new_callable=AsyncMock,
+            return_value=reference,
+        ),
+        patch("scholight.api.routes.survey._artifact_store", return_value=store),
+    ):
+        response = await api_client.get(f"/surveys/{survey_id}/report")
+
+    assert response.status_code == 200
+    store.open_artifact.assert_awaited_once_with(
+        manifest_key=overlay,
+        path="run/08_survey.md",
+    )
+
+
+@pytest.mark.parametrize(
+    "suffix",
+    [
+        "recoveries/not-a-sha/manifest.json",
+        f"recoveries/{'a' * 63}/manifest.json",
+        f"recoveries/{'A' * 64}/manifest.json",
+        f"recoveries/{'a' * 64}/../manifest.json",
+    ],
+)
+async def test_report_rejects_malformed_recovery_overlay_path(
+    api_app: FastAPI,
+    api_client: httpx.AsyncClient,
+    active_user: UserRecord,
+    monkeypatch: pytest.MonkeyPatch,
+    suffix: str,
+) -> None:
+    _authenticate(api_app, active_user)
+    monkeypatch.setattr(settings, "survey_runtime_enabled", True)
+    monkeypatch.setattr(settings, "survey_public_mode", "all")
+    survey_id = uuid4()
+    job_id = uuid4()
+    storage_prefix = f"surveys/v1/{active_user.id}/{job_id}"
+    reference = SurveyArtifactReference(
+        survey_id=survey_id,
+        user_id=active_user.id,
+        job_id=job_id,
+        survey_status="succeeded",
+        job_status="finished",
+        terminal_outcome="succeeded",
+        storage_bucket="private-bucket",
+        storage_prefix=storage_prefix,
+        manifest_key=f"{storage_prefix}/{suffix}",
+    )
+    with patch(
+        "scholight.api.routes.survey.get_survey_artifact_reference",
+        new_callable=AsyncMock,
+        return_value=reference,
+    ):
+        response = await api_client.get(f"/surveys/{survey_id}/report")
+
+    assert response.status_code == 503
+
+
 async def test_report_download_streams_owner_scoped_zip_package(
     api_app: FastAPI,
     api_client: httpx.AsyncClient,

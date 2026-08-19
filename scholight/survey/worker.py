@@ -41,6 +41,11 @@ from scholight.survey.cleanup_worker import serve_artifact_cleanup
 from scholight.survey.contracts import SurveyLeaseLostError
 from scholight.survey.diagnostics import SurveyDiagnostics
 from scholight.survey.email_notifications import AliyunSurveyEmailSender
+from scholight.survey.evidence import (
+    SurveyEvidenceAuditError,
+    SurveyEvidenceSummary,
+    audit_survey_evidence,
+)
 from scholight.survey.finalizer import SurveyFinalizationError, finalize_survey
 from scholight.survey.metrics import is_provider_throttled
 from scholight.survey.notification_worker import SurveyEmailSender, serve_email_notifications
@@ -64,7 +69,7 @@ from scholight.survey.workflow_runtime import workflow_file
 
 logger = structlog.get_logger(__name__)
 
-RCM_VERSION = "0.2.15"
+RCM_VERSION = "0.2.16"
 WORKFLOW_VERSION = "scholight-survey-v2"
 _IDLE_SECONDS = 1
 _RECOVERY_SECONDS = 30
@@ -86,11 +91,22 @@ _FINALIZATION_ERROR_CODES = frozenset(
         "survey_reference_contract_invalid",
         "survey_finalization_write_failed",
         "survey_finalization_output_invalid",
+        "survey_report_internal_metadata_leaked",
+    }
+)
+_MODEL_TERMINAL_ERROR_CODES = frozenset(
+    {
+        "survey_provider_rate_limited",
+        "survey_provider_unavailable",
+        "survey_model_auth_failed",
+        "survey_model_request_rejected",
+        "survey_model_configuration_failed",
+        "survey_model_completion_failed",
     }
 )
 
 
-def _classify_model_hitch(preview: object) -> dict[str, object] | None:
+def _classify_model_hitch(preview: object, *, role: object = None) -> dict[str, object] | None:
     """Classify an RCM hitch in memory without persisting its model-provided text."""
     if not isinstance(preview, str):
         return None
@@ -100,20 +116,148 @@ def _classify_model_hitch(preview: object) -> dict[str, object] | None:
         return {
             "error_code": "model_timeout",
             "timeout_seconds": int(timeout_match.group(1)),
+            "retryable": True,
         }
     status_match = re.search(r"(?:status|http)\D{0,8}([45]\d\d)", normalized)
     http_status = int(status_match.group(1)) if status_match is not None else None
     if http_status == 429 or "rate limit" in normalized:
-        result: dict[str, object] = {"error_code": "model_rate_limited"}
+        result: dict[str, object] = {
+            "error_code": "model_rate_limited",
+            "retryable": True,
+        }
+    elif http_status == 408 or "timed out" in normalized or "timeout" in normalized:
+        result = {"error_code": "model_timeout", "retryable": True}
+    elif http_status == 425 or (http_status is not None and 500 <= http_status <= 599):
+        result = {"error_code": "model_provider_unavailable", "retryable": True}
     elif http_status in {401, 403} or any(
         marker in normalized for marker in ("unauthorized", "authentication", "invalid api key")
     ):
-        result = {"error_code": "model_authentication_failed"}
+        result = {"error_code": "model_authentication_failed", "retryable": False}
+    elif http_status is not None and 400 <= http_status <= 499:
+        result = {"error_code": "model_request_rejected", "retryable": False}
+    elif any(
+        marker in normalized
+        for marker in ("connection", "network", "dns", "transport", "error sending request")
+    ):
+        result = {"error_code": "model_network_failed", "retryable": True}
+    elif role == "system":
+        result = {"error_code": "model_configuration_failed", "retryable": False}
     else:
-        result = {"error_code": "model_completion_failed"}
+        result = {"error_code": "model_completion_failed", "retryable": False}
     if http_status is not None:
         result["http_status"] = http_status
     return result
+
+
+def _classify_completion_failure(event: dict[str, object]) -> dict[str, object]:
+    """Map new RCM completion metadata to stable diagnostics without content."""
+    failure_kind = event.get("failure_kind")
+    declared_kind = failure_kind if isinstance(failure_kind, str) else "unknown"
+    kind = declared_kind
+    http_status = event.get("http_status")
+    status = http_status if isinstance(http_status, int) and 100 <= http_status <= 599 else None
+    error_codes = {
+        "rate_limited": "model_rate_limited",
+        "authentication": "model_authentication_failed",
+        "timeout": "model_timeout",
+        "provider_unavailable": "model_provider_unavailable",
+        "provider_error": "model_provider_unavailable",
+        "network": "model_network_failed",
+        "invalid_request": "model_request_rejected",
+        "http_error": "model_request_rejected",
+        "configuration": "model_configuration_failed",
+        "unknown": "model_completion_failed",
+    }
+    if status == 429:
+        error_code = "model_rate_limited"
+        kind = "rate_limited"
+    elif status == 408:
+        error_code = "model_timeout"
+        kind = "timeout"
+    elif status == 425 or (status is not None and 500 <= status <= 599):
+        error_code = "model_provider_unavailable"
+        kind = "provider_unavailable"
+    elif status in {401, 403}:
+        error_code = "model_authentication_failed"
+        kind = "authentication"
+    elif status is not None and 400 <= status <= 499:
+        error_code = "model_request_rejected"
+        kind = "invalid_request"
+    else:
+        error_code = error_codes.get(kind, "model_completion_failed")
+    result: dict[str, object] = {
+        "error_code": error_code,
+        "failure_kind": declared_kind if declared_kind in error_codes else "unknown",
+    }
+    if status is not None:
+        result["http_status"] = status
+    if isinstance(event.get("retryable"), bool):
+        result["retryable"] = event["retryable"]
+    duration_ms = event.get("duration_ms")
+    if isinstance(duration_ms, int) and duration_ms >= 0:
+        result["duration_ms"] = duration_ms
+    return result
+
+
+def _public_model_failure(diagnostics: dict[str, Any]) -> tuple[str, str] | None:
+    """Return client-safe Survey semantics for the last failed completion."""
+    model_error = diagnostics.get("last_model_error")
+    if not isinstance(model_error, dict):
+        return None
+    error_code = model_error.get("error_code")
+    if error_code == "model_rate_limited":
+        return (
+            "survey_provider_rate_limited",
+            "The Survey model is temporarily rate limited.",
+        )
+    if error_code in {"model_timeout", "model_provider_unavailable", "model_network_failed"}:
+        return (
+            "survey_provider_unavailable",
+            "The Survey model is temporarily unavailable.",
+        )
+    if error_code == "model_authentication_failed":
+        return (
+            "survey_model_auth_failed",
+            "The Survey model could not be authenticated.",
+        )
+    if error_code == "model_request_rejected":
+        return (
+            "survey_model_request_rejected",
+            "The Survey model rejected the request.",
+        )
+    if error_code == "model_configuration_failed":
+        return (
+            "survey_model_configuration_failed",
+            "The Survey model is not configured correctly.",
+        )
+    if isinstance(error_code, str):
+        return (
+            "survey_model_completion_failed",
+            "The Survey model did not complete a required step.",
+        )
+    return None
+
+
+def _record_evidence_summary(
+    diagnostics: SurveyDiagnostics,
+    summary: SurveyEvidenceSummary,
+) -> None:
+    diagnostics.evidence_summary(
+        card_count=summary.card_count,
+        counts=summary.counts,
+        reviewed_count=summary.reviewed_count,
+        coverage_percent=summary.coverage_percent,
+    )
+    for level, count in summary.counts.items():
+        emit_emf(
+            service="survey-full-worker",
+            outcome=level,
+            metrics={"SurveyPaperEvidenceCount": (count, "Count")},
+        )
+    emit_emf(
+        service="survey-full-worker",
+        metrics={"SurveyFullTextCoverage": (summary.coverage_percent, "Percent")},
+    )
 
 
 def _classify_image_tool_error(error: object) -> dict[str, object]:
@@ -191,6 +335,26 @@ class SurveyExecutionResult:
     diagnostics: dict[str, Any] | None = None
 
 
+def _retained_stderr_tail(
+    stderr_tail: str,
+    *,
+    error_code: str | None,
+    diagnostics: dict[str, Any],
+) -> str | None:
+    """Keep bounded local diagnostics, never provider/model response text."""
+    model_error = diagnostics.get("last_model_error")
+    if isinstance(model_error, dict) or error_code in {
+        "survey_model_auth_failed",
+        "survey_model_completion_failed",
+        "survey_model_configuration_failed",
+        "survey_model_request_rejected",
+        "survey_provider_rate_limited",
+        "survey_provider_unavailable",
+    }:
+        return None
+    return stderr_tail or None
+
+
 def _workflow_file() -> Path:
     return workflow_file("survey_pipeline.rcm", mcp_url=settings.survey_mcp_url)
 
@@ -240,6 +404,7 @@ async def _collect_stage_timings(
     active_tools: dict[str, float] = {}
     records: list[dict[str, object]] = []
     last_progress_stage: str | None = None
+    structured_failure_pending = False
 
     while chunk := await stream.read(_EVENT_READ_BYTES):
         buffer.extend(chunk)
@@ -281,6 +446,7 @@ async def _collect_stage_timings(
                 "tool_failed": "failed",
             }.get(event_type if isinstance(event_type, str) else "")
             if diagnostics is not None and event_type == "completion_start":
+                structured_failure_pending = False
                 diagnostics.model_event(status="started")
                 continue
             if diagnostics is not None and event_type == "completion_end":
@@ -296,15 +462,37 @@ async def _collect_stage_timings(
                     )
                     if isinstance(event.get(field), int)
                 }
-                diagnostics.model_event(status="finished", **completion_fields)
+                if event.get("outcome") == "failure":
+                    structured_failure_pending = True
+                    failure = _classify_completion_failure(event)
+                    diagnostics.model_event(status="failed", **failure, **completion_fields)
+                    failure_kind = str(failure.get("failure_kind", "unknown"))
+                    logger.warning(
+                        "survey_model_completion_failed",
+                        job_id=str(diagnostics.job_id),
+                        **failure,
+                    )
+                    emit_emf(
+                        service="survey-full-worker",
+                        outcome=failure_kind,
+                        metrics={"SurveyModelCompletionFailure": (1, "Count")},
+                    )
+                else:
+                    diagnostics.model_event(status="finished", **completion_fields)
                 continue
             if (
                 diagnostics is not None
-                and event_type in {"appended", "inserted", "replaced"}
+                and event_type in {"appended", "taken", "inserted", "replaced"}
                 and event.get("kind") == "hitch"
                 and event.get("role") in {"assistant", "system"}
             ):
-                classification = _classify_model_hitch(event.get("preview"))
+                if structured_failure_pending:
+                    structured_failure_pending = False
+                    continue
+                classification = _classify_model_hitch(
+                    event.get("preview"),
+                    role=event.get("role"),
+                )
                 if classification is not None:
                     diagnostics.model_event(status="failed", **classification)
                     continue
@@ -491,6 +679,14 @@ def _emit_result_metrics(result: SurveyExecutionResult) -> None:
             "SurveyContractAnomaly": (contract_errors, "Count"),
             "SurveyFinalizationFailure": (
                 1 if result.error_code in _FINALIZATION_ERROR_CODES else 0,
+                "Count",
+            ),
+            "SurveyModelTerminalFailure": (
+                1 if result.error_code in _MODEL_TERMINAL_ERROR_CODES else 0,
+                "Count",
+            ),
+            "SurveyFullTextRuntimeFailure": (
+                1 if result.error_code == "survey_full_text_runtime_unavailable" else 0,
                 "Count",
             ),
             "SurveyRuntimeFailure": (1 if result.outcome == "failed" else 0, "Count"),
@@ -701,7 +897,6 @@ async def _execute_survey_once(
             raise
         stderr_tail = await stderr_task
         if return_code != 0:
-            error_code, error_message = classify_rcm_error(stderr_tail)
             diagnostic_summary = _finish_diagnostics(
                 diagnostics,
                 outcome="failed",
@@ -709,11 +904,15 @@ async def _execute_survey_once(
                 termination_reason="nonzero_exit",
                 audit_contract=True,
             )
+            model_failure = _public_model_failure(diagnostic_summary)
+            error_code, error_message = (
+                model_failure if model_failure is not None else classify_rcm_error(stderr_tail)
+            )
             logger.error(
                 "survey_rcm_failed",
                 job_id=str(job.id),
                 return_code=return_code,
-                diagnostics=stderr_tail,
+                error_code=error_code,
             )
             return SurveyExecutionResult(
                 outcome="failed",
@@ -724,11 +923,62 @@ async def _execute_survey_once(
                 stage_timings=stage_timings,
                 return_code=return_code,
                 termination_reason="nonzero_exit",
-                stderr_tail=stderr_tail or None,
+                stderr_tail=_retained_stderr_tail(
+                    stderr_tail,
+                    error_code=error_code,
+                    diagnostics=diagnostic_summary,
+                ),
                 diagnostics=diagnostic_summary,
+            )
+        model_failure = _public_model_failure(diagnostics.snapshot())
+        if model_failure is not None and not _valid_final_report(run_root):
+            error_code, error_message = model_failure
+            diagnostic_summary = _finish_diagnostics(
+                diagnostics,
+                outcome="failed",
+                return_code=return_code,
+                termination_reason="model_completion_failed",
+                audit_contract=True,
+            )
+            logger.error(
+                "survey_rcm_failed",
+                job_id=str(job.id),
+                return_code=return_code,
+                error_code=error_code,
+                first_anomaly=diagnostic_summary.get("first_anomaly"),
+            )
+            return SurveyExecutionResult(
+                outcome="failed",
+                error_code=error_code,
+                error_message=error_message,
+                started_at=started_at,
+                finished_at=datetime.now(UTC),
+                stage_timings=stage_timings,
+                return_code=return_code,
+                termination_reason="model_completion_failed",
+                stderr_tail=_retained_stderr_tail(
+                    stderr_tail,
+                    error_code=error_code,
+                    diagnostics=diagnostic_summary,
+                ),
+                diagnostics=diagnostic_summary,
+            )
+        evidence_error: SurveyEvidenceAuditError | None = None
+        try:
+            evidence_summary = audit_survey_evidence(run_root)
+            _record_evidence_summary(diagnostics, evidence_summary)
+        except SurveyEvidenceAuditError as exc:
+            evidence_error = exc
+            diagnostics.record("evidence.failed", status="failed", error_code=exc.code)
+            logger.error(
+                "survey_full_text_evidence_failed",
+                job_id=str(job.id),
+                error_code=exc.code,
             )
         finalization_error: SurveyFinalizationError | None = None
         try:
+            if evidence_error is not None:
+                raise evidence_error
             if job.lease_owner is not None:
                 await update_survey_job_progress(
                     job_id=job.id,
@@ -744,6 +994,8 @@ async def _execute_survey_once(
                 reference_count=finalized.reference_count,
                 unverified_reference_count=finalized.unverified_reference_count,
             )
+        except SurveyEvidenceAuditError:
+            pass
         except SurveyFinalizationError as exc:
             finalization_error = exc
             logger.error(
@@ -754,35 +1006,48 @@ async def _execute_survey_once(
                 reason=str(exc),
             )
         if not _valid_final_report(run_root):
-            error_code = (
-                finalization_error.code
-                if finalization_error is not None
-                else "survey_finalization_output_invalid"
-            )
+            if evidence_error is not None:
+                error_code = evidence_error.code
+                error_message = str(evidence_error)
+                termination_reason = "evidence_audit_failed"
+            else:
+                error_code = (
+                    finalization_error.code
+                    if finalization_error is not None
+                    else "survey_finalization_output_invalid"
+                )
+                error_message = (
+                    "Survey research finished, but the final report could not be assembled."
+                )
+                termination_reason = "finalization_failed"
             diagnostic_summary = _finish_diagnostics(
                 diagnostics,
                 outcome="failed",
                 return_code=return_code,
-                termination_reason="finalization_failed",
+                termination_reason=termination_reason,
                 audit_contract=True,
             )
             logger.error(
                 "survey_rcm_failed",
                 job_id=str(job.id),
                 return_code=return_code,
-                diagnostics=stderr_tail,
+                error_code=error_code,
                 first_anomaly=diagnostic_summary.get("first_anomaly"),
             )
             return SurveyExecutionResult(
                 outcome="failed",
                 error_code=error_code,
-                error_message="Survey research finished, but the final report could not be assembled.",
+                error_message=error_message,
                 started_at=started_at,
                 finished_at=datetime.now(UTC),
                 stage_timings=stage_timings,
                 return_code=return_code,
-                termination_reason="finalization_failed",
-                stderr_tail=stderr_tail or None,
+                termination_reason=termination_reason,
+                stderr_tail=_retained_stderr_tail(
+                    stderr_tail,
+                    error_code=error_code,
+                    diagnostics=diagnostic_summary,
+                ),
                 diagnostics=diagnostic_summary,
             )
         diagnostics.finalize_contract_audit()
@@ -806,7 +1071,7 @@ async def _execute_survey_once(
                 "survey_rcm_failed",
                 job_id=str(job.id),
                 return_code=return_code,
-                diagnostics=stderr_tail,
+                error_code="survey_contract_violation",
                 first_anomaly=diagnostic_summary.get("first_anomaly"),
                 contract_error_count=len(contract_errors),
             )
@@ -1008,8 +1273,10 @@ async def _repair_survey_artifacts(
             return None
 
     try:
+        evidence_summary = audit_survey_evidence(run_root)
+        _record_evidence_summary(diagnostics, evidence_summary)
         finalized = finalize_survey(run_root)
-    except SurveyFinalizationError as exc:
+    except (SurveyEvidenceAuditError, SurveyFinalizationError) as exc:
         logger.warning(
             "survey_artifact_repair_failed",
             job_id=str(job.id),

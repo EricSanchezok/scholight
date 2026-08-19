@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 from uuid import UUID, uuid4
@@ -598,9 +599,13 @@ def _require_archived(reference: SurveyArtifactReference, *, report: bool) -> st
         user_id=reference.user_id,
         job_id=reference.job_id,
     )
-    if (
-        reference.storage_prefix != expected_prefix
-        or reference.manifest_key != f"{expected_prefix}/manifest.json"
+    base_manifest = f"{expected_prefix}/manifest.json"
+    overlay_pattern = re.compile(
+        rf"{re.escape(expected_prefix)}/recoveries/[0-9a-f]{{64}}/manifest\.json"
+    )
+    if reference.storage_prefix != expected_prefix or not (
+        reference.manifest_key == base_manifest
+        or overlay_pattern.fullmatch(reference.manifest_key) is not None
     ):
         raise _artifact_unavailable()
     return reference.manifest_key

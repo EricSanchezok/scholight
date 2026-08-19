@@ -1291,6 +1291,56 @@ Resources:
       TreatMissingData: notBreaching
       AlarmActions: [!ImportValue sanchezcloud-scholight-alert-topic-arn]
 
+  SurveyModelTerminalFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: RunSurveyWorkers
+    Properties:
+      AlarmName: sanchezcloud-scholight-survey-model-terminal-failure
+      Namespace: Scholight/Production
+      MetricName: SurveyModelTerminalFailure
+      Dimensions: [{ Name: service, Value: survey-worker }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!ImportValue sanchezcloud-scholight-alert-topic-arn]
+
+  SurveyFullTextRuntimeFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: RunSurveyWorkers
+    Properties:
+      AlarmName: sanchezcloud-scholight-survey-fulltext-runtime-failure
+      Namespace: Scholight/Production
+      MetricName: SurveyFullTextRuntimeFailure
+      Dimensions: [{ Name: service, Value: survey-worker }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!ImportValue sanchezcloud-scholight-alert-topic-arn]
+
+  SurveyFullTextCanaryFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: RunSurveyWorkers
+    Properties:
+      AlarmName: sanchezcloud-scholight-survey-fulltext-canary-failure
+      Namespace: Scholight/Production
+      MetricName: SurveyFullTextCanaryCount
+      Dimensions:
+        - { Name: service, Value: survey-fulltext-canary }
+        - { Name: outcome, Value: failed }
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!ImportValue sanchezcloud-scholight-alert-topic-arn]
+
   SurveyImageGenerationFailureAlarm:
     Type: AWS::CloudWatch::Alarm
     Condition: RunSurveyWorkers
@@ -1606,8 +1656,9 @@ Resources:
             {"type":"metric","x":12,"y":24,"width":12,"height":6,"properties":{"title":"PostgreSQL capacity","region":"${AWS::Region}","metrics":[["AWS/RDS","DatabaseConnections","DBInstanceIdentifier","${DatabaseInstanceIdentifier}"],[".","CPUUtilization",".","."],[".","FreeableMemory",".",".",{"yAxis":"right"}]]}},
             {"type":"metric","x":0,"y":30,"width":12,"height":6,"properties":{"title":"Full Survey compute","region":"${AWS::Region}","metrics":[["AWS/ECS","CPUUtilization","ServiceName","${SurveyFullServiceName}","ClusterName","${ClusterName}"],[".","MemoryUtilization",".",".",".","."]]}},
             {"type":"metric","x":12,"y":30,"width":12,"height":6,"properties":{"title":"Full Survey storage","region":"${AWS::Region}","metrics":[["ECS/ContainerInsights","EphemeralStorageUtilized","ClusterName","${ClusterName}","ServiceName","${SurveyFullServiceName}"],[".","EphemeralStorageReserved",".",".",".","."]]}},
-            {"type":"metric","x":0,"y":36,"width":24,"height":6,"properties":{"title":"Survey finalization and image generation","region":"${AWS::Region}","metrics":[["Scholight/Production","SurveyFinalizationFailure","service","survey-worker"],[".","SurveyImageGenerationCount","service","survey-full-worker","outcome","succeeded"],[".","SurveyImageGenerationCount",".",".",".","failed"],[".","SurveyImageCanaryCount","service","survey-image-canary","outcome","ok"],[".","SurveyImageCanaryCount",".",".",".","failed"]]}},
-            {"type":"log","x":0,"y":42,"width":24,"height":6,"properties":{"title":"Recent errors","region":"${AWS::Region}","query":"SOURCE '/sanchezcloud/scholight/api' | fields @timestamp, level, event, request_id | filter level in ['error','critical'] | sort @timestamp desc | limit 50"}}
+            {"type":"metric","x":0,"y":36,"width":24,"height":6,"properties":{"title":"Survey finalization and provider canaries","region":"${AWS::Region}","metrics":[["Scholight/Production","SurveyFinalizationFailure","service","survey-worker"],[".","SurveyModelTerminalFailure",".","."],[".","SurveyModelCanaryCount","service","survey-model-canary","outcome","ok"],[".","SurveyModelCanaryCount",".",".",".","failed"],[".","SurveyImageGenerationCount","service","survey-full-worker","outcome","succeeded"],[".","SurveyImageGenerationCount",".",".",".","failed"],[".","SurveyImageCanaryCount","service","survey-image-canary","outcome","ok"],[".","SurveyImageCanaryCount",".",".",".","failed"]]}},
+            {"type":"metric","x":0,"y":42,"width":24,"height":6,"properties":{"title":"Survey full-text evidence","region":"${AWS::Region}","metrics":[["Scholight/Production","SurveyFullTextCoverage","service","survey-full-worker"],[".","SurveyPaperEvidenceCount",".",".","outcome","full_text"],[".","SurveyPaperEvidenceCount",".",".",".","partial"],[".","SurveyPaperEvidenceCount",".",".",".","abstract_only"],[".","SurveyFullTextRuntimeFailure","service","survey-worker"],[".","SurveyFullTextCanaryCount","service","survey-fulltext-canary","outcome","failed"]]}},
+            {"type":"log","x":0,"y":48,"width":24,"height":6,"properties":{"title":"Recent Survey errors","region":"${AWS::Region}","query":"SOURCE '/sanchezcloud/scholight/survey' | fields @timestamp, level, event, job_id, error_code, http_status, retryable, duration_ms | filter level in ['error','critical'] or event in ['survey_model_completion_failed','survey_full_text_evidence_failed'] | sort @timestamp desc | limit 50"}}
           ]}
         - ApiServiceName: !GetAtt ApiService.Name
           ExtractServiceName: !GetAtt ExtractService.Name

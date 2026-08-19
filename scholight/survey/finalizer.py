@@ -14,6 +14,7 @@ from pathlib import Path
 import structlog
 
 from scholight.sources.arxiv import arxiv_artifact_stem
+from scholight.survey.evidence import paper_evidence_level
 
 logger = structlog.get_logger(__name__)
 
@@ -26,6 +27,12 @@ _SECTION_FILE = re.compile(r"^\d{2}_[A-Za-z0-9-]+\.md$")
 _OUTLINE_HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*$")
 _CARD_FIELD = re.compile(r"^-\s+(.+?):\s*(.*?)\s*$")
 _OUTLINE_JSON_MAX_BYTES = 1024 * 1024
+_INTERNAL_REPORT_MARKER = re.compile(
+    r"(?:\brun metadata\b|\bPaperCard\b|\bpdftotext\b|"
+    r"\b(?:this|current) environment\b.{0,60}(?:unavailable|missing|not installed)|"
+    r"(?:本环境|运行环境).{0,40}(?:缺少|没有|不可用))",
+    re.I,
+)
 
 
 class SurveyFinalizationError(RuntimeError):
@@ -45,6 +52,7 @@ class FinalizedSurvey:
     section_count: int
     reference_count: int
     unverified_reference_count: int
+    evidence_coverage_percent: float
 
 
 def _regular_file(
@@ -235,12 +243,11 @@ def _card_metadata(card: str) -> tuple[str | None, str | None, str | None]:
 def _unverified_reference(citation_id: str) -> str:
     return (
         f"- [{citation_id}] arXiv:{citation_id}. "
-        "PaperCard metadata was unavailable or incomplete in this run; "
-        "treat this citation as unverified."
+        "Bibliographic details could not be verified; consult the arXiv record."
     )
 
 
-def _references(run_root: Path, section_texts: list[str]) -> tuple[str, int, int]:
+def _references(run_root: Path, section_texts: list[str]) -> tuple[str, int, int, int]:
     citation_ids: list[str] = []
     for section in section_texts:
         for bracketed in _BRACKETED_CITATIONS.findall(section):
@@ -256,6 +263,7 @@ def _references(run_root: Path, section_texts: list[str]) -> tuple[str, int, int
     entries: list[str] = []
     verified_count = 0
     unverified_count = 0
+    reviewed_count = 0
     card_root, resolved_card_root = _safe_directory(run_root, "cards")
     for citation_id in citation_ids:
         card_stem = arxiv_artifact_stem(citation_id)
@@ -282,9 +290,10 @@ def _references(run_root: Path, section_texts: list[str]) -> tuple[str, int, int
             or card_stat.st_size <= 0
         ):
             raise SurveyFinalizationError(f"Cited paper card is invalid: {citation_id}")
-        title, authors, year_venue = _card_metadata(
-            _read_text(card_path, label=f"cards/{card_stem}.md")
-        )
+        card = _read_text(card_path, label=f"cards/{card_stem}.md")
+        if paper_evidence_level(card) in {"html", "full_text", "partial"}:
+            reviewed_count += 1
+        title, authors, year_venue = _card_metadata(card)
         if not title:
             entries.append(_unverified_reference(citation_id))
             unverified_count += 1
@@ -298,7 +307,7 @@ def _references(run_root: Path, section_texts: list[str]) -> tuple[str, int, int
             "Completed sections contain no verified paper cards",
             code="survey_reference_contract_invalid",
         )
-    return "\n".join(entries), len(entries), unverified_count
+    return "\n".join(entries), len(entries), unverified_count, reviewed_count
 
 
 def _atomic_write(path: Path, content: str) -> None:
@@ -336,7 +345,16 @@ def finalize_survey(run_root: Path) -> FinalizedSurvey:
 
     sections = _section_files(run_root)
     section_texts = [_read_text(path, label=f"sections/{path.name}").strip() for path in sections]
-    references, reference_count, unverified_reference_count = _references(run_root, section_texts)
+    reader_facing_text = [abstract, *section_texts]
+    if any(_INTERNAL_REPORT_MARKER.search(text) is not None for text in reader_facing_text):
+        raise SurveyFinalizationError(
+            "A report section contains internal runtime metadata",
+            code="survey_report_internal_metadata_leaked",
+        )
+    references, reference_count, unverified_reference_count, reviewed_reference_count = _references(
+        run_root, section_texts
+    )
+    evidence_coverage_percent = round(100.0 * reviewed_reference_count / reference_count, 2)
 
     report_parts = [f"# {title}", "## Abstract", abstract]
     if _regular_file(run_root, "08_global_picture.png", required=False) is not None:
@@ -347,7 +365,19 @@ def finalize_survey(run_root: Path) -> FinalizedSurvey:
             ]
         )
     report_parts.extend(section_texts)
-    report_parts.extend(["## References", references])
+    report_parts.extend(
+        [
+            "## Evidence coverage",
+            (
+                "Full or partial text was reviewed for "
+                f"{reviewed_reference_count} of {reference_count} cited sources. "
+                f"{reference_count - reviewed_reference_count} sources rely on abstract or "
+                "bibliographic evidence only."
+            ),
+            "## References",
+            references,
+        ]
+    )
     report = "\n\n".join(report_parts).rstrip() + "\n"
 
     index_items = [
@@ -374,6 +404,7 @@ def finalize_survey(run_root: Path) -> FinalizedSurvey:
         section_count=len(section_texts),
         reference_count=reference_count,
         unverified_reference_count=unverified_reference_count,
+        evidence_coverage_percent=evidence_coverage_percent,
     )
 
 

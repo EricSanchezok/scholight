@@ -98,3 +98,14 @@ def test_prepare_workspace_rejects_symlinked_contract_directory(tmp_path: Path) 
 
     with pytest.raises(WorkflowResourceError, match="cards cannot be a symbolic link"):
         prepare_workflow_workspace(tmp_path)
+
+
+def test_paper_card_prompt_requires_bounded_pdf_pagination_and_honest_truncation() -> None:
+    prompt = (_workflow_root() / "prompts" / "paper_card.txt").read_text(encoding="utf-8")
+
+    assert "limit=5000" in prompt
+    assert "increasing `offset` values" in prompt
+    assert "explicit end-of-file marker" in prompt
+    assert "extraction-size cap" in prompt
+    assert "Use `full_text` only after reaching end of file" in prompt
+    assert "Use `partial` with reason `pdf_text_truncated`" in prompt

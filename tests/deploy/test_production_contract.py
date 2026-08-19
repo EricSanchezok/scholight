@@ -260,12 +260,21 @@ def test_survey_capacity_observability_has_no_identifier_dimensions() -> None:
         "SurveyTaskProtectionFailure",
         "SurveyProviderThrottled",
         "SurveyFinalizationFailure",
+        "SurveyModelTerminalFailure",
+        "SurveyModelCanaryCount",
+        "SurveyPaperEvidenceCount",
+        "SurveyFullTextCoverage",
+        "SurveyFullTextRuntimeFailure",
+        "SurveyFullTextCanaryCount",
         "SurveyImageGenerationCount",
     ):
         assert metric in runtime
     assert "SurveyDraftProviderThrottleAlarm:" in runtime
     assert "SurveyFullProviderThrottleAlarm:" in runtime
     assert "SurveyFinalizationFailureAlarm:" in runtime
+    assert "SurveyModelTerminalFailureAlarm:" in runtime
+    assert "SurveyFullTextRuntimeFailureAlarm:" in runtime
+    assert "SurveyFullTextCanaryFailureAlarm:" in runtime
     assert "SurveyImageGenerationFailureAlarm:" in runtime
     assert "IF(jobs>0,100*throttled/jobs,0)" in runtime
     assert runtime.count("Threshold: 100") >= 2
@@ -536,13 +545,29 @@ def test_survey_image_pins_verified_rcm_release() -> None:
     worker = (ROOT / "scholight/survey/worker.py").read_text(encoding="utf-8")
     workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
 
-    assert "ARG RCM_VERSION=v0.2.15" in dockerfile
-    assert 'RCM_VERSION = "0.2.15"' in worker
-    assert "df436430359bed623ca4c8a9a7eb982a4470a50327a567b49f4ff71c56dc4e14" in dockerfile
+    assert "ARG RCM_VERSION=v0.2.16" in dockerfile
+    assert 'RCM_VERSION = "0.2.16"' in worker
+    assert "cea74a709cab99450fe0ffff82045930acfda594d9fa9fec822731e628a353dc" in dockerfile
     assert "sha256sum --check" in dockerfile
     assert "COPY --from=survey-builder /app/bin/accelerate /usr/local/bin/accelerate" in dockerfile
     assert "/releases/latest/" not in dockerfile
     assert "test -x /usr/local/bin/accelerate" in workflow
+
+
+def test_pull_request_ci_builds_and_executes_survey_fulltext_image() -> None:
+    workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    build_step = workflow.split("- name: Build Survey image", maxsplit=1)[1].split(
+        "- name:", maxsplit=1
+    )[0]
+    verify_step = workflow.split("- name: Verify Survey full-text image boundary", maxsplit=1)[
+        1
+    ].split("- name:", maxsplit=1)[0]
+
+    assert "if:" not in build_step
+    assert "target: survey" in build_step
+    assert "if:" not in verify_step
+    assert "command -v pdftotext" in verify_step
+    assert "pdftotext /tmp/survey.pdf /tmp/survey.txt" in verify_step
 
 
 def test_external_actions_are_pinned_to_full_commit_shas() -> None:

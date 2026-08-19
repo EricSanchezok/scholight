@@ -62,6 +62,7 @@ def _failure_message(error_code: str | None) -> str:
         "survey_reference_contract_invalid",
         "survey_finalization_write_failed",
         "survey_finalization_output_invalid",
+        "survey_report_internal_metadata_leaked",
     }:
         return (
             "The research materials were saved, but Scholight could not assemble the final "
@@ -69,10 +70,25 @@ def _failure_message(error_code: str | None) -> str:
         )
     if error_code in {
         "survey_model_rate_limited",
+        "survey_provider_rate_limited",
         "survey_provider_unavailable",
         "survey_timed_out",
     }:
         return "The survey stopped because a research provider was temporarily unavailable."
+    if error_code in {
+        "survey_model_auth_failed",
+        "survey_model_request_rejected",
+        "survey_model_configuration_failed",
+        "survey_model_completion_failed",
+    }:
+        return "The survey stopped because a required model completion failed."
+    if error_code == "survey_full_text_runtime_unavailable":
+        return "The survey stopped because its full-text reader was unavailable."
+    if error_code in {
+        "survey_full_text_evidence_missing",
+        "survey_full_text_evidence_invalid",
+    }:
+        return "The survey stopped because its paper evidence did not meet the full-text contract."
     return "The survey ended before a report was created. Open Scholight to review its status."
 
 

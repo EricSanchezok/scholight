@@ -181,7 +181,7 @@ def _artifact_content(stage: str, path: str) -> str:
             "- title: Deterministic RAG Evaluation\n"
             "- authors: Example et al.\n"
             "- year/venue: 2024 arXiv\n\n"
-            "## evidence\n\nabstract_only\n\n"
+            "## evidence\n\n- level: partial\n- reason: pdf_text_truncated\n\n"
             "## results\n\nDeterministic method and result.\n"
         )
     if stage == "research_map":
