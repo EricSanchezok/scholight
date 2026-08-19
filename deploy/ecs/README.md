@@ -346,13 +346,17 @@ least three image calls fail with no success in a six-hour window. Any finalizer
 failure alerts immediately because it means paid research completed without a
 deliverable report.
 
-RCM completion failures are likewise content-free. RCM 0.2.16 emits only the
+RCM completion failures are likewise content-free. RCM 0.2.17 emits only the
 completion outcome, HTTP status, stable failure kind, retryability, and elapsed
 time; Scholight also recognizes the legacy `taken` hitch shape during a rolling
 upgrade without archiving its text. Terminal model failures and full-text
 runtime failures have one-event alarms. The Dashboard shows their stable codes,
 full/partial/abstract evidence counts, and aggregate full-text coverage without
 paper, topic, user, or Survey dimensions.
+
+RCM 0.2.17 also preserves provider reasoning when visible assistant text
+precedes a tool call in the same completion. This is required by DeepSeek
+thinking mode when the tool-call turn is replayed as `reasoning_content`.
 
 Run the fixed provider canary from a one-off task cloned from the Survey task
 definition; it bypasses model completion and never prints its prompt, key, or
@@ -391,11 +395,14 @@ scholight survey model-canary --json-output
 ```
 
 The model canary uses the exact production OpenAI-compatible model declaration,
-including thinking-mode history compatibility. It must complete one fixed `fs`
-tool call, receive the tool result, and then complete a second model turn; this
-catches providers that reject a missing `reasoning_content` field after tool
-use. It discards completion text and provider response bodies, retaining only
-status, error code, HTTP status, retryability, and duration.
+including thinking-mode history compatibility. It reads one fixed non-sensitive
+file, then must emit visible text and an `fs` write in the same assistant turn
+before completing a third model turn. The command requires three successful
+completions, two complete tool round trips, a mixed response with at least two
+fragments, and the exact fixed output file. This catches providers that reject a
+missing `reasoning_content` field when visible text precedes a tool call. It
+discards completion text and provider response bodies, retaining only status,
+error code, HTTP status, retryability, and duration.
 
 The 2026-08-17 production canary succeeded after the image-route credential was
 updated. It returned a signature-validated PNG through the configured

@@ -45,8 +45,10 @@ _FULLTEXT_CANARY_URL = "https://arxiv.org/pdf/1706.03762"
 _FULLTEXT_CANARY_MAX_PDF_BYTES = 20 * 1024 * 1024
 _FULLTEXT_CANARY_MAX_TEXT_BYTES = 5 * 1024 * 1024
 _FULLTEXT_CANARY_MIN_CHARACTERS = 10_000
-_MODEL_CANARY_PURPOSE = "Return the single word READY. This is a non-sensitive protocol check."
+_MODEL_CANARY_PURPOSE = "Execute the fixed non-sensitive mixed tool-turn protocol check."
 _MODEL_CANARY_TIMEOUT_SECONDS = 180
+_MODEL_CANARY_INPUT = "CANARY INPUT\n"
+_MODEL_CANARY_OUTPUT = "CANARY COMPLETE\n"
 
 
 def _echo_concurrency(concurrency: object) -> None:
@@ -129,24 +131,40 @@ def _run_model_canary() -> dict[str, object]:
     http_status: int | None = None
     retryable = False
     try:
-        completed = subprocess.run(  # nosec B603
-            [
-                "/usr/local/bin/accelerate",
-                "run",
-                str(_model_canary_workflow()),
-                "--stream",
-                "--purpose-stdin",
-            ],
-            input=_MODEL_CANARY_PURPOSE,
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=_MODEL_CANARY_TIMEOUT_SECONDS,
-        )
+        with tempfile.TemporaryDirectory(
+            prefix=".survey-model-canary-",
+            dir=settings.data_root,
+        ) as directory:
+            root = Path(directory)
+            (root / "model-canary-input.txt").write_text(
+                _MODEL_CANARY_INPUT,
+                encoding="utf-8",
+            )
+            completed = subprocess.run(  # nosec B603
+                [
+                    "/usr/local/bin/accelerate",
+                    "run",
+                    str(_model_canary_workflow()),
+                    "--stream",
+                    "--purpose-stdin",
+                ],
+                input=_MODEL_CANARY_PURPOSE,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=_MODEL_CANARY_TIMEOUT_SECONDS,
+                cwd=root,
+            )
+            output_path = root / "model-canary-output.txt"
+            output_matches = (
+                output_path.is_file()
+                and output_path.read_text(encoding="utf-8") == _MODEL_CANARY_OUTPUT
+            )
         completion: dict[str, object] | None = None
         successful_completion_count = 0
-        saw_tool_call = False
-        saw_tool_result = False
+        fs_tool_call_count = 0
+        fs_tool_result_count = 0
+        saw_mixed_completion = False
         for line in completed.stdout.splitlines():
             try:
                 candidate = json.loads(line)
@@ -159,18 +177,29 @@ def _run_model_canary() -> dict[str, object]:
                 completion = candidate
                 if candidate.get("outcome") == "success":
                     successful_completion_count += 1
+                    fragments = candidate.get("fragments")
+                    if isinstance(fragments, int) and fragments >= 2:
+                        saw_mixed_completion = True
             elif event_type == "tool_call" and candidate.get("tool") == "fs":
-                saw_tool_call = True
+                fs_tool_call_count += 1
             elif event_type == "tool_result" and candidate.get("tool") == "fs":
-                saw_tool_result = True
+                fs_tool_result_count += 1
         if completion is None:
             error_code = "model_canary_invalid_result"
         elif completion.get("outcome") != "success" or completed.returncode != 0:
             error_code, retryable = _classify_model_canary_failure(completion)
             status = completion.get("http_status")
             http_status = status if isinstance(status, int) and 100 <= status <= 599 else None
-        elif not (successful_completion_count >= 2 and saw_tool_call and saw_tool_result):
+        elif not (
+            successful_completion_count >= 3
+            and fs_tool_call_count >= 2
+            and fs_tool_result_count >= 2
+        ):
             error_code = "model_canary_tool_roundtrip_missing"
+        elif not saw_mixed_completion:
+            error_code = "model_canary_mixed_tool_turn_missing"
+        elif not output_matches:
+            error_code = "model_canary_output_invalid"
     except subprocess.TimeoutExpired:
         error_code = "model_canary_timeout"
         retryable = True

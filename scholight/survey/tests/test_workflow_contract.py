@@ -57,11 +57,15 @@ def test_every_survey_model_allows_at_least_thirty_minutes() -> None:
 
 def test_model_canary_has_a_short_bounded_timeout() -> None:
     source = (_WORKFLOW / "rcm" / "model_canary.rcm").read_text(encoding="utf-8")
+    prompt = (_WORKFLOW / "prompts" / "model_canary.txt").read_text(encoding="utf-8")
 
     assert re.findall(r'(?m)^\s*timeout\s*=\s*"(\d+)"', source) == ["120"]
     assert 'limit = { context = "4096", output = "512" }' in source
     assert 'thinking = "true"' in source
     assert 'tools = ["fs"]' in source
+    assert "model-canary-input.txt" in prompt
+    assert "model-canary-output.txt" in prompt
+    assert "same assistant response" in prompt
 
 
 def test_deepseek_workflows_enable_thinking_tool_history_compatibility() -> None:
