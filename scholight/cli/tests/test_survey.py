@@ -268,7 +268,11 @@ def test_model_canary_rejects_incomplete_mixed_tool_protocol(
     assert payload["error_code"] == expected_error
 
 
-def test_model_canary_exposes_only_structured_provider_failure() -> None:
+def test_model_canary_exposes_only_structured_provider_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "data_root", str(tmp_path))
     completed = subprocess.CompletedProcess(
         args=["accelerate", "run"],
         returncode=1,
