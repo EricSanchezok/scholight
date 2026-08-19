@@ -285,6 +285,17 @@
   padding: 0 18px;
 }
 
+.surveyErrorActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.surveyErrorActions .dangerButton {
+  border-color: var(--danger);
+  background: var(--danger);
+}
+
 .surveyCompletedContent {
   padding-top: 34px;
 }
@@ -323,7 +334,12 @@
   background: var(--surface);
 }
 
-.surveyReportCard:focus-visible,
+.surveyReportCardLink {
+  display: block;
+  color: inherit;
+}
+
+.surveyReportCard:focus-within,
 .surveyReportCard:hover {
   border-color: var(--brand);
 }
@@ -364,6 +380,22 @@
 .surveyReportCardBody > strong {
   color: var(--brand);
   font-size: 12px;
+}
+
+.surveyReportCardActions {
+  display: flex;
+  min-height: 44px;
+  padding: 0 18px;
+  border-top: 1px solid var(--line-soft);
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.surveyReportCardActions button {
+  padding: 4px 0;
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .surveyTerminalList {

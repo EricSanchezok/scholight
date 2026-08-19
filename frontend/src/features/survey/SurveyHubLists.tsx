@@ -200,25 +200,28 @@ export function CompletedSurveyList({
       {reports.length > 0 && (
         <div className={styles.surveyReportGrid}>
           {reports.map((survey) => (
-            <Link
-              className={styles.surveyReportCard}
-              to={surveyReportPath(survey.id)}
-              key={survey.id}
-            >
-              <ReportPreview surveyId={survey.id} />
-              <div className={styles.surveyReportCardBody}>
-                <h3>{survey.title}</h3>
-                <div>
-                  <span>
-                    {survey.finished_at
-                      ? formatReportDate(survey.finished_at, locale)
-                      : "Completed"}
-                  </span>
-                  <span>{formatDurationBetween(survey.started_at, survey.finished_at)}</span>
+            <article className={styles.surveyReportCard} key={survey.id}>
+              <Link className={styles.surveyReportCardLink} to={surveyReportPath(survey.id)}>
+                <ReportPreview surveyId={survey.id} />
+                <div className={styles.surveyReportCardBody}>
+                  <h3>{survey.title}</h3>
+                  <div>
+                    <span>
+                      {survey.finished_at
+                        ? formatReportDate(survey.finished_at, locale)
+                        : "Completed"}
+                    </span>
+                    <span>{formatDurationBetween(survey.started_at, survey.finished_at)}</span>
+                  </div>
+                  <strong>Open report →</strong>
                 </div>
-                <strong>Open report →</strong>
+              </Link>
+              <div className={styles.surveyReportCardActions}>
+                <button type="button" onClick={() => onDelete(survey)}>
+                  Delete
+                </button>
               </div>
-            </Link>
+            </article>
           ))}
         </div>
       )}
