@@ -59,6 +59,26 @@ def test_model_canary_has_a_short_bounded_timeout() -> None:
     source = (_WORKFLOW / "rcm" / "model_canary.rcm").read_text(encoding="utf-8")
 
     assert re.findall(r'(?m)^\s*timeout\s*=\s*"(\d+)"', source) == ["120"]
+    assert 'limit = { context = "4096", output = "512" }' in source
+    assert 'thinking = "true"' in source
+    assert 'tools = ["fs"]' in source
+
+
+def test_deepseek_workflows_enable_thinking_tool_history_compatibility() -> None:
+    model_files = [
+        path
+        for path in sorted((_WORKFLOW / "rcm").glob("*.rcm"))
+        if "model deepseek-v4-flash" in path.read_text(encoding="utf-8")
+    ]
+
+    assert model_files
+    for path in model_files:
+        source = path.read_text(encoding="utf-8")
+        model_count = len(re.findall(r"(?m)^model\s+deepseek-v4-flash\s*\{", source))
+        thinking_count = len(re.findall(r'(?m)^\s*thinking\s*=\s*"true"', source))
+        assert thinking_count == model_count, (
+            f"{path.name} must preserve DeepSeek reasoning_content across tool turns"
+        )
 
 
 def test_draft_workflow_is_single_node_mcp_only() -> None:

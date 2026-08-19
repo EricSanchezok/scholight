@@ -390,9 +390,12 @@ along with the fixed DeepSeek protocol canary, before the Survey image may be re
 scholight survey model-canary --json-output
 ```
 
-The model canary uses the exact production OpenAI-compatible model declaration
-with a 64-token ceiling. It discards completion text and provider response bodies,
-retaining only status, error code, HTTP status, retryability, and duration.
+The model canary uses the exact production OpenAI-compatible model declaration,
+including thinking-mode history compatibility. It must complete one fixed `fs`
+tool call, receive the tool result, and then complete a second model turn; this
+catches providers that reject a missing `reasoning_content` field after tool
+use. It discards completion text and provider response bodies, retaining only
+status, error code, HTTP status, retryability, and duration.
 
 The 2026-08-17 production canary succeeded after the image-route credential was
 updated. It returned a signature-validated PNG through the configured

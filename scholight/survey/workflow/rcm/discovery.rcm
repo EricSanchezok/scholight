@@ -5,6 +5,7 @@ model deepseek-v4-flash {
     endpoint = "https://api.deepseek.com"
     credentials = { env = "DEEPSEEK_API_KEY" }
     timeout = "1800"
+    thinking = "true"
     limit = { context = "1000000", output = "393216" }
     modalities = { input = ["text"], output = ["text"] }
 }

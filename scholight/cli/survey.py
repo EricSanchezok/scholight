@@ -144,19 +144,33 @@ def _run_model_canary() -> dict[str, object]:
             timeout=_MODEL_CANARY_TIMEOUT_SECONDS,
         )
         completion: dict[str, object] | None = None
+        successful_completion_count = 0
+        saw_tool_call = False
+        saw_tool_result = False
         for line in completed.stdout.splitlines():
             try:
                 candidate = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            if isinstance(candidate, dict) and candidate.get("type") == "completion_end":
+            if not isinstance(candidate, dict):
+                continue
+            event_type = candidate.get("type")
+            if event_type == "completion_end":
                 completion = candidate
+                if candidate.get("outcome") == "success":
+                    successful_completion_count += 1
+            elif event_type == "tool_call" and candidate.get("tool") == "fs":
+                saw_tool_call = True
+            elif event_type == "tool_result" and candidate.get("tool") == "fs":
+                saw_tool_result = True
         if completion is None:
             error_code = "model_canary_invalid_result"
         elif completion.get("outcome") != "success" or completed.returncode != 0:
             error_code, retryable = _classify_model_canary_failure(completion)
             status = completion.get("http_status")
             http_status = status if isinstance(status, int) and 100 <= status <= 599 else None
+        elif not (successful_completion_count >= 2 and saw_tool_call and saw_tool_result):
+            error_code = "model_canary_tool_roundtrip_missing"
     except subprocess.TimeoutExpired:
         error_code = "model_canary_timeout"
         retryable = True

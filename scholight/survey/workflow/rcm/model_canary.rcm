@@ -5,7 +5,8 @@ model deepseek-v4-flash {
     endpoint = "https://api.deepseek.com"
     credentials = { env = "DEEPSEEK_API_KEY" }
     timeout = "120"
-    limit = { context = "4096", output = "64" }
+    thinking = "true"
+    limit = { context = "4096", output = "512" }
     modalities = { input = ["text"], output = ["text"] }
 }
 
@@ -14,5 +15,5 @@ accelerator {
     models = ["deepseek-v4-flash"]
     policy = "captain"
     prompts = { captain = file "../prompts/model_canary.txt" }
-    tools = []
+    tools = ["fs"]
 }

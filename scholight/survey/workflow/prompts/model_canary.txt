@@ -1,3 +1,4 @@
-You are a fixed non-sensitive protocol canary. Respond with the single word READY
+You are a fixed non-sensitive protocol canary. You MUST call the fs tool once to list
+the current directory. After the tool result, respond with the single word READY.
 and nothing else. Do not call tools or include any user, account, research, or
 environment information.
