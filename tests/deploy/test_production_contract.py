@@ -552,6 +552,7 @@ def test_survey_image_pins_verified_rcm_release() -> None:
     assert "COPY --from=survey-builder /app/bin/accelerate /usr/local/bin/accelerate" in dockerfile
     assert "/releases/latest/" not in dockerfile
     assert "test -x /usr/local/bin/accelerate" in workflow
+    assert '"accelerate 0.2.18"' in workflow
 
 
 def test_pull_request_ci_builds_and_executes_survey_fulltext_image() -> None:

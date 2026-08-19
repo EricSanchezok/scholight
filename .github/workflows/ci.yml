@@ -291,7 +291,7 @@ jobs:
             scholight survey --help >/dev/null
             python -c "from scholight.db.client import create_pool; from scholight.logging import configure_logging; from scholight.survey.email_notifications import AliyunSurveyEmailSender"
             test -x /usr/local/bin/accelerate
-            test "$(/usr/local/bin/accelerate --version)" = "accelerate 0.2.17"
+            test "$(/usr/local/bin/accelerate --version)" = "accelerate 0.2.18"
             ! command -v uvicorn >/dev/null
             ! command -v pandoc >/dev/null
             command -v pdftotext >/dev/null
