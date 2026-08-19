@@ -54,8 +54,8 @@ RUN uv pip install --no-deps /app
 
 FROM survey-python-builder AS survey-builder
 
-ARG RCM_VERSION=v0.2.18
-ARG RCM_LINUX_X86_64_SHA256=dd36c00b11262f4196ba40cc8ba13cee1fe6e258d4a765529fafea1e800a7d37
+ARG RCM_VERSION=v0.2.19
+ARG RCM_LINUX_X86_64_SHA256=afe5c1c6fb7ad6842543faffa418c19ce8b145a2c955b93cd65e5ecd80a688f1
 ARG TARGETARCH
 
 RUN test "${TARGETARCH}" = amd64 \

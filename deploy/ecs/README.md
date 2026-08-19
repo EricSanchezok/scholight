@@ -346,7 +346,7 @@ least three image calls fail with no success in a six-hour window. Any finalizer
 failure alerts immediately because it means paid research completed without a
 deliverable report.
 
-RCM completion failures are likewise content-free. RCM 0.2.18 emits only the
+RCM completion failures are likewise content-free. RCM 0.2.19 emits only the
 completion outcome, HTTP status, stable failure kind, retryability, and elapsed
 time; Scholight also recognizes the legacy `taken` hitch shape during a rolling
 upgrade without archiving its text. Terminal model failures and full-text
@@ -354,9 +354,11 @@ runtime failures have one-event alarms. The Dashboard shows their stable codes,
 full/partial/abstract evidence counts, and aggregate full-text coverage without
 paper, topic, user, or Survey dimensions.
 
-RCM 0.2.18 preserves provider reasoning and reconstructs visible assistant text
-plus its tool calls as one assistant turn. This is required by DeepSeek thinking
-mode when that mixed turn is replayed with its original `reasoning_content`.
+RCM 0.2.19 preserves provider reasoning and reconstructs visible assistant text
+plus its tool calls as one assistant turn; call-correlated failed tool results
+are replayed as valid outcomes without re-splitting the turn. This is required
+by DeepSeek thinking mode when that mixed turn is replayed with its original
+`reasoning_content`.
 
 Run the fixed provider canary from a one-off task cloned from the Survey task
 definition; it bypasses model completion and never prints its prompt, key, or
