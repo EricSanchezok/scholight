@@ -279,6 +279,67 @@ async def test_failed_execution_releases_reservation_without_creating_another_su
 
 
 @pytest.mark.asyncio
+async def test_degraded_success_releases_reservation_without_consuming_quota() -> None:
+    survey_id = uuid4()
+    job_id = uuid4()
+    worker_id = uuid4()
+    running_job = _job_row(job_id=job_id, survey_id=survey_id, worker_id=worker_id)
+    archiving_job = {
+        **running_job,
+        "status": "archiving",
+        "terminal_outcome": "succeeded",
+        "error_code": "survey_quality_degraded",
+    }
+    connection = MagicMock()
+    connection.execute = AsyncMock()
+    survey_row = _survey_row(survey_id=survey_id, status="running")
+    connection.fetchrow = AsyncMock(
+        side_effect=[
+            {"survey_id": survey_id},
+            running_job,
+            {"settled": 1},
+            archiving_job,
+        ]
+    )
+    locked = LockedSurveyAggregate(
+        survey=survey_row,
+        usage={"reserved_count": 1},
+        job=running_job,
+        drafts=(),
+    )
+
+    with (
+        patch(
+            "scholight.db.queries_survey.get_pool",
+            return_value=_pool_with_connection(connection),
+        ),
+        patch(
+            "scholight.db.queries_survey.lock_survey_aggregate",
+            new_callable=AsyncMock,
+            return_value=locked,
+        ),
+    ):
+        job = await settle_survey_execution(
+            job_id=job_id,
+            worker_id=worker_id,
+            outcome="succeeded",
+            error_code="survey_quality_degraded",
+            error_message="Readable report delivered without charge.",
+            chargeable=False,
+        )
+
+    assert job.terminal_outcome == "succeeded"
+    usage_call = connection.fetchrow.await_args_list[2]
+    assert usage_call.args[3] == 0
+    survey_update = next(
+        call
+        for call in connection.execute.await_args_list
+        if "UPDATE scholight.surveys" in call.args[0]
+    )
+    assert survey_update.args[2] == "released"
+
+
+@pytest.mark.asyncio
 async def test_archived_recovery_rejects_non_finalization_error_before_database_access() -> None:
     with (
         patch("scholight.db.queries_survey.get_pool") as get_pool,

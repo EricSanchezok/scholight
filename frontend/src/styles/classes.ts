@@ -291,7 +291,6 @@ export const styles: Readonly<Record<string, string>> = Object.freeze({
   surveyReuseSection: "surveyReuseSection",
   surveyRefineSection: "surveyRefineSection",
   surveyReportCard: "surveyReportCard",
-  surveyReportCardActions: "surveyReportCardActions",
   surveyReportCardBody: "surveyReportCardBody",
   surveyReportCardLink: "surveyReportCardLink",
   surveyReportDetails: "surveyReportDetails",

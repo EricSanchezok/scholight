@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -15,7 +15,6 @@ vi.mock("../../api/domain", () => ({
     list: vi.fn(),
     create: vi.fn(),
     cancel: vi.fn(),
-    remove: vi.fn(),
     report: vi.fn(),
   },
 }));
@@ -121,7 +120,6 @@ function renderHub(auth: AuthContextValue = anonymous) {
 
 describe("SurveyHubPage", () => {
   beforeEach(() => {
-    vi.mocked(surveyApi.remove).mockReset().mockResolvedValue(undefined);
     vi.mocked(surveyApi.list).mockReset().mockResolvedValue(emptyList);
     vi.mocked(surveyApi.report)
       .mockReset()
@@ -212,8 +210,7 @@ describe("SurveyHubPage", () => {
     expect(await screen.findByText("Preview evidence about token efficiency.")).toBeVisible();
   });
 
-  it("deletes a completed report from its own card action", async () => {
-    const user = userEvent.setup();
+  it("keeps destructive actions out of completed report cards", async () => {
     vi.mocked(surveyApi.list).mockImplementation((view) =>
       Promise.resolve(
         view === "completed" ? { ...emptyList, items: [completedSurvey] } : emptyList,
@@ -222,11 +219,11 @@ describe("SurveyHubPage", () => {
     renderHub(authenticated);
 
     await screen.findByRole("heading", { level: 3, name: completedSurvey.title });
-    await user.click(screen.getByRole("button", { name: "Delete" }));
-    const dialog = screen.getByRole("dialog");
-    await user.click(within(dialog).getByRole("button", { name: "Delete" }));
-
-    await waitFor(() => expect(surveyApi.remove).toHaveBeenCalledWith(completedSurvey.id));
+    expect(screen.getByRole("link", { name: /Open report/ })).toHaveAttribute(
+      "href",
+      `/survey/${completedSurvey.id}/report`,
+    );
+    expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
   });
 
   it("shows the safe failure reason for a survey without a report", async () => {
@@ -251,7 +248,11 @@ describe("SurveyHubPage", () => {
       "href",
       `/survey/${failed.id}/draft`,
     );
-    expect(screen.getByRole("button", { name: "Delete" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "View status →" })).toHaveAttribute(
+      "href",
+      `/survey/${failed.id}/report`,
+    );
+    expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
   });
 
   it("links a failed survey without a ready draft to its preserved request", async () => {

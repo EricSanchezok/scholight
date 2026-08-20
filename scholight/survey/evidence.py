@@ -153,9 +153,9 @@ def summarize_survey_evidence(run_root: Path) -> SurveyEvidenceSummary:
 
 
 def audit_survey_evidence(run_root: Path) -> SurveyEvidenceSummary:
-    """Enforce full-worker evidence requirements before deterministic finalization."""
+    """Block absent body evidence while retaining declaration defects as warnings."""
     summary = summarize_survey_evidence(run_root)
-    if summary.runtime_marker_count:
+    if summary.runtime_marker_count and summary.reviewed_count == 0:
         raise SurveyEvidenceAuditError(
             "The Survey full-text runtime was unavailable.",
             code="survey_full_text_runtime_unavailable",
@@ -165,11 +165,20 @@ def audit_survey_evidence(run_root: Path) -> SurveyEvidenceSummary:
             "The Survey did not produce evidence from paper bodies.",
             code="survey_full_text_evidence_missing",
         )
+    if summary.runtime_marker_count:
+        logger.warning(
+            "survey_full_text_runtime_marker_present",
+            card_count=summary.card_count,
+            runtime_marker_count=summary.runtime_marker_count,
+            coverage_percent=summary.coverage_percent,
+        )
     if summary.card_count and (summary.counts["unknown"] > 0 or summary.invalid_reason_count > 0):
-        raise SurveyEvidenceAuditError(
-            "The Survey paper evidence declarations are incomplete.",
-            code="survey_full_text_evidence_invalid",
-            invalid_cards=summary.invalid_cards,
+        logger.warning(
+            "survey_full_text_evidence_declarations_incomplete",
+            card_count=summary.card_count,
+            unknown_count=summary.counts["unknown"],
+            invalid_reason_count=summary.invalid_reason_count,
+            coverage_percent=summary.coverage_percent,
         )
     if summary.card_count >= 10 and summary.counts["abstract_only"] * 2 > summary.card_count:
         logger.warning(

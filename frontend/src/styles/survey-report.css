@@ -12,9 +12,12 @@
 }
 
 .surveyReportHeader h1 {
+  min-width: 0;
   max-width: 760px;
   font-size: 34px;
   line-height: 1.35;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 .surveyReportHeader > div {
@@ -25,6 +28,27 @@
 .surveyReportHeader .secondaryButton,
 .surveyReportHeader .dangerButton {
   min-height: 42px;
+}
+
+.surveyQualityNotice {
+  max-width: 800px;
+  margin-top: 28px;
+  padding: 18px 20px;
+  border-left: 3px solid var(--warning);
+  background: var(--surface-muted);
+  color: var(--ink-soft);
+}
+
+.surveyQualityNotice strong {
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 16px;
+}
+
+.surveyQualityNotice p {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .surveyReportLayout {
@@ -82,7 +106,8 @@
   color: var(--ink-soft);
   font-size: 15px;
   line-height: 1.75;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 .surveyMarkdown h1,
@@ -124,11 +149,13 @@
   color: var(--brand-link);
   text-decoration: underline;
   text-underline-offset: 3px;
+  overflow-wrap: anywhere;
 }
 
 .surveyMarkdown blockquote {
-  padding-left: 18px;
-  border-left: 3px solid var(--line);
+  padding: 16px 0;
+  border-top: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
   color: var(--muted);
 }
 
@@ -261,4 +288,112 @@
   color: var(--muted);
   font-size: 8px;
   text-align: center;
+}
+
+@media (max-width: 900px) {
+  .surveyReportLayout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 34px;
+  }
+
+  .surveyReportDetails {
+    position: static;
+    order: -1;
+    padding: 24px 0;
+    border-top: 1px solid var(--line-soft);
+    border-bottom: 1px solid var(--line-soft);
+  }
+
+  .surveyReportDetails dl {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 20px 28px;
+  }
+
+  .surveyReportDetails dl div {
+    min-width: 0;
+    margin-bottom: 0;
+  }
+
+  .surveyReportDetails dd {
+    overflow-wrap: break-word;
+  }
+}
+
+@media (max-width: 700px) {
+  .surveyReportHeader {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 22px;
+  }
+
+  .surveyReportHeader h1 {
+    width: 100%;
+    max-width: none;
+    font-size: clamp(28px, 8vw, 34px);
+    line-height: 1.28;
+  }
+
+  .surveyReportHeader > div {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .surveyReportLayout {
+    padding-top: 28px;
+  }
+
+  .surveyQualityNotice {
+    margin-top: 22px;
+    padding: 16px;
+  }
+
+  .surveyReportDetails dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .surveyReportDetails dl div:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .surveyMarkdown {
+    font-size: 16px;
+    line-height: 1.72;
+  }
+
+  .surveyMarkdown h1 {
+    font-size: 30px;
+  }
+
+  .surveyMarkdown h2 {
+    font-size: 24px;
+  }
+
+  .surveyMarkdown h3 {
+    font-size: 20px;
+  }
+
+  .surveyMarkdown table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+}
+
+@media (max-width: 460px) {
+  .surveyReportHeader > div {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .surveyReportHeader .secondaryButton {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .surveyReportHeader .dangerButton {
+    width: max-content;
+    min-height: 44px;
+    grid-column: 1 / -1;
+  }
 }

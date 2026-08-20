@@ -354,6 +354,40 @@ async def test_report_missing_dry_run_plans_v2_without_writes(tmp_path: Path) ->
 
 
 @pytest.mark.asyncio
+async def test_invalid_evidence_archive_can_be_finalized_deterministically(tmp_path: Path) -> None:
+    job_id, row, store, _report_sha = _fixture(tmp_path)
+    row["job_error_code"] = "survey_full_text_evidence_invalid"
+    row["survey_error_code"] = "survey_full_text_evidence_invalid"
+    for name in ("08_survey.md", "index.md"):
+        (store.source / name).unlink()
+        store.manifest["files"] = [
+            record for record in store.manifest["files"] if record["path"] != f"run/{name}"
+        ]
+    store.manifest_body = json.dumps(
+        store.manifest,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode()
+
+    with (
+        patch("scholight.survey.recovery.get_pool", return_value=_Pool(row)),
+        patch(
+            "scholight.survey.recovery.recover_archived_survey_contract_failure",
+            new_callable=AsyncMock,
+        ) as apply_recovery,
+    ):
+        result = await recover_archived_survey(
+            job_id=job_id,
+            artifact_store=store,  # type: ignore[arg-type]
+        )
+
+    assert result.recovery_type == "deterministic_finalization"
+    assert result.expected_manifest["schema_version"] == 2
+    assert result.report_sha256
+    apply_recovery.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_report_missing_accepts_complete_legacy_card_plan_and_run_dir(
     tmp_path: Path,
 ) -> None:

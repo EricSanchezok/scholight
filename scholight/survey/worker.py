@@ -337,6 +337,7 @@ class SurveyExecutionResult:
     termination_reason: str | None = None
     stderr_tail: str | None = None
     diagnostics: dict[str, Any] | None = None
+    chargeable: bool = True
 
 
 def _retained_stderr_tail(
@@ -384,12 +385,55 @@ def _valid_final_report(run_root: Path) -> bool:
         resolved_report = report.resolve(strict=True)
     except OSError:
         return False
-    return (
+    valid_path = (
         stat.S_ISREG(report_stat.st_mode)
         and not report.is_symlink()
         and resolved_report.parent == resolved_root
         and report_stat.st_size > 0
     )
+    if not valid_path:
+        return False
+    try:
+        return bool(report.read_text(encoding="utf-8").strip())
+    except (OSError, UnicodeError):
+        return False
+
+
+def _publication_quality_reasons(
+    *,
+    diagnostics: dict[str, Any],
+    evidence_summary: SurveyEvidenceSummary | None,
+    evidence_error: SurveyEvidenceAuditError | None,
+    finalization_error: SurveyFinalizationError | None,
+    model_failure: tuple[str, str] | None,
+) -> tuple[str, ...]:
+    """Return stable reasons that make a readable report free, never hidden."""
+    reasons: set[str] = set()
+    if model_failure is not None:
+        reasons.add("model_step_incomplete")
+    if evidence_error is not None:
+        reasons.add("evidence_audit_incomplete")
+    if evidence_summary is not None:
+        if evidence_summary.card_count == 0 or evidence_summary.coverage_percent < 80:
+            reasons.add("evidence_coverage_low")
+        if (
+            evidence_summary.counts.get("unknown", 0) > 0
+            or evidence_summary.invalid_reason_count > 0
+            or evidence_summary.runtime_marker_count > 0
+        ):
+            reasons.add("evidence_declarations_incomplete")
+    if finalization_error is not None:
+        reasons.add("deterministic_finalization_incomplete")
+    raw_anomalies = diagnostics.get("anomalies")
+    anomalies = raw_anomalies if isinstance(raw_anomalies, list) else []
+    if any(
+        isinstance(anomaly, dict)
+        and anomaly.get("component") != "image_planner"
+        and anomaly.get("severity") in {"warning", "error"}
+        for anomaly in anomalies
+    ):
+        reasons.add("workflow_quality_check_incomplete")
+    return tuple(sorted(reasons))
 
 
 def _local_finalization_inputs_available(run_root: Path) -> bool:
@@ -722,6 +766,14 @@ def _emit_result_metrics(result: SurveyExecutionResult) -> None:
             "SurveyJobDuration": (duration_ms, "Milliseconds"),
         },
     )
+    publication_outcome = (
+        "degraded" if result.outcome == "succeeded" and not result.chargeable else result.outcome
+    )
+    emit_emf(
+        service="survey-worker",
+        outcome=publication_outcome,
+        metrics={"SurveyPublicationCount": (1, "Count")},
+    )
     emit_emf(
         service="survey-worker",
         metrics={
@@ -981,9 +1033,15 @@ async def _execute_survey_once(
             )
         live_diagnostics = diagnostics.snapshot()
         model_failure = _public_model_failure(live_diagnostics)
-        if model_failure is not None and not _optional_model_failure_can_finalize(
-            live_diagnostics,
-            run_root,
+        if (
+            model_failure is not None
+            and not _optional_model_failure_can_finalize(
+                live_diagnostics,
+                run_root,
+            )
+            and not (
+                _valid_final_report(run_root) or _local_finalization_inputs_available(run_root)
+            )
         ):
             error_code, error_message = model_failure
             diagnostic_summary = _finish_diagnostics(
@@ -1016,6 +1074,7 @@ async def _execute_survey_once(
                 ),
                 diagnostics=diagnostic_summary,
             )
+        evidence_summary: SurveyEvidenceSummary | None = None
         evidence_error: SurveyEvidenceAuditError | None = None
         try:
             evidence_summary = audit_survey_evidence(run_root)
@@ -1031,8 +1090,6 @@ async def _execute_survey_once(
             )
         finalization_error: SurveyFinalizationError | None = None
         try:
-            if evidence_error is not None:
-                raise evidence_error
             if job.lease_owner is not None:
                 await update_survey_job_progress(
                     job_id=job.id,
@@ -1048,8 +1105,6 @@ async def _execute_survey_once(
                 reference_count=finalized.reference_count,
                 unverified_reference_count=finalized.unverified_reference_count,
             )
-        except SurveyEvidenceAuditError:
-            pass
         except SurveyFinalizationError as exc:
             finalization_error = exc
             logger.error(
@@ -1058,6 +1113,28 @@ async def _execute_survey_once(
                 error_code=exc.code,
                 error_type=type(exc).__name__,
                 reason=str(exc),
+            )
+        if (
+            finalization_error is not None
+            and finalization_error.code == "survey_report_internal_metadata_leaked"
+        ):
+            diagnostic_summary = _finish_diagnostics(
+                diagnostics,
+                outcome="failed",
+                return_code=return_code,
+                termination_reason="unsafe_report_rejected",
+                audit_contract=True,
+            )
+            return SurveyExecutionResult(
+                outcome="failed",
+                error_code=finalization_error.code,
+                error_message="The Survey report contained internal workflow metadata.",
+                started_at=started_at,
+                finished_at=datetime.now(UTC),
+                stage_timings=stage_timings,
+                return_code=return_code,
+                termination_reason="unsafe_report_rejected",
+                diagnostics=diagnostic_summary,
             )
         if not _valid_final_report(run_root):
             if evidence_error is not None:
@@ -1123,53 +1200,61 @@ async def _execute_survey_once(
             if isinstance(anomaly, dict) and anomaly.get("severity") == "error"
         ]
         if contract_errors:
-            diagnostic_summary = _finish_diagnostics(
-                diagnostics,
-                outcome="failed",
-                return_code=return_code,
-                termination_reason="contract_violation",
-                audit_contract=False,
-            )
-            logger.error(
-                "survey_rcm_failed",
+            logger.warning(
+                "survey_report_published_with_contract_warnings",
                 job_id=str(job.id),
-                return_code=return_code,
-                error_code="survey_contract_violation",
-                first_anomaly=diagnostic_summary.get("first_anomaly"),
                 contract_error_count=len(contract_errors),
             )
-            return SurveyExecutionResult(
-                outcome="failed",
-                error_code="survey_contract_violation",
-                error_message="Survey generation produced incomplete required artifacts.",
-                started_at=started_at,
-                finished_at=datetime.now(UTC),
-                stage_timings=stage_timings,
-                return_code=return_code,
-                termination_reason="contract_violation",
-                stderr_tail=stderr_tail or None,
-                diagnostics=diagnostic_summary,
+        quality_reasons = _publication_quality_reasons(
+            diagnostics=audited_diagnostics,
+            evidence_summary=evidence_summary,
+            evidence_error=evidence_error,
+            finalization_error=finalization_error,
+            model_failure=(
+                model_failure
+                if isinstance(audited_diagnostics.get("blocking_model_error"), dict)
+                else None
+            ),
+        )
+        if quality_reasons:
+            diagnostics.record(
+                "publication.degraded",
+                status="warning",
+                reason_count=len(quality_reasons),
+                reasons=list(quality_reasons),
+            )
+            logger.warning(
+                "survey_report_published_degraded",
+                job_id=str(job.id),
+                reason_count=len(quality_reasons),
+                reasons=quality_reasons,
             )
         diagnostic_summary = _finish_diagnostics(
             diagnostics,
             outcome="succeeded",
             return_code=return_code,
-            termination_reason="completed",
+            termination_reason="completed_degraded" if quality_reasons else "completed",
             audit_contract=False,
         )
         return SurveyExecutionResult(
             outcome="succeeded",
-            error_code=None,
-            error_message=None,
+            error_code="survey_quality_degraded" if quality_reasons else None,
+            error_message=(
+                "This report was delivered with incomplete quality checks and was not counted "
+                "against your Survey allowance."
+                if quality_reasons
+                else None
+            ),
             started_at=started_at,
             finished_at=datetime.now(UTC),
             stage_timings=stage_timings,
             return_code=return_code,
-            termination_reason="completed",
+            termination_reason="completed_degraded" if quality_reasons else "completed",
             stderr_tail=(
                 stderr_tail if stderr_tail and diagnostic_summary.get("anomaly_count", 0) else None
             ),
             diagnostics=diagnostic_summary,
+            chargeable=not quality_reasons,
         )
     except asyncio.CancelledError:
         await terminate_process_group(process)
@@ -1396,11 +1481,13 @@ async def _repair_survey_artifacts(
     diagnostics.component_finished("survey_finalizer", status="completed")
     diagnostics.finalize_contract_audit()
     snapshot = diagnostics.snapshot()
-    anomalies = snapshot.get("anomalies")
-    if isinstance(anomalies, list) and any(
-        isinstance(anomaly, dict) and anomaly.get("severity") == "error" for anomaly in anomalies
-    ):
-        return None
+    quality_reasons = _publication_quality_reasons(
+        diagnostics=snapshot,
+        evidence_summary=evidence_summary,
+        evidence_error=None,
+        finalization_error=None,
+        model_failure=None,
+    )
     logger.info(
         "survey_artifact_repair_finished",
         job_id=str(job.id),
@@ -1409,14 +1496,22 @@ async def _repair_survey_artifacts(
     )
     return SurveyExecutionResult(
         outcome="succeeded",
-        error_code=None,
-        error_message=None,
+        error_code="survey_quality_degraded" if quality_reasons else None,
+        error_message=(
+            "This report was delivered with incomplete quality checks and was not counted "
+            "against your Survey allowance."
+            if quality_reasons
+            else None
+        ),
         started_at=original.started_at,
         finished_at=datetime.now(UTC),
         stage_timings=original.stage_timings,
         return_code=0,
-        termination_reason="targeted_artifact_repair",
+        termination_reason=(
+            "targeted_artifact_repair_degraded" if quality_reasons else "targeted_artifact_repair"
+        ),
         diagnostics=snapshot,
+        chargeable=not quality_reasons,
     )
 
 
@@ -1546,6 +1641,15 @@ async def _heartbeat(
 
 
 def _run_metadata(job: SurveyJob, result: SurveyExecutionResult | None) -> dict[str, object]:
+    readable = bool(
+        (result is not None and result.outcome == "succeeded")
+        or job.terminal_outcome == "succeeded"
+    )
+    chargeable = (
+        result.chargeable
+        if result is not None
+        else job.terminal_outcome == "succeeded" and job.error_code != "survey_quality_degraded"
+    )
     return {
         "schema_version": 2,
         "job_id": str(job.id),
@@ -1557,6 +1661,10 @@ def _run_metadata(job: SurveyJob, result: SurveyExecutionResult | None) -> dict[
         "error_code": job.error_code or (result.error_code if result else None),
         "rcm_version": RCM_VERSION,
         "workflow_version": WORKFLOW_VERSION,
+        "publication": {
+            "readable": readable,
+            "chargeable": chargeable,
+        },
         "started_at": (
             result.started_at.isoformat()
             if result is not None
@@ -1689,6 +1797,7 @@ async def process_survey_job(
                 outcome=result.outcome,
                 error_code=result.error_code,
                 error_message=result.error_message,
+                chargeable=result.chargeable,
             )
         if control.lease_lost.is_set():
             return

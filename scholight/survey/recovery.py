@@ -25,6 +25,7 @@ _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _REPORT_MISSING_CODES = frozenset(
     {
         "survey_report_missing",
+        "survey_full_text_evidence_invalid",
         "survey_outline_metadata_invalid",
         "survey_section_contract_invalid",
         "survey_reference_contract_invalid",
