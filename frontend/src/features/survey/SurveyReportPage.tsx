@@ -180,6 +180,15 @@ export function SurveyReportPage() {
           </button>
         </div>
       </div>
+      {survey.data.error_code === "survey_quality_degraded" && (
+        <div className={styles.surveyQualityNotice} role="status">
+          <strong>Report delivered with quality notes</strong>
+          <p>
+            Some research quality checks were incomplete. You can still read and download the
+            report, and this run was not counted against your Survey allowance.
+          </p>
+        </div>
+      )}
       <div className={styles.surveyReportLayout}>
         <article className={styles.surveyReportDocument}>
           <SurveyMarkdown markdown={report.data} imageArtifacts={imageArtifacts} />

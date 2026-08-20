@@ -678,6 +678,118 @@ async def test_success_requires_complete_final_artifacts(
 
 
 @pytest.mark.asyncio
+async def test_repeated_identical_judge_verdict_does_not_block_publication(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_complete_workflow_artifacts(tmp_path)
+    (tmp_path / "06d_gap_judge.md").write_text(
+        "verdict: strong\n\n## Verdict summary\n\n- verdict: strong\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(settings, "survey_job_timeout_seconds", 60)
+    monkeypatch.setattr(settings, "survey_mcp_jwt_secret", "s" * 32)
+    monkeypatch.setattr(settings, "deepseek_api_key", "deepseek")
+    monkeypatch.setattr(settings, "image_gen_api_key", "image")
+
+    with (
+        patch(
+            "scholight.survey.worker.asyncio.create_subprocess_exec",
+            new_callable=AsyncMock,
+            return_value=_CompletedProcess(),
+        ),
+        patch("scholight.survey.worker.write_stdin", new_callable=AsyncMock),
+    ):
+        result = await execute_survey(
+            _job(job_id=uuid4(), worker_id=uuid4(), status="running"),
+            tmp_path,
+        )
+
+    assert result.outcome == "succeeded"
+    assert result.error_code is None
+    assert result.chargeable is True
+    assert (tmp_path / "08_survey.md").is_file()
+
+
+@pytest.mark.asyncio
+async def test_missing_intermediate_artifact_is_diagnostic_after_report_finalization(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_complete_workflow_artifacts(tmp_path)
+    (tmp_path / "06a_coverage_judge.md").unlink()
+    monkeypatch.setattr(settings, "survey_job_timeout_seconds", 60)
+    monkeypatch.setattr(settings, "survey_mcp_jwt_secret", "s" * 32)
+    monkeypatch.setattr(settings, "deepseek_api_key", "deepseek")
+    monkeypatch.setattr(settings, "image_gen_api_key", "image")
+
+    with (
+        patch(
+            "scholight.survey.worker.asyncio.create_subprocess_exec",
+            new_callable=AsyncMock,
+            return_value=_CompletedProcess(),
+        ),
+        patch("scholight.survey.worker.write_stdin", new_callable=AsyncMock),
+    ):
+        result = await execute_survey(
+            _job(job_id=uuid4(), worker_id=uuid4(), status="running"),
+            tmp_path,
+        )
+
+    assert result.outcome == "succeeded"
+    assert result.error_code == "survey_quality_degraded"
+    assert result.chargeable is False
+    assert result.diagnostics is not None
+    assert any(
+        anomaly["expected_artifact"] == "06a_coverage_judge.md"
+        for anomaly in result.diagnostics["anomalies"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_abstract_only_materials_are_delivered_as_a_free_readable_report(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_complete_workflow_artifacts(tmp_path)
+    (tmp_path / "cards" / "2401.12345.md").write_text(
+        (
+            "# PaperCard\n\n## header\n\n"
+            "- arxiv_id: 2401.12345\n"
+            "- title: Verified source\n"
+            "- authors: Example\n"
+            "- year/venue: 2024 arXiv\n\n"
+            "## evidence\n"
+            "- level: abstract_only\n"
+            "- reason: scanned_pdf\n"
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(settings, "survey_job_timeout_seconds", 60)
+    monkeypatch.setattr(settings, "survey_mcp_jwt_secret", "s" * 32)
+    monkeypatch.setattr(settings, "deepseek_api_key", "deepseek")
+    monkeypatch.setattr(settings, "image_gen_api_key", "image")
+
+    with (
+        patch(
+            "scholight.survey.worker.asyncio.create_subprocess_exec",
+            new_callable=AsyncMock,
+            return_value=_CompletedProcess(),
+        ),
+        patch("scholight.survey.worker.write_stdin", new_callable=AsyncMock),
+    ):
+        result = await execute_survey(
+            _job(job_id=uuid4(), worker_id=uuid4(), status="running"),
+            tmp_path,
+        )
+
+    assert result.outcome == "succeeded"
+    assert result.error_code == "survey_quality_degraded"
+    assert result.chargeable is False
+    assert (tmp_path / "08_survey.md").is_file()
+
+
+@pytest.mark.asyncio
 async def test_zero_exit_model_failure_is_nonblocking_when_local_finalization_succeeds(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -714,6 +826,8 @@ async def test_zero_exit_model_failure_is_nonblocking_when_local_finalization_su
 
     assert result.outcome == "succeeded"
     assert result.termination_reason == "completed"
+    assert result.error_code is None
+    assert result.chargeable is True
     assert (tmp_path / "08_survey.md").is_file()
     assert result.diagnostics is not None
     assert result.diagnostics["last_model_error"] == {
@@ -727,7 +841,7 @@ async def test_zero_exit_model_failure_is_nonblocking_when_local_finalization_su
 
 
 @pytest.mark.asyncio
-async def test_zero_exit_required_model_failure_stays_terminal_with_local_inputs(
+async def test_zero_exit_required_model_failure_delivers_existing_materials_for_free(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -761,14 +875,15 @@ async def test_zero_exit_required_model_failure_stays_terminal_with_local_inputs
             tmp_path,
         )
 
-    assert result.outcome == "failed"
-    assert result.error_code == "survey_model_request_rejected"
-    assert result.termination_reason == "model_completion_failed"
-    assert not (tmp_path / "08_survey.md").exists()
+    assert result.outcome == "succeeded"
+    assert result.error_code == "survey_quality_degraded"
+    assert result.termination_reason == "completed_degraded"
+    assert result.chargeable is False
+    assert (tmp_path / "08_survey.md").is_file()
 
 
 @pytest.mark.asyncio
-async def test_optional_model_failure_cannot_mask_prior_required_failure(
+async def test_prior_required_model_failure_delivers_report_despite_optional_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -807,13 +922,14 @@ async def test_optional_model_failure_cannot_mask_prior_required_failure(
             tmp_path,
         )
 
-    assert result.outcome == "failed"
-    assert result.error_code == "survey_provider_unavailable"
-    assert result.termination_reason == "model_completion_failed"
+    assert result.outcome == "succeeded"
+    assert result.error_code == "survey_quality_degraded"
+    assert result.termination_reason == "completed_degraded"
+    assert result.chargeable is False
     assert result.diagnostics is not None
     assert result.diagnostics["last_model_error"]["component"] == "image_planner"
     assert result.diagnostics["blocking_model_error"]["component"] == "survey_outline"
-    assert not (tmp_path / "08_survey.md").exists()
+    assert (tmp_path / "08_survey.md").is_file()
 
 
 @pytest.mark.asyncio
@@ -1591,8 +1707,8 @@ def test_result_metrics_use_only_low_cardinality_dimensions() -> None:
     with patch("scholight.survey.worker.emit_emf") as emit:
         _emit_result_metrics(result)
 
-    assert emit.call_count == 2
-    outcome_call, failure_call = emit.call_args_list
+    assert emit.call_count == 3
+    outcome_call, publication_call, failure_call = emit.call_args_list
     assert outcome_call.kwargs == {
         "service": "survey-worker",
         "outcome": "failed",
@@ -1600,6 +1716,11 @@ def test_result_metrics_use_only_low_cardinality_dimensions() -> None:
             "SurveyJobCount": (1, "Count"),
             "SurveyJobDuration": (0, "Milliseconds"),
         },
+    }
+    assert publication_call.kwargs == {
+        "service": "survey-worker",
+        "outcome": "failed",
+        "metrics": {"SurveyPublicationCount": (1, "Count")},
     }
     assert failure_call.kwargs["service"] == "survey-worker"
     assert "outcome" not in failure_call.kwargs

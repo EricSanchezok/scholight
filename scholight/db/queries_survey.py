@@ -26,6 +26,7 @@ _RECOVERABLE_SURVEY_FINALIZATION_CODES = frozenset(
     {
         "survey_contract_violation",
         "survey_report_missing",
+        "survey_full_text_evidence_invalid",
         "survey_outline_metadata_invalid",
         "survey_section_contract_invalid",
         "survey_reference_contract_invalid",
@@ -774,8 +775,9 @@ async def settle_survey_execution(
     outcome: SurveyOutcome,
     error_code: str | None,
     error_message: str | None,
+    chargeable: bool = True,
 ) -> SurveyJob:
-    """Settle quota once and enter archiving without creating another Survey."""
+    """Settle quota once while allowing readable degraded reports to remain free."""
     try:
         async with get_pool().acquire() as connection, connection.transaction():
             locator = await connection.fetchrow(
@@ -809,7 +811,8 @@ async def settle_survey_execution(
                 or survey["quota_state"] != "reserved"
             ):
                 raise SurveyLeaseLostError("Survey aggregate is no longer running")
-            success_delta = 1 if effective_outcome == "succeeded" else 0
+            consume_quota = effective_outcome == "succeeded" and chargeable
+            success_delta = 1 if consume_quota else 0
             usage = await connection.fetchrow(
                 "UPDATE scholight.survey_daily_usage SET reserved_count = reserved_count - 1, "
                 "succeeded_count = succeeded_count + $3, updated_at = now() "
@@ -824,7 +827,7 @@ async def settle_survey_execution(
                 "UPDATE scholight.surveys SET status = 'archiving', quota_state = $2, "
                 "error_code = $3, error_message = $4, updated_at = now() WHERE id = $1",
                 row["survey_id"],
-                "consumed" if effective_outcome == "succeeded" else "released",
+                "consumed" if consume_quota else "released",
                 None if effective_outcome == "cancelled" else error_code,
                 None if effective_outcome == "cancelled" else error_message,
             )

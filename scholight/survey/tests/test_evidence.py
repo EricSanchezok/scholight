@@ -82,18 +82,38 @@ def test_real_partial_evidence_allows_completion(tmp_path: Path) -> None:
     assert summary.coverage_percent == 100.0
 
 
-def test_evidence_reason_must_match_the_declared_level(tmp_path: Path) -> None:
+def test_invalid_evidence_reason_is_nonblocking_when_body_evidence_exists(tmp_path: Path) -> None:
     _card(tmp_path, "paper.md", "- level: full_text\n- reason: scanned_pdf")
 
     summary = summarize_survey_evidence(tmp_path)
 
     assert summary.invalid_cards == ("cards/paper.md",)
 
-    with pytest.raises(SurveyEvidenceAuditError) as captured:
-        audit_survey_evidence(tmp_path)
+    audited = audit_survey_evidence(tmp_path)
 
-    assert captured.value.code == "survey_full_text_evidence_invalid"
-    assert captured.value.invalid_cards == ("cards/paper.md",)
+    assert audited.coverage_percent == 100.0
+    assert audited.invalid_cards == ("cards/paper.md",)
+
+
+def test_two_missing_declarations_do_not_block_ninety_eight_percent_coverage(
+    tmp_path: Path,
+) -> None:
+    for index in range(98):
+        _card(
+            tmp_path,
+            f"reviewed-{index:02d}.md",
+            "- level: full_text\n- reason: pdf_text_extracted",
+        )
+    _card(tmp_path, "unknown-1.md", "No declaration")
+    _card(tmp_path, "unknown-2.md", "No declaration")
+
+    summary = audit_survey_evidence(tmp_path)
+
+    assert summary.card_count == 100
+    assert summary.reviewed_count == 98
+    assert summary.coverage_percent == 98.0
+    assert summary.counts["unknown"] == 2
+    assert summary.invalid_reason_count == 2
 
 
 @pytest.mark.parametrize(

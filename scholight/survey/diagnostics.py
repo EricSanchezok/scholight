@@ -715,12 +715,27 @@ class SurveyDiagnostics:
                 is_candidate, value = _judge_verdict_candidate(line, field)
                 if is_candidate:
                     matches.append(value)
-            if len(matches) != 1 or matches[0] not in _VERDICTS:
+            valid_matches = {match for match in matches if match in _VERDICTS}
+            if not matches:
+                self._record_anomaly(
+                    component=component,
+                    expected_artifact=f"{relative_path}#{field}",
+                    kind="judge_verdict_missing",
+                    severity="warning",
+                )
+            elif any(match is None for match in matches):
                 self._record_anomaly(
                     component=component,
                     expected_artifact=f"{relative_path}#{field}",
                     kind="judge_verdict_invalid",
-                    severity="error",
+                    severity="warning",
+                )
+            elif len(valid_matches) > 1:
+                self._record_anomaly(
+                    component=component,
+                    expected_artifact=f"{relative_path}#{field}",
+                    kind="judge_verdict_conflict",
+                    severity="warning",
                 )
 
     def _register_durable_plan(self, relative_path: str) -> bool:

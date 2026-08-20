@@ -110,4 +110,20 @@ describe("SurveyReportPage", () => {
 
     await waitFor(() => expect(surveyApi.remove).toHaveBeenCalledWith(survey.id));
   });
+
+  it("keeps a degraded report readable and explains that it was not charged", async () => {
+    vi.mocked(surveyApi.get).mockResolvedValue({
+      ...survey,
+      quota_state: "released",
+      error_code: "survey_quality_degraded",
+      error_message:
+        "This report was delivered with incomplete quality checks and was not counted against your Survey allowance.",
+    });
+
+    renderReport();
+
+    expect(await screen.findByText("Report delivered with quality notes")).toBeVisible();
+    expect(screen.getByText(/not counted against your Survey allowance/i)).toBeVisible();
+    expect(screen.getAllByRole("heading", { name: "Reliable model evaluation" })).toHaveLength(2);
+  });
 });

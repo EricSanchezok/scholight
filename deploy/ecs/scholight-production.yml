@@ -1291,6 +1291,55 @@ Resources:
       TreatMissingData: notBreaching
       AlarmActions: [!ImportValue sanchezcloud-scholight-alert-topic-arn]
 
+  SurveyReadablePublicationRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: RunSurveyWorkers
+    Properties:
+      AlarmName: sanchezcloud-scholight-survey-readable-publication-rate
+      ComparisonOperator: GreaterThanThreshold
+      EvaluationPeriods: 1
+      Threshold: 20
+      TreatMissingData: notBreaching
+      Metrics:
+        - Id: succeeded
+          MetricStat:
+            Metric:
+              Namespace: Scholight/Production
+              MetricName: SurveyPublicationCount
+              Dimensions:
+                - { Name: service, Value: survey-worker }
+                - { Name: outcome, Value: succeeded }
+            Period: 21600
+            Stat: Sum
+          ReturnData: false
+        - Id: degraded
+          MetricStat:
+            Metric:
+              Namespace: Scholight/Production
+              MetricName: SurveyPublicationCount
+              Dimensions:
+                - { Name: service, Value: survey-worker }
+                - { Name: outcome, Value: degraded }
+            Period: 21600
+            Stat: Sum
+          ReturnData: false
+        - Id: failed
+          MetricStat:
+            Metric:
+              Namespace: Scholight/Production
+              MetricName: SurveyPublicationCount
+              Dimensions:
+                - { Name: service, Value: survey-worker }
+                - { Name: outcome, Value: failed }
+            Period: 21600
+            Stat: Sum
+          ReturnData: false
+        - Id: failure_rate
+          Expression: IF((FILL(succeeded,0)+FILL(degraded,0)+FILL(failed,0))>=3,100*FILL(failed,0)/(FILL(succeeded,0)+FILL(degraded,0)+FILL(failed,0)),0)
+          Label: Unreadable Survey publication percentage
+          ReturnData: true
+      AlarmActions: [!ImportValue sanchezcloud-scholight-alert-topic-arn]
+
   SurveyModelTerminalFailureAlarm:
     Type: AWS::CloudWatch::Alarm
     Condition: RunSurveyWorkers
@@ -1656,9 +1705,9 @@ Resources:
             {"type":"metric","x":12,"y":24,"width":12,"height":6,"properties":{"title":"PostgreSQL capacity","region":"${AWS::Region}","metrics":[["AWS/RDS","DatabaseConnections","DBInstanceIdentifier","${DatabaseInstanceIdentifier}"],[".","CPUUtilization",".","."],[".","FreeableMemory",".",".",{"yAxis":"right"}]]}},
             {"type":"metric","x":0,"y":30,"width":12,"height":6,"properties":{"title":"Full Survey compute","region":"${AWS::Region}","metrics":[["AWS/ECS","CPUUtilization","ServiceName","${SurveyFullServiceName}","ClusterName","${ClusterName}"],[".","MemoryUtilization",".",".",".","."]]}},
             {"type":"metric","x":12,"y":30,"width":12,"height":6,"properties":{"title":"Full Survey storage","region":"${AWS::Region}","metrics":[["ECS/ContainerInsights","EphemeralStorageUtilized","ClusterName","${ClusterName}","ServiceName","${SurveyFullServiceName}"],[".","EphemeralStorageReserved",".",".",".","."]]}},
-            {"type":"metric","x":0,"y":36,"width":24,"height":6,"properties":{"title":"Survey finalization and provider canaries","region":"${AWS::Region}","metrics":[["Scholight/Production","SurveyFinalizationFailure","service","survey-worker"],[".","SurveyModelTerminalFailure",".","."],[".","SurveyModelCanaryCount","service","survey-model-canary","outcome","ok"],[".","SurveyModelCanaryCount",".",".",".","failed"],[".","SurveyImageGenerationCount","service","survey-full-worker","outcome","succeeded"],[".","SurveyImageGenerationCount",".",".",".","failed"],[".","SurveyImageCanaryCount","service","survey-image-canary","outcome","ok"],[".","SurveyImageCanaryCount",".",".",".","failed"]]}},
+            {"type":"metric","x":0,"y":36,"width":24,"height":6,"properties":{"title":"Survey publication, finalization, and provider canaries","region":"${AWS::Region}","metrics":[["Scholight/Production","SurveyPublicationCount","service","survey-worker","outcome","succeeded"],[".","SurveyPublicationCount",".",".",".","degraded"],[".","SurveyPublicationCount",".",".",".","failed"],[".","SurveyFinalizationFailure","service","survey-worker"],[".","SurveyModelTerminalFailure",".","."],[".","SurveyModelCanaryCount","service","survey-model-canary","outcome","ok"],[".","SurveyModelCanaryCount",".",".",".","failed"],[".","SurveyImageGenerationCount","service","survey-full-worker","outcome","succeeded"],[".","SurveyImageGenerationCount",".",".",".","failed"],[".","SurveyImageCanaryCount","service","survey-image-canary","outcome","ok"],[".","SurveyImageCanaryCount",".",".",".","failed"]]}},
             {"type":"metric","x":0,"y":42,"width":24,"height":6,"properties":{"title":"Survey full-text evidence","region":"${AWS::Region}","metrics":[["Scholight/Production","SurveyFullTextCoverage","service","survey-full-worker"],[".","SurveyPaperEvidenceCount",".",".","outcome","full_text"],[".","SurveyPaperEvidenceCount",".",".",".","partial"],[".","SurveyPaperEvidenceCount",".",".",".","abstract_only"],[".","SurveyFullTextRuntimeFailure","service","survey-worker"],[".","SurveyFullTextCanaryCount","service","survey-fulltext-canary","outcome","failed"]]}},
-            {"type":"log","x":0,"y":48,"width":24,"height":6,"properties":{"title":"Recent Survey errors","region":"${AWS::Region}","query":"SOURCE '/sanchezcloud/scholight/survey' | fields @timestamp, level, event, job_id, error_code, http_status, retryable, duration_ms | filter level in ['error','critical'] or event in ['survey_model_completion_failed','survey_full_text_evidence_failed'] | sort @timestamp desc | limit 50"}}
+            {"type":"log","x":0,"y":48,"width":24,"height":6,"properties":{"title":"Recent Survey errors and degraded publications","region":"${AWS::Region}","query":"SOURCE '/sanchezcloud/scholight/survey' | fields @timestamp, level, event, job_id, error_code, http_status, retryable, duration_ms | filter level in ['error','critical'] or event in ['survey_model_completion_failed','survey_full_text_evidence_failed','survey_report_published_degraded'] | sort @timestamp desc | limit 50"}}
           ]}
         - ApiServiceName: !GetAtt ApiService.Name
           ExtractServiceName: !GetAtt ExtractService.Name

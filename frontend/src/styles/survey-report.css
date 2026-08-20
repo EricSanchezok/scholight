@@ -30,6 +30,27 @@
   min-height: 42px;
 }
 
+.surveyQualityNotice {
+  max-width: 800px;
+  margin-top: 28px;
+  padding: 18px 20px;
+  border-left: 3px solid var(--warning);
+  background: var(--surface-muted);
+  color: var(--ink-soft);
+}
+
+.surveyQualityNotice strong {
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 16px;
+}
+
+.surveyQualityNotice p {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 .surveyReportLayout {
   display: grid;
   padding-top: 34px;
@@ -320,6 +341,11 @@
 
   .surveyReportLayout {
     padding-top: 28px;
+  }
+
+  .surveyQualityNotice {
+    margin-top: 22px;
+    padding: 16px;
   }
 
   .surveyReportDetails dl {

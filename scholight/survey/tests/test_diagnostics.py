@@ -388,7 +388,7 @@ def test_card_plan_rejects_unsafe_or_noncanonical_ids(tmp_path: Path, unsafe_id:
     )
 
 
-def test_final_audit_rejects_missing_or_invalid_judge_verdicts(tmp_path: Path) -> None:
+def test_final_audit_records_nonblocking_judge_verdict_warnings(tmp_path: Path) -> None:
     judge_files = {
         "06a_coverage_judge.md": "verdict: acceptable\n",
         "06b_scope_judge.md": "no verdict here\n",
@@ -406,16 +406,36 @@ def test_final_audit_rejects_missing_or_invalid_judge_verdicts(tmp_path: Path) -
 
     diagnostics.finalize_contract_audit()
 
-    verdict_errors = {
-        anomaly["expected_artifact"]
+    verdict_warnings = {
+        (anomaly["expected_artifact"], anomaly["kind"], anomaly["severity"])
         for anomaly in diagnostics.snapshot()["anomalies"]
-        if anomaly["kind"] == "judge_verdict_invalid"
+        if anomaly["component"] in {"scope_judge", "benchmark_judge", "gap_judge"}
     }
-    assert verdict_errors == {
-        "06b_scope_judge.md#verdict",
-        "06c_benchmark_judge.md#verdict",
-        "06d_gap_judge.md#verdict",
+    assert verdict_warnings == {
+        ("06b_scope_judge.md#verdict", "judge_verdict_missing", "warning"),
+        ("06c_benchmark_judge.md#verdict", "judge_verdict_invalid", "warning"),
+        ("06d_gap_judge.md#verdict", "judge_verdict_conflict", "warning"),
     }
+
+
+def test_final_audit_accepts_repeated_identical_judge_verdict(tmp_path: Path) -> None:
+    (tmp_path / "06d_gap_judge.md").write_text(
+        "verdict: strong\n\n## Verdict summary\n\n- verdict: strong\n",
+        encoding="utf-8",
+    )
+    diagnostics = SurveyDiagnostics(
+        run_root=tmp_path,
+        job_id=uuid4(),
+        survey_id=uuid4(),
+    )
+
+    diagnostics.finalize_contract_audit()
+
+    assert not any(
+        anomaly["component"] == "gap_judge"
+        and anomaly["expected_artifact"] == "06d_gap_judge.md#verdict"
+        for anomaly in diagnostics.snapshot()["anomalies"]
+    )
 
 
 def test_final_audit_accepts_exact_judge_verdict_contract(tmp_path: Path) -> None:
@@ -502,8 +522,9 @@ def test_final_audit_does_not_overmatch_judge_verdict_prose(
     diagnostics.finalize_contract_audit()
 
     assert any(
-        anomaly["kind"] == "judge_verdict_invalid"
+        anomaly["kind"] in {"judge_verdict_missing", "judge_verdict_invalid"}
         and anomaly["expected_artifact"] == "06a_coverage_judge.md#verdict"
+        and anomaly["severity"] == "warning"
         for anomaly in diagnostics.snapshot()["anomalies"]
     )
 

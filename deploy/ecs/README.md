@@ -470,34 +470,46 @@ Paper cards must declare one evidence level and its matching stable reason:
 `html/html_text_extracted`, `full_text/pdf_text_extracted`,
 `partial/pdf_text_truncated`, or `abstract_only` with a genuine scan, download,
 empty-text, or extraction failure. PDF reads page through bounded output until
-EOF; hitting the extraction cap is `partial`, not `full_text`. Completion fails
-closed if every card is abstract-only, if the evidence declarations disagree,
-or if any card exposes missing-`pdftotext` infrastructure text. Reports expose
-one aggregate evidence-coverage paragraph and must not reproduce workflow,
+EOF; hitting the extraction cap is `partial`, not `full_text`. Missing or
+inconsistent declarations, runtime markers, and coverage below 80% make a
+readable report a free degraded delivery rather than hiding it. The worker still
+refuses to claim new jobs when `pdftotext` itself is absent. Reports expose one
+aggregate evidence-coverage paragraph and must not reproduce workflow,
 PaperCard, or runtime metadata in reader-facing prose.
+
+Publication and research quality are separate contracts. A non-empty, regular,
+owner-scoped UTF-8 `08_survey.md` is delivered as a successful report after the
+normal archive hash checks. Missing intermediate artifacts, incomplete Judge
+fields, model steps that failed after sufficient materials were produced, and
+evidence-quality warnings set `survey_quality_degraded`, release the quota
+reservation, and show a reader-facing quality note. Repeated identical
+normalized Judge verdicts are accepted. Only an absent or unreadable report,
+unsafe paths, archive-integrity failures, or reader-facing internal workflow
+metadata remain publication failures. `SurveyPublicationCount{outcome}` records
+`succeeded`, `degraded`, `failed`, or `cancelled` independently of execution
+diagnostics.
 
 Model failures take precedence over a secondary missing-report symptom. HTTP
 429, 408, 425, 5xx, network, and timeout failures use the existing maximum of
-three clean-workspace attempts. Authentication, other 4xx responses,
-configuration faults, evidence-contract failures, and deterministic finalizer
-errors never replay the complete research graph.
+three clean-workspace attempts only while no readable report or deterministic
+finalization input set exists. If local materials can produce a readable report,
+the report is delivered without charge instead of replaying the research graph.
+Authentication, other 4xx responses, configuration faults, and deterministic
+finalizer errors never replay the complete research graph.
 
-Runtime artifact repair never replays the complete research graph. A
-deterministic finalizer error is returned immediately with its stable code. For
-a zero-exit contract violation, the worker validates `00_card_plan.json` and
-`00_sections.json`; when either valid plan has missing outputs, it runs only the
-corresponding missing-card or missing-section repair graph and then reruns local
-finalization. If the evidence audit identifies cards whose evidence declaration
-is missing or internally inconsistent, the worker maps only those artifact paths
-back to exact entries in the immutable card plan and runs one bounded card repair
-graph before repeating the audit and local finalization. Unselected cards and
-sections are never rewritten, image output is never a repair condition, and
-invalid plans or unrelated structural errors are not retried.
+Runtime artifact repair never replays the complete research graph. Missing
+reports may use validated `00_card_plan.json` and `00_sections.json` to target
+only absent outputs before deterministic finalization. Once a readable report
+exists, contract and evidence diagnostics cannot schedule repair or another
+provider run; they affect only quality classification and quota settlement.
+Image output is never a repair or publication condition.
 
 Component-finish artifact observations are provisional because a streamed
 completion event can precede the final filesystem flush. The final contract
 audit removes only an earlier missing-artifact or invalid-plan anomaly that the
-final validated filesystem state disproves; unresolved anomalies remain fatal.
+final validated filesystem state disproves. Unresolved anomalies remain visible
+in diagnostics; they make a readable report free instead of making it
+unavailable.
 Section-plan card references must use canonical ids from `00_card_plan.json`.
 For legacy slash ids, diagnostics may normalize an artifact stem such as
 `math-0208020` back to `math/0208020` only when the validated card plan provides
