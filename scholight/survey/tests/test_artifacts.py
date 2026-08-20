@@ -523,6 +523,29 @@ async def test_open_artifact_streams_only_exact_manifest_path(tmp_path: Path) ->
 
 
 @pytest.mark.asyncio
+async def test_open_artifact_rejects_same_size_checksum_mismatch(tmp_path: Path) -> None:
+    (tmp_path / "08_survey.md").write_text("# Survey", encoding="utf-8")
+    fake = _FakeS3()
+    store = SurveyArtifactStore(bucket="survey-test", client=fake)
+    archive = await store.archive_run(
+        user_id=42,
+        job_id=uuid4(),
+        run_root=tmp_path,
+        run_metadata={"outcome": "succeeded"},
+    )
+    report = next(
+        record for record in archive.manifest["files"] if record["path"] == "run/08_survey.md"
+    )
+    fake.objects[report["key"]] = b"# Tamper"
+
+    with pytest.raises(SurveyArtifactError, match="checksum"):
+        await store.open_artifact(
+            manifest_key=archive.manifest_key,
+            path="run/08_survey.md",
+        )
+
+
+@pytest.mark.asyncio
 async def test_open_artifact_rejects_path_not_in_manifest(tmp_path: Path) -> None:
     (tmp_path / "08_survey.md").write_text("# Survey", encoding="utf-8")
     fake = _FakeS3()

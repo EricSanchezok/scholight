@@ -415,9 +415,11 @@ Survey artifact readers accept both the original manifest v1 and the additive
 manifest v2 recovery overlay. A v2 manifest must live below the same
 owner-scoped job prefix, reference the exact v1 manifest and its SHA-256, and
 may replace only `run/08_survey.md` and `run/index.md`. Downloads merge those two
-records over the immutable v1 file set; deletion validates and removes both
-layers. This reader compatibility must be deployed and retained as the stable
-rollback release before any recovery command is allowed to write v2 manifests.
+records over the immutable v1 file set. Report and diagnostic reads verify the
+selected object's size and SHA-256 before returning it; deletion validates and
+removes both layers. This reader compatibility must be deployed and retained as
+the stable rollback release before any recovery command is allowed to write v2
+manifests.
 
 ## Failure handling
 
