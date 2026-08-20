@@ -354,6 +354,14 @@ runtime failures have one-event alarms. The Dashboard shows their stable codes,
 full/partial/abstract evidence counts, and aggregate full-text coverage without
 paper, topic, user, or Survey dimensions.
 
+A zero-exit RCM run may retain a classified model failure from the optional
+`image_planner` component. The Survey worker still runs its deterministic evidence
+audit and local finalizer when the required outline, sections, and cards are
+complete. Failures from required or unknown components remain terminal. An
+optional image-path failure alone must not discard otherwise complete research;
+it also cannot mask an earlier required-component failure. If local checks cannot
+produce a valid report, the model failure remains terminal.
+
 RCM 0.2.19 preserves provider reasoning and reconstructs visible assistant text
 plus its tool calls as one assistant turn; call-correlated failed tool results
 are replayed as valid outcomes without re-splitting the turn. This is required
