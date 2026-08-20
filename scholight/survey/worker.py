@@ -31,6 +31,7 @@ from scholight.db.queries_survey import (
 )
 from scholight.db.queries_survey_capacity import get_survey_capacity_snapshot
 from scholight.logging.emf import emit_emf
+from scholight.sources.arxiv import arxiv_artifact_stem
 from scholight.survey.artifacts import SurveyArtifactStore
 from scholight.survey.capacity import (
     SurveyCapacityReporter,
@@ -45,6 +46,7 @@ from scholight.survey.evidence import (
     SurveyEvidenceAuditError,
     SurveyEvidenceSummary,
     audit_survey_evidence,
+    summarize_survey_evidence,
 )
 from scholight.survey.finalizer import SurveyFinalizationError, finalize_survey
 from scholight.survey.metrics import is_provider_throttled
@@ -70,7 +72,7 @@ from scholight.survey.workflow_runtime import workflow_file
 logger = structlog.get_logger(__name__)
 
 RCM_VERSION = "0.2.19"
-WORKFLOW_VERSION = "scholight-survey-v2"
+WORKFLOW_VERSION = "scholight-survey-v2.1"
 _IDLE_SECONDS = 1
 _RECOVERY_SECONDS = 30
 _EVENT_READ_BYTES = 64 * 1024
@@ -1025,6 +1027,7 @@ async def _execute_survey_once(
                 "survey_full_text_evidence_failed",
                 job_id=str(job.id),
                 error_code=exc.code,
+                invalid_card_count=len(exc.invalid_cards),
             )
         finalization_error: SurveyFinalizationError | None = None
         try:
@@ -1199,6 +1202,34 @@ async def _execute_survey_once(
         )
 
 
+def _invalid_evidence_repair_items(
+    diagnostics: SurveyDiagnostics,
+    invalid_cards: tuple[str, ...],
+) -> tuple[dict[str, object], ...] | None:
+    """Map invalid card artifacts back to their immutable, validated plan items."""
+    if not invalid_cards or len(invalid_cards) > 100:
+        return None
+    requested = set(invalid_cards)
+    if len(requested) != len(invalid_cards) or any(
+        Path(path).parts != ("cards", Path(path).name) or not Path(path).name.endswith(".md")
+        for path in requested
+    ):
+        return None
+    plan = diagnostics.read_durable_plan("00_card_plan.json")
+    if plan is None:
+        return None
+    selected: list[dict[str, object]] = []
+    matched: set[str] = set()
+    for item in plan:
+        paper_id = item.get("id")
+        stem = arxiv_artifact_stem(paper_id) if isinstance(paper_id, str) else None
+        artifact = f"cards/{stem}.md" if stem is not None else None
+        if artifact in requested:
+            selected.append(item)
+            matched.add(artifact)
+    return tuple(selected) if matched == requested else None
+
+
 def _repair_workflows(diagnostics: SurveyDiagnostics) -> tuple[tuple[str, str], ...]:
     """Select bounded repair graphs only when a valid durable plan has gaps."""
     selected: list[tuple[str, str]] = []
@@ -1219,8 +1250,9 @@ async def _run_repair_workflow(
     plan: str,
     workflow: str,
     control: ProcessControl,
+    invalid_evidence_items: tuple[dict[str, object], ...] = (),
 ) -> bool:
-    """Run one missing-only repair graph without replaying upstream research."""
+    """Run one bounded repair graph without replaying upstream research."""
     process = await asyncio.create_subprocess_exec(
         "accelerate",
         "run",
@@ -1239,13 +1271,17 @@ async def _run_repair_workflow(
     collector = asyncio.create_task(_collect_stage_timings(process.stdout))
     stderr_task = asyncio.create_task(read_sanitized_tail(process.stderr))
     try:
+        repair_request: dict[str, object] = {
+            "run_dir": ".",
+            "repair": "missing_only",
+            "plan": plan,
+        }
+        if invalid_evidence_items:
+            repair_request["repair"] = "invalid_evidence"
+            repair_request["items"] = invalid_evidence_items
         await write_stdin(
             process,
-            json.dumps(
-                {"run_dir": ".", "repair": "missing_only", "plan": plan},
-                separators=(",", ":"),
-                sort_keys=True,
-            ),
+            json.dumps(repair_request, separators=(",", ":"), sort_keys=True),
         )
         try:
             return_code = await asyncio.wait_for(
@@ -1298,20 +1334,33 @@ async def _repair_survey_artifacts(
         job_id=job.id,
         survey_id=job.survey_id,
     )
-    repairs = _repair_workflows(diagnostics)
+    repairs: tuple[tuple[str, str, tuple[dict[str, object], ...]], ...] = tuple(
+        (*repair, ()) for repair in _repair_workflows(diagnostics)
+    )
+    if original.error_code == "survey_full_text_evidence_invalid":
+        evidence_summary = summarize_survey_evidence(run_root)
+        selected = _invalid_evidence_repair_items(
+            diagnostics,
+            evidence_summary.invalid_cards,
+        )
+        if not selected:
+            return None
+        repairs = (*repairs, ("00_card_plan.json", "card_repair.rcm", selected))
     if not repairs:
         return None
     logger.warning(
         "survey_artifact_repair_scheduled",
         job_id=str(job.id),
         repair_count=len(repairs),
-        plans=[plan for plan, _workflow in repairs],
+        plans=[plan for plan, _workflow, _items in repairs],
+        repair_kinds=["invalid_evidence" if items else "missing_only" for _, _, items in repairs],
+        invalid_evidence_item_count=sum(len(items) for _, _, items in repairs),
     )
     emit_emf(
         service="survey-full-worker",
         metrics={"SurveyArtifactRepair": (1, "Count")},
     )
-    for plan, workflow in repairs:
+    for plan, workflow, invalid_evidence_items in repairs:
         if control.lease_lost.is_set():
             raise SurveyLeaseLostError("Survey execution lease is no longer owned")
         if control.cancel_requested.is_set():
@@ -1329,6 +1378,7 @@ async def _repair_survey_artifacts(
             plan=plan,
             workflow=workflow,
             control=control,
+            invalid_evidence_items=invalid_evidence_items,
         ):
             return None
 
@@ -1376,14 +1426,15 @@ async def execute_survey(
     *,
     control: ProcessControl | None = None,
 ) -> SurveyExecutionResult:
-    """Run Survey with bounded provider retries and missing-only artifact repair."""
+    """Run Survey with bounded provider retries and targeted artifact repair."""
     control = control or ProcessControl()
     provider_attempt = 1
     while provider_attempt <= settings.survey_provider_max_attempts:
         result = await _execute_survey_once(job, run_root, control=control)
         if (
             result.outcome == "failed"
-            and result.error_code == "survey_contract_violation"
+            and result.error_code
+            in {"survey_contract_violation", "survey_full_text_evidence_invalid"}
             and result.return_code == 0
         ):
             repaired = await _repair_survey_artifacts(

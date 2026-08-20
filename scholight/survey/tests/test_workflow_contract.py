@@ -190,6 +190,17 @@ def test_fan_out_plans_are_durable_and_restart_safe() -> None:
     assert "one retry call" in section_plan
 
 
+def test_card_repair_supports_only_app_selected_invalid_evidence_items() -> None:
+    prompt = (_WORKFLOW / "prompts" / "card_repair.txt").read_text(encoding="utf-8")
+    normalized = " ".join(prompt.split())
+
+    assert "`invalid_evidence`" in prompt
+    assert "Confirm every item exactly matches its plan entry" in prompt
+    assert "dispatch exactly those items" in prompt
+    assert "exact `## evidence` block shape" in normalized
+    assert "Do not dispatch any item absent from the request" in prompt
+
+
 def test_empty_citation_expansion_has_an_explicit_artifact_state() -> None:
     reference = (_WORKFLOW / "prompts" / "reference_expander.txt").read_text(encoding="utf-8")
     expansion = (_WORKFLOW / "schema" / "expansion.md").read_text(encoding="utf-8")

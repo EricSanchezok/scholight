@@ -39,9 +39,16 @@ _RUNTIME_MARKERS = (
 class SurveyEvidenceAuditError(RuntimeError):
     """A stable, client-safe failure in the full-text evidence contract."""
 
-    def __init__(self, message: str, *, code: str) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str,
+        invalid_cards: tuple[str, ...] = (),
+    ) -> None:
         super().__init__(message)
         self.code = code
+        self.invalid_cards = invalid_cards
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,9 +61,10 @@ class SurveyEvidenceSummary:
     coverage_percent: float
     invalid_reason_count: int
     runtime_marker_count: int
+    invalid_cards: tuple[str, ...]
 
 
-def _card_documents(run_root: Path) -> list[str]:
+def _card_documents(run_root: Path) -> list[tuple[str, str]]:
     cards = run_root / "cards"
     try:
         cards_stat = cards.lstat()
@@ -71,7 +79,7 @@ def _card_documents(run_root: Path) -> list[str]:
     ):
         return []
 
-    documents: list[str] = []
+    documents: list[tuple[str, str]] = []
     for path in sorted(cards.glob("*.md"), key=lambda candidate: candidate.name):
         try:
             path_stat = path.lstat()
@@ -87,7 +95,7 @@ def _card_documents(run_root: Path) -> list[str]:
         ):
             continue
         try:
-            documents.append(path.read_text(encoding="utf-8"))
+            documents.append((f"cards/{path.name}", path.read_text(encoding="utf-8")))
         except (OSError, UnicodeError):
             continue
     return documents
@@ -122,11 +130,13 @@ def summarize_survey_evidence(run_root: Path) -> SurveyEvidenceSummary:
     counts = dict.fromkeys((*_LEVELS, "unknown"), 0)
     invalid_reason_count = 0
     runtime_marker_count = 0
-    for document in documents:
+    invalid_cards: list[str] = []
+    for relative_path, document in documents:
         level, reason = _evidence_fields(document)
         counts[level if level in counts else "unknown"] += 1
         if reason not in _LEVEL_REASONS.get(level, frozenset()):
             invalid_reason_count += 1
+            invalid_cards.append(relative_path)
         if any(marker.search(document) is not None for marker in _RUNTIME_MARKERS):
             runtime_marker_count += 1
     reviewed_count = sum(counts[level] for level in _REVIEWED_LEVELS)
@@ -138,6 +148,7 @@ def summarize_survey_evidence(run_root: Path) -> SurveyEvidenceSummary:
         coverage_percent=round(coverage, 2),
         invalid_reason_count=invalid_reason_count,
         runtime_marker_count=runtime_marker_count,
+        invalid_cards=tuple(invalid_cards),
     )
 
 
@@ -158,6 +169,7 @@ def audit_survey_evidence(run_root: Path) -> SurveyEvidenceSummary:
         raise SurveyEvidenceAuditError(
             "The Survey paper evidence declarations are incomplete.",
             code="survey_full_text_evidence_invalid",
+            invalid_cards=summary.invalid_cards,
         )
     if summary.card_count >= 10 and summary.counts["abstract_only"] * 2 > summary.card_count:
         logger.warning(

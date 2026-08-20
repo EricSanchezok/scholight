@@ -452,9 +452,12 @@ deterministic finalizer error is returned immediately with its stable code. For
 a zero-exit contract violation, the worker validates `00_card_plan.json` and
 `00_sections.json`; when either valid plan has missing outputs, it runs only the
 corresponding missing-card or missing-section repair graph and then reruns local
-finalization. Existing cards and sections are excluded, image output is never a
-repair condition, and invalid plans or unrelated structural errors are not
-retried.
+finalization. If the evidence audit identifies cards whose evidence declaration
+is missing or internally inconsistent, the worker maps only those artifact paths
+back to exact entries in the immutable card plan and runs one bounded card repair
+graph before repeating the audit and local finalization. Unselected cards and
+sections are never rewritten, image output is never a repair condition, and
+invalid plans or unrelated structural errors are not retried.
 
 Component-finish artifact observations are provisional because a streamed
 completion event can precede the final filesystem flush. The final contract

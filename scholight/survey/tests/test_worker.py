@@ -17,6 +17,7 @@ from scholight.config import settings
 from scholight.db.queries_survey import SurveyJob
 from scholight.survey.artifacts import SurveyArchive
 from scholight.survey.diagnostics import ARTIFACT_CONTRACTS, SurveyDiagnostics
+from scholight.survey.evidence import SurveyEvidenceSummary
 from scholight.survey.process import ProcessControl
 from scholight.survey.worker import (
     RCM_VERSION,
@@ -25,6 +26,8 @@ from scholight.survey.worker import (
     _collect_stage_timings,
     _emit_result_metrics,
     _heartbeat,
+    _invalid_evidence_repair_items,
+    _repair_survey_artifacts,
     _repair_workflows,
     _run_claimed_job,
     _run_metadata,
@@ -252,6 +255,168 @@ async def test_zero_exit_contract_violation_uses_targeted_repair_without_full_re
     assert execute.await_count == 1
     repair.assert_awaited_once()
     assert complete_report.read_text(encoding="utf-8") == "# Complete report\n"
+
+
+@pytest.mark.asyncio
+async def test_invalid_evidence_uses_targeted_repair_without_full_rerun(
+    tmp_path: Path,
+) -> None:
+    job = _job(job_id=uuid4(), worker_id=uuid4(), status="running")
+    now = datetime.now(UTC)
+    incomplete = SurveyExecutionResult(
+        outcome="failed",
+        error_code="survey_full_text_evidence_invalid",
+        error_message="The Survey paper evidence declarations are incomplete.",
+        started_at=now,
+        finished_at=now,
+        return_code=0,
+        termination_reason="evidence_audit_failed",
+    )
+    succeeded = SurveyExecutionResult(
+        outcome="succeeded",
+        error_code=None,
+        error_message=None,
+        started_at=now,
+        finished_at=now,
+        return_code=0,
+        termination_reason="targeted_artifact_repair",
+    )
+
+    with (
+        patch(
+            "scholight.survey.worker._execute_survey_once",
+            new_callable=AsyncMock,
+            return_value=incomplete,
+        ) as execute,
+        patch(
+            "scholight.survey.worker._repair_survey_artifacts",
+            new_callable=AsyncMock,
+            return_value=succeeded,
+        ) as repair,
+    ):
+        result = await execute_survey(job, tmp_path)
+
+    assert result.outcome == "succeeded"
+    assert execute.await_count == 1
+    repair.assert_awaited_once()
+
+
+def test_invalid_evidence_repair_items_are_bounded_by_the_durable_plan(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "cards").mkdir()
+    (tmp_path / "00_card_plan.json").write_text(
+        json.dumps(
+            [
+                {
+                    "run_dir": ".",
+                    "id": "2511.14617",
+                    "title": "Invalid evidence card",
+                    "why": "evidence",
+                },
+                {
+                    "run_dir": ".",
+                    "id": "2605.25189",
+                    "title": "Valid evidence card",
+                    "why": "evidence",
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+    diagnostics = SurveyDiagnostics(
+        run_root=tmp_path,
+        job_id=uuid4(),
+        survey_id=uuid4(),
+    )
+
+    selected = _invalid_evidence_repair_items(
+        diagnostics,
+        ("cards/2511.14617.md",),
+    )
+
+    assert selected is not None
+    assert [item["id"] for item in selected] == ["2511.14617"]
+    assert (
+        _invalid_evidence_repair_items(
+            diagnostics,
+            ("cards/not-in-plan.md",),
+        )
+        is None
+    )
+
+
+@pytest.mark.asyncio
+async def test_invalid_evidence_repair_dispatches_only_selected_plan_items(
+    tmp_path: Path,
+) -> None:
+    job = _job(job_id=uuid4(), worker_id=uuid4(), status="running")
+    now = datetime.now(UTC)
+    original = SurveyExecutionResult(
+        outcome="failed",
+        error_code="survey_full_text_evidence_invalid",
+        error_message="The Survey paper evidence declarations are incomplete.",
+        started_at=now,
+        finished_at=now,
+        return_code=0,
+        termination_reason="evidence_audit_failed",
+    )
+    selected = (
+        {
+            "run_dir": ".",
+            "id": "2511.14617",
+            "title": "Invalid evidence card",
+            "why": "evidence",
+        },
+    )
+    invalid_summary = SurveyEvidenceSummary(
+        card_count=1,
+        counts={
+            "html": 0,
+            "full_text": 0,
+            "partial": 0,
+            "abstract_only": 0,
+            "unknown": 1,
+        },
+        reviewed_count=0,
+        coverage_percent=0.0,
+        invalid_reason_count=1,
+        runtime_marker_count=0,
+        invalid_cards=("cards/2511.14617.md",),
+    )
+    control = ProcessControl()
+
+    with (
+        patch(
+            "scholight.survey.worker.summarize_survey_evidence",
+            return_value=invalid_summary,
+        ),
+        patch(
+            "scholight.survey.worker._invalid_evidence_repair_items",
+            return_value=selected,
+        ),
+        patch(
+            "scholight.survey.worker._run_repair_workflow",
+            new_callable=AsyncMock,
+            return_value=False,
+        ) as repair,
+    ):
+        result = await _repair_survey_artifacts(
+            job,
+            tmp_path,
+            original=original,
+            control=control,
+        )
+
+    assert result is None
+    repair.assert_awaited_once_with(
+        job=job,
+        run_root=tmp_path,
+        plan="00_card_plan.json",
+        workflow="card_repair.rcm",
+        control=control,
+        invalid_evidence_items=selected,
+    )
 
 
 def test_targeted_repair_selects_only_missing_items_from_valid_plans(tmp_path: Path) -> None:
