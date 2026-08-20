@@ -423,6 +423,19 @@ def test_production_deploy_role_can_run_candidate_survey_canaries() -> None:
     assert "Action: ecs:*" not in deploy_policy
 
 
+def test_production_deploy_role_can_run_owner_preserving_survey_reruns() -> None:
+    foundation = (ECS / "scholight-foundation.yml").read_text(encoding="utf-8")
+    deploy_policy = foundation.split("ProductionDeployRole:", maxsplit=1)[1].split(
+        "DatabaseDeployRole:", maxsplit=1
+    )[0]
+
+    assert "task-definition/sanchezcloud-scholight-api:*" in deploy_policy
+    assert "role/SanchezCloudScholightApiTaskRole" in deploy_policy
+    assert "log-group:/sanchezcloud/scholight/api:*" in deploy_policy
+    assert "cluster/sanchezcloud-production" in deploy_policy
+    assert "Action: ecs:*" not in deploy_policy
+
+
 def test_active_workflows_do_not_depend_on_frozen_ec2_package() -> None:
     active = "\n".join(
         (ROOT / ".github/workflows" / name).read_text(encoding="utf-8")
