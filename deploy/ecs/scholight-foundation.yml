@@ -447,6 +447,7 @@ Resources:
     Type: AWS::IAM::Role
     Properties:
       RoleName: SanchezCloudScholightProductionDeployRole
+      MaxSessionDuration: 14400
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
