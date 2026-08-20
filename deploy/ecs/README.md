@@ -489,6 +489,12 @@ metadata remain publication failures. `SurveyPublicationCount{outcome}` records
 `succeeded`, `degraded`, `failed`, or `cancelled` independently of execution
 diagnostics.
 
+Migration `013_allow_free_readable_surveys.sql` broadens the existing terminal
+quota constraint so `succeeded + released` represents a readable degraded
+report that did not consume the daily allowance. It introduces no new status or
+quota-state value, so the immediately previous application remains able to read
+and delete these rows after rollback; older code simply never creates them.
+
 Model failures take precedence over a secondary missing-report symptom. HTTP
 429, 408, 425, 5xx, network, and timeout failures use the existing maximum of
 three clean-workspace attempts only while no readable report or deterministic

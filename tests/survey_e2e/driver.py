@@ -279,7 +279,8 @@ async def _assert_missing_candidate_pool_diagnostics(
         json={"client_request_id": str(uuid4())},
     )
     started.raise_for_status()
-    await _poll_survey(client, survey_id, expected_status="failed")
+    survey = await _poll_survey(client, survey_id, expected_status="succeeded")
+    assert survey["error_code"] == "survey_quality_degraded"
 
     connection = await asyncpg.connect(
         host="postgres",
@@ -290,12 +291,23 @@ async def _assert_missing_candidate_pool_diagnostics(
     )
     try:
         job = await connection.fetchrow(
-            "SELECT id, manifest_key, terminal_outcome FROM scholight.survey_jobs "
+            "SELECT id, manifest_key, terminal_outcome, error_code FROM scholight.survey_jobs "
             "WHERE survey_id = $1::uuid",
             survey_id,
         )
         assert job is not None
-        assert job["terminal_outcome"] == "failed"
+        assert job["terminal_outcome"] == "succeeded"
+        assert job["error_code"] == "survey_quality_degraded"
+        quota_state = await connection.fetchval(
+            "SELECT quota_state FROM scholight.surveys WHERE id = $1::uuid", survey_id
+        )
+        assert quota_state == "released"
+        quota = await connection.fetchrow(
+            "SELECT reserved_count, succeeded_count FROM scholight.survey_daily_usage "
+            "WHERE user_id = 42"
+        )
+        assert quota is not None
+        assert tuple(quota.values()) == (0, 1)
         manifest = json.loads(_read_object(s3, job["manifest_key"]))
         paths = {item["path"] for item in manifest["files"]}
         assert "run/02_candidate_pool.md" not in paths
@@ -329,6 +341,9 @@ async def _assert_missing_candidate_pool_diagnostics(
             "survey_outline",
             "survey_finalizer",
         ]
+        report = await client.get(f"{API}/surveys/{survey_id}/report")
+        report.raise_for_status()
+        assert "This deterministic section is grounded" in report.text
         return survey_id, str(job["manifest_key"])
     finally:
         await connection.close()
