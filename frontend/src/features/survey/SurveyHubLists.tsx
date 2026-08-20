@@ -172,11 +172,9 @@ function ReportPreview({ surveyId }: { surveyId: string }) {
 export function CompletedSurveyList({
   items,
   locale,
-  onDelete,
 }: {
   items: SurveySummary[];
   locale: AppLocale;
-  onDelete: (survey: SurveySummary) => void;
 }) {
   if (!items.length) {
     return (
@@ -216,11 +214,6 @@ export function CompletedSurveyList({
                   <strong>Open report →</strong>
                 </div>
               </Link>
-              <div className={styles.surveyReportCardActions}>
-                <button type="button" onClick={() => onDelete(survey)}>
-                  Delete
-                </button>
-              </div>
             </article>
           ))}
         </div>
@@ -240,12 +233,10 @@ export function CompletedSurveyList({
                 </p>
               </div>
               <div className={styles.surveyTerminalActions}>
+                <Link to={surveyReportPath(survey.id)}>View status →</Link>
                 <Link to={surveyDraftPath(survey.id)}>
                   {survey.latest_draft_revision ? "Review draft" : "View request"} →
                 </Link>
-                <button type="button" onClick={() => onDelete(survey)}>
-                  Delete
-                </button>
               </div>
             </article>
           ))}

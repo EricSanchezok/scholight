@@ -8,7 +8,6 @@ import type { SurveySummary, SurveyView } from "../../api/types";
 import { queryKeys } from "../../app/queryKeys";
 import { surveyDraftPath } from "../../app/routes";
 import { useAuth } from "../../auth/context";
-import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { PageRefreshButton } from "../../components/PageRefreshButton";
 import { SkeletonPulse } from "../../components/EditorialSkeleton";
 import { useI18n } from "../../i18n/I18nProvider";
@@ -33,7 +32,6 @@ export function SurveyHubPage() {
   const [signInOpen, setSignInOpen] = useState(false);
   const [limitOpen, setLimitOpen] = useState(false);
   const [cancelTarget, setCancelTarget] = useState<SurveySummary | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<SurveySummary | null>(null);
 
   useEffect(() => {
     document.title = messages.titles.survey;
@@ -107,13 +105,6 @@ export function SurveyHubPage() {
     mutationFn: (surveyId: string) => surveyApi.cancel(surveyId),
     onSuccess: () => {
       setCancelTarget(null);
-      void queryClient.invalidateQueries({ queryKey: queryKeys.surveyRoot });
-    },
-  });
-  const deleteSurvey = useMutation({
-    mutationFn: (surveyId: string) => surveyApi.remove(surveyId),
-    onSuccess: () => {
-      setDeleteTarget(null);
       void queryClient.invalidateQueries({ queryKey: queryKeys.surveyRoot });
     },
   });
@@ -234,7 +225,7 @@ export function SurveyHubPage() {
       ) : view === "active" ? (
         <ActiveSurveyList items={items} locale={locale} onCancel={setCancelTarget} />
       ) : (
-        <CompletedSurveyList items={items} locale={locale} onDelete={setDeleteTarget} />
+        <CompletedSurveyList items={items} locale={locale} />
       )}
       {status === "authenticated" && list.hasNextPage && (
         <div className={styles.surveyLoadMore}>
@@ -267,21 +258,6 @@ export function SurveyHubPage() {
         }}
         onConfirm={() => {
           if (cancelTarget) cancelSurvey.mutate(cancelTarget.id);
-        }}
-      />
-      <ConfirmDialog
-        open={Boolean(deleteTarget)}
-        title="Delete this survey?"
-        description="This permanently removes the survey record. This action cannot be undone."
-        busy={deleteSurvey.isPending}
-        error={deleteSurvey.error instanceof Error ? deleteSurvey.error.message : undefined}
-        confirmLabel="Delete"
-        busyLabel="Deleting…"
-        onOpenChange={(open) => {
-          if (!open) setDeleteTarget(null);
-        }}
-        onConfirm={() => {
-          if (deleteTarget) deleteSurvey.mutate(deleteTarget.id);
         }}
       />
     </main>

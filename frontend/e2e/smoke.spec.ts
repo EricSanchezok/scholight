@@ -386,36 +386,52 @@ test("signed-in survey controls follow the shared page geometry", async ({ page 
 test("completed survey cards render a stable live Markdown preview", async ({ page }) => {
   await mockSurveyAvailable(page);
   await mockAuthenticated(page);
+  const completedItems = [
+    {
+      id: "00000000-0000-0000-0000-000000000001",
+      title: "Chain-of-thought compression and evaluation",
+      elapsedSeconds: 5220,
+    },
+    {
+      id: "00000000-0000-0000-0000-000000000002",
+      title:
+        "A deliberately longer survey title that wraps across several lines without shifting the report action",
+      elapsedSeconds: 4980,
+    },
+    {
+      id: "00000000-0000-0000-0000-000000000003",
+      title: "Short survey",
+      elapsedSeconds: 3600,
+    },
+  ].map(({ id, title, elapsedSeconds }) => ({
+    id,
+    title,
+    status: "succeeded",
+    created_at: "2026-08-02T06:00:00Z",
+    updated_at: "2026-08-02T07:37:00Z",
+    started_at: "2026-08-02T06:10:00Z",
+    finished_at: "2026-08-02T07:37:00Z",
+    latest_draft_revision: 1,
+    progress: {
+      survey_id: id,
+      status: "succeeded",
+      stage: "completed",
+      percent: 100,
+      step: 8,
+      total_steps: 8,
+      queue: null,
+      elapsed_seconds: elapsedSeconds,
+      started_at: "2026-08-02T06:10:00Z",
+      finished_at: "2026-08-02T07:37:00Z",
+      last_activity_at: "2026-08-02T07:37:00Z",
+    },
+    report_available: true,
+    artifacts_available: true,
+  }));
   await page.route("**/api/surveys?*", (route) =>
     route.fulfill({
       json: {
-        items: [
-          {
-            id: "00000000-0000-0000-0000-000000000001",
-            title: "Chain-of-thought compression and evaluation",
-            status: "succeeded",
-            created_at: "2026-08-02T06:00:00Z",
-            updated_at: "2026-08-02T07:37:00Z",
-            started_at: "2026-08-02T06:10:00Z",
-            finished_at: "2026-08-02T07:37:00Z",
-            latest_draft_revision: 1,
-            progress: {
-              survey_id: "00000000-0000-0000-0000-000000000001",
-              status: "succeeded",
-              stage: "completed",
-              percent: 100,
-              step: 8,
-              total_steps: 8,
-              queue: null,
-              elapsed_seconds: 5220,
-              started_at: "2026-08-02T06:10:00Z",
-              finished_at: "2026-08-02T07:37:00Z",
-              last_activity_at: "2026-08-02T07:37:00Z",
-            },
-            report_available: true,
-            artifacts_available: true,
-          },
-        ],
+        items: completedItems,
         quota: { daily_limit: 3, reserved: 0, succeeded: 1, remaining: 2 },
         next_cursor: null,
       },
@@ -442,15 +458,27 @@ test("completed survey cards render a stable live Markdown preview", async ({ pa
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/survey?view=completed");
 
-  const preview = page.locator(".surveyReportThumbnail");
+  const preview = page.locator(".surveyReportThumbnail").first();
   const loadingBox = await preview.boundingBox();
-  await expect(page.getByText("This survey maps where reasoning tokens are saved")).toBeVisible();
+  await expect(
+    page.getByText("This survey maps where reasoning tokens are saved").first(),
+  ).toBeVisible();
   const renderedBox = await preview.boundingBox();
-  const paperBox = await page.locator(".surveyReportPaper").boundingBox();
+  const paperBox = await page.locator(".surveyReportPaper").first().boundingBox();
 
   expect(renderedBox).toEqual(loadingBox);
   expect(paperBox).toEqual(renderedBox);
   await expect(page.getByText("Chain-of-thought compression and evaluation")).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Delete" })).toHaveCount(0);
+
+  if ((page.viewportSize()?.width ?? 0) >= 1000) {
+    const reportActions = page.locator(".surveyReportCardBody > strong");
+    await expect(reportActions).toHaveCount(3);
+    const actionBoxes = await reportActions.evaluateAll((elements) =>
+      elements.map((element) => element.getBoundingClientRect()),
+    );
+    expect(new Set(actionBoxes.map(({ top }) => Math.round(top))).size).toBe(1);
+  }
 });
 
 test("a failed survey preserves its draft and original request for reuse", async ({ page }) => {
@@ -600,7 +628,9 @@ test("a failed survey preserves its draft and original request for reuse", async
   expect(replacementBody).toHaveProperty("client_request_id");
 });
 
-test("a completed report downloads as a Markdown and image package", async ({ page }) => {
+test("a completed report downloads cleanly and reflows for mobile reading", async ({
+  page,
+}, testInfo) => {
   await mockSurveyAvailable(page);
   await mockAuthenticated(page);
   const surveyId = "00000000-0000-0000-0000-000000000001";
@@ -608,7 +638,7 @@ test("a completed report downloads as a Markdown and image package", async ({ pa
     route.fulfill({
       json: {
         id: surveyId,
-        title: "Chain-of-thought compression and evaluation",
+        title: "模型架构验证闭环与推理效率评估体系的结构化研究报告",
         initial_request: "Survey reasoning compression.",
         status: "succeeded",
         quota_state: "consumed",
@@ -648,11 +678,29 @@ test("a completed report downloads as a Markdown and image package", async ({ pa
   await page.goto(`/survey/${surveyId}/report`);
 
   await expect(page.getByText("<!--M4-->")).not.toBeVisible();
+  if (testInfo.project.name === "mobile") {
+    const [titleBox, documentBox, detailsBox] = await Promise.all([
+      page.locator(".surveyReportHeader h1").boundingBox(),
+      page.locator(".surveyReportDocument").boundingBox(),
+      page.locator(".surveyReportDetails").boundingBox(),
+    ]);
+    expect(titleBox).not.toBeNull();
+    expect(documentBox).not.toBeNull();
+    expect(detailsBox).not.toBeNull();
+    expect(titleBox!.width).toBeGreaterThan(300);
+    expect(documentBox!.width).toBeGreaterThan(300);
+    expect(detailsBox!.y + detailsBox!.height).toBeLessThan(documentBox!.y);
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+  }
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Download ZIP" }).click();
   const download = await downloadPromise;
 
-  expect(download.suggestedFilename()).toBe("Chain-of-thought-compression-and-evaluation.zip");
+  expect(download.suggestedFilename()).toBe(
+    "模型架构验证闭环与推理效率评估体系的结构化研究报告.zip",
+  );
 });
 
 test("survey routes remain unavailable while the public capability is off", async ({ page }) => {
