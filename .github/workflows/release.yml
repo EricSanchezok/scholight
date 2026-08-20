@@ -250,6 +250,10 @@ jobs:
               break
             fi
             if (( SECONDS >= deadline )); then
+              aws ecs stop-task \
+                --cluster sanchezcloud-production \
+                --task "$task_arn" \
+                --reason "Candidate Survey canary timed out" >/dev/null
               echo "Candidate Survey canaries timed out" >&2
               exit 1
             fi
