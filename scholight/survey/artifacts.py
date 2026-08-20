@@ -844,19 +844,13 @@ class SurveyArtifactStore:
         )
         if record is None:
             raise SurveyArtifactNotFoundError("Survey artifact is not present in the manifest")
-        response = self._client.get_object(Bucket=self._bucket, Key=record["key"])
-        body = response["Body"]
-        if int(response.get("ContentLength", -1)) != int(record["size"]):
-            close = getattr(body, "close", None)
-            if callable(close):
-                close()
-            raise SurveyArtifactError("Survey artifact size does not match the manifest")
+        content = self._read_record_bytes(record)
         return SurveyArtifactStream(
             path=str(record["path"]),
             size=int(record["size"]),
             sha256=str(record["sha256"]),
             content_type=str(record["mime"]),
-            _body=body,
+            _body=io.BytesIO(content),
         )
 
     async def build_report_package(self, *, manifest_key: str) -> SurveyArtifactStream:
@@ -935,12 +929,10 @@ class SurveyArtifactStore:
             close = getattr(body, "close", None)
             if callable(close):
                 close()
-        if (
-            declared_size != expected_size
-            or content.tell() != expected_size
-            or digest.hexdigest() != record["sha256"]
-        ):
+        if declared_size != expected_size or content.tell() != expected_size:
             raise SurveyArtifactError("Survey artifact does not match the manifest")
+        if digest.hexdigest() != record["sha256"]:
+            raise SurveyArtifactError("Survey artifact checksum does not match the manifest")
         return content.getvalue()
 
     async def delete_archive(self, *, manifest_key: str, preserve_manifest: bool = False) -> None:
