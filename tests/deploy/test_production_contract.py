@@ -160,6 +160,39 @@ def test_active_workflows_are_oidc_manifest_and_digest_driven() -> None:
     assert 'expected_confirmation="${OPERATION^^} SCHOLIGHT PRODUCTION"' in release
 
 
+def test_release_runs_candidate_survey_canaries_before_deployment() -> None:
+    workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+
+    canary = workflow.split("- name: Register candidate Survey canary task", maxsplit=1)[1]
+    canary = canary.split("- name: Deploy digest-qualified ECS release", maxsplit=1)[0]
+    assert "sanchezcloud-scholight-survey-canary" in canary
+    assert "scholight survey model-canary --json-output" in canary
+    assert "scholight survey image-canary --json-output" in canary
+    assert "scholight survey fulltext-canary --json-output" in canary
+    assert "aws ecs describe-tasks" in canary
+    assert "deadline=$((SECONDS + 1200))" in canary
+    assert "aws ecs deregister-task-definition" in canary
+    assert '--task-definition "$CANARY_TASK_DEFINITION"' in canary
+
+
+def test_production_survey_rerun_workflow_is_fixed_and_owner_preserving() -> None:
+    workflow = (ROOT / ".github/workflows/survey-production-rerun.yml").read_text(encoding="utf-8")
+
+    assert "environment: production" in workflow
+    assert "id-token: write" in workflow
+    assert "RERUN SCHOLIGHT SURVEY" in workflow
+    assert '"python","-m","scholight.survey.production_ops"' in workflow
+    assert "rerun-and-verify" in workflow
+    assert "--source-survey-id" in workflow
+    assert "--operation-id" in workflow
+    assert '"--minimum-coverage","80"' in workflow
+    assert "--notify-on-completion" in workflow
+    assert "aws ecs run-task" in workflow
+    assert "aws ecs describe-tasks" in workflow
+    assert "status=$(jq -r '.tasks[0].lastStatus'" in workflow
+    assert "inputs.command" not in workflow
+
+
 def test_survey_capacity_contract_is_explicit_and_staged() -> None:
     runtime = (ECS / "scholight-production.yml").read_text(encoding="utf-8")
     workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")

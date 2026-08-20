@@ -183,6 +183,95 @@ jobs:
             --current-full "$current_full" \
             --desired-draft "$desired_draft" \
             --desired-full "$desired_full"
+      - name: Register candidate Survey canary task
+        if: inputs.survey_runtime_enabled == 'true'
+        id: survey_canary
+        run: |
+          desired_image=$(jq -r .images.survey release-manifest.json)
+          aws ecs describe-task-definition \
+            --task-definition sanchezcloud-scholight-survey \
+            --query taskDefinition > survey-task.json
+          jq --arg image "$desired_image" '
+            {
+              family: "sanchezcloud-scholight-survey-canary",
+              taskRoleArn, executionRoleArn, networkMode,
+              containerDefinitions, volumes, placementConstraints,
+              requiresCompatibilities, cpu, memory, runtimePlatform,
+              ephemeralStorage
+            }
+            | .containerDefinitions[0].image = $image
+            | with_entries(select(.value != null))
+          ' survey-task.json > survey-canary-task.json
+          task_definition=$(aws ecs register-task-definition \
+            --cli-input-json file://survey-canary-task.json \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "task_definition=$task_definition" >> "$GITHUB_OUTPUT"
+      - name: Run candidate Survey release canaries
+        if: inputs.survey_runtime_enabled == 'true'
+        env:
+          CANARY_TASK_DEFINITION: ${{ steps.survey_canary.outputs.task_definition }}
+        run: |
+          # JMESPath and jq programs are literal expressions.
+          # shellcheck disable=SC2016
+          subnet_1=$(aws cloudformation list-exports \
+            --query 'Exports[?Name==`sanchezcloud-production-private-subnet-1`].Value|[0]' \
+            --output text)
+          # shellcheck disable=SC2016
+          subnet_2=$(aws cloudformation list-exports \
+            --query 'Exports[?Name==`sanchezcloud-production-private-subnet-2`].Value|[0]' \
+            --output text)
+          # shellcheck disable=SC2016
+          task_sg=$(aws cloudformation describe-stacks \
+            --stack-name sanchezcloud-scholight-production \
+            --query 'Stacks[0].Outputs[?OutputKey==`TaskSecurityGroupId`].OutputValue|[0]' \
+            --output text)
+          network=$(jq -cn \
+            --arg subnet1 "$subnet_1" --arg subnet2 "$subnet_2" --arg sg "$task_sg" \
+            '{awsvpcConfiguration:{subnets:[$subnet1,$subnet2],securityGroups:[$sg],assignPublicIp:"DISABLED"}}')
+          canary_command='scholight survey model-canary --json-output && scholight survey image-canary --json-output && scholight survey fulltext-canary --json-output'
+          overrides=$(jq -cn --arg canary "$canary_command" \
+            '{containerOverrides:[{name:"survey",command:["/bin/sh","-ec",$canary]}]}')
+          response=$(aws ecs run-task \
+            --cluster sanchezcloud-production \
+            --launch-type FARGATE \
+            --task-definition "$CANARY_TASK_DEFINITION" \
+            --network-configuration "$network" \
+            --overrides "$overrides" \
+            --started-by "github-canary-${GITHUB_RUN_ID}")
+          test "$(jq '.failures | length' <<<"$response")" = 0
+          task_arn=$(jq -r '.tasks[0].taskArn' <<<"$response")
+          test -n "$task_arn"
+          deadline=$((SECONDS + 1200))
+          while true; do
+            task=$(aws ecs describe-tasks \
+              --cluster sanchezcloud-production --tasks "$task_arn")
+            status=$(jq -r '.tasks[0].lastStatus' <<<"$task")
+            if [[ "$status" == STOPPED ]]; then
+              break
+            fi
+            if (( SECONDS >= deadline )); then
+              echo "Candidate Survey canaries timed out" >&2
+              exit 1
+            fi
+            sleep 15
+          done
+          task_id=${task_arn##*/}
+          aws logs get-log-events \
+            --log-group-name /sanchezcloud/scholight/survey \
+            --log-stream-name "full/survey/${task_id}" \
+            --start-from-head --limit 50 \
+            --query 'events[].message' --output text
+          exit_code=$(jq -r '.tasks[0].containers[] | select(.name == "survey") | .exitCode' \
+            <<<"$task")
+          if [[ "$exit_code" != 0 ]]; then
+            echo "Candidate Survey canaries failed with exit code $exit_code" >&2
+            exit 1
+          fi
+      - name: Retire candidate Survey canary task definition
+        if: always() && steps.survey_canary.outputs.task_definition != ''
+        env:
+          CANARY_TASK_DEFINITION: ${{ steps.survey_canary.outputs.task_definition }}
+        run: aws ecs deregister-task-definition --task-definition "$CANARY_TASK_DEFINITION" >/dev/null
       - name: Defer active Survey worker image replacements
         env:
           AWS_REGION: ${{ vars.AWS_REGION }}
