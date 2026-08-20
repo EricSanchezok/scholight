@@ -299,6 +299,7 @@ class SurveyDiagnostics:
         self._tool_counts = {"started": 0, "finished": 0, "failed": 0}
         self._model_counts = {"started": 0, "finished": 0, "failed": 0}
         self._last_model_error: dict[str, object] | None = None
+        self._blocking_model_error: dict[str, object] | None = None
         self._last_image_error: dict[str, object] | None = None
         self._evidence_summary: dict[str, object] | None = None
         self._anomalies: list[dict[str, str]] = []
@@ -361,6 +362,7 @@ class SurveyDiagnostics:
                 self._last_model_error = {
                     key: sanitized[key]
                     for key in (
+                        "component",
                         "error_code",
                         "timeout_seconds",
                         "http_status",
@@ -370,6 +372,8 @@ class SurveyDiagnostics:
                     )
                     if key in sanitized
                 }
+                if self._last_model_error.get("component") != "image_planner":
+                    self._blocking_model_error = dict(self._last_model_error)
         if event_type == "tool.failed" and sanitized.get("tool") == "image_gen":
             self._last_image_error = {
                 key: sanitized[key]
@@ -954,6 +958,7 @@ class SurveyDiagnostics:
             "tool_counts": dict(self._tool_counts),
             "model_counts": dict(self._model_counts),
             "last_model_error": self._last_model_error,
+            "blocking_model_error": self._blocking_model_error,
             "last_image_error": self._last_image_error,
             "evidence_summary": self._evidence_summary,
             "anomaly_count": len(self._anomalies),

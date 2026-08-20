@@ -513,6 +513,145 @@ async def test_success_requires_complete_final_artifacts(
 
 
 @pytest.mark.asyncio
+async def test_zero_exit_model_failure_is_nonblocking_when_local_finalization_succeeds(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_complete_workflow_artifacts(tmp_path)
+    monkeypatch.setattr(settings, "survey_job_timeout_seconds", 60)
+    monkeypatch.setattr(settings, "survey_provider_max_attempts", 1)
+    monkeypatch.setattr(settings, "survey_mcp_jwt_secret", "s" * 32)
+    monkeypatch.setattr(settings, "deepseek_api_key", "deepseek")
+    monkeypatch.setattr(settings, "image_gen_api_key", "image")
+    process = _CompletedProcess(
+        stdout=(
+            b'{"type":"component_start","name":"image_planner",'
+            b'"kind":"accelerator","index":1}\n'
+            b'{"type":"completion_start"}\n'
+            b'{"type":"completion_end","outcome":"failure","http_status":400,'
+            b'"failure_kind":"invalid_request","retryable":false,"duration_ms":376}\n'
+            b'{"type":"component_done","name":"image_planner",'
+            b'"kind":"accelerator","index":1}\n'
+        )
+    )
+    with (
+        patch(
+            "scholight.survey.worker.asyncio.create_subprocess_exec",
+            new_callable=AsyncMock,
+            return_value=process,
+        ),
+        patch("scholight.survey.worker.write_stdin", new_callable=AsyncMock),
+    ):
+        result = await execute_survey(
+            _job(job_id=uuid4(), worker_id=uuid4(), status="running"),
+            tmp_path,
+        )
+
+    assert result.outcome == "succeeded"
+    assert result.termination_reason == "completed"
+    assert (tmp_path / "08_survey.md").is_file()
+    assert result.diagnostics is not None
+    assert result.diagnostics["last_model_error"] == {
+        "component": "image_planner",
+        "error_code": "model_request_rejected",
+        "http_status": 400,
+        "retryable": False,
+        "duration_ms": 376,
+        "failure_kind": "invalid_request",
+    }
+
+
+@pytest.mark.asyncio
+async def test_zero_exit_required_model_failure_stays_terminal_with_local_inputs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_complete_workflow_artifacts(tmp_path)
+    monkeypatch.setattr(settings, "survey_job_timeout_seconds", 60)
+    monkeypatch.setattr(settings, "survey_provider_max_attempts", 1)
+    monkeypatch.setattr(settings, "survey_mcp_jwt_secret", "s" * 32)
+    monkeypatch.setattr(settings, "deepseek_api_key", "deepseek")
+    monkeypatch.setattr(settings, "image_gen_api_key", "image")
+    process = _CompletedProcess(
+        stdout=(
+            b'{"type":"component_start","name":"survey_outline",'
+            b'"kind":"accelerator","index":1}\n'
+            b'{"type":"completion_start"}\n'
+            b'{"type":"completion_end","outcome":"failure","http_status":400,'
+            b'"failure_kind":"invalid_request","retryable":false,"duration_ms":376}\n'
+            b'{"type":"component_done","name":"survey_outline",'
+            b'"kind":"accelerator","index":1}\n'
+        )
+    )
+    with (
+        patch(
+            "scholight.survey.worker.asyncio.create_subprocess_exec",
+            new_callable=AsyncMock,
+            return_value=process,
+        ),
+        patch("scholight.survey.worker.write_stdin", new_callable=AsyncMock),
+    ):
+        result = await execute_survey(
+            _job(job_id=uuid4(), worker_id=uuid4(), status="running"),
+            tmp_path,
+        )
+
+    assert result.outcome == "failed"
+    assert result.error_code == "survey_model_request_rejected"
+    assert result.termination_reason == "model_completion_failed"
+    assert not (tmp_path / "08_survey.md").exists()
+
+
+@pytest.mark.asyncio
+async def test_optional_model_failure_cannot_mask_prior_required_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_complete_workflow_artifacts(tmp_path)
+    monkeypatch.setattr(settings, "survey_job_timeout_seconds", 60)
+    monkeypatch.setattr(settings, "survey_provider_max_attempts", 1)
+    monkeypatch.setattr(settings, "survey_mcp_jwt_secret", "s" * 32)
+    monkeypatch.setattr(settings, "deepseek_api_key", "deepseek")
+    monkeypatch.setattr(settings, "image_gen_api_key", "image")
+    process = _CompletedProcess(
+        stdout=(
+            b'{"type":"component_start","name":"survey_outline",'
+            b'"kind":"accelerator","index":1}\n'
+            b'{"type":"completion_end","outcome":"failure","http_status":503,'
+            b'"failure_kind":"provider_error","retryable":true}\n'
+            b'{"type":"component_done","name":"survey_outline",'
+            b'"kind":"accelerator","index":1}\n'
+            b'{"type":"component_start","name":"image_planner",'
+            b'"kind":"accelerator","index":2}\n'
+            b'{"type":"completion_end","outcome":"failure","http_status":400,'
+            b'"failure_kind":"invalid_request","retryable":false}\n'
+            b'{"type":"component_done","name":"image_planner",'
+            b'"kind":"accelerator","index":2}\n'
+        )
+    )
+    with (
+        patch(
+            "scholight.survey.worker.asyncio.create_subprocess_exec",
+            new_callable=AsyncMock,
+            return_value=process,
+        ),
+        patch("scholight.survey.worker.write_stdin", new_callable=AsyncMock),
+    ):
+        result = await execute_survey(
+            _job(job_id=uuid4(), worker_id=uuid4(), status="running"),
+            tmp_path,
+        )
+
+    assert result.outcome == "failed"
+    assert result.error_code == "survey_provider_unavailable"
+    assert result.termination_reason == "model_completion_failed"
+    assert result.diagnostics is not None
+    assert result.diagnostics["last_model_error"]["component"] == "image_planner"
+    assert result.diagnostics["blocking_model_error"]["component"] == "survey_outline"
+    assert not (tmp_path / "08_survey.md").exists()
+
+
+@pytest.mark.asyncio
 async def test_zero_exit_missing_report_surfaces_structured_model_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

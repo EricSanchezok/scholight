@@ -201,7 +201,9 @@ def _classify_completion_failure(event: dict[str, object]) -> dict[str, object]:
 
 def _public_model_failure(diagnostics: dict[str, Any]) -> tuple[str, str] | None:
     """Return client-safe Survey semantics for the last failed completion."""
-    model_error = diagnostics.get("last_model_error")
+    model_error = diagnostics.get("blocking_model_error")
+    if not isinstance(model_error, dict):
+        model_error = diagnostics.get("last_model_error")
     if not isinstance(model_error, dict):
         return None
     error_code = model_error.get("error_code")
@@ -388,6 +390,38 @@ def _valid_final_report(run_root: Path) -> bool:
     )
 
 
+def _local_finalization_inputs_available(run_root: Path) -> bool:
+    """Return whether deterministic finalization has its minimum material set."""
+    return (
+        (run_root / "00_outline.md").is_file()
+        and (run_root / "sections").is_dir()
+        and (run_root / "cards").is_dir()
+    )
+
+
+def _active_model_component(
+    active: dict[tuple[str, str, int], tuple[datetime, float]],
+) -> str | None:
+    """Return an unambiguous component owner for one model completion."""
+    if len(active) != 1:
+        return None
+    return next(iter(active))[0]
+
+
+def _optional_model_failure_can_finalize(
+    diagnostic_summary: dict[str, Any],
+    run_root: Path,
+) -> bool:
+    """Allow local finalization only for the explicitly optional image planner."""
+    model_error = diagnostic_summary.get("last_model_error")
+    return (
+        diagnostic_summary.get("blocking_model_error") is None
+        and isinstance(model_error, dict)
+        and model_error.get("component") == "image_planner"
+        and _local_finalization_inputs_available(run_root)
+    )
+
+
 async def _collect_stage_timings(
     stream: asyncio.StreamReader | None,
     *,
@@ -465,7 +499,14 @@ async def _collect_stage_timings(
                 if event.get("outcome") == "failure":
                     structured_failure_pending = True
                     failure = _classify_completion_failure(event)
-                    diagnostics.model_event(status="failed", **failure, **completion_fields)
+                    component = _active_model_component(active)
+                    if component is not None:
+                        failure["component"] = component
+                    diagnostics.model_event(
+                        status="failed",
+                        **failure,
+                        **completion_fields,
+                    )
                     failure_kind = str(failure.get("failure_kind", "unknown"))
                     logger.warning(
                         "survey_model_completion_failed",
@@ -494,7 +535,13 @@ async def _collect_stage_timings(
                     role=event.get("role"),
                 )
                 if classification is not None:
-                    diagnostics.model_event(status="failed", **classification)
+                    component = _active_model_component(active)
+                    if component is not None:
+                        classification["component"] = component
+                    diagnostics.model_event(
+                        status="failed",
+                        **classification,
+                    )
                     continue
             if tool_status is not None:
                 tool_name = event.get("tool") or event.get("name")
@@ -930,8 +977,12 @@ async def _execute_survey_once(
                 ),
                 diagnostics=diagnostic_summary,
             )
-        model_failure = _public_model_failure(diagnostics.snapshot())
-        if model_failure is not None and not _valid_final_report(run_root):
+        live_diagnostics = diagnostics.snapshot()
+        model_failure = _public_model_failure(live_diagnostics)
+        if model_failure is not None and not _optional_model_failure_can_finalize(
+            live_diagnostics,
+            run_root,
+        ):
             error_code, error_message = model_failure
             diagnostic_summary = _finish_diagnostics(
                 diagnostics,
@@ -1010,6 +1061,9 @@ async def _execute_survey_once(
                 error_code = evidence_error.code
                 error_message = str(evidence_error)
                 termination_reason = "evidence_audit_failed"
+            elif model_failure is not None:
+                error_code, error_message = model_failure
+                termination_reason = "model_completion_failed"
             else:
                 error_code = (
                     finalization_error.code
@@ -1049,6 +1103,12 @@ async def _execute_survey_once(
                     diagnostics=diagnostic_summary,
                 ),
                 diagnostics=diagnostic_summary,
+            )
+        if model_failure is not None:
+            logger.warning(
+                "survey_model_failure_finalized_locally",
+                job_id=str(job.id),
+                error_code=model_failure[0],
             )
         diagnostics.finalize_contract_audit()
         audited_diagnostics = diagnostics.snapshot()
