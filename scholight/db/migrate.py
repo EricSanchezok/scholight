@@ -34,6 +34,10 @@ _APPROVED_CONTRACT_MIGRATIONS = {
         "access_keys_all_tools",
     ): "73edc54a385429a0fb01e84f63f6449fc7e5dd4a28ea81d762afa42477329ba2",
     (
+        13,
+        "allow_free_readable_surveys",
+    ): "9721adf3e020ffa3d85380115a1afd874769c132d8854256c29f7aa3c17f2513",
+    (
         5,
         "survey",
     ): "d80b622457cef62a2c47f3a8ce940c288efe42666c590faa8ec595f3d5c1307e",

@@ -300,6 +300,29 @@ def test_access_key_all_tools_migration_rewrites_scope_atomically() -> None:
     assert "check (scopes = array['all']::text[])" in sql
 
 
+def test_free_readable_survey_migration_only_broadens_quota_terminal_state() -> None:
+    migration = Path(__file__).parents[3] / "migrations/013_allow_free_readable_surveys.sql"
+    raw_sql = migration.read_text(encoding="utf-8")
+    sql = " ".join(raw_sql.split()).lower()
+
+    assert "-- scholight: migration-phase=contract" in raw_sql
+    assert sql.count("drop constraint") == 1
+    assert "drop constraint surveys_quota_terminal" in sql
+    assert "status = 'succeeded' and quota_state in ('consumed', 'released')" in sql
+    assert "drop table" not in sql
+    assert "truncate" not in sql
+    assert "delete from" not in sql
+    assert "auth." not in sql
+
+
+def test_free_readable_survey_migration_requires_explicit_checksum_approval() -> None:
+    migration = Path(__file__).parents[3] / "migrations/013_allow_free_readable_surveys.sql"
+    sql = migration.read_text(encoding="utf-8")
+
+    with pytest.raises(ValueError, match="destructive migration rejected"):
+        validate_expand_only_sql(sql)
+
+
 def test_survey_migration_is_product_scoped_and_expand_only() -> None:
     migration = Path(__file__).parents[3] / "migrations/005_survey.sql"
     raw_sql = migration.read_text(encoding="utf-8")

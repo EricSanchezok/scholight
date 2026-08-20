@@ -465,6 +465,60 @@ async def test_formal_failure_keeps_one_failed_survey_and_releases_quota(
 
 
 @pytest.mark.asyncio
+async def test_degraded_success_is_readable_and_does_not_consume_quota(
+    survey_pool: asyncpg.Pool,
+) -> None:
+    with (
+        patch("scholight.db.queries_survey.get_pool", return_value=survey_pool),
+        patch("scholight.db.queries_survey_drafts.get_pool", return_value=survey_pool),
+    ):
+        survey_id = await _create()
+        await _complete_next_draft(markdown="# Approved Draft")
+        await start_survey(
+            survey_id=survey_id,
+            user_id=42,
+            job_id=uuid4(),
+            client_request_id=uuid4(),
+            request_hash="f" * 64,
+            notify_on_completion=True,
+        )
+        worker_id = uuid4()
+        job = await claim_survey_job(worker_id=worker_id, lease_seconds=3600)
+        assert job is not None
+        settled = await settle_survey_execution(
+            job_id=job.id,
+            worker_id=worker_id,
+            outcome="succeeded",
+            error_code="survey_quality_degraded",
+            error_message="Readable report delivered without charge.",
+            chargeable=False,
+        )
+        await finish_survey_archive(
+            job_id=job.id,
+            worker_id=worker_id,
+            storage_bucket="test-surveys",
+            storage_prefix="surveys/v1/42/free-readable",
+            manifest_key="surveys/v1/42/free-readable/manifest.json",
+        )
+        survey = await get_survey(survey_id=survey_id, user_id=42)
+
+    assert settled.terminal_outcome == "succeeded"
+    assert survey is not None
+    assert survey.status == "succeeded"
+    assert survey.quota_state == "released"
+    assert survey.error_code == "survey_quality_degraded"
+    assert await _usage(survey_pool) == (0, 0)
+    notification = await survey_pool.fetchrow(
+        "SELECT survey_outcome, status FROM scholight.survey_email_notifications "
+        "WHERE survey_id = $1",
+        survey_id,
+    )
+    assert notification is not None
+    assert notification["survey_outcome"] == "succeeded"
+    assert notification["status"] == "pending"
+
+
+@pytest.mark.asyncio
 async def test_verified_archived_contract_failure_recovers_atomically_and_idempotently(
     survey_pool: asyncpg.Pool,
 ) -> None:
