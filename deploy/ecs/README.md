@@ -145,7 +145,10 @@ The same protected role may run the existing Scholight API task family for the
 fixed, owner-preserving production Survey rerun workflow. That path can pass
 only the API and shared execution roles, reads only the API log group, accepts
 UUID inputs rather than an arbitrary command, and stops the task if acceptance
-verification exceeds its bounded deadline.
+verification exceeds its bounded deadline. The role and workflow request a
+four-hour OIDC session because a full Survey and its acceptance checks can
+legitimately exceed AWS's one-hour role-session default; the workflow timeout
+and ECS task deadline remain the independent upper bounds.
 
 Persistent resources use `DeletionPolicy: Retain`. Deleting a stack is not a
 cleanup operation and must never be used as a rollback mechanism.

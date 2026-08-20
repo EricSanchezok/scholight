@@ -19,3 +19,8 @@ The synthesizer artifact returns:
 - `what_to_expand_next`
 - `allowed_final_claims`
 - `forbidden_overclaims`
+
+Producers must continue emitting the canonical standalone form above. The runtime
+normalizes only common Markdown, JSON/YAML, Unicode punctuation, and two-column
+table decoration around that exact field. It still rejects prose matches,
+unknown values, extra table cells, and duplicate verdict fields.

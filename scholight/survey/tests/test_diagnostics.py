@@ -441,6 +441,73 @@ def test_final_audit_accepts_exact_judge_verdict_contract(tmp_path: Path) -> Non
     )
 
 
+@pytest.mark.parametrize(
+    ("verdict_line", "overall_line"),
+    (
+        ("## verdict: acceptable", "### overall_verdict: strong"),
+        ("- **Verdict:** **Acceptable**", "- **Overall verdict:** **Strong**"),
+        ("> `verdict`: `acceptable`.", "> `overall-verdict`: `strong`."),
+        ('"verdict": "acceptable",', '"overall_verdict": "strong",'),
+        ("verdict\uff1aacceptable", "overall_verdict\uff1astrong"),
+        ("| verdict | acceptable |", "| overall verdict | strong |"),
+        ("### Verdict — Acceptable", "### Overall verdict — Strong"),
+    ),
+)
+def test_final_audit_accepts_common_judge_verdict_markdown(
+    tmp_path: Path,
+    verdict_line: str,
+    overall_line: str,
+) -> None:
+    for name in (
+        "06a_coverage_judge.md",
+        "06b_scope_judge.md",
+        "06c_benchmark_judge.md",
+        "06d_gap_judge.md",
+    ):
+        (tmp_path / name).write_text(f"{verdict_line}\n", encoding="utf-8")
+    (tmp_path / "06_judge_panel.md").write_text(f"{overall_line}\n", encoding="utf-8")
+    diagnostics = SurveyDiagnostics(
+        run_root=tmp_path,
+        job_id=uuid4(),
+        survey_id=uuid4(),
+    )
+
+    diagnostics.finalize_contract_audit()
+
+    assert not any(
+        anomaly["kind"] == "judge_verdict_invalid"
+        for anomaly in diagnostics.snapshot()["anomalies"]
+    )
+
+
+@pytest.mark.parametrize(
+    "verdict_line",
+    (
+        "The verdict: acceptable",
+        "verdict: acceptable because the evidence is sufficient",
+        "| verdict | acceptable | extra |",
+        "verdict: excellent",
+    ),
+)
+def test_final_audit_does_not_overmatch_judge_verdict_prose(
+    tmp_path: Path, verdict_line: str
+) -> None:
+    (tmp_path / "06a_coverage_judge.md").write_text(f"{verdict_line}\n", encoding="utf-8")
+    diagnostics = SurveyDiagnostics(
+        run_root=tmp_path,
+        job_id=uuid4(),
+        survey_id=uuid4(),
+    )
+
+    diagnostics.finalize_contract_audit()
+
+    assert any(
+        anomaly["kind"] == "judge_verdict_invalid"
+        and anomaly["expected_artifact"] == "06a_coverage_judge.md#verdict"
+        for anomaly in diagnostics.snapshot()["anomalies"]
+    )
+
+
 def test_all_spawned_card_outputs_are_tracked_beyond_log_preview_limit(tmp_path: Path) -> None:
     diagnostics = SurveyDiagnostics(
         run_root=tmp_path,

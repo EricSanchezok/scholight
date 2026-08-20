@@ -177,9 +177,15 @@ def test_release_runs_candidate_survey_canaries_before_deployment() -> None:
 
 def test_production_survey_rerun_workflow_is_fixed_and_owner_preserving() -> None:
     workflow = (ROOT / ".github/workflows/survey-production-rerun.yml").read_text(encoding="utf-8")
+    foundation = (ECS / "scholight-foundation.yml").read_text(encoding="utf-8")
+    deploy_role = foundation.split("  ProductionDeployRole:", maxsplit=1)[1].split(
+        "  DatabaseDeployRole:", maxsplit=1
+    )[0]
 
     assert "environment: production" in workflow
     assert "id-token: write" in workflow
+    assert "role-duration-seconds: 14400" in workflow
+    assert "MaxSessionDuration: 14400" in deploy_role
     assert "RERUN SCHOLIGHT SURVEY" in workflow
     assert '"python","-m","scholight.survey.production_ops"' in workflow
     assert "rerun-and-verify" in workflow

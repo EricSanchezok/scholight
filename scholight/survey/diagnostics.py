@@ -50,6 +50,62 @@ _JUDGE_VERDICT_ARTIFACTS = {
 }
 
 
+def _strip_inline_markup(value: str) -> str:
+    """Remove bounded Markdown/JSON wrappers without accepting surrounding prose."""
+    stripped = value.strip()
+    while True:
+        normalized = stripped.strip("`*_\"'").strip()
+        if normalized == stripped:
+            return normalized
+        stripped = normalized
+
+
+def _normalize_judge_field(value: str) -> str:
+    normalized = _strip_inline_markup(value).casefold()
+    return re.sub(r"[\s-]+", "_", normalized)
+
+
+def _normalize_judge_value(value: str) -> str | None:
+    normalized = re.sub(r"\s+#{1,6}\s*$", "", value.strip())
+    while True:
+        cleaned = _strip_inline_markup(normalized).rstrip(",;.").strip()
+        if cleaned == normalized:
+            break
+        normalized = cleaned
+    normalized = normalized.casefold()
+    return normalized if normalized in _VERDICTS else None
+
+
+def _judge_verdict_candidate(line: str, field: str) -> tuple[bool, str | None]:
+    """Parse one exact judge field while tolerating common serialization decoration."""
+    normalized = unicodedata.normalize("NFKC", line).strip()
+    if not normalized:
+        return False, None
+
+    if normalized.startswith("|") and normalized.endswith("|"):
+        cells = [cell.strip() for cell in normalized[1:-1].split("|")]
+        if not cells or _normalize_judge_field(cells[0]) != field:
+            return False, None
+        if len(cells) != 2:
+            return True, None
+        return True, _normalize_judge_value(cells[1])
+
+    while True:
+        undecorated = re.sub(
+            r"^(?:#{1,6}\s+|>{1,3}\s*|(?:[-+*]|\d+[.)])\s+)",
+            "",
+            normalized,
+        )
+        if undecorated == normalized:
+            break
+        normalized = undecorated.strip()
+    normalized = re.sub(r"\s+#{1,6}\s*$", "", normalized)
+    parts = re.split(r"\s*(?::|=|\u2014|\u2013)\s*", normalized, maxsplit=1)
+    if len(parts) != 2 or _normalize_judge_field(parts[0]) != field:
+        return False, None
+    return True, _normalize_judge_value(parts[1])
+
+
 def _card_artifact_path(paper_id: object) -> str | None:
     if not isinstance(paper_id, str) or canonicalize_arxiv_id(paper_id) != paper_id:
         return None
@@ -654,12 +710,11 @@ class SurveyDiagnostics:
                 lines = (self.run_root / relative_path).read_text(encoding="utf-8").splitlines()
             except (OSError, UnicodeError):
                 lines = []
-            matches = []
-            prefix = f"{field}:"
+            matches: list[str | None] = []
             for line in lines:
-                stripped = line.strip()
-                if stripped.startswith(prefix):
-                    matches.append(stripped.removeprefix(prefix).strip())
+                is_candidate, value = _judge_verdict_candidate(line, field)
+                if is_candidate:
+                    matches.append(value)
             if len(matches) != 1 or matches[0] not in _VERDICTS:
                 self._record_anomaly(
                     component=component,
