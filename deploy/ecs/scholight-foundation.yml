@@ -489,7 +489,9 @@ Resources:
               - Effect: Allow
                 Action:
                   - ecs:RunTask
-                Resource: !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/sanchezcloud-scholight-survey-canary:*
+                Resource:
+                  - !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/sanchezcloud-scholight-survey-canary:*
+                  - !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/sanchezcloud-scholight-api:*
                 Condition:
                   ArnLike:
                     ecs:cluster: !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:cluster/sanchezcloud-production
@@ -506,12 +508,15 @@ Resources:
                 Resource:
                   - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/SanchezCloudScholightTaskExecutionRole
                   - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/SanchezCloudScholightSurveyTaskRole
+                  - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/SanchezCloudScholightApiTaskRole
                 Condition:
                   StringEquals:
                     iam:PassedToService: ecs-tasks.amazonaws.com
               - Effect: Allow
                 Action: [logs:GetLogEvents, logs:FilterLogEvents]
-                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/sanchezcloud/scholight/survey:*
+                Resource:
+                  - !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/sanchezcloud/scholight/survey:*
+                  - !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/sanchezcloud/scholight/api:*
               - Effect: Allow
                 Action: cloudwatch:GetMetricStatistics
                 Resource: "*"
