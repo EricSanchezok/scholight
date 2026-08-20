@@ -414,6 +414,25 @@ missing `reasoning_content` field when visible text precedes a tool call. It
 discards completion text and provider response bodies, retaining only status,
 error code, HTTP status, retryability, and duration.
 
+The immutable release workflow enforces this contract before CloudFormation
+changes the running services. It clones the deployed Survey task definition,
+replaces only its image with the digest-qualified candidate, runs all three
+fixed canaries in the private production network, checks the container exit
+code, and deregisters the one-off task definition. A failed canary therefore
+stops the release before the production Survey service is updated.
+
+Owner-preserving production reruns use the separately confirmed
+`Run production Survey rerun` workflow. It accepts only a terminal source Survey
+UUID and a stable operation UUID, verifies the exact deployed API digest, derives
+deterministic new Survey, Draft, and Job identifiers, and executes the fixed
+`production_ops` module. The operation copies the source owner and initial
+request without printing either, preserves the old record, waits for terminal
+success, verifies the archive, report, and package hashes, requires at least 80%
+full, partial, or HTML evidence coverage, rejects runtime metadata leakage, and
+requires exactly one successful completion-notification outbox record.
+Re-dispatching the same operation UUID is idempotent and cannot create or charge
+a second Survey.
+
 The 2026-08-17 production canary succeeded after the image-route credential was
 updated. It returned a signature-validated PNG through the configured
 `gpt-image-2` route. Continue to use the real canary, rather than model listing,
