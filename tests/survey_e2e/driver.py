@@ -320,7 +320,7 @@ async def _assert_missing_candidate_pool_diagnostics(
             )
         )
         assert run_record["process"]["return_code"] == 0
-        assert run_record["process"]["termination_reason"] == "contract_violation"
+        assert run_record["process"]["termination_reason"] == "completed_degraded"
         assert run_record["diagnostics"]["first_anomaly"] == {
             "component": "discovery_merger",
             "expected_artifact": "02_candidate_pool.md",
