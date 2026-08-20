@@ -487,10 +487,39 @@ Resources:
                 Action: ecs:DescribeServices
                 Resource: !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:service/sanchezcloud-production/scholight-*
               - Effect: Allow
+                Action:
+                  - ecs:RunTask
+                Resource: !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/sanchezcloud-scholight-survey-canary:*
+                Condition:
+                  ArnLike:
+                    ecs:cluster: !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:cluster/sanchezcloud-production
+              - Effect: Allow
+                Action:
+                  - ecs:DeregisterTaskDefinition
+                  - ecs:DescribeTaskDefinition
+                  - ecs:DescribeTasks
+                  - ecs:RegisterTaskDefinition
+                  - ecs:StopTask
+                Resource: "*"
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource:
+                  - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/SanchezCloudScholightTaskExecutionRole
+                  - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/SanchezCloudScholightSurveyTaskRole
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: ecs-tasks.amazonaws.com
+              - Effect: Allow
+                Action: [logs:GetLogEvents, logs:FilterLogEvents]
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/sanchezcloud/scholight/survey:*
+              - Effect: Allow
                 Action: cloudwatch:GetMetricStatistics
                 Resource: "*"
               - Effect: Allow
                 Action: servicequotas:GetServiceQuota
+                Resource: "*"
+              - Effect: Allow
+                Action: cloudformation:ListExports
                 Resource: "*"
               - Effect: Allow
                 Action: [s3:GetObject]

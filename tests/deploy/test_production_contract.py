@@ -400,6 +400,29 @@ def test_production_deploy_role_can_wait_for_scholight_services() -> None:
     assert "Action: ecs:*" not in deploy_policy
 
 
+def test_production_deploy_role_can_run_candidate_survey_canaries() -> None:
+    foundation = (ECS / "scholight-foundation.yml").read_text(encoding="utf-8")
+    deploy_policy = foundation.split("ProductionDeployRole:", maxsplit=1)[1].split(
+        "DatabaseDeployRole:", maxsplit=1
+    )[0]
+
+    for action in (
+        "ecs:DeregisterTaskDefinition",
+        "ecs:DescribeTaskDefinition",
+        "ecs:DescribeTasks",
+        "ecs:RegisterTaskDefinition",
+        "ecs:RunTask",
+        "ecs:StopTask",
+    ):
+        assert f"- {action}" in deploy_policy
+    assert "task-definition/sanchezcloud-scholight-survey-canary:*" in deploy_policy
+    assert "role/SanchezCloudScholightTaskExecutionRole" in deploy_policy
+    assert "role/SanchezCloudScholightSurveyTaskRole" in deploy_policy
+    assert "Action: [logs:GetLogEvents, logs:FilterLogEvents]" in deploy_policy
+    assert "log-group:/sanchezcloud/scholight/survey:*" in deploy_policy
+    assert "Action: ecs:*" not in deploy_policy
+
+
 def test_active_workflows_do_not_depend_on_frozen_ec2_package() -> None:
     active = "\n".join(
         (ROOT / ".github/workflows" / name).read_text(encoding="utf-8")

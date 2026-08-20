@@ -134,6 +134,13 @@ Created once and updated deliberately. It owns persistent resources:
 - GitHub OIDC image-publish, database-production, and production roles;
 - the CloudFormation service role used by the runtime stack.
 
+The protected production role may register and run only the temporary
+`sanchezcloud-scholight-survey-canary` task family on the production cluster.
+It can pass only the Survey execution and task roles and can read only the
+Survey log group. These permissions are required for the pre-deployment model,
+image, and full-text release gate; they do not permit arbitrary ECS services or
+task families.
+
 Persistent resources use `DeletionPolicy: Retain`. Deleting a stack is not a
 cleanup operation and must never be used as a rollback mechanism.
 
