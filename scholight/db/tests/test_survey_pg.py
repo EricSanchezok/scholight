@@ -26,6 +26,7 @@ from scholight.db.queries_survey import (
     mark_survey_workspace_missing,
     recover_archived_survey_contract_failure,
     recover_expired_survey_jobs,
+    repair_degraded_survey_evidence,
     settle_survey_execution,
     start_survey,
     update_survey_job_progress,
@@ -516,6 +517,104 @@ async def test_degraded_success_is_readable_and_does_not_consume_quota(
     assert notification is not None
     assert notification["survey_outcome"] == "succeeded"
     assert notification["status"] == "pending"
+
+
+@pytest.mark.asyncio
+async def test_degraded_evidence_repair_switches_manifest_without_quota_or_notification_change(
+    survey_pool: asyncpg.Pool,
+) -> None:
+    with (
+        patch("scholight.db.queries_survey.get_pool", return_value=survey_pool),
+        patch("scholight.db.queries_survey_drafts.get_pool", return_value=survey_pool),
+    ):
+        survey_id = await _create()
+        await _complete_next_draft(markdown="# Approved Draft")
+        await start_survey(
+            survey_id=survey_id,
+            user_id=42,
+            job_id=uuid4(),
+            client_request_id=uuid4(),
+            request_hash="e" * 64,
+            notify_on_completion=True,
+        )
+        worker_id = uuid4()
+        job = await claim_survey_job(worker_id=worker_id, lease_seconds=3600)
+        assert job is not None
+        await settle_survey_execution(
+            job_id=job.id,
+            worker_id=worker_id,
+            outcome="succeeded",
+            error_code="survey_quality_degraded",
+            error_message="Readable report delivered without charge.",
+            chargeable=False,
+        )
+        prefix = f"surveys/v1/42/{job.id}"
+        source_manifest_key = f"{prefix}/manifest.json"
+        replacement_manifest_key = f"{prefix}/recoveries/{'b' * 64}/manifest.json"
+        await finish_survey_archive(
+            job_id=job.id,
+            worker_id=worker_id,
+            storage_bucket="test-surveys",
+            storage_prefix=prefix,
+            manifest_key=source_manifest_key,
+        )
+        await survey_pool.execute(
+            "UPDATE scholight.survey_email_notifications SET status = 'succeeded', "
+            "attempts = 3, finished_at = now() WHERE survey_id = $1",
+            survey_id,
+        )
+
+        assert await repair_degraded_survey_evidence(
+            job_id=job.id,
+            expected_manifest_key=source_manifest_key,
+            replacement_manifest_key=replacement_manifest_key,
+        )
+        assert not await repair_degraded_survey_evidence(
+            job_id=job.id,
+            expected_manifest_key=source_manifest_key,
+            replacement_manifest_key=replacement_manifest_key,
+        )
+        with pytest.raises(SurveyStateError, match="does not match"):
+            await repair_degraded_survey_evidence(
+                job_id=job.id,
+                expected_manifest_key=source_manifest_key,
+                replacement_manifest_key=f"{prefix}/recoveries/{'c' * 64}/manifest.json",
+            )
+
+    survey = await survey_pool.fetchrow(
+        "SELECT status, quota_state, error_code, error_message FROM scholight.surveys "
+        "WHERE id = $1",
+        survey_id,
+    )
+    repaired_job = await survey_pool.fetchrow(
+        "SELECT status, terminal_outcome, error_code, error_message, manifest_key "
+        "FROM scholight.survey_jobs WHERE id = $1",
+        job.id,
+    )
+    notification = await survey_pool.fetchrow(
+        "SELECT status, survey_outcome, attempts FROM scholight.survey_email_notifications "
+        "WHERE survey_id = $1",
+        survey_id,
+    )
+    assert survey is not None and tuple(survey.values()) == (
+        "succeeded",
+        "released",
+        None,
+        None,
+    )
+    assert repaired_job is not None and tuple(repaired_job.values()) == (
+        "finished",
+        "succeeded",
+        None,
+        None,
+        replacement_manifest_key,
+    )
+    assert notification is not None and tuple(notification.values()) == (
+        "succeeded",
+        "succeeded",
+        3,
+    )
+    assert await _usage(survey_pool) == (0, 0)
 
 
 @pytest.mark.asyncio

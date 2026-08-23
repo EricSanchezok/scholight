@@ -449,13 +449,26 @@ requires exactly one successful completion-notification outbox record.
 Re-dispatching the same operation UUID is idempotent and cannot create or charge
 a second Survey.
 
+One archived degraded evidence incident is repaired through the separately
+confirmed `Repair production Survey evidence` workflow. The workflow is fixed to
+Job `f4795522-28f6-4edd-8813-102f654d4367`; neither a Job UUID nor a command can
+be supplied at dispatch time. It verifies the exact deployed API and Survey
+images against the immutable release manifest, then runs the read-only
+`repair-degraded-evidence` verification in an owner-scoped Survey Fargate task.
+An `apply` dispatch performs that same verification first and proceeds only when
+the immutable source manifest and report still match their reviewed SHA-256
+guards. Apply repairs only cards selected from `00_card_plan.json`, does not run
+image generation, and never replays retrieval, outlining, or the complete Survey
+graph. The workflow shares the `scholight-production` concurrency lock with
+deployment and deregisters its one-off task definition on completion.
+
 The 2026-08-17 production canary succeeded after the image-route credential was
 updated. It returned a signature-validated PNG through the configured
 `gpt-image-2` route. Continue to use the real canary, rather than model listing,
 as the release and incident-resolution check.
 
-Survey artifact readers accept both the original manifest v1 and the additive
-manifest v2 recovery overlay. A v2 manifest must live below the same
+Survey artifact readers accept the original manifest v1 and additive manifest
+v2/v3 recovery overlays. A v2 manifest must live below the same
 owner-scoped job prefix, reference the exact v1 manifest and its SHA-256, and
 may replace only `run/08_survey.md` and `run/index.md`. Downloads merge those two
 records over the immutable v1 file set. Report and diagnostic reads verify the
@@ -464,6 +477,19 @@ removes both layers. This reader compatibility must be deployed and retained as
 the stable rollback release before any recovery command is allowed to write v2
 manifests.
 
+Manifest v3 is the append-only evidence-repair overlay. It also references the
+exact immutable v1 parent, may replace between one and 100 existing
+`run/cards/*.md` records plus the mandatory regenerated `run/08_survey.md` and
+`run/index.md`, and rejects all other paths, symlinks, oversized objects, parent
+overlays, and nested overlay chains. Its recovery directory is content-addressed
+from the parent SHA-256 and every replacement path/digest, so retries are
+idempotent and conflicting writes fail closed. The database manifest pointer is
+switched only after the overlay and merged workspace pass checksum and evidence
+validation. Rollback is a guarded database-pointer change back to the v1
+manifest together with restoring `survey_quality_degraded`; the immutable v1
+objects are never overwritten. Delete and cleanup validate both layers before
+removing exactly their manifest-authorized objects.
+
 ## Failure handling
 
 Paper cards must declare one evidence level and its matching stable reason:
@@ -471,11 +497,16 @@ Paper cards must declare one evidence level and its matching stable reason:
 `partial/pdf_text_truncated`, or `abstract_only` with a genuine scan, download,
 empty-text, or extraction failure. PDF reads page through bounded output until
 EOF; hitting the extraction cap is `partial`, not `full_text`. Missing or
-inconsistent declarations, runtime markers, and coverage below 80% make a
-readable report a free degraded delivery rather than hiding it. The worker still
-refuses to claim new jobs when `pdftotext` itself is absent. Reports expose one
-aggregate evidence-coverage paragraph and must not reproduce workflow,
-PaperCard, or runtime metadata in reader-facing prose.
+inconsistent declarations first trigger one bounded `card_repair.rcm` pass for
+at most 100 cards mapped back to immutable `00_card_plan.json`. The worker then
+repeats evidence audit and deterministic finalization. A clean result publishes
+normally and consumes the future Survey allowance; a failed mapping, repair, or
+re-audit leaves the readable report free with `survey_quality_degraded`. Other
+quality warnings do not trigger this repair. Runtime markers and coverage below
+80% also remain free degraded deliveries rather than hiding the report. The
+worker still refuses to claim new jobs when `pdftotext` itself is absent. Reports
+expose one aggregate evidence-coverage paragraph and must not reproduce
+workflow, PaperCard, or runtime metadata in reader-facing prose.
 
 Publication and research quality are separate contracts. A non-empty, regular,
 owner-scoped UTF-8 `08_survey.md` is delivered as a successful report after the
@@ -505,10 +536,20 @@ finalizer errors never replay the complete research graph.
 
 Runtime artifact repair never replays the complete research graph. Missing
 reports may use validated `00_card_plan.json` and `00_sections.json` to target
-only absent outputs before deterministic finalization. Once a readable report
-exists, contract and evidence diagnostics cannot schedule repair or another
-provider run; they affect only quality classification and quota settlement.
-Image output is never a repair or publication condition.
+only absent outputs before deterministic finalization. A readable report with
+invalid evidence declarations may schedule exactly one targeted PaperCard
+repair; other contract and evidence diagnostics affect only quality
+classification and quota settlement. Image output is never a repair,
+publication, or quality-degradation condition.
+
+The historical evidence repair has a separate acceptance contract from a new
+Survey rerun. The repaired Survey and Job must be succeeded with no quality
+error, every PaperCard declaration must use a valid level/reason pair, no runtime
+marker may remain, and evidence coverage must be at least 80%. Its quota state
+must remain `released` (a new clean rerun must instead be `consumed`), the Survey
+ID and URL do not change, and the existing notification row is not inserted,
+reset, or retried. The database transition has no quota-ledger or notification
+write and is idempotent when the same verified v3 manifest is already active.
 
 Component-finish artifact observations are provisional because a streamed
 completion event can precede the final filesystem flush. The final contract

@@ -199,6 +199,32 @@ def test_production_survey_rerun_workflow_is_fixed_and_owner_preserving() -> Non
     assert "inputs.command" not in workflow
 
 
+def test_production_survey_evidence_repair_is_fixed_guarded_and_serialized() -> None:
+    workflow = (ROOT / ".github/workflows/survey-production-evidence-repair.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "environment: production" in workflow
+    assert "group: scholight-production" in workflow
+    assert "VERIFY SURVEY EVIDENCE REPAIR" in workflow
+    assert "APPLY SURVEY EVIDENCE REPAIR" in workflow
+    assert "f4795522-28f6-4edd-8813-102f654d4367" in workflow
+    assert "d4568b259f1fd0c89e9be975a32b8938a9839b9ca64cdc1c848bf6a6613f31e0" in workflow
+    assert "34a1ae81bcbb93c518cdc5d9ca52bb84a76a9f452447aa8a221df5e89eae8984" in workflow
+    assert "repair-degraded-evidence" in workflow
+    assert "run_repair_task verify" in workflow
+    assert "run_repair_task apply" in workflow
+    assert 'if $mode == "apply" then ["--apply"]' in workflow
+    assert "sanchezcloud-scholight-survey-canary" in workflow
+    assert "deployed_api_image" in workflow
+    assert "deployed_survey_image" in workflow
+    assert "aws ecs run-task" in workflow
+    assert "aws ecs deregister-task-definition" in workflow
+    assert "inputs.command" not in workflow
+    assert "source_survey_id:" not in workflow
+    assert "job_id:" not in workflow
+
+
 def test_survey_capacity_contract_is_explicit_and_staged() -> None:
     runtime = (ECS / "scholight-production.yml").read_text(encoding="utf-8")
     workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")

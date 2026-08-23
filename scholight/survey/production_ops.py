@@ -25,6 +25,10 @@ from scholight.config import settings
 from scholight.db.client import close_pool, create_pool, get_pool
 from scholight.db.queries_survey import create_survey, start_survey
 from scholight.survey.contracts import canonical_request_hash
+from scholight.survey.quality_repair import (
+    apply_archived_evidence_repair,
+    inspect_archived_evidence_repair,
+)
 
 _TERMINAL_SURVEY_STATUSES = frozenset({"succeeded", "failed", "cancelled"})
 _FORBIDDEN_REPORT_MARKERS = (
@@ -81,17 +85,29 @@ def acceptance_payload(
     notification_count: int,
     notification_status: str | None,
     minimum_coverage: float = 80.0,
+    quota_state: str = "consumed",
+    unknown_count: int = 0,
+    invalid_reason_count: int = 0,
+    runtime_marker_count: int = 0,
 ) -> dict[str, object]:
     """Validate and project only non-sensitive production acceptance evidence."""
     if survey_status != "succeeded" or job_status != "finished" or terminal_outcome != "succeeded":
         suffix = f" ({error_code})" if error_code else ""
         raise ProductionSurveyAcceptanceError(f"Survey did not succeed{suffix}")
+    if error_code is not None:
+        raise ProductionSurveyAcceptanceError("Survey quality checks did not complete cleanly")
+    if quota_state != "consumed":
+        raise ProductionSurveyAcceptanceError(
+            "Survey allowance was not consumed by the clean rerun"
+        )
     if card_count <= 0 or section_count <= 0:
         raise ProductionSurveyAcceptanceError("Survey required artifacts are incomplete")
     if coverage_percent < minimum_coverage:
         raise ProductionSurveyAcceptanceError(
             f"Survey full-text coverage is below {minimum_coverage:g}%"
         )
+    if unknown_count or invalid_reason_count or runtime_marker_count:
+        raise ProductionSurveyAcceptanceError("Survey evidence declarations are incomplete")
     if notification_count != 1 or notification_status != "succeeded":
         raise ProductionSurveyAcceptanceError(
             "Survey completion notification was not delivered exactly once"
@@ -262,7 +278,7 @@ async def _verify_terminal_survey(
 
     store = SurveyArtifactStore(bucket=bucket, endpoint_url=settings.survey_s3_endpoint_url)
     manifest, manifest_sha256 = await store.read_manifest_with_sha256(manifest_key=manifest_key)
-    if manifest.get("schema_version") not in {1, 2}:
+    if manifest.get("schema_version") not in {1, 2, 3}:
         raise ProductionSurveyAcceptanceError("Survey manifest version is invalid")
 
     with tempfile.TemporaryDirectory(
@@ -314,6 +330,10 @@ async def _verify_terminal_survey(
         notification_count=notification_count,
         notification_status=notification_status,
         minimum_coverage=minimum_coverage,
+        quota_state=str(snapshot["quota_state"]),
+        unknown_count=summary.counts["unknown"],
+        invalid_reason_count=summary.invalid_reason_count,
+        runtime_marker_count=summary.runtime_marker_count,
     )
 
 
@@ -346,6 +366,68 @@ async def rerun_and_verify(
         await close_pool()
 
 
+async def archived_evidence_repair_operation(
+    *,
+    job_id: UUID,
+    apply: bool,
+    expected_source_manifest_sha256: str,
+    expected_report_sha256: str,
+) -> dict[str, object]:
+    """Verify or apply one hash-guarded, owner-preserving archived repair."""
+    await create_pool()
+    try:
+        if apply:
+            applied = await apply_archived_evidence_repair(
+                job_id=job_id,
+                expected_source_manifest_sha256=expected_source_manifest_sha256,
+                expected_report_sha256=expected_report_sha256,
+            )
+            result = await inspect_archived_evidence_repair(job_id=job_id)
+            if (
+                result.manifest_key != applied.manifest_key
+                or result.invalid_cards
+                or result.coverage_percent < 80.0
+                or result.notification_count != applied.notification_count
+                or result.notification_status != applied.notification_status
+            ):
+                raise ProductionSurveyAcceptanceError(
+                    "The archived Survey repair did not pass final verification"
+                )
+            status = "repaired"
+            changed = applied.changed
+        else:
+            result = await inspect_archived_evidence_repair(job_id=job_id)
+            status = "eligible"
+            changed = False
+        if (
+            result.source_manifest_sha256 != expected_source_manifest_sha256
+            or result.report_sha256 != expected_report_sha256
+        ):
+            raise ProductionSurveyOperationError("The archived Survey checksum guard changed")
+        return {
+            "status": status,
+            "job_id": str(result.job_id),
+            "survey_id": str(result.survey_id),
+            "source_manifest_sha256": result.source_manifest_sha256,
+            "report_sha256": result.report_sha256,
+            "manifest_key": result.manifest_key,
+            "manifest_sha256": result.manifest_sha256,
+            "invalid_card_count": len(result.invalid_cards),
+            "coverage_percent": result.coverage_percent,
+            "quota_state": "released",
+            "notification_count": result.notification_count,
+            "notification_status": result.notification_status,
+            "applied": apply,
+            "changed": changed,
+        }
+    except ProductionSurveyOperationError:
+        raise
+    except Exception as exc:
+        raise ProductionSurveyOperationError("Archived Survey evidence repair failed") from exc
+    finally:
+        await close_pool()
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run one bounded production Survey operation")
     subparsers = parser.add_subparsers(dest="operation", required=True)
@@ -356,27 +438,42 @@ def _parser() -> argparse.ArgumentParser:
     rerun.add_argument("--timeout-seconds", type=int, default=10_800)
     rerun.add_argument("--poll-seconds", type=float, default=30.0)
     rerun.add_argument("--notify-on-completion", action="store_true", required=True)
+    repair = subparsers.add_parser("repair-degraded-evidence")
+    repair.add_argument("--job-id", type=UUID, required=True)
+    repair.add_argument("--expected-source-manifest-sha256", required=True)
+    repair.add_argument("--expected-report-sha256", required=True)
+    repair.add_argument("--apply", action="store_true")
     return parser
 
 
 def main() -> None:
     args = _parser().parse_args()
-    if not 0.0 <= args.minimum_coverage <= 100.0:
-        raise SystemExit("minimum coverage must be between 0 and 100")
-    if not 60 <= args.timeout_seconds <= 14_400:
-        raise SystemExit("timeout must be between 60 and 14400 seconds")
-    if not 1.0 <= args.poll_seconds <= 300.0:
-        raise SystemExit("poll interval must be between 1 and 300 seconds")
     try:
-        payload = asyncio.run(
-            rerun_and_verify(
-                source_survey_id=args.source_survey_id,
-                operation_id=args.operation_id,
-                minimum_coverage=args.minimum_coverage,
-                timeout_seconds=args.timeout_seconds,
-                poll_seconds=args.poll_seconds,
+        if args.operation == "rerun-and-verify":
+            if not 0.0 <= args.minimum_coverage <= 100.0:
+                raise SystemExit("minimum coverage must be between 0 and 100")
+            if not 60 <= args.timeout_seconds <= 14_400:
+                raise SystemExit("timeout must be between 60 and 14400 seconds")
+            if not 1.0 <= args.poll_seconds <= 300.0:
+                raise SystemExit("poll interval must be between 1 and 300 seconds")
+            payload = asyncio.run(
+                rerun_and_verify(
+                    source_survey_id=args.source_survey_id,
+                    operation_id=args.operation_id,
+                    minimum_coverage=args.minimum_coverage,
+                    timeout_seconds=args.timeout_seconds,
+                    poll_seconds=args.poll_seconds,
+                )
             )
-        )
+        else:
+            payload = asyncio.run(
+                archived_evidence_repair_operation(
+                    job_id=args.job_id,
+                    apply=args.apply,
+                    expected_source_manifest_sha256=args.expected_source_manifest_sha256,
+                    expected_report_sha256=args.expected_report_sha256,
+                )
+            )
     except ProductionSurveyOperationError as exc:
         sys.stdout.write(
             json.dumps({"status": "failed", "error": str(exc)}, separators=(",", ":")) + "\n"

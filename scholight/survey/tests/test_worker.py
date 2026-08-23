@@ -301,6 +301,172 @@ async def test_invalid_evidence_uses_targeted_repair_without_full_rerun(
     repair.assert_awaited_once()
 
 
+@pytest.mark.asyncio
+async def test_degraded_evidence_declarations_use_targeted_repair_before_publication(
+    tmp_path: Path,
+) -> None:
+    job = _job(job_id=uuid4(), worker_id=uuid4(), status="running")
+    now = datetime.now(UTC)
+    degraded = SurveyExecutionResult(
+        outcome="succeeded",
+        error_code="survey_quality_degraded",
+        error_message="Readable report delivered without charge.",
+        started_at=now,
+        finished_at=now,
+        return_code=0,
+        termination_reason="completed_degraded",
+        chargeable=False,
+    )
+    repaired = SurveyExecutionResult(
+        outcome="succeeded",
+        error_code=None,
+        error_message=None,
+        started_at=now,
+        finished_at=now,
+        return_code=0,
+        termination_reason="targeted_artifact_repair",
+        chargeable=True,
+    )
+    evidence = SurveyEvidenceSummary(
+        card_count=1,
+        counts={
+            "html": 0,
+            "full_text": 0,
+            "partial": 0,
+            "abstract_only": 0,
+            "unknown": 1,
+        },
+        reviewed_count=0,
+        coverage_percent=0.0,
+        invalid_reason_count=1,
+        runtime_marker_count=0,
+        invalid_cards=("cards/2511.14617.md",),
+    )
+
+    with (
+        patch(
+            "scholight.survey.worker._execute_survey_once",
+            new_callable=AsyncMock,
+            return_value=degraded,
+        ) as execute,
+        patch("scholight.survey.worker.summarize_survey_evidence", return_value=evidence),
+        patch(
+            "scholight.survey.worker._repair_survey_artifacts",
+            new_callable=AsyncMock,
+            return_value=repaired,
+        ) as repair,
+    ):
+        result = await execute_survey(job, tmp_path)
+
+    assert result.error_code is None
+    assert result.chargeable is True
+    assert execute.await_count == 1
+    repair.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_failed_degraded_evidence_repair_preserves_free_readable_result(
+    tmp_path: Path,
+) -> None:
+    job = _job(job_id=uuid4(), worker_id=uuid4(), status="running")
+    now = datetime.now(UTC)
+    degraded = SurveyExecutionResult(
+        outcome="succeeded",
+        error_code="survey_quality_degraded",
+        error_message="Readable report delivered without charge.",
+        started_at=now,
+        finished_at=now,
+        return_code=0,
+        termination_reason="completed_degraded",
+        chargeable=False,
+    )
+    evidence = SurveyEvidenceSummary(
+        card_count=1,
+        counts={
+            "html": 0,
+            "full_text": 0,
+            "partial": 0,
+            "abstract_only": 0,
+            "unknown": 1,
+        },
+        reviewed_count=0,
+        coverage_percent=0.0,
+        invalid_reason_count=1,
+        runtime_marker_count=0,
+        invalid_cards=("cards/2511.14617.md",),
+    )
+
+    with (
+        patch(
+            "scholight.survey.worker._execute_survey_once",
+            new_callable=AsyncMock,
+            return_value=degraded,
+        ),
+        patch("scholight.survey.worker.summarize_survey_evidence", return_value=evidence),
+        patch(
+            "scholight.survey.worker._repair_survey_artifacts",
+            new_callable=AsyncMock,
+            return_value=None,
+        ) as repair,
+    ):
+        result = await execute_survey(job, tmp_path)
+
+    assert result is degraded
+    assert result.error_code == "survey_quality_degraded"
+    assert result.chargeable is False
+    repair.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_other_degraded_quality_warning_does_not_trigger_card_repair(
+    tmp_path: Path,
+) -> None:
+    job = _job(job_id=uuid4(), worker_id=uuid4(), status="running")
+    now = datetime.now(UTC)
+    degraded = SurveyExecutionResult(
+        outcome="succeeded",
+        error_code="survey_quality_degraded",
+        error_message="Readable report delivered without charge.",
+        started_at=now,
+        finished_at=now,
+        return_code=0,
+        termination_reason="completed_degraded",
+        chargeable=False,
+    )
+    evidence = SurveyEvidenceSummary(
+        card_count=1,
+        counts={
+            "html": 0,
+            "full_text": 1,
+            "partial": 0,
+            "abstract_only": 0,
+            "unknown": 0,
+        },
+        reviewed_count=1,
+        coverage_percent=100.0,
+        invalid_reason_count=0,
+        runtime_marker_count=0,
+        invalid_cards=(),
+    )
+
+    with (
+        patch(
+            "scholight.survey.worker._execute_survey_once",
+            new_callable=AsyncMock,
+            return_value=degraded,
+        ),
+        patch("scholight.survey.worker.summarize_survey_evidence", return_value=evidence),
+        patch(
+            "scholight.survey.worker._repair_survey_artifacts",
+            new_callable=AsyncMock,
+        ) as repair,
+    ):
+        result = await execute_survey(job, tmp_path)
+
+    assert result is degraded
+    repair.assert_not_awaited()
+
+
 def test_invalid_evidence_repair_items_are_bounded_by_the_durable_plan(
     tmp_path: Path,
 ) -> None:
@@ -387,6 +553,84 @@ async def test_invalid_evidence_repair_dispatches_only_selected_plan_items(
     control = ProcessControl()
 
     with (
+        patch(
+            "scholight.survey.worker.summarize_survey_evidence",
+            return_value=invalid_summary,
+        ),
+        patch(
+            "scholight.survey.worker._invalid_evidence_repair_items",
+            return_value=selected,
+        ),
+        patch(
+            "scholight.survey.worker._run_repair_workflow",
+            new_callable=AsyncMock,
+            return_value=False,
+        ) as repair,
+    ):
+        result = await _repair_survey_artifacts(
+            job,
+            tmp_path,
+            original=original,
+            control=control,
+        )
+
+    assert result is None
+    repair.assert_awaited_once_with(
+        job=job,
+        run_root=tmp_path,
+        plan="00_card_plan.json",
+        workflow="card_repair.rcm",
+        control=control,
+        invalid_evidence_items=selected,
+    )
+
+
+@pytest.mark.asyncio
+async def test_degraded_invalid_evidence_dispatches_only_selected_plan_items(
+    tmp_path: Path,
+) -> None:
+    job = _job(job_id=uuid4(), worker_id=uuid4(), status="running")
+    now = datetime.now(UTC)
+    original = SurveyExecutionResult(
+        outcome="succeeded",
+        error_code="survey_quality_degraded",
+        error_message="Readable report delivered without charge.",
+        started_at=now,
+        finished_at=now,
+        return_code=0,
+        termination_reason="completed_degraded",
+        chargeable=False,
+    )
+    selected = (
+        {
+            "run_dir": ".",
+            "id": "2511.14617",
+            "title": "Invalid evidence card",
+            "why": "evidence",
+        },
+    )
+    invalid_summary = SurveyEvidenceSummary(
+        card_count=1,
+        counts={
+            "html": 0,
+            "full_text": 0,
+            "partial": 0,
+            "abstract_only": 0,
+            "unknown": 1,
+        },
+        reviewed_count=0,
+        coverage_percent=0.0,
+        invalid_reason_count=1,
+        runtime_marker_count=0,
+        invalid_cards=("cards/2511.14617.md",),
+    )
+    control = ProcessControl()
+
+    with (
+        patch(
+            "scholight.survey.worker._repair_workflows",
+            return_value=(("00_sections.json", "section_repair.rcm"),),
+        ),
         patch(
             "scholight.survey.worker.summarize_survey_evidence",
             return_value=invalid_summary,
