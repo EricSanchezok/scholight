@@ -1,0 +1,215 @@
+name: Repair production Survey evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Verify the fixed archived Survey or apply its guarded repair
+        required: true
+        type: choice
+        options: [verify, apply]
+      release_sha:
+        description: Exact deployed 40-character Scholight release SHA
+        required: true
+        type: string
+      confirmation:
+        description: Type VERIFY SURVEY EVIDENCE REPAIR or APPLY SURVEY EVIDENCE REPAIR
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: scholight-production
+  cancel-in-progress: false
+
+env:
+  REPAIR_JOB_ID: f4795522-28f6-4edd-8813-102f654d4367
+  SOURCE_MANIFEST_SHA256: d4568b259f1fd0c89e9be975a32b8938a9839b9ca64cdc1c848bf6a6613f31e0
+  SOURCE_REPORT_SHA256: 34a1ae81bcbb93c518cdc5d9ca52bb84a76a9f452447aa8a221df5e89eae8984
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    environment: production
+    steps:
+      - name: Validate the fixed repair operation
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+          OPERATION: ${{ inputs.operation }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          expected_confirmation="${OPERATION^^} SURVEY EVIDENCE REPAIR"
+          test "$CONFIRMATION" = "$expected_confirmation"
+          test "$REPAIR_JOB_ID" = "f4795522-28f6-4edd-8813-102f654d4367"
+          [[ "$SOURCE_MANIFEST_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$SOURCE_REPORT_SHA256" =~ ^[0-9a-f]{64}$ ]]
+      - name: Check out exact deployed source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.release_sha }}
+          persist-credentials: false
+      - name: Configure AWS production credentials
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-duration-seconds: 14400
+      - name: Verify exact deployed API and Survey images
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: |
+          account_id=$(aws sts get-caller-identity --query Account --output text)
+          bucket="sanchezcloud-scholight-releases-${account_id}-${AWS_REGION}"
+          aws s3 cp "s3://${bucket}/releases/${RELEASE_SHA}/manifest.json" release-manifest.json
+          python scripts/release_manifest.py verify \
+            --manifest release-manifest.json \
+            --expected-release-sha "$RELEASE_SHA"
+          desired_api_image=$(jq -r .images.api release-manifest.json)
+          desired_survey_image=$(jq -r .images.survey release-manifest.json)
+          # JMESPath expressions are fixed literals.
+          # shellcheck disable=SC2016
+          deployed_api_image=$(aws cloudformation describe-stacks \
+            --stack-name sanchezcloud-scholight-production \
+            --query 'Stacks[0].Parameters[?ParameterKey==`ApiImage`].ParameterValue|[0]' \
+            --output text)
+          # shellcheck disable=SC2016
+          deployed_survey_image=$(aws cloudformation describe-stacks \
+            --stack-name sanchezcloud-scholight-production \
+            --query 'Stacks[0].Parameters[?ParameterKey==`SurveyImage`].ParameterValue|[0]' \
+            --output text)
+          # shellcheck disable=SC2016
+          task_api_image=$(aws ecs describe-task-definition \
+            --task-definition sanchezcloud-scholight-api \
+            --query 'taskDefinition.containerDefinitions[?name==`api`].image|[0]' \
+            --output text)
+          # shellcheck disable=SC2016
+          task_survey_image=$(aws ecs describe-task-definition \
+            --task-definition sanchezcloud-scholight-survey \
+            --query 'taskDefinition.containerDefinitions[?name==`survey`].image|[0]' \
+            --output text)
+          test "$deployed_api_image" = "$desired_api_image"
+          test "$deployed_survey_image" = "$desired_survey_image"
+          test "$task_api_image" = "$desired_api_image"
+          test "$task_survey_image" = "$desired_survey_image"
+      - name: Register exact Survey repair task
+        id: repair_task
+        run: |
+          desired_image=$(jq -r .images.survey release-manifest.json)
+          aws ecs describe-task-definition \
+            --task-definition sanchezcloud-scholight-survey \
+            --query taskDefinition > survey-task.json
+          jq --arg image "$desired_image" '
+            {
+              family: "sanchezcloud-scholight-survey-canary",
+              taskRoleArn, executionRoleArn, networkMode,
+              containerDefinitions, volumes, placementConstraints,
+              requiresCompatibilities, cpu, memory, runtimePlatform,
+              ephemeralStorage
+            }
+            | .containerDefinitions[0].image = $image
+            | with_entries(select(.value != null))
+          ' survey-task.json > repair-task.json
+          task_definition=$(aws ecs register-task-definition \
+            --cli-input-json file://repair-task.json \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "task_definition=$task_definition" >> "$GITHUB_OUTPUT"
+      - name: Verify then optionally apply the fixed evidence repair
+        env:
+          OPERATION: ${{ inputs.operation }}
+          REPAIR_TASK_DEFINITION: ${{ steps.repair_task.outputs.task_definition }}
+        run: |
+          # JMESPath and jq programs are fixed literal expressions.
+          # shellcheck disable=SC2016
+          subnet_1=$(aws cloudformation list-exports \
+            --query 'Exports[?Name==`sanchezcloud-production-private-subnet-1`].Value|[0]' \
+            --output text)
+          # shellcheck disable=SC2016
+          subnet_2=$(aws cloudformation list-exports \
+            --query 'Exports[?Name==`sanchezcloud-production-private-subnet-2`].Value|[0]' \
+            --output text)
+          # shellcheck disable=SC2016
+          task_sg=$(aws cloudformation describe-stacks \
+            --stack-name sanchezcloud-scholight-production \
+            --query 'Stacks[0].Outputs[?OutputKey==`TaskSecurityGroupId`].OutputValue|[0]' \
+            --output text)
+          network=$(jq -cn \
+            --arg subnet1 "$subnet_1" --arg subnet2 "$subnet_2" --arg sg "$task_sg" \
+            '{awsvpcConfiguration:{subnets:[$subnet1,$subnet2],securityGroups:[$sg],assignPublicIp:"DISABLED"}}')
+
+          run_repair_task() {
+            local mode=$1
+            local command overrides response task_arn task status deadline task_id exit_code
+            command=$(jq -cn \
+              --arg job "$REPAIR_JOB_ID" \
+              --arg manifest "$SOURCE_MANIFEST_SHA256" \
+              --arg report "$SOURCE_REPORT_SHA256" \
+              --arg mode "$mode" \
+              '["python","-m","scholight.survey.production_ops","repair-degraded-evidence","--job-id",$job,"--expected-source-manifest-sha256",$manifest,"--expected-report-sha256",$report] + (if $mode == "apply" then ["--apply"] else [] end)')
+            overrides=$(jq -cn --argjson command "$command" \
+              '{containerOverrides:[{name:"survey",command:$command}]}')
+            response=$(aws ecs run-task \
+              --cluster sanchezcloud-production \
+              --launch-type FARGATE \
+              --task-definition "$REPAIR_TASK_DEFINITION" \
+              --network-configuration "$network" \
+              --overrides "$overrides" \
+              --started-by "github-evidence-repair-${GITHUB_RUN_ID}")
+            test "$(jq '.failures | length' <<<"$response")" = 0
+            task_arn=$(jq -r '.tasks[0].taskArn' <<<"$response")
+            test -n "$task_arn"
+            deadline=$((SECONDS + 5400))
+            while true; do
+              task=$(aws ecs describe-tasks \
+                --cluster sanchezcloud-production --tasks "$task_arn")
+              status=$(jq -r '.tasks[0].lastStatus' <<<"$task")
+              if [[ "$status" == STOPPED ]]; then
+                break
+              fi
+              if (( SECONDS >= deadline )); then
+                aws ecs stop-task \
+                  --cluster sanchezcloud-production \
+                  --task "$task_arn" \
+                  --reason "Production Survey evidence repair timed out" >/dev/null
+                echo "Production Survey evidence $mode timed out" >&2
+                return 1
+              fi
+              sleep 30
+            done
+            task_id=${task_arn##*/}
+            aws logs get-log-events \
+              --log-group-name /sanchezcloud/scholight/survey \
+              --log-stream-name "full/survey/${task_id}" \
+              --start-from-head --limit 50 \
+              --query 'events[].message' --output text
+            exit_code=$(jq -r '.tasks[0].containers[] | select(.name == "survey") | .exitCode' \
+              <<<"$task")
+            if [[ "$exit_code" != 0 ]]; then
+              echo "Production Survey evidence $mode failed with exit code $exit_code" >&2
+              return 1
+            fi
+          }
+
+          run_repair_task verify
+          if [[ "$OPERATION" == apply ]]; then
+            run_repair_task apply
+          fi
+          {
+            echo "### Production Survey evidence repair"
+            echo "- Operation: \`$OPERATION\`"
+            echo "- Survey: \`c9aa7d4c-774f-4b34-9c4a-d8cc578a89e3\`"
+            echo "- Job: \`$REPAIR_JOB_ID\`"
+            echo "- Source manifest guard: \`$SOURCE_MANIFEST_SHA256\`"
+            echo "- Source report guard: \`$SOURCE_REPORT_SHA256\`"
+            echo "- Quota contract: \`released\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Deregister one-off Survey repair task
+        if: always() && steps.repair_task.outputs.task_definition != ''
+        env:
+          REPAIR_TASK_DEFINITION: ${{ steps.repair_task.outputs.task_definition }}
+        run: aws ecs deregister-task-definition --task-definition "$REPAIR_TASK_DEFINITION"
