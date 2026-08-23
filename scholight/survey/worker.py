@@ -1419,10 +1419,9 @@ async def _repair_survey_artifacts(
         job_id=job.id,
         survey_id=job.survey_id,
     )
-    repairs: tuple[tuple[str, str, tuple[dict[str, object], ...]], ...] = tuple(
-        (*repair, ()) for repair in _repair_workflows(diagnostics)
-    )
-    if original.error_code == "survey_full_text_evidence_invalid":
+    repairs: tuple[tuple[str, str, tuple[dict[str, object], ...]], ...]
+    if original.error_code == "survey_quality_degraded":
+        repairs = ()
         evidence_summary = summarize_survey_evidence(run_root)
         selected = _invalid_evidence_repair_items(
             diagnostics,
@@ -1430,7 +1429,19 @@ async def _repair_survey_artifacts(
         )
         if not selected:
             return None
-        repairs = (*repairs, ("00_card_plan.json", "card_repair.rcm", selected))
+        repairs = (("00_card_plan.json", "card_repair.rcm", selected),)
+    else:
+        repairs = tuple((*repair, ()) for repair in _repair_workflows(diagnostics))
+        if original.error_code == "survey_full_text_evidence_invalid":
+            evidence_summary = summarize_survey_evidence(run_root)
+            if evidence_summary.invalid_cards:
+                selected = _invalid_evidence_repair_items(
+                    diagnostics,
+                    evidence_summary.invalid_cards,
+                )
+                if not selected:
+                    return None
+                repairs = (*repairs, ("00_card_plan.json", "card_repair.rcm", selected))
     if not repairs:
         return None
     logger.warning(
@@ -1526,6 +1537,18 @@ async def execute_survey(
     provider_attempt = 1
     while provider_attempt <= settings.survey_provider_max_attempts:
         result = await _execute_survey_once(job, run_root, control=control)
+        if (
+            result.outcome == "succeeded"
+            and result.error_code == "survey_quality_degraded"
+            and summarize_survey_evidence(run_root).invalid_cards
+        ):
+            repaired = await _repair_survey_artifacts(
+                job,
+                run_root,
+                original=result,
+                control=control,
+            )
+            return repaired or result
         if (
             result.outcome == "failed"
             and result.error_code
