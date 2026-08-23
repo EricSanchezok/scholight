@@ -326,6 +326,15 @@ def _classify_image_tool_error(error: object) -> dict[str, object]:
 
 
 @dataclass(frozen=True, slots=True)
+class SurveyRepairContext:
+    """Minimal owner identity needed by a bounded repair workflow."""
+
+    id: UUID
+    survey_id: UUID
+    user_id: int
+
+
+@dataclass(frozen=True, slots=True)
 class SurveyExecutionResult:
     outcome: Literal["succeeded", "failed", "cancelled"]
     error_code: str | None
@@ -1330,7 +1339,7 @@ def _repair_workflows(diagnostics: SurveyDiagnostics) -> tuple[tuple[str, str], 
 
 async def _run_repair_workflow(
     *,
-    job: SurveyJob,
+    job: SurveyJob | SurveyRepairContext,
     run_root: Path,
     plan: str,
     workflow: str,

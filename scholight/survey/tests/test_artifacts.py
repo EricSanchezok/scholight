@@ -442,6 +442,98 @@ async def test_recovery_overlay_writer_rejects_source_hash_change(tmp_path: Path
 
 
 @pytest.mark.asyncio
+async def test_evidence_repair_overlay_replaces_only_cards_report_and_index(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "00_outline.md").write_text("## Original outline\n", encoding="utf-8")
+    (source / "08_survey.md").write_text("# Original report\n", encoding="utf-8")
+    (source / "index.md").write_text("# Original index\n", encoding="utf-8")
+    (source / "cards").mkdir()
+    (source / "cards" / "2601.21473.md").write_text(
+        "# Original card without evidence\n",
+        encoding="utf-8",
+    )
+    fake = _FakeS3()
+    store = SurveyArtifactStore(bucket="survey-test", client=fake)
+    archive = await store.archive_run(
+        user_id=42,
+        job_id=uuid4(),
+        run_root=source,
+        run_metadata={"outcome": "succeeded"},
+    )
+    source_sha256 = hashlib.sha256(fake.objects[archive.manifest_key]).hexdigest()
+
+    repaired = tmp_path / "repaired"
+    repaired.mkdir()
+    (repaired / "08_survey.md").write_text("# Repaired report\n", encoding="utf-8")
+    (repaired / "index.md").write_text("# Repaired index\n", encoding="utf-8")
+    (repaired / "cards").mkdir()
+    (repaired / "cards" / "2601.21473.md").write_text(
+        "# Repaired card\n\n## evidence\n- level: full_text\n- reason: pdf_text_extracted\n",
+        encoding="utf-8",
+    )
+
+    overlay = await store.create_evidence_repair_overlay(
+        source_manifest_key=archive.manifest_key,
+        expected_source_sha256=source_sha256,
+        run_root=repaired,
+        repaired_cards=("cards/2601.21473.md",),
+    )
+    repeated = await store.create_evidence_repair_overlay(
+        source_manifest_key=archive.manifest_key,
+        expected_source_sha256=source_sha256,
+        run_root=repaired,
+        repaired_cards=("cards/2601.21473.md",),
+    )
+    card = await store.open_artifact(
+        manifest_key=overlay.manifest_key,
+        path="run/cards/2601.21473.md",
+    )
+    outline = await store.open_artifact(
+        manifest_key=overlay.manifest_key,
+        path="run/00_outline.md",
+    )
+
+    assert overlay == repeated
+    assert overlay.manifest["schema_version"] == 3
+    assert overlay.manifest["repair_type"] == "evidence_declarations"
+    assert b"Repaired card" in b"".join([chunk async for chunk in card.chunks()])
+    assert b"Original outline" in b"".join([chunk async for chunk in outline.chunks()])
+
+    await store.delete_archive(manifest_key=overlay.manifest_key)
+
+    assert fake.objects == {}
+
+
+@pytest.mark.asyncio
+async def test_evidence_repair_overlay_rejects_unbounded_or_unsafe_card_paths(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "08_survey.md").write_text("# Original report\n", encoding="utf-8")
+    fake = _FakeS3()
+    store = SurveyArtifactStore(bucket="survey-test", client=fake)
+    archive = await store.archive_run(
+        user_id=42,
+        job_id=uuid4(),
+        run_root=source,
+        run_metadata={"outcome": "succeeded"},
+    )
+    source_sha256 = hashlib.sha256(fake.objects[archive.manifest_key]).hexdigest()
+
+    with pytest.raises(SurveyArtifactError, match="card path"):
+        await store.create_evidence_repair_overlay(
+            source_manifest_key=archive.manifest_key,
+            expected_source_sha256=source_sha256,
+            run_root=source,
+            repaired_cards=("cards/../secret.md",),
+        )
+
+
+@pytest.mark.asyncio
 async def test_manifest_cannot_presign_another_owner_key(tmp_path: Path) -> None:
     (tmp_path / "08_survey.md").write_text("# Survey", encoding="utf-8")
     fake = _FakeS3()

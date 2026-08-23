@@ -28,6 +28,7 @@ _READ_CHUNK_BYTES = 1024 * 1024
 _MANIFEST_MAX_BYTES = 8 * 1024 * 1024
 _RECOVERY_FILE_MAX_BYTES = 16 * 1024 * 1024
 _RECOVERY_TOTAL_MAX_BYTES = 256 * 1024 * 1024
+_MAX_EVIDENCE_REPAIR_CARDS = 100
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 _HTML_COMMENT_BYTES_PATTERN = re.compile(rb"<!--.*?-->", re.DOTALL)
 
@@ -458,7 +459,7 @@ class SurveyArtifactStore:
         return payload, hashlib.sha256(raw).hexdigest()
 
     async def validate_manifest(self, *, manifest_key: str) -> None:
-        """Validate ownership, paths, and any v2 parent link without issuing URLs."""
+        """Validate ownership, paths, and any recovery parent link without issuing URLs."""
         await asyncio.to_thread(self._resolve_manifest_sync, manifest_key)
 
     def _read_manifest_sync(self, manifest_key: str) -> dict[str, Any]:
@@ -485,7 +486,7 @@ class SurveyArtifactStore:
             raise SurveyArtifactError("Survey artifact manifest is invalid") from exc
         if (
             not isinstance(payload, dict)
-            or payload.get("schema_version") not in {1, 2}
+            or payload.get("schema_version") not in {1, 2, 3}
             or not isinstance(payload.get("files"), list)
         ):
             raise SurveyArtifactError("Survey artifact manifest is invalid")
@@ -503,7 +504,8 @@ class SurveyArtifactStore:
                 deletion_records=records,
                 manifest_keys=(manifest_key,),
             )
-        if manifest.get("schema_version") != 2:
+        schema_version = manifest.get("schema_version")
+        if schema_version not in {2, 3}:
             raise SurveyArtifactError("Survey artifact manifest is invalid")
 
         parent = manifest.get("parent_manifest")
@@ -526,21 +528,62 @@ class SurveyArtifactStore:
         parent_records = _validated_records(parent_manifest, manifest_key=parent_key)
 
         recovery_prefix = f"{location.base_prefix}/recoveries/{location.recovery_sha256}"
-        overrides = _validated_record_list(
-            manifest["files"],
-            object_prefix=recovery_prefix,
-            manifest_key=manifest_key,
-            allowed_paths={"run/08_survey.md", "run/index.md"},
-            error_label="overlay entry",
-        )
-        if {record["path"] for record in overrides} != {
-            "run/08_survey.md",
-            "run/index.md",
-        }:
-            raise SurveyArtifactError("Survey artifact manifest overlay entry is invalid")
-        report = next(record for record in overrides if record["path"] == "run/08_survey.md")
-        if report["sha256"] != location.recovery_sha256:
-            raise SurveyArtifactError("Survey artifact manifest overlay entry is invalid")
+        if schema_version == 2:
+            overrides = _validated_record_list(
+                manifest["files"],
+                object_prefix=recovery_prefix,
+                manifest_key=manifest_key,
+                allowed_paths={"run/08_survey.md", "run/index.md"},
+                error_label="overlay entry",
+            )
+            if {record["path"] for record in overrides} != {
+                "run/08_survey.md",
+                "run/index.md",
+            }:
+                raise SurveyArtifactError("Survey artifact manifest overlay entry is invalid")
+            report = next(record for record in overrides if record["path"] == "run/08_survey.md")
+            if report["sha256"] != location.recovery_sha256:
+                raise SurveyArtifactError("Survey artifact manifest overlay entry is invalid")
+        else:
+            overrides = _validated_record_list(
+                manifest["files"],
+                object_prefix=recovery_prefix,
+                manifest_key=manifest_key,
+                error_label="overlay entry",
+            )
+            override_paths = {str(record["path"]) for record in overrides}
+            card_paths = override_paths - {"run/08_survey.md", "run/index.md"}
+            parent_paths = {str(record["path"]) for record in parent_records}
+            if (
+                manifest.get("repair_type") != "evidence_declarations"
+                or not {"run/08_survey.md", "run/index.md"}.issubset(override_paths)
+                or not 1 <= len(card_paths) <= _MAX_EVIDENCE_REPAIR_CARDS
+                or any(
+                    PurePosixPath(path).parts != ("run", "cards", PurePosixPath(path).name)
+                    or not path.endswith(".md")
+                    or path not in parent_paths
+                    for path in card_paths
+                )
+                or any(
+                    record["mime"] != "text/markdown"
+                    or record["size"] <= 0
+                    or record["size"] > _RECOVERY_FILE_MAX_BYTES
+                    for record in overrides
+                )
+            ):
+                raise SurveyArtifactError("Survey artifact manifest overlay entry is invalid")
+            identity = {
+                "parent_sha256": parent_sha256,
+                "files": [
+                    {"path": record["path"], "sha256": record["sha256"]}
+                    for record in sorted(overrides, key=lambda item: str(item["path"]))
+                ],
+            }
+            overlay_sha256 = hashlib.sha256(
+                json.dumps(identity, separators=(",", ":"), sort_keys=True).encode("utf-8")
+            ).hexdigest()
+            if overlay_sha256 != location.recovery_sha256:
+                raise SurveyArtifactError("Survey artifact manifest overlay entry is invalid")
 
         merged = {str(record["path"]): record for record in parent_records}
         for record in overrides:
@@ -568,6 +611,153 @@ class SurveyArtifactStore:
             report_path,
             index_path,
             True,
+        )
+
+    async def create_evidence_repair_overlay(
+        self,
+        *,
+        source_manifest_key: str,
+        expected_source_sha256: str,
+        run_root: Path,
+        repaired_cards: tuple[str, ...],
+    ) -> SurveyRecoveryOverlay:
+        """Append verified card/report replacements without mutating the v1 archive."""
+        return await asyncio.to_thread(
+            self._create_evidence_repair_overlay_sync,
+            source_manifest_key,
+            expected_source_sha256,
+            run_root,
+            repaired_cards,
+        )
+
+    def _create_evidence_repair_overlay_sync(
+        self,
+        source_manifest_key: str,
+        expected_source_sha256: str,
+        run_root: Path,
+        repaired_cards: tuple[str, ...],
+    ) -> SurveyRecoveryOverlay:
+        if _SHA256_PATTERN.fullmatch(expected_source_sha256) is None:
+            raise SurveyArtifactError("Survey recovery source checksum is invalid")
+        if (
+            not 1 <= len(repaired_cards) <= _MAX_EVIDENCE_REPAIR_CARDS
+            or len(set(repaired_cards)) != len(repaired_cards)
+            or any(
+                PurePosixPath(path).parts != ("cards", PurePosixPath(path).name)
+                or not path.endswith(".md")
+                for path in repaired_cards
+            )
+        ):
+            raise SurveyArtifactError("Survey evidence repair card path is invalid")
+
+        source_manifest, source_raw = self._read_manifest_document_sync(source_manifest_key)
+        location = _manifest_location(source_manifest_key)
+        if location.recovery_sha256 is not None:
+            raise SurveyArtifactError("Survey recovery source manifest is invalid")
+        source_records = _validated_records(source_manifest, manifest_key=source_manifest_key)
+        source_sha256 = hashlib.sha256(source_raw).hexdigest()
+        if source_sha256 != expected_source_sha256:
+            raise SurveyArtifactError("Survey recovery source checksum changed")
+        source_paths = {str(record["path"]) for record in source_records}
+        artifact_paths = (
+            "run/08_survey.md",
+            "run/index.md",
+            *(f"run/{path}" for path in sorted(repaired_cards)),
+        )
+        if any(path not in source_paths for path in artifact_paths):
+            raise SurveyArtifactError("Survey evidence repair source artifact is unavailable")
+
+        try:
+            resolved_root = run_root.resolve(strict=True)
+        except OSError as exc:
+            raise SurveyArtifactError("Survey recovery output is unavailable") from exc
+        content_by_path: dict[str, bytes] = {}
+        for artifact_path in artifact_paths:
+            relative = PurePosixPath(artifact_path).relative_to("run")
+            path = resolved_root.joinpath(*relative.parts)
+            try:
+                path_stat = path.lstat()
+                resolved_path = path.resolve(strict=True)
+            except OSError as exc:
+                raise SurveyArtifactError("Survey recovery output is unavailable") from exc
+            if (
+                not stat.S_ISREG(path_stat.st_mode)
+                or path.is_symlink()
+                or resolved_path.parent
+                != resolved_root.joinpath(*relative.parts[:-1]).resolve(strict=True)
+                or path_stat.st_size <= 0
+                or path_stat.st_size > _RECOVERY_FILE_MAX_BYTES
+            ):
+                raise SurveyArtifactError("Survey recovery output is invalid")
+            flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+            try:
+                descriptor = os.open(path, flags)
+                with os.fdopen(descriptor, "rb") as handle:
+                    content = handle.read(_RECOVERY_FILE_MAX_BYTES + 1)
+            except OSError as exc:
+                raise SurveyArtifactError("Survey recovery output is unreadable") from exc
+            if len(content) != path_stat.st_size or len(content) > _RECOVERY_FILE_MAX_BYTES:
+                raise SurveyArtifactError("Survey recovery output changed while reading")
+            content_by_path[artifact_path] = content
+
+        identity = {
+            "parent_sha256": source_sha256,
+            "files": [
+                {"path": path, "sha256": hashlib.sha256(content_by_path[path]).hexdigest()}
+                for path in sorted(content_by_path)
+            ],
+        }
+        overlay_sha256 = hashlib.sha256(
+            json.dumps(identity, separators=(",", ":"), sort_keys=True).encode("utf-8")
+        ).hexdigest()
+        recovery_prefix = f"{location.base_prefix}/recoveries/{overlay_sha256}"
+        records: list[dict[str, Any]] = []
+        for artifact_path in sorted(content_by_path):
+            content = content_by_path[artifact_path]
+            key = f"{recovery_prefix}/{artifact_path}"
+            self._put_append_only(
+                key=key,
+                content=content,
+                content_type="text/markdown",
+            )
+            records.append(
+                {
+                    "path": artifact_path,
+                    "key": key,
+                    "size": len(content),
+                    "sha256": hashlib.sha256(content).hexdigest(),
+                    "mime": "text/markdown",
+                }
+            )
+        manifest: dict[str, Any] = {
+            "schema_version": 3,
+            "job_id": str(location.job_id),
+            "user_id": location.user_id,
+            "repair_type": "evidence_declarations",
+            "parent_manifest": {
+                "key": source_manifest_key,
+                "sha256": source_sha256,
+            },
+            "files": records,
+        }
+        manifest_key = f"{recovery_prefix}/manifest.json"
+        manifest_body = json.dumps(
+            manifest,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+        self._put_append_only(
+            key=manifest_key,
+            content=manifest_body,
+            content_type="application/json",
+        )
+        return SurveyRecoveryOverlay(
+            source_manifest_key=source_manifest_key,
+            source_manifest_sha256=source_sha256,
+            storage_prefix=location.base_prefix,
+            manifest_key=manifest_key,
+            manifest=manifest,
         )
 
     async def plan_recovery_overlay(

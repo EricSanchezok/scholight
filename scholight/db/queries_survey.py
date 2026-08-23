@@ -1211,6 +1211,104 @@ async def recover_archived_survey_contract_failure(
         raise DBError("Failed to recover archived Survey") from exc
 
 
+async def repair_degraded_survey_evidence(
+    *,
+    job_id: UUID,
+    expected_manifest_key: str,
+    replacement_manifest_key: str,
+) -> bool:
+    """Atomically activate a verified evidence overlay while keeping the run free."""
+    try:
+        async with get_pool().acquire() as connection, connection.transaction():
+            survey_id = await connection.fetchval(
+                "SELECT survey_id FROM scholight.survey_jobs WHERE id = $1", job_id
+            )
+            if survey_id is None:
+                raise SurveyStateError(
+                    "The archived Survey execution does not exist.",
+                    code="survey_repair_not_found",
+                )
+            locked = await lock_survey_aggregate(connection, survey_id=survey_id)
+            if locked is None or locked.job is None or locked.job["id"] != job_id:
+                raise SurveyStateError(
+                    "The archived Survey execution does not exist.",
+                    code="survey_repair_not_found",
+                )
+            survey = locked.survey
+            job = locked.job
+            storage_prefix = str(job["storage_prefix"] or "")
+            expected_storage_prefix = f"surveys/v1/{survey['user_id']}/{job_id}"
+            if (
+                storage_prefix != expected_storage_prefix
+                or expected_manifest_key != f"{storage_prefix}/manifest.json"
+                or re.fullmatch(
+                    rf"{re.escape(storage_prefix)}/recoveries/[0-9a-f]{{64}}/manifest\.json",
+                    replacement_manifest_key,
+                )
+                is None
+            ):
+                raise SurveyStateError(
+                    "The repaired Survey manifest ownership is invalid.",
+                    code="survey_repair_manifest_changed",
+                )
+            if (
+                survey["status"] == "succeeded"
+                and survey["quota_state"] == "released"
+                and survey["error_code"] is None
+                and job["status"] == "finished"
+                and job["terminal_outcome"] == "succeeded"
+                and job["error_code"] is None
+            ):
+                if job["manifest_key"] != replacement_manifest_key:
+                    raise SurveyStateError(
+                        "The repaired Survey manifest does not match.",
+                        code="survey_repair_manifest_changed",
+                    )
+                return False
+            if job["manifest_key"] != expected_manifest_key:
+                raise SurveyStateError(
+                    "The archived Survey manifest changed during repair.",
+                    code="survey_repair_manifest_changed",
+                )
+            if not (
+                survey["status"] == "succeeded"
+                and survey["quota_state"] == "released"
+                and survey["error_code"] == "survey_quality_degraded"
+                and job["status"] == "finished"
+                and job["terminal_outcome"] == "succeeded"
+                and job["error_code"] == "survey_quality_degraded"
+            ):
+                raise SurveyStateError(
+                    "The archived Survey is not eligible for evidence repair.",
+                    code="survey_repair_ineligible",
+                )
+
+            await connection.execute(
+                "UPDATE scholight.surveys SET error_code = NULL, error_message = NULL, "
+                "updated_at = now() WHERE id = $1",
+                survey_id,
+            )
+            await connection.execute(
+                "UPDATE scholight.survey_jobs SET error_code = NULL, error_message = NULL, "
+                "manifest_key = $2 WHERE id = $1",
+                job_id,
+                replacement_manifest_key,
+            )
+            logger.info(
+                "survey_degraded_evidence_repaired",
+                job_id=str(job_id),
+                survey_id=str(survey_id),
+                source_manifest_key=expected_manifest_key,
+                manifest_key=replacement_manifest_key,
+            )
+            return True
+    except SurveyStateError:
+        raise
+    except asyncpg.PostgresError as exc:
+        logger.error("survey_degraded_evidence_repair_failed", error_type=type(exc).__name__)
+        raise DBError("Failed to activate repaired Survey evidence") from exc
+
+
 async def get_survey_job_counts() -> dict[str, int]:
     counts = {"queued": 0, "running": 0, "archiving": 0, "finished": 0}
     try:
@@ -1246,6 +1344,7 @@ __all__ = [
     "mark_survey_workspace_missing",
     "recover_expired_survey_jobs",
     "recover_archived_survey_contract_failure",
+    "repair_degraded_survey_evidence",
     "settle_survey_execution",
     "start_survey",
     "update_survey_job_progress",

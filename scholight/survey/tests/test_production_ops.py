@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from uuid import UUID
 
 import pytest
@@ -10,8 +11,10 @@ from scholight.survey import production_ops
 from scholight.survey.production_ops import (
     ProductionSurveyAcceptanceError,
     acceptance_payload,
+    archived_evidence_repair_operation,
     rerun_identifiers,
 )
+from scholight.survey.quality_repair import ArchivedEvidenceRepair
 
 
 def test_rerun_identifiers_are_deterministic_and_distinct() -> None:
@@ -22,6 +25,118 @@ def test_rerun_identifiers_are_deterministic_and_distinct() -> None:
 
     assert first == second
     assert len({first.survey_id, first.draft_id, first.job_id, first.start_request_id}) == 4
+
+
+@pytest.mark.asyncio
+async def test_archived_evidence_verify_is_read_only_and_hash_guarded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job_id = UUID("f4795522-28f6-4edd-8813-102f654d4367")
+    survey_id = UUID("c9aa7d4c-774f-4b34-9c4a-d8cc578a89e3")
+    inspection = ArchivedEvidenceRepair(
+        job_id=job_id,
+        survey_id=survey_id,
+        user_id=42,
+        source_manifest_key=f"surveys/v1/42/{job_id}/manifest.json",
+        source_manifest_sha256="1" * 64,
+        report_sha256="2" * 64,
+        manifest_key=f"surveys/v1/42/{job_id}/manifest.json",
+        manifest_sha256="1" * 64,
+        invalid_cards=("cards/2601.21473.md",),
+        coverage_percent=99.0,
+        notification_count=1,
+        notification_status="succeeded",
+        applied=False,
+        changed=False,
+    )
+    create_pool = AsyncMock()
+    close_pool = AsyncMock()
+    inspect = AsyncMock(return_value=inspection)
+    apply = AsyncMock()
+    monkeypatch.setattr(production_ops, "create_pool", create_pool)
+    monkeypatch.setattr(production_ops, "close_pool", close_pool)
+    monkeypatch.setattr(production_ops, "inspect_archived_evidence_repair", inspect)
+    monkeypatch.setattr(production_ops, "apply_archived_evidence_repair", apply)
+
+    payload = await archived_evidence_repair_operation(
+        job_id=job_id,
+        apply=False,
+        expected_source_manifest_sha256="1" * 64,
+        expected_report_sha256="2" * 64,
+    )
+
+    assert payload["status"] == "eligible"
+    assert payload["quota_state"] == "released"
+    assert payload["invalid_card_count"] == 1
+    assert "invalid_cards" not in payload
+    apply.assert_not_awaited()
+    create_pool.assert_awaited_once()
+    close_pool.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_archived_evidence_apply_reverifies_clean_released_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job_id = UUID("f4795522-28f6-4edd-8813-102f654d4367")
+    survey_id = UUID("c9aa7d4c-774f-4b34-9c4a-d8cc578a89e3")
+    source_key = f"surveys/v1/42/{job_id}/manifest.json"
+    overlay_key = f"surveys/v1/42/{job_id}/recoveries/{'3' * 64}/manifest.json"
+    before = ArchivedEvidenceRepair(
+        job_id=job_id,
+        survey_id=survey_id,
+        user_id=42,
+        source_manifest_key=source_key,
+        source_manifest_sha256="1" * 64,
+        report_sha256="2" * 64,
+        manifest_key=overlay_key,
+        manifest_sha256="3" * 64,
+        invalid_cards=("cards/2601.21473.md",),
+        coverage_percent=99.0,
+        notification_count=1,
+        notification_status="succeeded",
+        applied=True,
+        changed=True,
+    )
+    after = ArchivedEvidenceRepair(
+        job_id=job_id,
+        survey_id=survey_id,
+        user_id=42,
+        source_manifest_key=source_key,
+        source_manifest_sha256="1" * 64,
+        report_sha256="2" * 64,
+        manifest_key=overlay_key,
+        manifest_sha256="4" * 64,
+        invalid_cards=(),
+        coverage_percent=100.0,
+        notification_count=1,
+        notification_status="succeeded",
+        applied=False,
+        changed=False,
+    )
+    monkeypatch.setattr(production_ops, "create_pool", AsyncMock())
+    monkeypatch.setattr(production_ops, "close_pool", AsyncMock())
+    monkeypatch.setattr(
+        production_ops,
+        "apply_archived_evidence_repair",
+        AsyncMock(return_value=before),
+    )
+    inspect = AsyncMock(return_value=after)
+    monkeypatch.setattr(production_ops, "inspect_archived_evidence_repair", inspect)
+
+    payload = await archived_evidence_repair_operation(
+        job_id=job_id,
+        apply=True,
+        expected_source_manifest_sha256="1" * 64,
+        expected_report_sha256="2" * 64,
+    )
+
+    assert payload["status"] == "repaired"
+    assert payload["manifest_key"] == overlay_key
+    assert payload["invalid_card_count"] == 0
+    assert payload["notification_count"] == 1
+    assert payload["changed"] is True
+    inspect.assert_awaited_once_with(job_id=job_id)
 
 
 @pytest.mark.asyncio
@@ -90,6 +205,68 @@ def test_acceptance_payload_requires_terminal_success() -> None:
             coverage_percent=100.0,
             notification_count=1,
             notification_status="succeeded",
+        )
+
+
+def test_acceptance_payload_rejects_degraded_success() -> None:
+    with pytest.raises(ProductionSurveyAcceptanceError, match="quality checks"):
+        acceptance_payload(
+            survey_id=UUID("4ee54f64-89a1-47d5-b657-117366e3035c"),
+            job_id=UUID("decc86b6-6e4d-4ac1-be86-dd127382d5c7"),
+            survey_status="succeeded",
+            job_status="finished",
+            terminal_outcome="succeeded",
+            error_code="survey_quality_degraded",
+            manifest_sha256="0" * 64,
+            report_sha256="1" * 64,
+            package_sha256="2" * 64,
+            card_count=100,
+            section_count=12,
+            coverage_percent=99.0,
+            notification_count=1,
+            notification_status="succeeded",
+        )
+
+
+def test_acceptance_payload_rejects_incomplete_evidence_declarations() -> None:
+    with pytest.raises(ProductionSurveyAcceptanceError, match="declarations"):
+        acceptance_payload(
+            survey_id=UUID("4ee54f64-89a1-47d5-b657-117366e3035c"),
+            job_id=UUID("decc86b6-6e4d-4ac1-be86-dd127382d5c7"),
+            survey_status="succeeded",
+            job_status="finished",
+            terminal_outcome="succeeded",
+            error_code=None,
+            manifest_sha256="0" * 64,
+            report_sha256="1" * 64,
+            package_sha256="2" * 64,
+            card_count=100,
+            section_count=12,
+            coverage_percent=99.0,
+            notification_count=1,
+            notification_status="succeeded",
+            unknown_count=1,
+        )
+
+
+def test_acceptance_payload_requires_consumed_quota_for_new_reruns() -> None:
+    with pytest.raises(ProductionSurveyAcceptanceError, match="allowance"):
+        acceptance_payload(
+            survey_id=UUID("4ee54f64-89a1-47d5-b657-117366e3035c"),
+            job_id=UUID("decc86b6-6e4d-4ac1-be86-dd127382d5c7"),
+            survey_status="succeeded",
+            job_status="finished",
+            terminal_outcome="succeeded",
+            error_code=None,
+            manifest_sha256="0" * 64,
+            report_sha256="1" * 64,
+            package_sha256="2" * 64,
+            card_count=100,
+            section_count=12,
+            coverage_percent=99.0,
+            notification_count=1,
+            notification_status="succeeded",
+            quota_state="released",
         )
 
 
