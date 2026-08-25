@@ -768,7 +768,10 @@ Resources:
       LaunchType: FARGATE
       PlatformVersion: LATEST
       HealthCheckGracePeriodSeconds: 30
-      DeploymentConfiguration: { MinimumHealthyPercent: 100, MaximumPercent: 200 }
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 100
+        MaximumPercent: 200
+        DeploymentCircuitBreaker: { Enable: true, Rollback: true }
       NetworkConfiguration:
         AwsvpcConfiguration:
           AssignPublicIp: DISABLED
@@ -795,7 +798,10 @@ Resources:
       LaunchType: FARGATE
       PlatformVersion: LATEST
       HealthCheckGracePeriodSeconds: 60
-      DeploymentConfiguration: { MinimumHealthyPercent: 100, MaximumPercent: 200 }
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 100
+        MaximumPercent: 200
+        DeploymentCircuitBreaker: { Enable: true, Rollback: true }
       NetworkConfiguration:
         AwsvpcConfiguration:
           AssignPublicIp: DISABLED
@@ -824,7 +830,10 @@ Resources:
       DesiredCount: !If [RunApplication, 1, 0]
       LaunchType: FARGATE
       PlatformVersion: LATEST
-      DeploymentConfiguration: { MinimumHealthyPercent: 100, MaximumPercent: 200 }
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 100
+        MaximumPercent: 200
+        DeploymentCircuitBreaker: { Enable: true, Rollback: true }
       NetworkConfiguration:
         AwsvpcConfiguration:
           AssignPublicIp: DISABLED
@@ -851,7 +860,10 @@ Resources:
       DesiredCount: !If [RunSurveyWorkers, 1, 0]
       LaunchType: FARGATE
       PlatformVersion: LATEST
-      DeploymentConfiguration: { MinimumHealthyPercent: 100, MaximumPercent: 200 }
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 100
+        MaximumPercent: 200
+        DeploymentCircuitBreaker: { Enable: true, Rollback: true }
       NetworkConfiguration:
         AwsvpcConfiguration:
           AssignPublicIp: DISABLED
@@ -874,7 +886,10 @@ Resources:
       DesiredCount: !If [RunSurveyWorkers, 1, 0]
       LaunchType: FARGATE
       PlatformVersion: LATEST
-      DeploymentConfiguration: { MinimumHealthyPercent: 100, MaximumPercent: 200 }
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 100
+        MaximumPercent: 200
+        DeploymentCircuitBreaker: { Enable: true, Rollback: true }
       NetworkConfiguration:
         AwsvpcConfiguration:
           AssignPublicIp: DISABLED
@@ -887,6 +902,44 @@ Resources:
         Namespace: !ImportValue sanchezcloud-production-namespace-arn
       PropagateTags: SERVICE
       EnableExecuteCommand: false
+
+  WebScalableTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Condition: RunApplication
+    Properties:
+      ServiceNamespace: ecs
+      ScalableDimension: ecs:service:DesiredCount
+      MinCapacity: 1
+      MaxCapacity: 3
+      ResourceId: !Join [/, [service, !ImportValue sanchezcloud-production-cluster-name, !GetAtt WebService.Name]]
+
+  WebCpuScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Condition: RunApplication
+    Properties:
+      PolicyName: scholight-web-cpu
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref WebScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 60
+        ScaleInCooldown: 300
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification: { PredefinedMetricType: ECSServiceAverageCPUUtilization }
+
+  WebRequestScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Condition: RunApplication
+    Properties:
+      PolicyName: scholight-web-requests
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref WebScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 600
+        ScaleInCooldown: 300
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ALBRequestCountPerTarget
+          ResourceLabel: !Join [/, [!GetAtt LoadBalancer.LoadBalancerFullName, !GetAtt WebTargetGroup.TargetGroupFullName]]
 
   ApiScalableTarget:
     Type: AWS::ApplicationAutoScaling::ScalableTarget
@@ -923,6 +976,21 @@ Resources:
         ScaleInCooldown: 300
         ScaleOutCooldown: 60
         PredefinedMetricSpecification: { PredefinedMetricType: ECSServiceAverageMemoryUtilization }
+
+  ApiRequestScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Condition: RunApplication
+    Properties:
+      PolicyName: scholight-api-requests
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref ApiScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 300
+        ScaleInCooldown: 300
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ALBRequestCountPerTarget
+          ResourceLabel: !Join [/, [!GetAtt LoadBalancer.LoadBalancerFullName, !GetAtt ApiTargetGroup.TargetGroupFullName]]
 
   ExtractScalableTarget:
     Type: AWS::ApplicationAutoScaling::ScalableTarget
@@ -1254,8 +1322,25 @@ Resources:
       Period: 300
       EvaluationPeriods: 3
       DatapointsToAlarm: 3
-      Threshold: 524288000
+      Threshold: 104857600
       ComparisonOperator: LessThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!ImportValue sanchezcloud-scholight-alert-topic-arn]
+
+  DatabaseSwapUsageAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: RunApplication
+    Properties:
+      AlarmName: sanchezcloud-scholight-postgres-swap-usage
+      Namespace: AWS/RDS
+      MetricName: SwapUsage
+      Dimensions: [{ Name: DBInstanceIdentifier, Value: !Ref DatabaseInstanceIdentifier }]
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 3
+      Threshold: 67108864
+      ComparisonOperator: GreaterThanThreshold
       TreatMissingData: notBreaching
       AlarmActions: [!ImportValue sanchezcloud-scholight-alert-topic-arn]
 
@@ -1702,7 +1787,7 @@ Resources:
             {"type":"metric","x":0,"y":18,"width":12,"height":6,"properties":{"title":"Survey worker tasks","region":"${AWS::Region}","metrics":[["ECS/ContainerInsights","RunningTaskCount","ClusterName","${ClusterName}","ServiceName","${SurveyDraftServiceName}"],[".",".",".",".",".","${SurveyFullServiceName}"]]}},
             {"type":"metric","x":12,"y":18,"width":12,"height":6,"properties":{"title":"Survey reliability and protection","region":"${AWS::Region}","metrics":[["Scholight/Production","SurveyRuntimeFailure","service","survey-worker"],[".","SurveyProviderThrottled",".","."],[".","SurveyProviderThrottled","service","survey-draft-worker"],[".","SurveyProviderRetry",".","."],[".","SurveyProviderRetry","service","survey-full-worker"],[".","SurveyTaskProtectionFailure","service","survey-draft-worker"],[".",".",".","survey-full-worker"],[".","SurveyEmailNotificationDead","service","survey-worker"]]}},
             {"type":"metric","x":0,"y":24,"width":12,"height":6,"properties":{"title":"Survey database latency","region":"${AWS::Region}","metrics":[["Scholight/Production","SurveyDraftClaimLatency","service","survey-draft-worker",{"stat":"p95"}],[".","SurveyDraftHeartbeatLatency",".",".",{"stat":"p95"}],[".","SurveyJobClaimLatency","service","survey-full-worker",{"stat":"p95"}],[".","SurveyJobHeartbeatLatency",".",".",{"stat":"p95"}]]}},
-            {"type":"metric","x":12,"y":24,"width":12,"height":6,"properties":{"title":"PostgreSQL capacity","region":"${AWS::Region}","metrics":[["AWS/RDS","DatabaseConnections","DBInstanceIdentifier","${DatabaseInstanceIdentifier}"],[".","CPUUtilization",".","."],[".","FreeableMemory",".",".",{"yAxis":"right"}]]}},
+            {"type":"metric","x":12,"y":24,"width":12,"height":6,"properties":{"title":"PostgreSQL capacity","region":"${AWS::Region}","metrics":[["AWS/RDS","DatabaseConnections","DBInstanceIdentifier","${DatabaseInstanceIdentifier}"],[".","CPUUtilization",".","."],[".","FreeableMemory",".",".",{"yAxis":"right"}],[".","SwapUsage",".",".",{"yAxis":"right"}]]}},
             {"type":"metric","x":0,"y":30,"width":12,"height":6,"properties":{"title":"Full Survey compute","region":"${AWS::Region}","metrics":[["AWS/ECS","CPUUtilization","ServiceName","${SurveyFullServiceName}","ClusterName","${ClusterName}"],[".","MemoryUtilization",".",".",".","."]]}},
             {"type":"metric","x":12,"y":30,"width":12,"height":6,"properties":{"title":"Full Survey storage","region":"${AWS::Region}","metrics":[["ECS/ContainerInsights","EphemeralStorageUtilized","ClusterName","${ClusterName}","ServiceName","${SurveyFullServiceName}"],[".","EphemeralStorageReserved",".",".",".","."]]}},
             {"type":"metric","x":0,"y":36,"width":24,"height":6,"properties":{"title":"Survey publication, finalization, and provider canaries","region":"${AWS::Region}","metrics":[["Scholight/Production","SurveyPublicationCount","service","survey-worker","outcome","succeeded"],[".","SurveyPublicationCount",".",".",".","degraded"],[".","SurveyPublicationCount",".",".",".","failed"],[".","SurveyFinalizationFailure","service","survey-worker"],[".","SurveyModelTerminalFailure",".","."],[".","SurveyModelCanaryCount","service","survey-model-canary","outcome","ok"],[".","SurveyModelCanaryCount",".",".",".","failed"],[".","SurveyImageGenerationCount","service","survey-full-worker","outcome","succeeded"],[".","SurveyImageGenerationCount",".",".",".","failed"],[".","SurveyImageCanaryCount","service","survey-image-canary","outcome","ok"],[".","SurveyImageCanaryCount",".",".",".","failed"]]}},

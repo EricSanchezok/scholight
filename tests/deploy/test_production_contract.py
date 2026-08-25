@@ -345,7 +345,10 @@ def test_survey_capacity_observability_has_no_identifier_dimensions() -> None:
     assert runtime.count("Threshold: 100") >= 2
     assert "MetricName: CPUUtilization" in runtime
     assert "MetricName: FreeableMemory" in runtime
-    assert "Threshold: 524288000" in runtime
+    assert "Threshold: 104857600" in runtime
+    assert "MetricName: SwapUsage" in runtime
+    assert "Threshold: 67108864" in runtime
+    assert "freeable memory above 500 MiB" in (ECS / "README.md").read_text(encoding="utf-8")
     assert "SurveyDraftNoTasksAlarm:" in runtime
     assert "SurveyFullNoTasksAlarm:" in runtime
     assert '"title":"Full Survey compute"' in runtime
@@ -531,6 +534,74 @@ def test_first_ecs_deployment_can_bootstrap_without_starting_services() -> None:
             template,
         )
     assert "if: inputs.application_enabled == 'true'" in workflow
+
+
+def test_web_and_api_autoscaling_use_compute_and_alb_request_targets() -> None:
+    runtime = (ECS / "scholight-production.yml").read_text(encoding="utf-8")
+
+    web_target = runtime.split("  WebScalableTarget:", maxsplit=1)[1].split(
+        "  WebCpuScalingPolicy:", maxsplit=1
+    )[0]
+    web_cpu = runtime.split("  WebCpuScalingPolicy:", maxsplit=1)[1].split(
+        "  WebRequestScalingPolicy:", maxsplit=1
+    )[0]
+    web_requests = runtime.split("  WebRequestScalingPolicy:", maxsplit=1)[1].split(
+        "  ApiScalableTarget:", maxsplit=1
+    )[0]
+    api_requests = runtime.split("  ApiRequestScalingPolicy:", maxsplit=1)[1].split(
+        "  ExtractScalableTarget:", maxsplit=1
+    )[0]
+
+    assert "MinCapacity: 1" in web_target
+    assert "MaxCapacity: 3" in web_target
+    assert "TargetValue: 60" in web_cpu
+    assert "ECSServiceAverageCPUUtilization" in web_cpu
+    assert "TargetValue: 600" in web_requests
+    assert "ALBRequestCountPerTarget" in web_requests
+    assert "WebTargetGroup.TargetGroupFullName" in web_requests
+    assert "TargetValue: 300" in api_requests
+    assert "ALBRequestCountPerTarget" in api_requests
+    assert "ApiTargetGroup.TargetGroupFullName" in api_requests
+
+
+def test_all_long_running_services_roll_back_failed_deployments() -> None:
+    runtime = (ECS / "scholight-production.yml").read_text(encoding="utf-8")
+    service_names = ("Web", "Api", "Extract", "SurveyDraft", "Survey")
+
+    for index, service_name in enumerate(service_names):
+        start = f"  {service_name}Service:"
+        end = (
+            f"  {service_names[index + 1]}Service:"
+            if index + 1 < len(service_names)
+            else "  WebScalableTarget:"
+        )
+        service = runtime.split(start, maxsplit=1)[1].split(end, maxsplit=1)[0]
+        assert "DeploymentCircuitBreaker:" in service
+        assert "Enable: true" in service
+        assert "Rollback: true" in service
+
+
+def test_shared_database_alarms_cover_memory_swap_and_connections() -> None:
+    runtime = (ECS / "scholight-production.yml").read_text(encoding="utf-8")
+    memory = runtime.split("  DatabaseFreeableMemoryAlarm:", maxsplit=1)[1].split(
+        "  DatabaseSwapUsageAlarm:", maxsplit=1
+    )[0]
+    swap = runtime.split("  DatabaseSwapUsageAlarm:", maxsplit=1)[1].split(
+        "  SurveyRuntimeFailureAlarm:", maxsplit=1
+    )[0]
+    connections = runtime.split("  DatabaseConnectionPressureAlarm:", maxsplit=1)[1].split(
+        "  DatabaseCpuAlarm:", maxsplit=1
+    )[0]
+
+    assert "Threshold: 104857600" in memory
+    assert "EvaluationPeriods: 3" in memory
+    assert "Period: 300" in memory
+    assert "MetricName: SwapUsage" in swap
+    assert "Threshold: 67108864" in swap
+    assert "EvaluationPeriods: 3" in swap
+    assert "Period: 300" in swap
+    assert "MetricName: DatabaseConnections" in connections
+    assert "Threshold: 60" in connections
 
 
 def test_first_cutover_creates_the_dormant_stack_before_running_migrations() -> None:
