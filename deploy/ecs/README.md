@@ -86,6 +86,12 @@ integration. Each worker also emits aggregate queued, running, outstanding,
 oldest-queue-age, and protection-failure metrics every 30 seconds. These
 metrics contain no user, Survey, topic, or document identifiers.
 
+The Web service scales from one to three tasks at 60% average CPU or 600 ALB requests per
+target per minute. The API scales from one to four tasks at 60% average CPU, 70% average
+memory, or 300 requests per target per minute. Extract remains at one to three tasks on its
+existing CPU and memory targets. Every long-running service enables the ECS deployment circuit
+breaker with automatic rollback; task sizes remain unchanged during this capacity rollout.
+
 Autoscaling uses aggregate `outstanding / running ECS tasks` metric math with
 targets of 8 Drafts and 2 Full Surveys per task. Each Full worker task has 1
 vCPU, 2 GiB memory, and runs at most two jobs concurrently. The per-user Full
@@ -103,6 +109,11 @@ quotas must be confirmed. Database size is governed by observed CPU, memory,
 connection, and latency pressure rather than a fixed instance-class gate. The
 production workflow checks AWS capacity automatically and requires an explicit
 operator confirmation for external provider capacity.
+
+The shared RDS operational alarms page when connections remain at or above 60, freeable memory
+remains below 100 MiB, or swap remains above 64 MiB for 15 minutes. Those incident thresholds do
+not replace the stricter Survey capacity gate below: raising a Survey worker ceiling still requires
+freeable memory above 500 MiB throughout the reviewed observation window.
 
 Each stage is an observed capacity release, not a configuration-only change.
 Before raising either ceiling again, confirm that there are no OOM or abnormal
