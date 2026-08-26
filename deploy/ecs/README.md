@@ -88,13 +88,14 @@ metrics contain no user, Survey, topic, or document identifiers.
 
 The Web service scales from one to three tasks at 60% average CPU or 600 ALB requests per
 target per minute. The API scales from one to four tasks at 60% average CPU, 70% average
-memory, or 300 requests per target per minute. Extract remains at one to three tasks on its
-existing CPU and memory targets. Every long-running service enables the ECS deployment circuit
-breaker with automatic rollback; task sizes remain unchanged during this capacity rollout.
+memory, or 300 requests per target per minute. Extract uses 0.5 vCPU and 1 GiB and remains at
+one to three tasks on its existing CPU and memory targets. Every long-running service enables
+the ECS deployment circuit breaker with automatic rollback.
 
 Autoscaling uses aggregate `outstanding / running ECS tasks` metric math with
-targets of 8 Drafts and 2 Full Surveys per task. Each Full worker task has 1
-vCPU, 2 GiB memory, and runs at most two jobs concurrently. The per-user Full
+targets of 8 Drafts and 2 Full Surveys per task. Each Draft worker has 0.25 vCPU
+and 0.5 GiB, while each Full worker has 0.5 vCPU and 1 GiB and runs at most two
+jobs concurrently. The per-user Full
 limit remains 4 and the global Full limit remains 16. Fargate supplies its
 20-GiB minimum ephemeral storage because the template no longer provisions the
 previous 40-GiB override; production samples used less than 1 GiB per task.
@@ -336,6 +337,9 @@ both database queues have no active lease, the operator may enter the exact
 one-time phrase `SURVEY WORKERS IDLE`. This confirmation cannot override a
 positive activity metric. The workflow records any deferred digest in its job
 summary so the partial worker rollout cannot be mistaken for a complete one.
+Task CPU or memory changes are stricter: both activity metrics must be present
+and report zero running work, otherwise the release fails before CloudFormation.
+The Full Survey release canaries run with the candidate task CPU and memory.
 
 ## First cutover
 

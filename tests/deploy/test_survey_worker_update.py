@@ -14,6 +14,7 @@ def _select(**overrides: object) -> str:
         "draft_running": 0,
         "full_running": 0,
         "idle_confirmation": "",
+        "require_idle": False,
     }
     values.update(overrides)
     return select_worker_image(**values)  # type: ignore[arg-type]
@@ -36,6 +37,20 @@ def test_active_work_always_retains_the_current_worker_image(
         idle_confirmation=IDLE_CONFIRMATION,
     )
     assert selected.endswith("old")
+
+
+def test_active_work_blocks_a_worker_resource_change() -> None:
+    with pytest.raises(ValueError, match="resource change requires idle workers"):
+        _select(require_idle=True, draft_running=1)
+
+
+def test_resource_change_requires_observed_activity_metrics() -> None:
+    with pytest.raises(ValueError, match="requires observed activity metrics"):
+        _select(
+            require_idle=True,
+            metrics_observed=False,
+            idle_confirmation=IDLE_CONFIRMATION,
+        )
 
 
 def test_missing_metrics_fail_closed_without_exact_operator_confirmation() -> None:

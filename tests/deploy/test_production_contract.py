@@ -173,6 +173,11 @@ def test_release_runs_candidate_survey_canaries_before_deployment() -> None:
     assert "deadline=$((SECONDS + 1200))" in canary
     assert "aws ecs deregister-task-definition" in canary
     assert '--task-definition "$CANARY_TASK_DEFINITION"' in canary
+    assert '.cpu = "512"' in canary
+    assert '.memory = "1024"' in canary
+    assert "check_task_size scholight-survey-draft 256 512" in canary
+    assert "check_task_size scholight-survey 512 1024" in canary
+    assert "--require-idle" in canary
 
 
 def test_production_survey_rerun_workflow_is_fixed_and_owner_preserving() -> None:
@@ -234,6 +239,9 @@ def test_survey_capacity_contract_is_explicit_and_staged() -> None:
     draft_task = runtime.split("  SurveyDraftTaskDefinition:", maxsplit=1)[1].split(
         "  SurveyTaskDefinition:", maxsplit=1
     )[0]
+    extract_task = runtime.split("  ExtractTaskDefinition:", maxsplit=1)[1].split(
+        "  IngestTaskDefinition:", maxsplit=1
+    )[0]
     full_task = runtime.split("  SurveyTaskDefinition:", maxsplit=1)[1].split(
         "  MigrationTaskDefinition:", maxsplit=1
     )[0]
@@ -246,8 +254,12 @@ def test_survey_capacity_contract_is_explicit_and_staged() -> None:
     assert 'SCHOLIGHT_PG_POOL_MAX_SIZE, Value: "4"' in draft_task
     assert 'SCHOLIGHT_SURVEY_JOB_GLOBAL_CONCURRENCY, Value: "16"' in full_task
     assert 'SCHOLIGHT_SURVEY_JOB_PER_USER_CONCURRENCY, Value: "4"' in full_task
-    assert 'Cpu: "1024"' in full_task
-    assert 'Memory: "2048"' in full_task
+    assert 'Cpu: "512"' in extract_task
+    assert 'Memory: "1024"' in extract_task
+    assert 'Cpu: "256"' in draft_task
+    assert 'Memory: "512"' in draft_task
+    assert 'Cpu: "512"' in full_task
+    assert 'Memory: "1024"' in full_task
     assert "EphemeralStorage:" not in full_task
     assert 'SCHOLIGHT_SURVEY_JOB_WORKER_CONCURRENCY, Value: "2"' in full_task
     assert 'SCHOLIGHT_SURVEY_MCP_URL, Value: !Sub "https://${DomainName}/api/mcp"' in full_task

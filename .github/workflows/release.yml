@@ -200,6 +200,8 @@ jobs:
               ephemeralStorage
             }
             | .containerDefinitions[0].image = $image
+            | .cpu = "512"
+            | .memory = "1024"
             | with_entries(select(.value != null))
           ' survey-task.json > survey-canary-task.json
           task_definition=$(aws ecs register-task-definition \
@@ -301,7 +303,27 @@ jobs:
           rm -f "$stack_error"
           current_image=$(jq -r '.Stacks[0].Parameters[] | select(.ParameterKey == "SurveyImage") | .ParameterValue' <<<"$stack")
           runtime_enabled=$(jq -r '.Stacks[0].Parameters[] | select(.ParameterKey == "SurveyRuntimeEnabled") | .ParameterValue' <<<"$stack")
-          if [[ "$current_image" == "$desired_image" || "$runtime_enabled" != true ]]; then
+          if [[ "$runtime_enabled" != true ]]; then
+            exit 0
+          fi
+          resource_change=false
+          check_task_size() {
+            local service=$1 expected_cpu=$2 expected_memory=$3
+            local task_definition current_cpu current_memory
+            task_definition=$(aws ecs describe-services \
+              --cluster sanchezcloud-production \
+              --services "$service" \
+              --query 'services[0].taskDefinition' --output text)
+            read -r current_cpu current_memory < <(aws ecs describe-task-definition \
+              --task-definition "$task_definition" \
+              --query 'taskDefinition.[cpu,memory]' --output text)
+            if [[ "$current_cpu" != "$expected_cpu" || "$current_memory" != "$expected_memory" ]]; then
+              resource_change=true
+            fi
+          }
+          check_task_size scholight-survey-draft 256 512
+          check_task_size scholight-survey 512 1024
+          if [[ "$current_image" == "$desired_image" && "$resource_change" != true ]]; then
             exit 0
           fi
           end_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -323,6 +345,9 @@ jobs:
           metric_args=()
           if [[ $(jq '.Datapoints | length' <<<"$draft") -gt 0 && $(jq '.Datapoints | length' <<<"$full") -gt 0 ]]; then
             metric_args+=(--metrics-observed)
+          fi
+          if [[ "$resource_change" == true ]]; then
+            metric_args+=(--require-idle)
           fi
           selected_image=$(python scripts/check_survey_worker_update.py \
             --current-image "$current_image" \
