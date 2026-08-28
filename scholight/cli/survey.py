@@ -90,6 +90,34 @@ def _verify_full_text_runtime() -> str:
     return pdftotext
 
 
+def _verify_chart_runtime() -> dict[str, object]:
+    """Require the deterministic chart rendering stack before claiming work."""
+    import graphviz  # noqa: PLC0415
+    import matplotlib  # noqa: PLC0415
+
+    dot = shutil.which("dot")
+    if dot is None:
+        raise RuntimeError("Survey chart executable dot is unavailable")
+    return {
+        "matplotlib": matplotlib.__version__,
+        "graphviz": graphviz.__version__,
+        "dot": Path(dot).name,
+    }
+
+
+def _verify_extract_runtime() -> dict[str, object]:
+    """Require the HTML/PDF extract conversion stack before claiming work."""
+    import bs4  # noqa: PLC0415
+    import markdownify  # noqa: PLC0415
+    import pymupdf4llm  # noqa: PLC0415
+
+    return {
+        "beautifulsoup4": bs4.__version__,
+        "markdownify": getattr(markdownify, "__version__", "unknown"),
+        "pymupdf4llm": getattr(pymupdf4llm, "__version__", "unknown"),
+    }
+
+
 def _model_canary_workflow() -> Path:
     return Path(__file__).parents[1] / "survey" / "workflow" / "rcm" / "model_canary.rcm"
 
@@ -906,6 +934,8 @@ def smoke(json_output: bool) -> None:
 
         installed_rcm_version = await asyncio.to_thread(_installed_rcm_version)
         pdftotext = await asyncio.to_thread(_verify_full_text_runtime)
+        chart_runtime = await asyncio.to_thread(_verify_chart_runtime)
+        extract_runtime = await asyncio.to_thread(_verify_extract_runtime)
         await asyncio.to_thread(_verify_diagnostic_workspace, Path(settings.data_root))
         await create_pool()
         try:
