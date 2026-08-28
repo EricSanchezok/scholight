@@ -306,6 +306,17 @@ export const surveyApi = {
         "protected",
       ),
     ),
+  downloadPdf: (surveyId: string) =>
+    unwrap<Blob>(
+      withAuthRetry(
+        () =>
+          apiClient.GET("/surveys/{survey_id}/report.pdf", {
+            params: { path: { survey_id: surveyId } },
+            parseAs: "blob",
+          }),
+        "protected",
+      ),
+    ),
   artifacts: (surveyId: string) =>
     unwrap<SurveyArtifacts>(
       withAuthRetry(

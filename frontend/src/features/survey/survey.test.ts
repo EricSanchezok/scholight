@@ -6,6 +6,7 @@ import {
   artifactUrlMap,
   hasOpeningFigure,
   markdownFilename,
+  pdfFilename,
   queueAhead,
   resolveReportImage,
   runningGuidance,
@@ -106,6 +107,10 @@ describe("Survey presentation helpers", () => {
 
   it("creates a filesystem-safe report package filename", () => {
     expect(archiveFilename("AI & scientific work: 2026")).toBe("AI-scientific-work-2026.zip");
+  });
+
+  it("creates a filesystem-safe PDF filename", () => {
+    expect(pdfFilename("AI & scientific work: 2026")).toBe("AI-scientific-work-2026.pdf");
   });
 
   it("prefers the generated survey title", () => {

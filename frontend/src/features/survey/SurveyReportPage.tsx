@@ -12,7 +12,13 @@ import { formatDurationBetween, formatFullDateTime } from "../../i18n/format";
 import { useI18n } from "../../i18n/I18nProvider";
 import { styles } from "../../styles/classes";
 import { SurveyMarkdown } from "./SurveyMarkdown";
-import { archiveFilename, artifactUrlMap, hasOpeningFigure, surveyTitle } from "./survey";
+import {
+  archiveFilename,
+  artifactUrlMap,
+  hasOpeningFigure,
+  pdfFilename,
+  surveyTitle,
+} from "./survey";
 
 export function SurveyReportPage() {
   const surveyId = useParams().surveyId ?? "";
@@ -52,6 +58,9 @@ export function SurveyReportPage() {
   });
   const packageDownload = useMutation({
     mutationFn: () => surveyApi.downloadPackage(surveyId),
+  });
+  const pdfDownload = useMutation({
+    mutationFn: () => surveyApi.downloadPdf(surveyId),
   });
   const runAgain = useMutation({
     mutationFn: () => {
@@ -133,18 +142,24 @@ export function SurveyReportPage() {
   }
 
   const title = surveyTitle(survey.data.title, survey.data.initial_request);
+  const saveBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  };
   const download = () => {
     packageDownload.mutate(undefined, {
-      onSuccess: (blob) => {
-        const url = URL.createObjectURL(blob);
-        const anchor = document.createElement("a");
-        anchor.href = url;
-        anchor.download = archiveFilename(title);
-        document.body.append(anchor);
-        anchor.click();
-        anchor.remove();
-        window.setTimeout(() => URL.revokeObjectURL(url), 0);
-      },
+      onSuccess: (blob) => saveBlob(blob, archiveFilename(title)),
+    });
+  };
+  const downloadPdf = () => {
+    pdfDownload.mutate(undefined, {
+      onSuccess: (blob) => saveBlob(blob, pdfFilename(title)),
     });
   };
 
@@ -167,6 +182,15 @@ export function SurveyReportPage() {
           >
             {runAgain.isPending ? "Preparing…" : "Run again"}
           </button>
+          <button
+            className={styles.secondaryButton}
+            type="button"
+            disabled={pdfDownload.isPending}
+            onClick={downloadPdf}
+          >
+            {pdfDownload.isPending ? "Preparing…" : "Download PDF"}
+          </button>
+
           <button
             className={styles.secondaryButton}
             type="button"
@@ -232,6 +256,13 @@ export function SurveyReportPage() {
               {packageDownload.error instanceof Error
                 ? packageDownload.error.message
                 : "The report package is temporarily unavailable."}
+            </p>
+          )}
+          {pdfDownload.error && (
+            <p className={styles.surveyInlineError} role="alert">
+              {pdfDownload.error instanceof Error
+                ? pdfDownload.error.message
+                : "The report PDF is temporarily unavailable."}
             </p>
           )}
           {runAgain.error && (
