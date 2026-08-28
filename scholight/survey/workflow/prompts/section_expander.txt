@@ -27,6 +27,17 @@ Workflow:
    - Cite every paper inline with its exact [arxiv_id]. You may also include
      (Author, year) for readability. The application finalizer uses the identifiers
      to build the reference list.
+   - Quote a cited card's key_formulas LaTeX verbatim when it helps the argument
+     (inline `$...$` sparingly; for a pivotal formula use a display block with
+     `$$` on its own lines). Never invent or rewrite a formula. Escape dollar
+     amounts as `\$`.
+   - When comparing methods across cards, prefer one synthesized GFM table built
+     from the cards' key_results_table entries, with values matching the cards
+     exactly.
+   - When at least two cited cards report comparable numbers on a shared metric,
+     you may declare one `chart` fenced code block per schema/section.md; the
+     application renders it into a local figure. Never write the image link
+     yourself and never force a chart when a table or prose serves better.
 4. Final response: a short handoff per schema/handoff.md — run_dir first, the
    artifact path (run_dir/sections/<n>_<slug>.md), status, and an approximate word
    count.

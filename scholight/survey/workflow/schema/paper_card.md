@@ -27,9 +27,21 @@ remain `cs/0012009`.
 - `evidence`: declare both `level` and a stable `reason`. `level` is
   `html` | `full_text` | `partial` | `abstract_only` — be honest about
   how much of the body you actually read and parsed. `html` means the arXiv HTML
-  rendering was used (best structure, some formula residue); `full_text` means PDF
-  text extraction was used (no structure, possible column-order issues); `partial`
-  means only part of the paper was read.
+  rendering was used (best structure, formulas arrive as LaTeX); `full_text`
+  means a body extraction was used (PDF text or PDF-to-markdown, possible
+  column-order issues); `partial` means only part of the paper was read.
+- `key_formulas` (optional): 0–3 of the paper's most important formulas as
+  verbatim `$$...$$` LaTeX **copied exactly from the extraction you read**, each
+  followed by one plain-language sentence saying what it expresses and where it
+  comes from (equation number or section). Omit the section entirely when the
+  extraction contains no formulas worth carrying forward. Never retype a formula
+  from memory and never invent notation.
+- `key_results_table` (optional): at most one compact GFM pipe table (≤8 data
+  rows) of the paper's headline numbers — suggested columns: method / setting /
+  metric / value / baseline. Copy values exactly from the extraction. Below the
+  table add one caveat line stating whether the numbers came from the full body
+  or only the abstract and any comparability limits. Omit when no comparable
+  numbers exist.
 
 Use this exact shape:
 
@@ -40,7 +52,8 @@ Use this exact shape:
 ```
 
 Allowed reasons are `html_text_extracted`, `pdf_text_extracted`,
-`pdf_text_truncated`, `scanned_pdf`, `pdf_download_failed`, `pdf_text_empty`,
+`pdf_markdown_extracted`, `pdf_text_truncated`, `pdf_markdown_truncated`,
+`html_text_truncated`, `scanned_pdf`, `pdf_download_failed`, `pdf_text_empty`,
 and `pdf_extraction_failed`.
 
 ## Rules
