@@ -1043,6 +1043,39 @@ class SurveyArtifactStore:
             _body=io.BytesIO(content),
         )
 
+    async def open_report_assets(
+        self,
+        *,
+        manifest_key: str,
+    ) -> tuple[bytes, dict[str, bytes]]:
+        """Read the final report Markdown plus its run-relative images."""
+        return await asyncio.to_thread(self._open_report_assets_sync, manifest_key)
+
+    def _open_report_assets_sync(self, manifest_key: str) -> tuple[bytes, dict[str, bytes]]:
+        records = self._resolve_manifest_sync(manifest_key).records
+        report = next(
+            (record for record in records if record["path"] == "run/08_survey.md"),
+            None,
+        )
+        if report is None:
+            raise SurveyArtifactNotFoundError("Survey report is not present in the manifest")
+        images = sorted(
+            (
+                record
+                for record in records
+                if str(record["path"]).startswith("run/")
+                and str(record["mime"]).startswith("image/")
+            ),
+            key=lambda record: str(record["path"]),
+        )
+        image_assets = {
+            PurePosixPath(str(record["path"])).relative_to("run").as_posix(): (
+                self._read_record_bytes(record)
+            )
+            for record in images
+        }
+        return self._read_record_bytes(report), image_assets
+
     async def build_report_package(self, *, manifest_key: str) -> SurveyArtifactStream:
         """Build a portable ZIP containing the final Markdown report and its images."""
         return await asyncio.to_thread(self._build_report_package_sync, manifest_key)

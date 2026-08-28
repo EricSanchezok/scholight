@@ -24,8 +24,10 @@ api = [
     "grpcio>=1.60,<2",
     "pymilvus>=2.4",
     "fastapi>=0.115",
+    "markdown>=3.8",
     "mcp>=1.28,<2",
     "uvicorn[standard]>=0.30",
+    "weasyprint>=62",
     "PyJWT>=2.10",
 ]
 extract = [
@@ -72,6 +74,10 @@ include = ["scholight*"]
     "workflow/prompts/*.txt",
     "workflow/rcm/*.rcm",
     "workflow/schema/*.md",
+]
+"scholight.api" = [
+    "assets/fonts/*.ttf",
+    "assets/fonts/*.txt",
 ]
 
 
