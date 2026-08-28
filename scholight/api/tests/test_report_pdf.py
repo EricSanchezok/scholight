@@ -143,6 +143,7 @@ def _weasyprint_importable() -> bool:
     return True
 
 
+@pytest.mark.filterwarnings("ignore")
 @pytest.mark.skipif(not _weasyprint_importable(), reason="WeasyPrint native backend unavailable")
 def test_render_report_pdf_returns_pdf_bytes() -> None:
     png = bytes.fromhex(

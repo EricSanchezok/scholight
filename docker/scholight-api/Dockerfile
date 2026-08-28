@@ -94,6 +94,13 @@ STOPSIGNAL SIGTERM
 
 FROM runtime-base AS api
 
+USER root
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        libpango-1.0-0 libpangoft2-1.0-0 \
+        fonts-dejavu-core fonts-noto-cjk \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --from=api-builder /app/.venv/ /app/.venv/
 COPY --from=api-builder /app/migrations/ /app/migrations/
 COPY global-bundle.pem /etc/ssl/certs/global-bundle.pem
