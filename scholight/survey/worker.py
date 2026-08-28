@@ -48,6 +48,7 @@ from scholight.survey.evidence import (
     audit_survey_evidence,
     summarize_survey_evidence,
 )
+from scholight.survey.extracts import materialize_extracts
 from scholight.survey.finalizer import SurveyFinalizationError, finalize_survey
 from scholight.survey.metrics import is_provider_throttled
 from scholight.survey.notification_worker import SurveyEmailSender, serve_email_notifications
@@ -927,6 +928,16 @@ async def _execute_survey_once(
     )
     artifact_stop = asyncio.Event()
     artifact_observer = asyncio.create_task(_observe_artifacts(diagnostics, stop=artifact_stop))
+    extract_stop = asyncio.Event()
+    extract_task = asyncio.create_task(
+        materialize_extracts(
+            run_root,
+            stop=extract_stop,
+            on_event=lambda kind, fields: diagnostics.record(
+                f"extract.{kind.removeprefix('extract_')}", **fields
+            ),
+        )
+    )
     stderr_task = asyncio.create_task(read_sanitized_tail(process.stderr))
     wait_task = asyncio.create_task(process.wait())
     lost_task = asyncio.create_task(control.lease_lost.wait())
@@ -1267,9 +1278,9 @@ async def _execute_survey_once(
         )
     except asyncio.CancelledError:
         await terminate_process_group(process)
-        raise
     finally:
         artifact_stop.set()
+        extract_stop.set()
         lost_task.cancel()
         if process.returncode is None:
             await terminate_process_group(process)
@@ -1281,6 +1292,7 @@ async def _execute_survey_once(
             lost_task,
             cancel_task,
             artifact_observer,
+            extract_task,
         ):
             if not task.done():
                 task.cancel()
@@ -1292,6 +1304,7 @@ async def _execute_survey_once(
             lost_task,
             cancel_task,
             artifact_observer,
+            extract_task,
             return_exceptions=True,
         )
 
