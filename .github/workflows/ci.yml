@@ -241,12 +241,10 @@ jobs:
             ! command -v pandoc >/dev/null
             ! command -v pdftotext >/dev/null
           '
+          docker run --rm --entrypoint /app/.venv/bin/python scholight-api:ci -c 'import importlib.util; assert importlib.util.find_spec("markdownify") is None; assert importlib.util.find_spec("playwright") is None; import scholight.api.app; import scholight.api.extract_execution'
+      - name: Verify API image renders branded Survey report PDFs
+        run: |
           docker run --rm --entrypoint /app/.venv/bin/python scholight-api:ci -ec '
-            import importlib.util
-            assert importlib.util.find_spec("markdownify") is None
-            assert importlib.util.find_spec("playwright") is None
-            import scholight.api.app
-            import scholight.api.extract_execution
             from datetime import date
             from scholight.api.report_pdf import render_report_pdf
             pdf = render_report_pdf(
