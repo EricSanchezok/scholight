@@ -349,3 +349,78 @@ def test_finalizer_rejects_symlinked_card_directory(tmp_path: Path) -> None:
 
     with pytest.raises(SurveyFinalizationError, match="Required directory is invalid: cards"):
         finalize_survey(tmp_path)
+
+
+_VALID_CHART = """## Comparison
+
+Compared methods [2501.12345] with shared metrics.
+
+```chart
+{
+  "type": "line",
+  "title": "Accuracy vs context length",
+  "x": [1024, 2048],
+  "series": [{"name": "Method A", "y": [72.1, 71.8]}],
+  "caption": "Shared benchmark; values from cited cards."
+}
+```
+
+The loss is $\\mathcal{L}(\\theta)$ inline.
+
+$$
+E = mc^2
+$$
+
+| Method | Score |
+| --- | --- |
+| A | 72.1 |
+"""
+
+
+def test_finalizer_renders_chart_blocks_and_preserves_formulas_and_tables(
+    tmp_path: Path,
+) -> None:
+    _write_run(tmp_path)
+    (tmp_path / "sections" / "01_introduction.md").write_text(_VALID_CHART, encoding="utf-8")
+
+    result = finalize_survey(tmp_path)
+
+    report = result.report_path.read_text(encoding="utf-8")
+    assert "![Shared benchmark; values from cited cards.](figures/01_introduction-1.png)" in report
+    assert "```chart" not in report
+    assert (tmp_path / "figures" / "01_introduction-1.png").read_bytes().startswith(b"\x89PNG")
+    assert "$\\mathcal{L}(\\theta)$" in report
+    assert "$$\nE = mc^2\n$$" in report
+    assert "| Method | Score |" in report
+    assert result.chart_count == 1
+    assert result.chart_rejected_count == 0
+
+
+def test_finalizer_drops_invalid_chart_blocks_and_counts_them(tmp_path: Path) -> None:
+    _write_run(tmp_path)
+    (tmp_path / "sections" / "01_introduction.md").write_text(
+        "## Introduction\n\n"
+        "Evidence [2501.12345] survives.\n\n"
+        "```chart\n"
+        '{"type": "line", "series": []}\n'
+        "```\n",
+        encoding="utf-8",
+    )
+
+    result = finalize_survey(tmp_path)
+
+    report = result.report_path.read_text(encoding="utf-8")
+    assert "```chart" not in report
+    assert "Evidence [2501.12345] survives." in report
+    assert result.chart_count == 0
+    assert result.chart_rejected_count == 1
+    assert not (tmp_path / "figures").exists() or not list((tmp_path / "figures").iterdir())
+
+
+def test_finalizer_without_charts_keeps_zero_counts(tmp_path: Path) -> None:
+    _write_run(tmp_path)
+
+    result = finalize_survey(tmp_path)
+
+    assert result.chart_count == 0
+    assert result.chart_rejected_count == 0
