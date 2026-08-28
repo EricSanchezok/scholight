@@ -248,7 +248,11 @@ export function SurveyReportPage() {
             </div>
             <div>
               <dt>Format</dt>
-              <dd>{openingFigureAvailable ? "Markdown + images (.zip)" : "Markdown (.zip)"}</dd>
+              <dd>
+                {openingFigureAvailable
+                  ? "PDF · Markdown + images (.zip)"
+                  : "PDF · Markdown (.zip)"}
+              </dd>
             </div>
           </dl>
           {packageDownload.error && (
