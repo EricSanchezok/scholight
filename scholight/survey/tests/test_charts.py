@@ -16,7 +16,7 @@ from scholight.survey.charts import (
 )
 
 
-def _spec_line() -> dict:
+def _spec_line() -> dict[str, object]:
     return {
         "type": "line",
         "title": "Growth",
@@ -28,7 +28,7 @@ def _spec_line() -> dict:
     }
 
 
-def _spec_bar() -> dict:
+def _spec_bar() -> dict[str, object]:
     return {
         "type": "bar",
         "x": ["CNN", "RNN", "MLP"],
@@ -39,7 +39,7 @@ def _spec_bar() -> dict:
     }
 
 
-def _spec_grouped_bar() -> dict:
+def _spec_grouped_bar() -> dict[str, object]:
     return {
         "type": "grouped_bar",
         "x": ["2020", "2021"],
@@ -50,7 +50,7 @@ def _spec_grouped_bar() -> dict:
     }
 
 
-def _spec_scatter() -> dict:
+def _spec_scatter() -> dict[str, object]:
     return {
         "type": "scatter",
         "x": [1.5, 2.5, 3.5],
@@ -58,7 +58,7 @@ def _spec_scatter() -> dict:
     }
 
 
-def _spec_pie() -> dict:
+def _spec_pie() -> dict[str, object]:
     return {
         "type": "pie",
         "labels": ["transformer", "cnn", "rnn"],
@@ -66,7 +66,7 @@ def _spec_pie() -> dict:
     }
 
 
-def _spec_flow() -> dict:
+def _spec_flow() -> dict[str, object]:
     return {
         "type": "flow",
         "direction": "LR",
@@ -82,7 +82,7 @@ def _spec_flow() -> dict:
     }
 
 
-_LEGAL_FACTORIES: tuple[Callable[[], dict], ...] = (
+_LEGAL_FACTORIES: tuple[Callable[[], dict[str, object]], ...] = (
     _spec_line,
     _spec_bar,
     _spec_grouped_bar,
@@ -93,13 +93,15 @@ _LEGAL_FACTORIES: tuple[Callable[[], dict], ...] = (
 
 
 @pytest.mark.parametrize("spec_factory", _LEGAL_FACTORIES, ids=lambda factory: factory.__name__)
-def test_validate_accepts_each_legal_chart_type(spec_factory: Callable[[], dict]) -> None:
+def test_validate_accepts_each_legal_chart_type(
+    spec_factory: Callable[[], dict[str, object]],
+) -> None:
     spec = spec_factory()
 
     assert validate_chart_spec(spec) == spec
 
 
-def _invalid_specs() -> list[tuple[str, dict]]:
+def _invalid_specs() -> list[tuple[str, dict[str, object]]]:
     return [
         (
             "missing_type",
@@ -204,7 +206,7 @@ def _invalid_specs() -> list[tuple[str, dict]]:
 
 
 @pytest.mark.parametrize("case,spec", _invalid_specs())
-def test_validate_rejects_invalid_chart_specs(case: str, spec: dict) -> None:
+def test_validate_rejects_invalid_chart_specs(case: str, spec: dict[str, object]) -> None:
     with pytest.raises(ChartSpecError):
         validate_chart_spec(spec)
 
@@ -246,7 +248,7 @@ def test_extract_chart_blocks_ignores_unterminated_block() -> None:
     ids=lambda factory: factory.__name__,
 )
 def test_render_chart_writes_png(
-    spec_factory: Callable[[], dict],
+    spec_factory: Callable[[], dict[str, object]],
     tmp_path: Path,
 ) -> None:
     output = tmp_path / "chart.png"
