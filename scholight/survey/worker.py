@@ -50,7 +50,7 @@ from scholight.survey.evidence import (
 )
 from scholight.survey.extracts import materialize_extracts
 from scholight.survey.finalizer import SurveyFinalizationError, finalize_survey
-from scholight.survey.metrics import is_provider_throttled
+from scholight.survey.metrics import emit_chart_metrics, is_provider_throttled
 from scholight.survey.notification_worker import SurveyEmailSender, serve_email_notifications
 from scholight.survey.process import (
     ProcessControl,
@@ -1118,6 +1118,12 @@ async def _execute_survey_once(
                 )
             finalized = finalize_survey(run_root)
             diagnostics.component_finished("survey_finalizer", status="completed")
+            diagnostics.record("survey_charts_rendered", count=finalized.chart_count)
+            diagnostics.record("survey_chart_rejected", count=finalized.chart_rejected_count)
+            emit_chart_metrics(
+                chart_count=finalized.chart_count,
+                chart_rejected_count=finalized.chart_rejected_count,
+            )
             logger.info(
                 "survey_report_finalized",
                 job_id=str(job.id),
@@ -1513,6 +1519,12 @@ async def _repair_survey_artifacts(
         )
         return None
     diagnostics.component_finished("survey_finalizer", status="completed")
+    diagnostics.record("survey_charts_rendered", count=finalized.chart_count)
+    diagnostics.record("survey_chart_rejected", count=finalized.chart_rejected_count)
+    emit_chart_metrics(
+        chart_count=finalized.chart_count,
+        chart_rejected_count=finalized.chart_rejected_count,
+    )
     diagnostics.finalize_contract_audit()
     snapshot = diagnostics.snapshot()
     quality_reasons = _publication_quality_reasons(
