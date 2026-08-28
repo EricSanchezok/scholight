@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import re
@@ -18,6 +19,7 @@ from sanchezcloud_identity.models.user import UserRecord
 
 from scholight.api.deps import get_current_user
 from scholight.api.http_errors import http_error
+from scholight.api.report_pdf import ReportPdfError, render_report_pdf
 from scholight.config import get_survey_public_mode, settings
 from scholight.db.client import DBError
 from scholight.db.queries_survey import (
@@ -689,6 +691,71 @@ async def survey_report_download(
             "Content-Disposition": (f'attachment; filename="scholight-survey-{survey_id}.zip"'),
             "ETag": f'"{stream.sha256}"',
             "Content-Length": str(stream.size),
+        },
+    )
+
+
+@router.get(
+    "/surveys/{survey_id}/report.pdf",
+    response_class=Response,
+    responses={200: {"content": {"application/pdf": {}}}},
+)
+async def survey_report_pdf(
+    survey_id: UUID,
+    current_user: UserRecord = Depends(get_current_user),
+) -> Response:
+    """Render the archived final report as a branded PDF document."""
+    _require_enabled()
+    reference = await _artifact_reference(survey_id=survey_id, user_id=current_user.id)
+    manifest_key = _require_archived(reference, report=True)
+    try:
+        markdown_bytes, images = await _artifact_store(reference).open_report_assets(
+            manifest_key=manifest_key,
+        )
+    except SurveyArtifactNotFoundError as exc:
+        raise http_error(
+            409,
+            code="survey_report_not_available",
+            message="This Survey does not have a final report.",
+            retryable=False,
+            retry_after=None,
+        ) from exc
+    except (SurveyArtifactError, BotoCoreError, ClientError) as exc:
+        raise _artifact_unavailable() from exc
+    survey = await _owned_survey(survey_id=survey_id, user_id=current_user.id)
+    generated_on = (
+        survey.finished_at.date() if survey.finished_at is not None else datetime.now(UTC).date()
+    )
+    try:
+        markdown_text = markdown_bytes.decode("utf-8")
+        pdf = await asyncio.to_thread(
+            render_report_pdf,
+            title=survey.title or _fallback_title(survey.initial_request),
+            markdown_text=markdown_text,
+            images=images,
+            generated_on=generated_on,
+        )
+    except UnicodeDecodeError as exc:
+        raise _artifact_unavailable() from exc
+    except ReportPdfError as exc:
+        logger.warning(
+            "survey_report_pdf_failed",
+            survey_id=str(survey_id),
+            error_type=type(exc).__name__,
+        )
+        raise http_error(
+            503,
+            code="survey_report_pdf_unavailable",
+            message="The Survey report PDF is temporarily unavailable.",
+            retryable=True,
+            retry_after=5,
+        ) from exc
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={
+            "Cache-Control": "private, no-store",
+            "Content-Disposition": f'attachment; filename="scholight-survey-{survey_id}.pdf"',
         },
     )
 
