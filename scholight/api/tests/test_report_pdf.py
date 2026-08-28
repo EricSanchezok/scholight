@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 from datetime import date
 
 import pytest
@@ -146,10 +147,9 @@ def _weasyprint_importable() -> bool:
 @pytest.mark.filterwarnings("ignore")
 @pytest.mark.skipif(not _weasyprint_importable(), reason="WeasyPrint native backend unavailable")
 def test_render_report_pdf_returns_pdf_bytes() -> None:
-    png = bytes.fromhex(
-        "89504e470d0a1a0a0000000d494844520000000100000001080600000"
-        "01f15c4890000000d49444154789c63f8cfc0f01f0005050201edb53a"
-        "a60000000049454e44ae426082"
+    png = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ"
+        "AAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
     )
 
     pdf = render_report_pdf(
