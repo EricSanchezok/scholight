@@ -92,8 +92,8 @@ def _verify_full_text_runtime() -> str:
 
 def _verify_chart_runtime() -> dict[str, object]:
     """Require the deterministic chart rendering stack before claiming work."""
-    import graphviz  # noqa: PLC0415
-    import matplotlib  # noqa: PLC0415
+    import graphviz
+    import matplotlib
 
     dot = shutil.which("dot")
     if dot is None:
@@ -107,9 +107,9 @@ def _verify_chart_runtime() -> dict[str, object]:
 
 def _verify_extract_runtime() -> dict[str, object]:
     """Require the HTML/PDF extract conversion stack before claiming work."""
-    import bs4  # noqa: PLC0415
-    import markdownify  # noqa: PLC0415
-    import pymupdf4llm  # noqa: PLC0415
+    import bs4
+    import markdownify
+    import pymupdf4llm
 
     return {
         "beautifulsoup4": bs4.__version__,
@@ -952,6 +952,8 @@ def smoke(json_output: bool) -> None:
                 "ok": True,
                 "rcm_version": installed_rcm_version,
                 "full_text_runtime": Path(pdftotext).name,
+                "chart_runtime": chart_runtime,
+                "extract_runtime": extract_runtime,
                 "runtime_schema": "compatible",
                 "cleanup_dead": cleanup.dead,
                 "diagnostics_writable": True,

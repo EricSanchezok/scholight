@@ -1278,6 +1278,7 @@ async def _execute_survey_once(
         )
     except asyncio.CancelledError:
         await terminate_process_group(process)
+        raise
     finally:
         artifact_stop.set()
         extract_stop.set()

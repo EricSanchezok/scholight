@@ -6,9 +6,10 @@ import asyncio
 import json
 import os
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import httpx
 from bs4 import BeautifulSoup, Tag
@@ -41,19 +42,18 @@ def _table_to_gfm(table: Tag) -> str:
     rows = table.find_all("tr")
     rendered: list[list[str]] = []
     for row in rows:
-        cells = row.find_all(["th", "td"])
-        if not cells:
+        header_cells = row.find_all(["th", "td"])
+        if not header_cells:
             continue
-        rendered.append([_gfm_cell(cell.get_text(" ", strip=True)) for cell in cells])
+        rendered.append([_gfm_cell(cell.get_text(" ", strip=True)) for cell in header_cells])
     if not rendered:
         return ""
-    width = max(len(row) for row in rendered)
-    for row in rendered:
-        row.extend([""] * (width - len(row)))
-    lines = ["| " + " | ".join(rendered[0]) + " |"]
+    width = max(len(cells) for cells in rendered)
+    padded = [cells + [""] * (width - len(cells)) for cells in rendered]
+    lines = ["| " + " | ".join(padded[0]) + " |"]
     lines.append("| " + " | ".join("---" for _ in range(width)) + " |")
-    for row in rendered[1:]:
-        lines.append("| " + " | ".join(row) + " |")
+    for cells in padded[1:]:
+        lines.append("| " + " | ".join(cells) + " |")
     return "\n".join(lines)
 
 
