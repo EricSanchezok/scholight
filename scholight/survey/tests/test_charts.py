@@ -350,3 +350,22 @@ def test_render_section_charts_returns_text_unchanged_without_chart_blocks(
     text = "Plain section text."
 
     assert render_section_charts(text, tmp_path / "figures", prefix="p") == (text, 0, 0)
+
+
+def test_oversized_chart_body_is_marked_invalid_and_rejected(tmp_path: Path) -> None:
+    long_name = "x" * 9000
+    body = json.dumps({"type": "line", "x": [1], "series": [{"name": long_name, "y": [1]}]})
+    text = f"```chart\n{body}\n```"
+
+    blocks = extract_chart_blocks(text)
+
+    assert "__invalid__" in blocks[0][0]
+    new_text, rendered, rejected = render_section_charts(
+        text,
+        tmp_path / "figures",
+        prefix="oversized",
+    )
+
+    assert rendered == 0
+    assert rejected == 1
+    assert "```chart" not in new_text

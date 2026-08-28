@@ -28,6 +28,7 @@ _CATEGORY_MAX = 60
 _PIE_SLICES_MAX = 12
 _FLOW_NODES_MAX = 30
 _FLOW_EDGES_MAX = 60
+_CHART_BODY_MAX_BYTES = 8192
 _PALETTE = (
     "#4C72B0",
     "#DD8452",
@@ -245,6 +246,8 @@ def validate_chart_spec(spec: _ChartSpec) -> _ChartSpec:
 
 
 def _parse_chart_body(raw_body: str) -> _ChartSpec:
+    if len(raw_body.encode("utf-8")) > _CHART_BODY_MAX_BYTES:
+        return {_INVALID_SPEC_MARKER: raw_body}
     try:
         parsed = json.loads(raw_body)
     except ValueError:
@@ -387,13 +390,23 @@ def render_section_charts(
     figures_dir: Path,
     *,
     prefix: str,
+    render_budget: int | None = None,
 ) -> tuple[str, int, int]:
-    """Render every chart block, replacing valid blocks and discarding invalid ones."""
+    """Render chart blocks, replacing valid blocks and discarding invalid ones.
+
+    ``render_budget`` caps how many blocks this call may render; blocks beyond
+    the budget are dropped and counted as rejected so callers can enforce a
+    document-wide maximum across sections.
+    """
     figures_dir.mkdir(parents=True, exist_ok=True)
     replacements: list[tuple[int, int, str]] = []
     rendered_count = 0
     rejected_count = 0
     for spec, (start, end) in extract_chart_blocks(section_text):
+        if render_budget is not None and rendered_count >= render_budget:
+            replacements.append((start, end, ""))
+            rejected_count += 1
+            continue
         filename = f"{prefix}-{rendered_count + 1}.png"
         try:
             render_chart(spec, figures_dir / filename)

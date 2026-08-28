@@ -424,3 +424,35 @@ def test_finalizer_without_charts_keeps_zero_counts(tmp_path: Path) -> None:
 
     assert result.chart_count == 0
     assert result.chart_rejected_count == 0
+
+
+def test_finalizer_caps_document_wide_chart_blocks_at_eight(tmp_path: Path) -> None:
+    _write_run(tmp_path)
+    chart = json.dumps(
+        {
+            "type": "line",
+            "title": "Chart",
+            "x": [1, 2],
+            "series": [{"name": "s", "y": [1.0, 2.0]}],
+        }
+    )
+
+    def _blocks(count: int) -> str:
+        return "\n\n".join(f"```chart\n{chart}\n```" for _ in range(count))
+
+    (tmp_path / "sections" / "01_introduction.md").write_text(
+        f"## Introduction\n\nEvidence [2501.12345].\n\n{_blocks(5)}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "sections" / "02_conclusion.md").write_text(
+        f"## Conclusion\n\nMore [2501.12345].\n\n{_blocks(5)}\n",
+        encoding="utf-8",
+    )
+
+    result = finalize_survey(tmp_path)
+
+    report = result.report_path.read_text(encoding="utf-8")
+    assert result.chart_count == 8
+    assert result.chart_rejected_count == 2
+    assert "```chart" not in report
+    assert report.count("![Chart](figures/") == 8

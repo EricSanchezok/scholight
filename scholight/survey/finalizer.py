@@ -27,6 +27,7 @@ _SECTION_FILE = re.compile(r"^\d{2}_[A-Za-z0-9-]+\.md$")
 _OUTLINE_HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*$")
 _CARD_FIELD = re.compile(r"^-\s+(.+?):\s*(.*?)\s*$")
 _OUTLINE_JSON_MAX_BYTES = 1024 * 1024
+_CHART_MAX_PER_DOCUMENT = 8
 _INTERNAL_REPORT_MARKER = re.compile(
     r"(?:\brun metadata\b|\bPaperCard\b|\bpdftotext\b|"
     r"\b(?:this|current) environment\b.{0,60}(?:unavailable|missing|not installed)|"
@@ -357,6 +358,7 @@ def finalize_survey(run_root: Path) -> FinalizedSurvey:
             section_text,
             run_root / "figures",
             prefix=section_path.stem,
+            render_budget=_CHART_MAX_PER_DOCUMENT - chart_count,
         )
         rendered_sections.append(rendered_text)
         chart_count += rendered_n
