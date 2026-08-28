@@ -1,5 +1,7 @@
 import ReactMarkdown, { defaultUrlTransform, type Components } from "react-markdown";
+import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
 
 import { styles } from "../../styles/classes";
 import { resolveReportImage } from "./survey";
@@ -36,7 +38,8 @@ export function SurveyMarkdown({
   return (
     <div className={`${styles.surveyMarkdown} ${compact ? styles.surveyMarkdownCompact : ""}`}>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[[rehypeKatex, { strict: "ignore" }]]}
         components={components}
         urlTransform={(url, key, node) => {
           if (key === "src" && node.tagName === "img") return url;
