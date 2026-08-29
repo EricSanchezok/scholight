@@ -17,23 +17,37 @@ Workflow:
    arxiv_download with the original semantic id, saving into
    run_dir/pdfs/<artifact_stem>.pdf. This is the
    only allowed network path for paper full text.
-3. Read run_dir/pdfs/<artifact_stem>.pdf with fs using `limit=5000`. If the tool
-   says that more lines remain or that output was truncated, continue with
-   increasing `offset` values until reaching the explicit end-of-file marker or
-   the extraction-size cap. Never read only the default first page of tool output
-   and call it full text. The fs tool extracts text via pdftotext.
+3. Read the app-materialized extract for this paper with the fs tool:
+   run_dir/extracts/<artifact_stem>.md. It starts with a machine-written
+   `## evidence` block (level, reason, source) followed by the paper body as
+   markdown, with formulas in LaTeX and tables as pipe tables. If it does not
+   exist yet, list run_dir/extracts once and retry the read a single time, then
+   proceed either way.
+4. If the extract exists, transcribe its `## evidence` block verbatim into your
+   card (copy level, reason, and the source line as-is) and base the card on the
+   extract body. When the extract body is capped mid-paper, treat the coverage
+   honestly per its declared level/reason.
+5. If no extract exists, read the PDF directly: run_dir/pdfs/<artifact_stem>.pdf
+   with fs using `limit=5000`. If the tool says that more lines remain or that
+   output was truncated, continue with increasing `offset` values until reaching
+   the explicit end-of-file marker or the extraction-size cap. Never read only
+   the default first page of tool output and call it full text. The fs tool
+   extracts text via pdftotext.
    - Use `full_text` only after reaching end of file.
    - Use `partial` with reason `pdf_text_truncated` when the extraction-size cap
      prevents full coverage.
    - Use `abstract_only` only for `scanned_pdf`, `pdf_download_failed`,
      `pdf_text_empty`, or `pdf_extraction_failed`.
-4. Read it WITH THE ANCHOR IN MIND (your `why` + the survey topic). Focus on: the
-   method in writable detail; the real results and their caveats; and — the key
-   value-add — whether the idea could transfer to the anchor's research direction.
-5. Write run_dir/cards/<artifact_stem>.md per schema/paper_card.md: header, problem, method,
-   results (with caveats), anchor_relevance, transfer, evidence level, and stable
-   evidence reason.
-6. Final response: a short handoff per schema/handoff.md — run_dir first, the
+6. Read what you have WITH THE ANCHOR IN MIND (your `why` + the survey topic).
+   Focus on: the method in writable detail; the real results and their caveats;
+   and — the key value-add — whether the idea could transfer to the anchor's
+   research direction.
+7. Write run_dir/cards/<artifact_stem>.md per schema/paper_card.md: header,
+   problem, method, results (with caveats), anchor_relevance, transfer, the
+   optional key_formulas and key_results_table sections (copy values and LaTeX
+   exactly from the extraction you read — never from memory), and the evidence
+   level with its stable reason.
+8. Final response: a short handoff per schema/handoff.md — run_dir first, the
    artifact path (run_dir/cards/<artifact_stem>.md), status, and the evidence level.
 
 Rules:

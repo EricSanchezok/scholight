@@ -22,6 +22,12 @@ that produced it.
 - State the substance instead. Not "the BenchmarkJudge marked this not ready",
   but "these methods are evaluated on different benchmarks, so a direct
   comparison is not yet possible."
+- Body images must be local `figures/` relative-path links produced by the
+  application from declared chart blocks (plus the opening global picture).
+  Never embed remote or absolute image URLs — the report must stay
+  self-contained and render offline.
+- Formulas are quoted verbatim from cited cards as `$...$` / `$$...$$` LaTeX;
+  never invent notation, and escape dollar amounts as `\$`.
 - Do not describe how the survey was assembled, retrieved, or judged.
 
 ## Narrative requirements

@@ -131,3 +131,27 @@ def test_real_abstract_fallback_reasons_are_accepted_when_body_evidence_exists(
 
     assert summary.coverage_percent == 50.0
     assert summary.counts["abstract_only"] == 1
+
+
+@pytest.mark.parametrize(
+    "level,reason",
+    [
+        ("html", "html_text_extracted"),
+        ("full_text", "pdf_markdown_extracted"),
+        ("partial", "pdf_markdown_truncated"),
+        ("partial", "html_text_truncated"),
+    ],
+)
+def test_extract_ladder_reasons_are_valid_when_body_evidence_exists(
+    tmp_path: Path,
+    level: str,
+    reason: str,
+) -> None:
+    _card(tmp_path, "ladder.md", f"- level: {level}\n- reason: {reason}")
+
+    summary = audit_survey_evidence(tmp_path)
+
+    assert summary.invalid_reason_count == 0
+    assert summary.invalid_cards == ()
+    assert summary.reviewed_count == 1
+    assert summary.coverage_percent == 100.0

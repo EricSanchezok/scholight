@@ -48,8 +48,9 @@ from scholight.survey.evidence import (
     audit_survey_evidence,
     summarize_survey_evidence,
 )
+from scholight.survey.extracts import materialize_extracts
 from scholight.survey.finalizer import SurveyFinalizationError, finalize_survey
-from scholight.survey.metrics import is_provider_throttled
+from scholight.survey.metrics import emit_chart_metrics, is_provider_throttled
 from scholight.survey.notification_worker import SurveyEmailSender, serve_email_notifications
 from scholight.survey.process import (
     ProcessControl,
@@ -927,6 +928,16 @@ async def _execute_survey_once(
     )
     artifact_stop = asyncio.Event()
     artifact_observer = asyncio.create_task(_observe_artifacts(diagnostics, stop=artifact_stop))
+    extract_stop = asyncio.Event()
+    extract_task = asyncio.create_task(
+        materialize_extracts(
+            run_root,
+            stop=extract_stop,
+            on_event=lambda kind, fields: diagnostics.record(
+                f"extract.{kind.removeprefix('extract_')}", **fields
+            ),
+        )
+    )
     stderr_task = asyncio.create_task(read_sanitized_tail(process.stderr))
     wait_task = asyncio.create_task(process.wait())
     lost_task = asyncio.create_task(control.lease_lost.wait())
@@ -1107,6 +1118,12 @@ async def _execute_survey_once(
                 )
             finalized = finalize_survey(run_root)
             diagnostics.component_finished("survey_finalizer", status="completed")
+            diagnostics.record("survey_charts_rendered", count=finalized.chart_count)
+            diagnostics.record("survey_chart_rejected", count=finalized.chart_rejected_count)
+            emit_chart_metrics(
+                chart_count=finalized.chart_count,
+                chart_rejected_count=finalized.chart_rejected_count,
+            )
             logger.info(
                 "survey_report_finalized",
                 job_id=str(job.id),
@@ -1270,6 +1287,7 @@ async def _execute_survey_once(
         raise
     finally:
         artifact_stop.set()
+        extract_stop.set()
         lost_task.cancel()
         if process.returncode is None:
             await terminate_process_group(process)
@@ -1281,6 +1299,7 @@ async def _execute_survey_once(
             lost_task,
             cancel_task,
             artifact_observer,
+            extract_task,
         ):
             if not task.done():
                 task.cancel()
@@ -1292,6 +1311,7 @@ async def _execute_survey_once(
             lost_task,
             cancel_task,
             artifact_observer,
+            extract_task,
             return_exceptions=True,
         )
 
@@ -1499,6 +1519,12 @@ async def _repair_survey_artifacts(
         )
         return None
     diagnostics.component_finished("survey_finalizer", status="completed")
+    diagnostics.record("survey_charts_rendered", count=finalized.chart_count)
+    diagnostics.record("survey_chart_rejected", count=finalized.chart_rejected_count)
+    emit_chart_metrics(
+        chart_count=finalized.chart_count,
+        chart_rejected_count=finalized.chart_rejected_count,
+    )
     diagnostics.finalize_contract_audit()
     snapshot = diagnostics.snapshot()
     quality_reasons = _publication_quality_reasons(

@@ -16,8 +16,8 @@ _LEVELS = ("html", "full_text", "partial", "abstract_only")
 _REVIEWED_LEVELS = frozenset({"html", "full_text", "partial"})
 _LEVEL_REASONS = {
     "html": frozenset({"html_text_extracted"}),
-    "full_text": frozenset({"pdf_text_extracted"}),
-    "partial": frozenset({"pdf_text_truncated"}),
+    "full_text": frozenset({"pdf_text_extracted", "pdf_markdown_extracted"}),
+    "partial": frozenset({"pdf_text_truncated", "pdf_markdown_truncated", "html_text_truncated"}),
     "abstract_only": frozenset(
         {"scanned_pdf", "pdf_download_failed", "pdf_text_empty", "pdf_extraction_failed"}
     ),

@@ -45,8 +45,13 @@ ingest = [
 survey = [
     "alibabacloud-credentials>=0.3.7",
     "alibabacloud-dm20151123>=1.2.2",
+    "beautifulsoup4>=4.12",
     "boto3>=1.35,<2",
     "cryptography>=50.0.0",
+    "graphviz>=0.20",
+    "markdownify>=0.13,<2",
+    "matplotlib>=3.8",
+    "pymupdf4llm>=1.27.2.3",
     "PyJWT>=2.10",
 ]
 dev = [
