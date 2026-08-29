@@ -37,6 +37,20 @@ def test_markdown_renders_gfm_tables_and_fenced_code() -> None:
     assert "print('hello')" in html
 
 
+def test_markdown_renders_math_formulas_as_self_contained_images() -> None:
+    html = build_report_html(
+        title="Formula report",
+        markdown_text="Inline $x^2$ and display:\n\n$$\\mathcal{L}(\\theta)$$\n",
+        images={},
+        generated_on=GENERATED_ON,
+    )
+
+    assert 'class="math-inline"' in html
+    assert 'class="math-display"' in html
+    assert 'src="data:image/png;base64,' in html
+    assert "$$\\mathcal{L}" not in html
+
+
 def test_internal_html_comments_are_removed() -> None:
     html = build_report_html(
         title="Survey",
@@ -47,6 +61,24 @@ def test_internal_html_comments_are_removed() -> None:
 
     assert "<!--M4-->" not in html
     assert "Closing." in html
+
+
+def test_unsafe_body_html_is_removed() -> None:
+    html = build_report_html(
+        title="Survey",
+        markdown_text=(
+            '<script>alert("x")</script>\n'
+            '<style>@import url("https://example.invalid/style.css");</style>\n'
+            '<p style="background:url(https://example.invalid/x)">Safe text</p>\n'
+        ),
+        images={},
+        generated_on=GENERATED_ON,
+    )
+
+    assert "alert" not in html
+    assert "example.invalid" not in html
+    assert 'style="background' not in html
+    assert "Safe text" in html
 
 
 def test_cover_contains_wordmark_title_and_date() -> None:
@@ -113,6 +145,17 @@ def test_unrelated_leading_h1_is_kept() -> None:
     )
 
     assert html.count("<h1") == 2
+
+
+def test_leading_title_comparison_unescapes_html_entities() -> None:
+    html = build_report_html(
+        title="A & B",
+        markdown_text="# A & B\n\nBody.\n",
+        images={},
+        generated_on=GENERATED_ON,
+    )
+
+    assert html.count("<h1") == 1
 
 
 def test_render_report_pdf_maps_missing_native_backend(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -241,6 +241,7 @@ jobs:
             ! command -v pandoc >/dev/null
             ! command -v pdftotext >/dev/null
           '
+          test "$(docker run --rm --entrypoint /bin/sh scholight-api:ci -c 'id -u')" = 1000
           docker run --rm --entrypoint /app/.venv/bin/python scholight-api:ci -c 'import importlib.util; assert importlib.util.find_spec("markdownify") is None; assert importlib.util.find_spec("playwright") is None; import scholight.api.app; import scholight.api.extract_execution'
       - name: Verify API image renders branded Survey report PDFs
         run: |

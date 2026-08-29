@@ -10,9 +10,11 @@ from __future__ import annotations
 import base64
 import re
 from datetime import date
-from html import escape
+from html import escape, unescape
+from io import BytesIO
 from pathlib import Path, PurePosixPath
 from typing import Any
+from urllib.parse import unquote, urlsplit
 
 import markdown as markdown_lib
 
@@ -40,6 +42,14 @@ _SRC_ATTRIBUTE_PATTERN = re.compile(r"""\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)')""", 
 _ALT_ATTRIBUTE_PATTERN = re.compile(r"""\balt\s*=\s*(?:"([^"]*)"|'([^']*)')""", re.IGNORECASE)
 _LEADING_H1_PATTERN = re.compile(r"^\s*<h1[^>]*>(.*?)</h1>", re.DOTALL)
 _INNER_TAG_PATTERN = re.compile(r"<[^>]+>")
+_UNSAFE_BODY_TAGS = ("script", "style", "iframe", "object", "embed", "link", "base", "form")
+_STYLE_ATTRIBUTE_PATTERN = re.compile(
+    r"\s(?:style|on[a-z]+)\s*=\s*(?:\"[^\"]*\"|'[^']*')",
+    re.IGNORECASE,
+)
+_MATH_DISPLAY_PATTERN = re.compile(r"(?<!\\)\$\$(?P<formula>.+?)(?<!\\)\$\$", re.DOTALL)
+_MATH_INLINE_PATTERN = re.compile(r"(?<!\\)\$(?!\$)(?P<formula>[^$\n]+?)(?<!\\)\$")
+_MATH_MAX_CHARS = 2_000
 
 # Print typography mirrors the web report (DESIGN.md): Literata carries the
 # wordmark and headings, Manrope carries body copy, and the single accent is
@@ -186,6 +196,28 @@ body {
   display: block;
   margin: 4mm auto 2mm;
 }
+.report img.math-inline {
+  display: inline;
+  width: auto;
+  max-height: 1.6em;
+  vertical-align: -0.3em;
+  margin: 0 0.12em;
+}
+.report img.math-display {
+  width: auto;
+  max-width: 100%;
+  margin: 4mm auto;
+}
+.report .math-fallback {
+  font-family: 'DejaVu Sans Mono', monospace;
+  white-space: pre-wrap;
+}
+.report .chart-caption {
+  color: #61636E;
+  font-size: 9pt;
+  text-align: center;
+  margin: 0 0 4mm;
+}
 .report ul, .report ol { margin: 0 0 0.9em; padding-left: 6mm; }
 .report li { margin-bottom: 0.3em; }
 .report hr { border: none; border-top: 0.5pt solid #DBD9CC; margin: 2em 0; }
@@ -240,6 +272,8 @@ def _embed_images(body_html: str, images: dict[str, bytes]) -> str:
     def replace(match: re.Match[str]) -> str:
         tag = match.group(0)
         src = _first_attribute(_SRC_ATTRIBUTE_PATTERN, tag)
+        if "math-inline" in tag or "math-display" in tag:
+            return tag
         resolved = _resolve_image(src, images)
         if resolved is None:
             return ""
@@ -252,8 +286,61 @@ def _embed_images(body_html: str, images: dict[str, bytes]) -> str:
     return _IMG_TAG_PATTERN.sub(replace, body_html)
 
 
+def _sanitize_body_html(body_html: str) -> str:
+    """Remove active/raw HTML that could trigger network or script side effects."""
+    sanitized = body_html
+    for tag in _UNSAFE_BODY_TAGS:
+        sanitized = re.sub(
+            rf"<{tag}\b[^>]*>.*?(?:</{tag}\s*>|$)",
+            "",
+            sanitized,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        sanitized = re.sub(rf"<{tag}\b[^>]*/?>", "", sanitized, flags=re.IGNORECASE)
+    return _STYLE_ATTRIBUTE_PATTERN.sub("", sanitized)
+
+
+def _render_math_formula(formula: str, *, display: bool) -> str:
+    """Render a bounded LaTeX formula to a self-contained PNG or safe text."""
+    normalized = formula.strip()
+    delimiter = "$$" if display else "$"
+    fallback = escape(f"{delimiter}{normalized}{delimiter}")
+    if not normalized or len(normalized) > _MATH_MAX_CHARS:
+        return f'<span class="math-fallback">{fallback}</span>'
+    try:
+        from matplotlib.mathtext import math_to_image
+
+        output = BytesIO()
+        math_to_image(f"${normalized}$", output, format="png", dpi=180)
+    except Exception:
+        return f'<span class="math-fallback">{fallback}</span>'
+    encoded = base64.b64encode(output.getvalue()).decode("ascii")
+    class_name = "math-display" if display else "math-inline"
+    return (
+        f'<img class="{class_name}" src="data:image/png;base64,{encoded}" '
+        f'alt="{escape(normalized)}" />'
+    )
+
+
+def _render_math_markdown(markdown_text: str) -> str:
+    """Replace Markdown dollar-delimited formulas before Markdown conversion."""
+    rendered: dict[tuple[str, bool], str] = {}
+
+    def replace(match: re.Match[str], *, display: bool) -> str:
+        formula = match.group("formula")
+        key = (formula, display)
+        if key not in rendered:
+            rendered[key] = _render_math_formula(formula, display=display)
+        return rendered[key]
+
+    markdown_text = _MATH_DISPLAY_PATTERN.sub(
+        lambda match: replace(match, display=True), markdown_text
+    )
+    return _MATH_INLINE_PATTERN.sub(lambda match: replace(match, display=False), markdown_text)
+
+
 def _normalized_heading_text(heading_html: str) -> str:
-    return " ".join(_INNER_TAG_PATTERN.sub("", heading_html).split())
+    return " ".join(unescape(_INNER_TAG_PATTERN.sub("", heading_html)).split())
 
 
 def _drop_leading_duplicate_title(body_html: str, title: str) -> str:
@@ -279,11 +366,12 @@ def build_report_html(
     """Assemble the self-contained print HTML document for one Survey report."""
     cleaned_markdown = _HTML_COMMENT_PATTERN.sub("", markdown_text)
     body_html = markdown_lib.markdown(
-        cleaned_markdown,
+        _render_math_markdown(cleaned_markdown),
         extensions=["tables", "fenced_code"],
         output_format="html5",
     )
     body_html = _embed_images(body_html, images)
+    body_html = _sanitize_body_html(body_html)
     body_html = _drop_leading_duplicate_title(body_html, title)
     return (
         "<!DOCTYPE html>\n"
@@ -328,10 +416,26 @@ def render_report_pdf(
     )
     try:
         weasyprint = _load_weasyprint()
-    except OSError as exc:
+    except (ImportError, OSError) as exc:
         raise ReportPdfError("PDF backend is unavailable on this host") from exc
+
+    default_url_fetcher = weasyprint.default_url_fetcher
+
+    def safe_url_fetcher(url: str, *args: Any, **kwargs: Any) -> Any:
+        parsed = urlsplit(url)
+        if parsed.scheme == "data":
+            return default_url_fetcher(url, *args, **kwargs)
+        if parsed.scheme == "file":
+            font_path = Path(unquote(parsed.path)).resolve()
+            try:
+                font_path.relative_to(_FONTS_DIR.resolve())
+            except ValueError as exc:
+                raise ValueError("PDF resources must be bundled assets") from exc
+            return default_url_fetcher(url, *args, **kwargs)
+        raise ValueError("PDF resources must be bundled assets")
+
     try:
-        return bytes(weasyprint.HTML(string=html).write_pdf())
+        return bytes(weasyprint.HTML(string=html, url_fetcher=safe_url_fetcher).write_pdf())
     except OSError as exc:
         raise ReportPdfError("PDF backend is unavailable on this host") from exc
     except ReportPdfError:
