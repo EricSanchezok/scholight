@@ -232,14 +232,35 @@ def test_extract_chart_blocks_returns_exact_spans_and_skips_other_fences() -> No
     }
 
 
-def test_extract_chart_blocks_marks_unparseable_bodies() -> None:
+def test_extract_chart_blocks_marks_unparsable_bodies() -> None:
     blocks = extract_chart_blocks("```chart\nnot json\n```")
 
     assert blocks[0][0] == {"__invalid__": "not json\n"}
 
 
-def test_extract_chart_blocks_ignores_unterminated_block() -> None:
-    assert extract_chart_blocks('```chart\n{"type": "line"}\n') == []
+def test_extract_chart_blocks_marks_unterminated_block() -> None:
+    text = 'before\n```chart\n{"type": "line"}\nafter'
+
+    blocks = extract_chart_blocks(text)
+
+    assert len(blocks) == 1
+    spec, (start, end) = blocks[0]
+    assert spec == {"__invalid__": '{"type": "line"}\nafter'}
+    assert text[start:end] == text[text.index("```chart") :]
+
+
+def test_render_section_charts_discards_unterminated_block(tmp_path: Path) -> None:
+    text = 'Keep this.\n\n```chart\n{"type": "line"}\nTrailing leak'
+
+    new_text, rendered, rejected = render_section_charts(
+        text,
+        tmp_path / "figures",
+        prefix="unterminated",
+    )
+
+    assert (rendered, rejected) == (0, 1)
+    assert new_text == "Keep this.\n\n"
+    assert "```chart" not in new_text
 
 
 @pytest.mark.parametrize(
@@ -325,6 +346,7 @@ def test_render_section_charts_escapes_markdown_characters_in_captions(
 
     assert (rendered, rejected) == (1, 0)
     assert "![Share \\(2020\\) \\[all\\]](figures/esc-1.png)" in new_text
+    assert '<p class="chart-caption">Share (2020) [all]</p>' in new_text
 
 
 def test_render_section_charts_keeps_surrounding_text_when_all_blocks_rejected(

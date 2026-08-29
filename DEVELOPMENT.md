@@ -65,6 +65,8 @@ Optional profiles are separate processes:
 - `survey`: run Survey draft/worker processes against local PostgreSQL and MinIO. Survey
   chart rendering additionally needs a local `dot` binary — install with
   `brew install graphviz` on macOS (the production image ships it).
+  When both HTML and PDF evidence are available for a paper, the HTML extract is authoritative;
+  the PDF path is a fallback only after HTML retrieval fails.
 - ingestion and maintenance: never part of shared-local development.
 
 ## Remote dependency policy

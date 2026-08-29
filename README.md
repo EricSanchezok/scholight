@@ -69,9 +69,10 @@ Survey 生成结构化证据与可视化：报告包含 `$...$` / `$$...$$` 数�
 GFM 数据对比表，以及由应用确定性渲染的本地数据图表（折线 / 柱状 / 分组柱状 / 散点 /
 饼图 / 流程图）。图表由模型声明为 fenced `chart` JSON 块、finalizer 用 matplotlib/graphviz
 渲染到 `figures/`，非法声明被丢弃并计数，绝不阻塞发布。
+图表 caption 会在正文中以可见说明呈现；未闭合的 `chart` 围栏会作为非法声明丢弃，避免原始标记泄漏。
 
 全文证据走应用侧抽取阶梯：优先抓取 arXiv HTML（LaTeXML 渲染，`<math alttext>` 保留原始
-LaTeX，失败回退 ar5iv），其次对 agent 下载的 PDF 跑 pymupdf4llm，物化到 `extracts/` 供
+LaTeX，失败回退 ar5iv）；仅在 HTML 抽取不可用时才对 agent 下载的 PDF 跑 pymupdf4llm，物化到 `extracts/` 供
 PaperCardWriter 读取；两端失败时回退现状 pdftotext 直读。卡片新增 `key_formulas` 与
 `key_results_table` 可选小节，公式与数字只能逐字来自读到的抽取产物。
 

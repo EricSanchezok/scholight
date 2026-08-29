@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 import re
+import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -131,9 +132,20 @@ def build_pdf_extract(body: str, *, stem: str) -> str:
 
 def _write_extract(path: Path, document: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f".{path.name}.tmp")
-    temporary.write_text(document, encoding="utf-8")
-    os.replace(temporary, path)
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        delete=False,
+    ) as handle:
+        temporary = Path(handle.name)
+        handle.write(document)
+    try:
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def planned_paper_ids(run_dir: Path) -> tuple[str, ...]:
@@ -169,7 +181,9 @@ def _is_transient_http(exception: BaseException) -> bool:
 
 @retry(reraise=True, stop=stop_after_attempt(2), retry=retry_if_exception(_is_transient_http))
 async def _get_html(client: httpx.AsyncClient, url: str) -> httpx.Response:
-    return await client.get(url)
+    response = await client.get(url)
+    response.raise_for_status()
+    return response
 
 
 async def _fetch_first_html(
@@ -278,10 +292,19 @@ async def run_extract_pass(
                     )
                 )
 
+    # Finish HTML materialization before considering PDF fallbacks.  Both
+    # sources write the same canonical extract path; running them concurrently
+    # lets a slower PDF conversion overwrite a preferred HTML extract.
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    tasks = []
     pdfs_dir = run_dir / "pdfs"
     if pdfs_dir.is_dir():
         for pdf_path in sorted(pdfs_dir.glob("*.pdf")):
             stem = pdf_path.stem
+            if pdf_path.is_symlink() or not pdf_path.is_file():
+                continue
             if stem in state.pdf_stems or (run_dir / "extracts" / f"{stem}.md").exists():
                 continue
             state.pdf_stems.add(stem)
@@ -292,7 +315,7 @@ async def run_extract_pass(
             )
 
     if tasks:
-        await asyncio.gather(*tasks)
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 async def materialize_extracts(

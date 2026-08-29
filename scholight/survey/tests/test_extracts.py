@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from pathlib import Path
 
 import httpx
@@ -136,6 +137,43 @@ async def test_pass_materializes_html_from_plan(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_html_extract_wins_when_pdf_fallback_is_also_available(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _plan(tmp_path, ["2401.12345"])
+    pdfs = tmp_path / "pdfs"
+    pdfs.mkdir()
+    (pdfs / "2401.12345.pdf").write_bytes(b"%PDF-1.4 stub")
+
+    def slow_pdf_to_markdown(path: str) -> str:
+        time.sleep(0.05)
+        return "## PDF fallback"
+
+    monkeypatch.setattr(
+        "scholight.pipeline.pdf_md.pdf_to_markdown",
+        slow_pdf_to_markdown,
+    )
+
+    def transport(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/html"},
+            text=_HTML_FIXTURE,
+        )
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(transport),
+        follow_redirects=True,
+    ) as client:
+        await run_extract_pass(tmp_path, state=ExtractAttemptState(), client=client)
+
+    document = (tmp_path / "extracts" / "2401.12345.md").read_text(encoding="utf-8")
+    assert "- reason: html_text_extracted" in document
+    assert "PDF fallback" not in document
+
+
+@pytest.mark.asyncio
 async def test_pass_falls_back_to_ar5iv(tmp_path: Path) -> None:
     _plan(tmp_path, ["1909.08053"])
 
@@ -172,7 +210,12 @@ async def test_pass_skips_stems_with_existing_or_attempted_extracts(tmp_path: Pa
         follow_redirects=True,
     ) as client:
         await run_extract_pass(tmp_path, state=state, client=client)
-        assert calls == ["arxiv.org", "ar5iv.labs.arxiv.org"]  # only 2402.22222
+        assert calls == [
+            "arxiv.org",
+            "arxiv.org",
+            "ar5iv.labs.arxiv.org",
+            "ar5iv.labs.arxiv.org",
+        ]  # only 2402.22222, retried once per source
 
         calls.clear()
         await run_extract_pass(tmp_path, state=state, client=client)

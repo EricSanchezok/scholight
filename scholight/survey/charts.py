@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import json
 import math
 import os
@@ -268,6 +269,11 @@ def extract_chart_blocks(text: str) -> list[tuple[_ChartSpec, tuple[int, int]]]:
         body_start = opened.end() + 1
         closed = _CHART_FENCE_CLOSE.search(text, body_start)
         if closed is None:
+            # Treat an unterminated chart fence as a malformed block through
+            # EOF so finalization cannot leak raw `````chart`` text into the
+            # report.  The caller will count and discard this block.
+            raw_body = text[body_start:]
+            blocks.append((_parse_chart_body(raw_body), (opened.start(), len(text))))
             return blocks
         raw_body = text[body_start : closed.start()]
         blocks.append((_parse_chart_body(raw_body), (opened.start(), closed.end())))
@@ -414,7 +420,15 @@ def render_section_charts(
             replacements.append((start, end, ""))
             rejected_count += 1
             continue
-        replacements.append((start, end, f"\n\n![{_alt_text(spec)}](figures/{filename})\n\n"))
+        caption = spec.get("caption")
+        visible_caption = (
+            f'\n\n<p class="chart-caption">{html.escape(caption)}</p>'
+            if isinstance(caption, str)
+            else ""
+        )
+        replacements.append(
+            (start, end, f"\n\n![{_alt_text(spec)}](figures/{filename}){visible_caption}\n\n")
+        )
         rendered_count += 1
     segments: list[str] = []
     cursor = 0
