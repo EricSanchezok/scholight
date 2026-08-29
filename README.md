@@ -2,6 +2,13 @@
 
 AI 学术研究引擎——当前索引 arXiv 语料，提供段落级论文检索、多阶段重排与通用 Web Extract。
 
+> **Public repository note**: This repository contains source code and deployment
+> references only. It does not include SanchezCloud production data or credentials.
+> Keep `.env`, `.env.local`, `data/`, research outputs, and generated build artifacts
+> out of commits and release archives. Use your own service accounts and secrets for
+> local or production deployments; never copy production secret values into this
+> repository.
+
 前端产品原则以 [`PRODUCT.md`](PRODUCT.md) 为准，视觉与交互系统以 [`DESIGN.md`](DESIGN.md) 为准；新增界面前应先读取两者。
 本地端口、共享 PostgreSQL、启动 profile 和远程依赖规则以 [`DEVELOPMENT.md`](DEVELOPMENT.md) 为准。
 共享身份接入、数据库角色、升级和排障的权威规范见
@@ -40,7 +47,7 @@ scholight/
 ## 快速上手
 
 ```bash
-git clone git@github.com:EricSanchezok/scholight.git
+git clone https://github.com/EricSanchezok/scholight.git
 cd scholight
 cp .env.example .env.local   # 只填本地运行密码、应用 secret 和只读 Zilliz key
 chmod 600 .env.local
