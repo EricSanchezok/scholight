@@ -17,6 +17,7 @@ vi.mock("../../api/domain", () => ({
     artifacts: vi.fn(),
     remove: vi.fn(),
     downloadPackage: vi.fn(),
+    downloadPdf: vi.fn(),
     create: vi.fn(),
   },
 }));

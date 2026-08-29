@@ -4573,6 +4573,49 @@
         "tags": ["survey"]
       }
     },
+    "/surveys/{survey_id}/report.pdf": {
+      "get": {
+        "description": "Render the archived final report as a branded PDF document.",
+        "operationId": "survey_report_pdf_surveys__survey_id__report_pdf_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "survey_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Survey Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/pdf": {}
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Survey Report Pdf",
+        "tags": ["survey"]
+      }
+    },
     "/surveys/{survey_id}/start": {
       "post": {
         "operationId": "start_survey_execution_surveys__survey_id__start_post",

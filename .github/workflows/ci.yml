@@ -241,7 +241,22 @@ jobs:
             ! command -v pandoc >/dev/null
             ! command -v pdftotext >/dev/null
           '
+          test "$(docker run --rm --entrypoint /bin/sh scholight-api:ci -c 'id -u')" = 1000
           docker run --rm --entrypoint /app/.venv/bin/python scholight-api:ci -c 'import importlib.util; assert importlib.util.find_spec("markdownify") is None; assert importlib.util.find_spec("playwright") is None; import scholight.api.app; import scholight.api.extract_execution'
+      - name: Verify API image renders branded Survey report PDFs
+        run: |
+          docker run --rm --entrypoint /app/.venv/bin/python scholight-api:ci - <<'PY'
+          from datetime import date
+          from scholight.api.report_pdf import render_report_pdf
+
+          pdf = render_report_pdf(
+              title="CI boundary smoke",
+              markdown_text="# CI boundary smoke\n\nBody text.",
+              images={},
+              generated_on=date(2026, 8, 29),
+          )
+          assert pdf[:5] == b"%PDF-", "report PDF rendering is unavailable in the API image"
+          PY
       - name: Build ingest image
         if: github.event_name != 'pull_request'
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6

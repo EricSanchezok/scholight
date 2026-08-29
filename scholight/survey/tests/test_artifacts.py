@@ -14,7 +14,11 @@ import pytest
 from botocore.exceptions import ClientError
 
 from scholight.survey import artifacts as artifacts_module
-from scholight.survey.artifacts import SurveyArtifactError, SurveyArtifactStore
+from scholight.survey.artifacts import (
+    SurveyArtifactError,
+    SurveyArtifactNotFoundError,
+    SurveyArtifactStore,
+)
 
 
 class _FakeS3:
@@ -843,3 +847,62 @@ async def test_cleanup_missing_manifest_is_scoped_to_exact_server_prefix() -> No
     )
 
     assert fake.objects == {unrelated_key: b"keep"}
+
+
+@pytest.mark.asyncio
+async def test_open_report_assets_returns_markdown_and_run_relative_images(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "08_survey.md").write_text("# Survey", encoding="utf-8")
+    (tmp_path / "08_global_picture.png").write_bytes(b"image")
+    (tmp_path / "cards").mkdir()
+    (tmp_path / "cards" / "paper.md").write_text("Evidence", encoding="utf-8")
+    fake = _FakeS3()
+    store = SurveyArtifactStore(bucket="survey-test", client=fake)
+    archive = await store.archive_run(
+        user_id=42,
+        job_id=uuid4(),
+        run_root=tmp_path,
+        run_metadata={"outcome": "succeeded"},
+    )
+
+    report, images = await store.open_report_assets(manifest_key=archive.manifest_key)
+
+    assert report == b"# Survey"
+    assert images == {"08_global_picture.png": b"image"}
+
+
+@pytest.mark.asyncio
+async def test_open_report_assets_requires_final_report(tmp_path: Path) -> None:
+    (tmp_path / "00_outline.md").write_text("Outline", encoding="utf-8")
+    fake = _FakeS3()
+    store = SurveyArtifactStore(bucket="survey-test", client=fake)
+    archive = await store.archive_run(
+        user_id=42,
+        job_id=uuid4(),
+        run_root=tmp_path,
+        run_metadata={"outcome": "failed"},
+    )
+
+    with pytest.raises(SurveyArtifactNotFoundError, match="not present"):
+        await store.open_report_assets(manifest_key=archive.manifest_key)
+
+
+@pytest.mark.asyncio
+async def test_open_report_assets_skips_non_image_records(tmp_path: Path) -> None:
+    (tmp_path / "08_survey.md").write_text("# Survey", encoding="utf-8")
+    (tmp_path / "08_global_picture.png").write_bytes(b"image")
+    (tmp_path / "paper.pdf").write_bytes(b"pdf")
+    fake = _FakeS3()
+    store = SurveyArtifactStore(bucket="survey-test", client=fake)
+    archive = await store.archive_run(
+        user_id=42,
+        job_id=uuid4(),
+        run_root=tmp_path,
+        run_metadata={"outcome": "succeeded"},
+    )
+
+    report, images = await store.open_report_assets(manifest_key=archive.manifest_key)
+
+    assert report == b"# Survey"
+    assert list(images) == ["08_global_picture.png"]

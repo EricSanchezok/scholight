@@ -139,3 +139,7 @@ export function markdownFilename(title: string): string {
 export function archiveFilename(title: string): string {
   return markdownFilename(title).replace(/\.md$/, ".zip");
 }
+
+export function pdfFilename(title: string): string {
+  return markdownFilename(title).replace(/\.md$/, ".pdf");
+}

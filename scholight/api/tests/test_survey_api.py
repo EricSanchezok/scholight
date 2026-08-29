@@ -14,6 +14,7 @@ from fastapi import FastAPI
 from sanchezcloud_identity.models.user import UserRecord
 
 from scholight.api.deps import get_current_user
+from scholight.api.report_pdf import ReportPdfError
 from scholight.api.routes.survey import _artifact_store
 from scholight.config import settings
 from scholight.db.queries_survey import (
@@ -29,7 +30,7 @@ from scholight.db.queries_survey_views import (
     SurveySummary,
     SurveySummaryPage,
 )
-from scholight.survey.artifacts import SurveyArtifactStream
+from scholight.survey.artifacts import SurveyArtifactNotFoundError, SurveyArtifactStream
 
 pytestmark = pytest.mark.asyncio
 
@@ -830,6 +831,202 @@ async def test_report_download_streams_owner_scoped_zip_package(
     store.build_report_package.assert_awaited_once_with(
         manifest_key=f"{storage_prefix}/manifest.json"
     )
+
+
+@pytest.mark.asyncio
+async def test_report_pdf_returns_branded_pdf_for_owner(
+    api_app: FastAPI,
+    api_client: httpx.AsyncClient,
+    active_user: UserRecord,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _authenticate(api_app, active_user)
+    monkeypatch.setattr(settings, "survey_runtime_enabled", True)
+    monkeypatch.setattr(settings, "survey_public_mode", "all")
+    survey_id = uuid4()
+    job_id = uuid4()
+    storage_prefix = f"surveys/v1/{active_user.id}/{job_id}"
+    reference = SurveyArtifactReference(
+        survey_id=survey_id,
+        user_id=active_user.id,
+        job_id=job_id,
+        survey_status="succeeded",
+        job_status="finished",
+        terminal_outcome="succeeded",
+        storage_bucket="private-bucket",
+        storage_prefix=storage_prefix,
+        manifest_key=f"{storage_prefix}/manifest.json",
+    )
+    survey = replace(
+        _survey(survey_id=survey_id, status="succeeded"),
+        title="Reliable model evaluation",
+        finished_at=datetime(2026, 8, 29, 7, 0, tzinfo=UTC),
+    )
+    store = AsyncMock()
+    store.open_report_assets.return_value = (b"# Reliable model evaluation\n\nBody.", {})
+    with (
+        patch(
+            "scholight.api.routes.survey.get_survey_artifact_reference",
+            new_callable=AsyncMock,
+            return_value=reference,
+        ),
+        patch("scholight.api.routes.survey._artifact_store", return_value=store),
+        patch(
+            "scholight.api.routes.survey.get_survey",
+            new_callable=AsyncMock,
+            return_value=survey,
+        ),
+        patch(
+            "scholight.api.routes.survey.render_report_pdf",
+            return_value=b"%PDF-fake-bytes",
+        ) as render,
+    ):
+        response = await api_client.get(f"/surveys/{survey_id}/report.pdf")
+
+    assert response.status_code == 200
+    assert response.content == b"%PDF-fake-bytes"
+    assert response.headers["content-type"] == "application/pdf"
+    assert response.headers["content-disposition"] == (
+        f'attachment; filename="scholight-survey-{survey_id}.pdf"'
+    )
+    store.open_report_assets.assert_awaited_once_with(
+        manifest_key=f"{storage_prefix}/manifest.json",
+    )
+    render.assert_called_once_with(
+        title="Reliable model evaluation",
+        markdown_text="# Reliable model evaluation\n\nBody.",
+        images={},
+        generated_on=date(2026, 8, 29),
+    )
+
+
+@pytest.mark.asyncio
+async def test_report_pdf_requires_succeeded_survey(
+    api_app: FastAPI,
+    api_client: httpx.AsyncClient,
+    active_user: UserRecord,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _authenticate(api_app, active_user)
+    monkeypatch.setattr(settings, "survey_runtime_enabled", True)
+    monkeypatch.setattr(settings, "survey_public_mode", "all")
+    survey_id = uuid4()
+    job_id = uuid4()
+    storage_prefix = f"surveys/v1/{active_user.id}/{job_id}"
+    reference = SurveyArtifactReference(
+        survey_id=survey_id,
+        user_id=active_user.id,
+        job_id=job_id,
+        survey_status="failed",
+        job_status="finished",
+        terminal_outcome="failed",
+        storage_bucket="private-bucket",
+        storage_prefix=storage_prefix,
+        manifest_key=f"{storage_prefix}/manifest.json",
+    )
+    with patch(
+        "scholight.api.routes.survey.get_survey_artifact_reference",
+        new_callable=AsyncMock,
+        return_value=reference,
+    ):
+        response = await api_client.get(f"/surveys/{survey_id}/report.pdf")
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "survey_report_not_available"
+
+
+@pytest.mark.asyncio
+async def test_report_pdf_maps_missing_report_archive(
+    api_app: FastAPI,
+    api_client: httpx.AsyncClient,
+    active_user: UserRecord,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _authenticate(api_app, active_user)
+    monkeypatch.setattr(settings, "survey_runtime_enabled", True)
+    monkeypatch.setattr(settings, "survey_public_mode", "all")
+    survey_id = uuid4()
+    job_id = uuid4()
+    storage_prefix = f"surveys/v1/{active_user.id}/{job_id}"
+    reference = SurveyArtifactReference(
+        survey_id=survey_id,
+        user_id=active_user.id,
+        job_id=job_id,
+        survey_status="succeeded",
+        job_status="finished",
+        terminal_outcome="succeeded",
+        storage_bucket="private-bucket",
+        storage_prefix=storage_prefix,
+        manifest_key=f"{storage_prefix}/manifest.json",
+    )
+    store = AsyncMock()
+    store.open_report_assets.side_effect = SurveyArtifactNotFoundError("missing")
+    with (
+        patch(
+            "scholight.api.routes.survey.get_survey_artifact_reference",
+            new_callable=AsyncMock,
+            return_value=reference,
+        ),
+        patch("scholight.api.routes.survey._artifact_store", return_value=store),
+    ):
+        response = await api_client.get(f"/surveys/{survey_id}/report.pdf")
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "survey_report_not_available"
+
+
+@pytest.mark.asyncio
+async def test_report_pdf_maps_render_backend_failure(
+    api_app: FastAPI,
+    api_client: httpx.AsyncClient,
+    active_user: UserRecord,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _authenticate(api_app, active_user)
+    monkeypatch.setattr(settings, "survey_runtime_enabled", True)
+    monkeypatch.setattr(settings, "survey_public_mode", "all")
+    survey_id = uuid4()
+    job_id = uuid4()
+    storage_prefix = f"surveys/v1/{active_user.id}/{job_id}"
+    reference = SurveyArtifactReference(
+        survey_id=survey_id,
+        user_id=active_user.id,
+        job_id=job_id,
+        survey_status="succeeded",
+        job_status="finished",
+        terminal_outcome="succeeded",
+        storage_bucket="private-bucket",
+        storage_prefix=storage_prefix,
+        manifest_key=f"{storage_prefix}/manifest.json",
+    )
+    survey = replace(
+        _survey(survey_id=survey_id, status="succeeded"),
+        title="Survey",
+        finished_at=datetime(2026, 8, 29, 7, 0, tzinfo=UTC),
+    )
+    store = AsyncMock()
+    store.open_report_assets.return_value = (b"# Survey", {})
+    with (
+        patch(
+            "scholight.api.routes.survey.get_survey_artifact_reference",
+            new_callable=AsyncMock,
+            return_value=reference,
+        ),
+        patch("scholight.api.routes.survey._artifact_store", return_value=store),
+        patch(
+            "scholight.api.routes.survey.get_survey",
+            new_callable=AsyncMock,
+            return_value=survey,
+        ),
+        patch(
+            "scholight.api.routes.survey.render_report_pdf",
+            side_effect=ReportPdfError("PDF backend is unavailable"),
+        ),
+    ):
+        response = await api_client.get(f"/surveys/{survey_id}/report.pdf")
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "survey_report_pdf_unavailable"
 
 
 async def test_artifacts_hide_storage_keys_and_use_short_lived_urls(
