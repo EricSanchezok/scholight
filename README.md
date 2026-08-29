@@ -83,6 +83,9 @@ LaTeX，失败回退 ar5iv）；仅在 HTML 抽取不可用时才对 agent 下�
 PaperCardWriter 读取；两端失败时回退现状 pdftotext 直读。卡片新增 `key_formulas` 与
 `key_results_table` 可选小节，公式与数字只能逐字来自读到的抽取产物。
 
+成功的 Survey 可通过 owner-scoped `GET /api/surveys/{survey_id}/report.pdf` 下载品牌化 PDF；
+服务端会将公式栅格化为内嵌图片、只读取清单授权的图表资源，并拒绝报告正文中的外部资源。
+
 ## 配置
 
 所有配置通过 `SCHOLIGHT_` 前缀的环境变量注入，模板在 `.env.example`。关键变量：

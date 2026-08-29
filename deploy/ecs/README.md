@@ -19,6 +19,11 @@ target so a large Survey or ingestion runtime cannot leak into the Search API.
 | `sanchezcloud-scholight-ingest` | `ingest` | Metadata sync and bounded paper-ingestion tasks |
 | `sanchezcloud-scholight-survey` | `survey` | Survey draft/full workers and the pinned RCM runtime |
 
+The API PDF endpoint renders archived Survey reports with WeasyPrint and the API
+`matplotlib` dependency. Formula images and chart assets are embedded in the
+document; the renderer rejects external report resources and runs as the
+non-root `scholight` user.
+
 The API and Extract processes share only the lightweight models in
 `scholight.web_extract.contracts`. Importing the API application must not load
 the extraction engine or require Playwright, Chromium, or `markdownify`; CI
