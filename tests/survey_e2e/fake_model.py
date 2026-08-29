@@ -198,7 +198,27 @@ def _artifact_content(stage: str, path: str) -> str:
             "# Ordered section list\n\n## 01 Introduction\n"
         )
     if stage == "section_expander":
-        return "## Introduction\n\nThis deterministic section is grounded in [2401.12345].\n"
+        return (
+            "## Introduction\n\n"
+            "This deterministic section is grounded in [2401.12345].\n\n"
+            "The eval minimizes $\\mathcal{L}(\\theta)$ with\n\n"
+            "$$\n"
+            "\\mathrm{ECE} = \\sum_i p_i(\\hat{p}_i - p_i)\n"
+            "$$\n\n"
+            "| Method | Score |\n| --- | --- |\n| Base | 0.62 |\n| Ours | 0.71 |\n\n"
+            "```chart\n"
+            "{\n"
+            '  "type": "line",\n'
+            '  "title": "Score vs corpus size",\n'
+            '  "x": [100, 200],\n'
+            '  "series": [{"name": "Ours [2401.12345]", "y": [0.62, 0.71]}],\n'
+            '  "caption": "Shared metric; values from cited cards."\n'
+            "}\n"
+            "```\n\n"
+            "```chart\n"
+            '{"type": "bar", "series": []}\n'
+            "```\n"
+        )
     return f"# {path}\n\nDeterministic E2E artifact.\n"
 
 

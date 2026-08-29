@@ -131,6 +131,7 @@ async def _assert_database_and_archive(s3: Any, survey_id: str) -> tuple[str, st
             "run/00_outline.md",
             "run/00_outline.json",
             "run/sections/01_introduction.md",
+            "run/figures/01_introduction-1.png",
             "run/08_survey.md",
             "run/index.md",
             "run/trajectory.jsonl",
@@ -223,6 +224,12 @@ async def _assert_public_report_and_artifacts(
     report = await client.get(f"{API}/surveys/{survey_id}/report")
     report.raise_for_status()
     assert "This deterministic section is grounded" in report.text
+    assert "![Shared metric; values from cited cards.](figures/01_introduction-1.png)" in (
+        report.text
+    )
+    assert "$$\n\\mathrm{ECE} = \\sum_i p_i(\\hat{p}_i - p_i)\n$$" in report.text
+    assert "| Method | Score |" in report.text
+    assert "```chart" not in report.text
 
     artifacts = await client.get(f"{API}/surveys/{survey_id}/artifacts")
     artifacts.raise_for_status()

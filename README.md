@@ -2,6 +2,13 @@
 
 AI 学术研究引擎——当前索引 arXiv 语料，提供段落级论文检索、多阶段重排与通用 Web Extract。
 
+> **Public repository note**: This repository contains source code and deployment
+> references only. It does not include SanchezCloud production data or credentials.
+> Keep `.env`, `.env.local`, `data/`, research outputs, and generated build artifacts
+> out of commits and release archives. Use your own service accounts and secrets for
+> local or production deployments; never copy production secret values into this
+> repository.
+
 前端产品原则以 [`PRODUCT.md`](PRODUCT.md) 为准，视觉与交互系统以 [`DESIGN.md`](DESIGN.md) 为准；新增界面前应先读取两者。
 本地端口、共享 PostgreSQL、启动 profile 和远程依赖规则以 [`DEVELOPMENT.md`](DEVELOPMENT.md) 为准。
 共享身份接入、数据库角色、升级和排障的权威规范见
@@ -40,7 +47,7 @@ scholight/
 ## 快速上手
 
 ```bash
-git clone git@github.com:EricSanchezok/scholight.git
+git clone https://github.com/EricSanchezok/scholight.git
 cd scholight
 cp .env.example .env.local   # 只填本地运行密码、应用 secret 和只读 Zilliz key
 chmod 600 .env.local
@@ -63,7 +70,18 @@ Web Extract 要求 Access Key，但不消耗搜索日额度。带目标请求头
 
 抽取 sidecar 仅记录静态/浏览器路径、稳定错误码、耗时、下载/输出字节数与缓存命中指标；目标 URL、Authorization、Cookie 和响应正文不会进入日志或指标。
 
----
+### Survey 研究报告
+
+Survey 生成结构化证据与可视化：报告包含 `$...$` / `$$...$$` 数学公式（前端 KaTeX 渲染）、
+GFM 数据对比表，以及由应用确定性渲染的本地数据图表（折线 / 柱状 / 分组柱状 / 散点 /
+饼图 / 流程图）。图表由模型声明为 fenced `chart` JSON 块、finalizer 用 matplotlib/graphviz
+渲染到 `figures/`，非法声明被丢弃并计数，绝不阻塞发布。
+图表 caption 会在正文中以可见说明呈现；未闭合的 `chart` 围栏会作为非法声明丢弃，避免原始标记泄漏。
+
+全文证据走应用侧抽取阶梯：优先抓取 arXiv HTML（LaTeXML 渲染，`<math alttext>` 保留原始
+LaTeX，失败回退 ar5iv）；仅在 HTML 抽取不可用时才对 agent 下载的 PDF 跑 pymupdf4llm，物化到 `extracts/` 供
+PaperCardWriter 读取；两端失败时回退现状 pdftotext 直读。卡片新增 `key_formulas` 与
+`key_results_table` 可选小节，公式与数字只能逐字来自读到的抽取产物。
 
 ## 配置
 

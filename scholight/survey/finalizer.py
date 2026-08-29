@@ -27,6 +27,7 @@ _SECTION_FILE = re.compile(r"^\d{2}_[A-Za-z0-9-]+\.md$")
 _OUTLINE_HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*$")
 _CARD_FIELD = re.compile(r"^-\s+(.+?):\s*(.*?)\s*$")
 _OUTLINE_JSON_MAX_BYTES = 1024 * 1024
+_CHART_MAX_PER_DOCUMENT = 8
 _INTERNAL_REPORT_MARKER = re.compile(
     r"(?:\brun metadata\b|\bPaperCard\b|\bpdftotext\b|"
     r"\b(?:this|current) environment\b.{0,60}(?:unavailable|missing|not installed)|"
@@ -53,6 +54,8 @@ class FinalizedSurvey:
     reference_count: int
     unverified_reference_count: int
     evidence_coverage_percent: float
+    chart_count: int = 0
+    chart_rejected_count: int = 0
 
 
 def _regular_file(
@@ -345,6 +348,22 @@ def finalize_survey(run_root: Path) -> FinalizedSurvey:
 
     sections = _section_files(run_root)
     section_texts = [_read_text(path, label=f"sections/{path.name}").strip() for path in sections]
+    from scholight.survey.charts import render_section_charts
+
+    chart_count = 0
+    chart_rejected_count = 0
+    rendered_sections: list[str] = []
+    for section_path, section_text in zip(sections, section_texts, strict=True):
+        rendered_text, rendered_n, rejected_n = render_section_charts(
+            section_text,
+            run_root / "figures",
+            prefix=section_path.stem,
+            render_budget=_CHART_MAX_PER_DOCUMENT - chart_count,
+        )
+        rendered_sections.append(rendered_text)
+        chart_count += rendered_n
+        chart_rejected_count += rejected_n
+    section_texts = rendered_sections
     reader_facing_text = [abstract, *section_texts]
     if any(_INTERNAL_REPORT_MARKER.search(text) is not None for text in reader_facing_text):
         raise SurveyFinalizationError(
@@ -405,6 +424,8 @@ def finalize_survey(run_root: Path) -> FinalizedSurvey:
         reference_count=reference_count,
         unverified_reference_count=unverified_reference_count,
         evidence_coverage_percent=evidence_coverage_percent,
+        chart_count=chart_count,
+        chart_rejected_count=chart_rejected_count,
     )
 
 

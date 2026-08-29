@@ -9,6 +9,8 @@ spawn_SectionExpander(items=[...], max_parallel=10). Preserve every item field
 exactly. After the call, list sections again and make at most one retry call
 containing only entries still missing. Never dispatch an existing section and
 do not run discovery, cards, ranking, research-map, judge, or image work.
+Repaired sections follow the current schema/section.md contract, including its
+formula, table, and chart-block rules.
 
 Return a short schema/handoff.md handoff with run_dir, status, planned count,
 already-present count, repaired count, and any entries still missing.

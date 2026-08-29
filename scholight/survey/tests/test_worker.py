@@ -2121,3 +2121,113 @@ async def test_survey_task_failure_does_not_escape_supervisor_boundary() -> None
             worker_id=uuid4(),
             artifact_store=AsyncMock(),
         )
+
+
+@pytest.mark.asyncio
+async def test_finalized_report_records_chart_diagnostics_and_metrics(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job_id = uuid4()
+    worker_id = uuid4()
+    _write_complete_workflow_artifacts(tmp_path)
+    chart = json.dumps(
+        {
+            "type": "line",
+            "title": "Evidence growth",
+            "x": [2023, 2024],
+            "series": [{"name": "papers", "y": [3.0, 7.0]}],
+        }
+    )
+    (tmp_path / "sections" / "01_introduction.md").write_text(
+        f"## 1. Introduction\n\nBody grounded in [2401.12345].\n\n```chart\n{chart}\n```\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(settings, "survey_job_timeout_seconds", 60)
+    monkeypatch.setattr(settings, "survey_mcp_jwt_secret", "s" * 32)
+    monkeypatch.setattr(settings, "deepseek_api_key", "deepseek")
+    monkeypatch.setattr(settings, "image_gen_api_key", "image")
+    process = _CompletedProcess()
+    with (
+        patch(
+            "scholight.survey.worker.asyncio.create_subprocess_exec",
+            new_callable=AsyncMock,
+            return_value=process,
+        ),
+        patch("scholight.survey.worker.write_stdin", new_callable=AsyncMock),
+        patch("scholight.survey.worker.update_survey_job_progress", new_callable=AsyncMock),
+        patch("scholight.survey.worker.emit_chart_metrics") as emit_charts,
+    ):
+        result = await execute_survey(
+            _job(job_id=job_id, worker_id=worker_id, status="running"),
+            tmp_path,
+        )
+
+    assert result.outcome == "succeeded"
+    emit_charts.assert_called_once_with(chart_count=1, chart_rejected_count=0)
+    trace = (tmp_path / "trajectory.jsonl").read_text(encoding="utf-8")
+    rendered_events = [
+        json.loads(line)
+        for line in trace.splitlines()
+        if json.loads(line).get("type") == "survey_charts_rendered"
+    ]
+    rejected_events = [
+        json.loads(line)
+        for line in trace.splitlines()
+        if json.loads(line).get("type") == "survey_chart_rejected"
+    ]
+    assert [event["count"] for event in rendered_events] == [1]
+    assert [event["count"] for event in rejected_events] == [0]
+
+
+@pytest.mark.asyncio
+async def test_repaired_report_records_chart_diagnostics_and_metrics(
+    tmp_path: Path,
+) -> None:
+    job = _job(job_id=uuid4(), worker_id=uuid4(), status="running")
+    _write_complete_workflow_artifacts(tmp_path)
+    now = datetime.now(UTC)
+    original = SurveyExecutionResult(
+        outcome="failed",
+        error_code="survey_contract_violation",
+        error_message="Survey generation produced incomplete required artifacts.",
+        started_at=now,
+        finished_at=now,
+        return_code=0,
+        termination_reason="contract_violation",
+    )
+    sections_plan = [
+        {
+            "run_dir": ".",
+            "n": "02",
+            "slug": "conclusion",
+            "title": "Conclusion",
+            "thesis": "Close the arc",
+            "card_ids": ["2401.12345"],
+            "transfer_angle": "",
+        }
+    ]
+    (tmp_path / "00_sections.json").write_text(json.dumps(sections_plan), encoding="utf-8")
+
+    with (
+        patch(
+            "scholight.survey.worker._run_repair_workflow",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
+        patch("scholight.survey.worker.emit_chart_metrics") as emit_charts,
+    ):
+        result = await _repair_survey_artifacts(
+            job,
+            tmp_path,
+            original=original,
+            control=ProcessControl(),
+        )
+
+    assert result is not None
+    assert result.outcome == "succeeded"
+    emit_charts.assert_called_once_with(chart_count=0, chart_rejected_count=0)
+    trace = (tmp_path / "trajectory.jsonl").read_text(encoding="utf-8")
+    event_types = {json.loads(line).get("type") for line in trace.splitlines()}
+    assert "survey_charts_rendered" in event_types
+    assert "survey_chart_rejected" in event_types

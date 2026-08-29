@@ -93,6 +93,11 @@ scholight/
 │   │   ├── metadata_sync.py 每日 OAI-PMH/API 元数据同步与任务入队
 │   │   ├── ingest_worker.py 单论文下载→解析→切块→Embedding→安全写入
 │   │   └── resources.py     确定版本资源下载与安全解包
+│   ├── survey/             Survey 研究报告子系统
+│   │   ├── extracts.py     arXiv HTML / PDF → Markdown 抽取阶梯物化器
+│   │   ├── charts.py       chart 声明块 → matplotlib/graphviz 确定性渲染
+│   │   ├── finalizer.py    sections → 08_survey.md 确定性组装
+│   │   └── worker.py       RCM 伴随编排（extract 物化 / 诊断 / 归档）
 │   ├── cli/                  Click CLI 子命令集
 │   │   ├── __init__.py       CLI 入口注册（lazy-import 子命令）
 │   │   ├── search.py         scholight search

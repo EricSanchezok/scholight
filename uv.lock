@@ -1305,6 +1305,15 @@ wheels = [
 ]
 
 [[package]]
+name = "graphviz"
+version = "0.21"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/f8/b3/3ac91e9be6b761a4b30d66ff165e54439dcd48b83f4e20d644867215f6ca/graphviz-0.21.tar.gz", hash = "sha256:20743e7183be82aaaa8ad6c93f8893c923bd6658a04c32ee115edb3c8a835f78", size = 200434, upload-time = "2025-06-15T09:35:05.824Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/91/4c/e0ce1ef95d4000ebc1c11801f9b944fa5910ecc15b5e351865763d8657f8/graphviz-0.21-py3-none-any.whl", hash = "sha256:54f33de9f4f911d7e84e4191749cac8cc5653f815b06738c54db9a15ab8b1e42", size = 47300, upload-time = "2025-06-15T09:35:04.433Z" },
+]
+
+[[package]]
 name = "greenlet"
 version = "3.5.4"
 source = { registry = "https://pypi.org/simple" }
@@ -3762,9 +3771,14 @@ ingest = [
 survey = [
     { name = "alibabacloud-credentials" },
     { name = "alibabacloud-dm20151123" },
+    { name = "beautifulsoup4" },
     { name = "boto3" },
     { name = "cryptography" },
+    { name = "graphviz" },
+    { name = "markdownify" },
+    { name = "matplotlib" },
     { name = "pyjwt" },
+    { name = "pymupdf4llm" },
 ]
 
 [package.dev-dependencies]
@@ -3779,6 +3793,7 @@ requires-dist = [
     { name = "alibabacloud-dm20151123", marker = "extra == 'survey'", specifier = ">=1.2.2" },
     { name = "asyncpg", specifier = ">=0.29" },
     { name = "bandit", extras = ["toml"], marker = "extra == 'dev'", specifier = ">=1.8" },
+    { name = "beautifulsoup4", marker = "extra == 'survey'", specifier = ">=4.12" },
     { name = "boto3", marker = "extra == 'api'", specifier = ">=1.35,<2" },
     { name = "boto3", marker = "extra == 'survey'", specifier = ">=1.35,<2" },
     { name = "click", specifier = ">=8" },
@@ -3786,12 +3801,15 @@ requires-dist = [
     { name = "cryptography", marker = "extra == 'survey'", specifier = ">=50.0.0" },
     { name = "fastapi", marker = "extra == 'api'", specifier = ">=0.115" },
     { name = "fastapi", marker = "extra == 'extract'", specifier = ">=0.115" },
+    { name = "graphviz", marker = "extra == 'survey'", specifier = ">=0.20" },
     { name = "grpcio", marker = "extra == 'api'", specifier = ">=1.60,<2" },
     { name = "grpcio", marker = "extra == 'ingest'", specifier = ">=1.60,<2" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "markdown", marker = "extra == 'api'", specifier = ">=3.8" },
     { name = "markdownify", marker = "extra == 'extract'", specifier = ">=0.13,<2" },
+    { name = "markdownify", marker = "extra == 'survey'", specifier = ">=0.13,<2" },
     { name = "matplotlib", marker = "extra == 'api'", specifier = ">=3.8" },
+    { name = "matplotlib", marker = "extra == 'survey'", specifier = ">=3.8" },
     { name = "mcp", marker = "extra == 'api'", specifier = ">=1.28,<2" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.14" },
     { name = "pip-audit", marker = "extra == 'dev'", specifier = ">=2.8" },
@@ -3805,6 +3823,7 @@ requires-dist = [
     { name = "pymilvus", marker = "extra == 'api'", specifier = ">=2.4" },
     { name = "pymilvus", marker = "extra == 'ingest'", specifier = ">=2.4" },
     { name = "pymupdf4llm", marker = "extra == 'ingest'", specifier = ">=1.27.2.3" },
+    { name = "pymupdf4llm", marker = "extra == 'survey'", specifier = ">=1.27.2.3" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.5" },
     { name = "sanchezcloud-identity", extras = ["aliyun", "avatar"], marker = "extra == 'api'", git = "https://github.com/EricSanchezok/sanchezcloud-identity.git?tag=v0.5.2" },

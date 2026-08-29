@@ -48,4 +48,42 @@ describe("SurveyMarkdown", () => {
     render(<SurveyMarkdown markdown={"# Report\n\nFinal paragraph.\n\n<!--M4-->"} />);
     expect(screen.queryByText("<!--M4-->")).not.toBeInTheDocument();
   });
+
+  it("renders inline math with KaTeX", () => {
+    const { container } = render(<SurveyMarkdown markdown={"Mass-energy: $E=mc^2$."} />);
+    expect(container.querySelector(".katex")).toBeInTheDocument();
+    expect(container.querySelector(".katex-display")).toBeNull();
+  });
+
+  it("renders block math as a KaTeX display block", () => {
+    const { container } = render(<SurveyMarkdown markdown={"$$\n\\int_0^1 x\\,dx\n$$"} />);
+    expect(container.querySelector(".katex-display .katex")).toBeInTheDocument();
+  });
+
+  it("renders GFM tables and math in the same document", () => {
+    const { container } = render(
+      <SurveyMarkdown
+        markdown={"| Metric | Formula |\n| --- | --- |\n| Entropy | $H = -\\sum p \\log p$ |"}
+      />,
+    );
+    expect(screen.getByRole("table").querySelector("thead")).toBeInTheDocument();
+    expect(container.querySelector(".katex")).toBeInTheDocument();
+  });
+
+  it("renders dollar-free content without KaTeX markup", () => {
+    const { container } = render(<SurveyMarkdown markdown={"# Report\n\nPlain paragraph."} />);
+    expect(screen.getByRole("heading", { name: "Report" })).toBeInTheDocument();
+    expect(container.querySelector(".katex")).toBeNull();
+  });
+
+  it("renders math in card previews", () => {
+    const { container } = render(<SurveyMarkdown markdown={"$E=mc^2$"} preview />);
+    expect(container.querySelector(".katex")).toBeInTheDocument();
+  });
+
+  it("does not treat dollar signs inside code spans as math", () => {
+    const { container } = render(<SurveyMarkdown markdown={"Run `$x$` in the shell."} />);
+    expect(container.querySelector("code")).toHaveTextContent("$x$");
+    expect(container.querySelector(".katex")).toBeNull();
+  });
 });

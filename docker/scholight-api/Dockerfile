@@ -144,7 +144,7 @@ FROM runtime-base AS survey
 
 USER root
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends poppler-utils \
+    && apt-get install -y --no-install-recommends graphviz poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=survey-builder /app/.venv/ /app/.venv/

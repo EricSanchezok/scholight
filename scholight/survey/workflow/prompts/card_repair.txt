@@ -10,7 +10,8 @@ JSON repair request from your purpose and follow exactly one mode:
   validated plan. Confirm every item exactly matches its plan entry, then
   dispatch exactly those items even though their existing cards are present.
   These targeted writers must overwrite only their own card and may reuse the
-  existing PDF. Do not dispatch any item absent from the request.
+  existing PDF or the app-materialized run_dir/extracts/ document.
+  Do not dispatch any item absent from the request.
 
 Use spawn_PaperCard(items=[...], max_parallel=20) and preserve every item field
 exactly. After the call, inspect each targeted card and require the exact
