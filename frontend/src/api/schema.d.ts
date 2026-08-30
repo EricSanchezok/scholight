@@ -631,7 +631,11 @@ export interface paths {
     };
     /**
      * Survey Report Pdf
-     * @description Render the archived final report as a branded PDF document.
+     * @description Stream the archived branded PDF, rendering it synchronously only as a fallback.
+     *
+     *     The worker pre-renders the PDF at archive time; older archives without one
+     *     fall back to an in-request render, which large reports cannot complete
+     *     within the gateway timeout, so the stream is preferred whenever present.
      */
     get: operations["survey_report_pdf_surveys__survey_id__report_pdf_get"];
     put?: never;
