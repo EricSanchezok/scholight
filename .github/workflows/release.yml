@@ -322,7 +322,7 @@ jobs:
             fi
           }
           check_task_size scholight-survey-draft 256 512
-          check_task_size scholight-survey 512 1024
+          check_task_size scholight-survey 1024 2048
           if [[ "$current_image" == "$desired_image" && "$resource_change" != true ]]; then
             exit 0
           fi

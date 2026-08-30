@@ -7,6 +7,7 @@ import json
 import os
 import re
 import tempfile
+import weakref
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -15,7 +16,7 @@ from typing import Any
 import httpx
 from bs4 import BeautifulSoup, Tag
 from bs4.element import NavigableString
-from markdownify import markdownify as _markdownify
+from markdownify import MarkdownConverter
 from tenacity import retry, retry_if_exception, stop_after_attempt
 
 from scholight.sources.arxiv import arxiv_artifact_stem
@@ -26,7 +27,7 @@ _ARXIV_HTML_URL = "https://arxiv.org/html/{paper_id}"
 _AR5IV_HTML_URL = "https://ar5iv.labs.arxiv.org/html/{paper_id}"
 _EXTRACT_MAX_CHARS = 400_000
 _FETCH_TIMEOUT_SECONDS = 30.0
-_MAX_CONCURRENT_EXTRACTS = 4
+_MAX_CONCURRENT_EXTRACTS = 2
 _DEFAULT_POLL_INTERVAL_SECONDS = 3.0
 
 _EventCallback = Callable[[str, dict[str, object]], None]
@@ -85,7 +86,11 @@ def html_to_markdown(html: str) -> str:
         table.replace_with(NavigableString(f"\n\n{gfm}\n\n" if gfm else ""))
     for image in soup.find_all("img"):
         image.decompose()
-    markdown = _markdownify(str(soup), heading_style="ATX")
+    converter = MarkdownConverter(heading_style="ATX")
+    markdown = converter.convert_soup(soup)
+    # Break the tree's reference cycles so the parsed DOM is freed immediately
+    # instead of waiting for the next GC cycle under memory pressure.
+    soup.decompose()
     for index, snippet in enumerate(math_snippets):
         markdown = markdown.replace(f"MATHSNIPPET{index}ENDMATH", snippet)
     return re.sub(r"\n{3,}", "\n\n", markdown).strip()
@@ -179,6 +184,26 @@ def _is_transient_http(exception: BaseException) -> bool:
     return is_transient(exception)
 
 
+_EXTRACT_SEMAPHORES: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore] = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def _extract_semaphore() -> asyncio.Semaphore:
+    """Return the worker-wide extract semaphore bound to the running loop.
+
+    All Survey jobs materializing in this worker process share one cap, so
+    concurrent jobs cannot multiply peak conversion memory.  The per-loop
+    cache keeps test sessions (one loop per test) isolated from each other.
+    """
+    loop = asyncio.get_running_loop()
+    semaphore = _EXTRACT_SEMAPHORES.get(loop)
+    if semaphore is None:
+        semaphore = asyncio.Semaphore(_MAX_CONCURRENT_EXTRACTS)
+        _EXTRACT_SEMAPHORES[loop] = semaphore
+    return semaphore
+
+
 @retry(reraise=True, stop=stop_after_attempt(2), retry=retry_if_exception(_is_transient_http))
 async def _get_html(client: httpx.AsyncClient, url: str) -> httpx.Response:
     response = await client.get(url)
@@ -265,7 +290,7 @@ async def run_extract_pass(
 ) -> None:
     """Run one materialization pass: card-plan HTML fetches plus new PDFs."""
     if semaphore is None:
-        semaphore = asyncio.Semaphore(_MAX_CONCURRENT_EXTRACTS)
+        semaphore = _extract_semaphore()
     tasks: list[asyncio.Task[None]] = []
 
     if not state.plan_consumed:
@@ -339,7 +364,7 @@ async def materialize_extracts(
             follow_redirects=True,
         )
     try:
-        semaphore = asyncio.Semaphore(_MAX_CONCURRENT_EXTRACTS)
+        semaphore = _extract_semaphore()
         while not stop.is_set():
             try:
                 await run_extract_pass(
