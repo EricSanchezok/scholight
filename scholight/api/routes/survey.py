@@ -19,7 +19,6 @@ from sanchezcloud_identity.models.user import UserRecord
 
 from scholight.api.deps import get_current_user
 from scholight.api.http_errors import http_error
-from scholight.api.report_pdf import ReportPdfError, render_report_pdf
 from scholight.config import get_survey_public_mode, settings
 from scholight.db.client import DBError
 from scholight.db.queries_survey import (
@@ -66,6 +65,7 @@ from scholight.survey.progress import (
     PublicProgressStage,
     present_progress,
 )
+from scholight.survey.report_pdf import ReportPdfError, render_report_pdf
 from scholight.survey.title import generate_survey_title
 
 router = APIRouter()
@@ -704,12 +704,38 @@ async def survey_report_pdf(
     survey_id: UUID,
     current_user: UserRecord = Depends(get_current_user),
 ) -> Response:
-    """Render the archived final report as a branded PDF document."""
+    """Stream the archived branded PDF, rendering it synchronously only as a fallback.
+
+    The worker pre-renders the PDF at archive time; older archives without one
+    fall back to an in-request render, which large reports cannot complete
+    within the gateway timeout, so the stream is preferred whenever present.
+    """
     _require_enabled()
     reference = await _artifact_reference(survey_id=survey_id, user_id=current_user.id)
     manifest_key = _require_archived(reference, report=True)
+    store = _artifact_store(reference)
     try:
-        markdown_bytes, images = await _artifact_store(reference).open_report_assets(
+        pdf_stream = await store.open_artifact(
+            manifest_key=manifest_key,
+            path="run/08_survey.pdf",
+        )
+    except SurveyArtifactNotFoundError:
+        pdf_stream = None
+    except (SurveyArtifactError, BotoCoreError, ClientError) as exc:
+        raise _artifact_unavailable() from exc
+    if pdf_stream is not None and pdf_stream.content_type == "application/pdf":
+        return StreamingResponse(
+            pdf_stream.chunks(),
+            media_type="application/pdf",
+            headers={
+                "Cache-Control": "private, no-store",
+                "ETag": f'"{pdf_stream.sha256}"',
+                "Content-Length": str(pdf_stream.size),
+                "Content-Disposition": (f'attachment; filename="scholight-survey-{survey_id}.pdf"'),
+            },
+        )
+    try:
+        markdown_bytes, images = await store.open_report_assets(
             manifest_key=manifest_key,
         )
     except SurveyArtifactNotFoundError as exc:

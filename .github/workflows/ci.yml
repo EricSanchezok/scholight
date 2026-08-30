@@ -247,7 +247,7 @@ jobs:
         run: |
           docker run --rm --entrypoint /app/.venv/bin/python scholight-api:ci - <<'PY'
           from datetime import date
-          from scholight.api.report_pdf import render_report_pdf
+          from scholight.survey.report_pdf import render_report_pdf
 
           pdf = render_report_pdf(
               title="CI boundary smoke",

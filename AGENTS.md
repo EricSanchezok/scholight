@@ -97,7 +97,8 @@ scholight/
 │   │   ├── extracts.py     arXiv HTML / PDF → Markdown 抽取阶梯物化器
 │   │   ├── charts.py       chart 声明块 → matplotlib/graphviz 确定性渲染
 │   │   ├── finalizer.py    sections → 08_survey.md 确定性组装
-│   │   └── worker.py       RCM 伴随编排（extract 物化 / 诊断 / 归档）
+│   │   ├── report_pdf.py   品牌报告 PDF 渲染（归档时预渲染进 manifest）
+│   │   └── worker.py       RCM 伴随编排（extract 物化 / 诊断 / 归档 + PDF 预渲染）
 │   ├── cli/                  Click CLI 子命令集
 │   │   ├── __init__.py       CLI 入口注册（lazy-import 子命令）
 │   │   ├── search.py         scholight search

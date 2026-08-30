@@ -23,6 +23,7 @@ from scholight.db.queries_survey import (
     claim_survey_job,
     defer_survey_archive,
     finish_survey_archive,
+    get_survey,
     heartbeat_survey_job,
     mark_survey_workspace_missing,
     recover_expired_survey_jobs,
@@ -62,6 +63,10 @@ from scholight.survey.process import (
     write_stdin,
 )
 from scholight.survey.progress import stage_for_component
+from scholight.survey.report_pdf import (
+    fallback_title as report_fallback_title,
+    render_report_pdf,
+)
 from scholight.survey.runtime import survey_environment
 from scholight.survey.workflow_resources import (
     WorkflowResourceError,
@@ -1739,6 +1744,68 @@ def _run_metadata(job: SurveyJob, result: SurveyExecutionResult | None) -> dict[
     }
 
 
+def _report_image_assets(run_root: Path) -> dict[str, bytes]:
+    """Collect run-relative image bytes referenced by the finalized report."""
+    assets: dict[str, bytes] = {}
+    for pattern in ("*.png", "*.jpg", "*.jpeg", "*.gif", "*.webp"):
+        for path in run_root.rglob(pattern):
+            if not path.is_file():
+                continue
+            relative = path.relative_to(run_root).as_posix()
+            assets[relative] = path.read_bytes()
+    return assets
+
+
+def _draft_heading_title(draft_markdown: str) -> str:
+    for line in draft_markdown.splitlines():
+        text = line.lstrip("#").strip()
+        if text:
+            return text[:96]
+    return "Untitled survey"
+
+
+async def _report_pdf_title(job: SurveyJob) -> str:
+    """Prefer the stored Survey title; fall back to the draft's first heading."""
+    try:
+        survey = await get_survey(survey_id=job.survey_id, user_id=job.user_id)
+    except DBError:
+        survey = None
+    if survey is not None:
+        return survey.title or report_fallback_title(survey.initial_request)
+    return _draft_heading_title(job.approved_draft)
+
+
+async def _prerender_report_pdf(*, job: SurveyJob, run_root: Path) -> None:
+    """Best-effort branded PDF render so downloads stream a finished file.
+
+    A production report renders for well over the API gateway's idle timeout,
+    so the PDF is produced once at archive time and shipped from the manifest.
+    Any failure only logs — archiving must never be blocked by PDF rendering.
+    """
+    report = run_root / "08_survey.md"
+    if not report.is_file():
+        return
+    try:
+        markdown_text = await asyncio.to_thread(report.read_text, "utf-8")
+        images = await asyncio.to_thread(_report_image_assets, run_root)
+        title = await _report_pdf_title(job)
+        pdf = await asyncio.to_thread(
+            render_report_pdf,
+            title=title,
+            markdown_text=markdown_text,
+            images=images,
+            generated_on=datetime.now(UTC).date(),
+        )
+        await asyncio.to_thread((run_root / "08_survey.pdf").write_bytes, pdf)
+        logger.info("survey_report_pdf_prerendered", job_id=str(job.id), size=len(pdf))
+    except Exception as exc:
+        logger.warning(
+            "survey_report_pdf_prerender_failed",
+            job_id=str(job.id),
+            error_type=type(exc).__name__,
+        )
+
+
 async def _archive(
     *,
     job: SurveyJob,
@@ -1750,6 +1817,7 @@ async def _archive(
     if not run_root.is_dir():
         job = await mark_survey_workspace_missing(job_id=job.id, worker_id=worker_id)
         run_root.mkdir(parents=True, exist_ok=True)
+    await _prerender_report_pdf(job=job, run_root=run_root)
     logger.info("survey_archive_started", job_id=str(job.id))
     try:
         archive = await artifact_store.archive_run(
