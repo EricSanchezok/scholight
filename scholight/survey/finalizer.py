@@ -349,6 +349,7 @@ def finalize_survey(run_root: Path) -> FinalizedSurvey:
     sections = _section_files(run_root)
     section_texts = [_read_text(path, label=f"sections/{path.name}").strip() for path in sections]
     from scholight.survey.charts import render_section_charts
+    from scholight.survey.math_format import normalize_report_math
 
     chart_count = 0
     chart_rejected_count = 0
@@ -397,7 +398,7 @@ def finalize_survey(run_root: Path) -> FinalizedSurvey:
             references,
         ]
     )
-    report = "\n\n".join(report_parts).rstrip() + "\n"
+    report = normalize_report_math("\n\n".join(report_parts).rstrip() + "\n")
 
     index_items = [
         "- [Final survey](08_survey.md)",
