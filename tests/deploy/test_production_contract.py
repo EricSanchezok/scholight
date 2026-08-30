@@ -176,7 +176,7 @@ def test_release_runs_candidate_survey_canaries_before_deployment() -> None:
     assert '.cpu = "512"' in canary
     assert '.memory = "1024"' in canary
     assert "check_task_size scholight-survey-draft 256 512" in canary
-    assert "check_task_size scholight-survey 512 1024" in canary
+    assert "check_task_size scholight-survey 1024 2048" in canary
     assert "--require-idle" in canary
 
 
@@ -258,8 +258,8 @@ def test_survey_capacity_contract_is_explicit_and_staged() -> None:
     assert 'Memory: "1024"' in extract_task
     assert 'Cpu: "256"' in draft_task
     assert 'Memory: "512"' in draft_task
-    assert 'Cpu: "512"' in full_task
-    assert 'Memory: "1024"' in full_task
+    assert 'Cpu: "1024"' in full_task
+    assert 'Memory: "2048"' in full_task
     assert "EphemeralStorage:" not in full_task
     assert 'SCHOLIGHT_SURVEY_JOB_WORKER_CONCURRENCY, Value: "2"' in full_task
     assert 'SCHOLIGHT_SURVEY_MCP_URL, Value: !Sub "https://${DomainName}/api/mcp"' in full_task

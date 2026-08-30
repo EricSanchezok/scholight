@@ -304,3 +304,46 @@ async def test_materializer_loop_stops_on_event(tmp_path: Path) -> None:
         await asyncio.wait_for(task, timeout=2.0)
 
     assert task.exception() is None
+
+
+@pytest.mark.asyncio
+async def test_concurrent_jobs_share_one_worker_wide_semaphore(tmp_path: Path) -> None:
+    job_a = tmp_path / "job-a"
+    job_b = tmp_path / "job-b"
+    _plan(job_a, ["2401.00001", "2401.00002", "2401.00003"])
+    _plan(job_b, ["2401.00004", "2401.00005", "2401.00006"])
+
+    in_flight = 0
+    peak = 0
+    lock = asyncio.Lock()
+
+    async def transport(request: httpx.Request) -> httpx.Response:
+        nonlocal in_flight, peak
+        async with lock:
+            in_flight += 1
+            peak = max(peak, in_flight)
+        await asyncio.sleep(0.05)
+        async with lock:
+            in_flight -= 1
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/html"},
+            text=_HTML_FIXTURE,
+        )
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(transport),
+        follow_redirects=True,
+    ) as client:
+        await asyncio.gather(
+            run_extract_pass(job_a, state=ExtractAttemptState(), client=client),
+            run_extract_pass(job_b, state=ExtractAttemptState(), client=client),
+        )
+
+    assert peak <= 2
+    for job_dir, stems in (
+        (job_a, ("2401.00001", "2401.00002", "2401.00003")),
+        (job_b, ("2401.00004", "2401.00005", "2401.00006")),
+    ):
+        for stem in stems:
+            assert (job_dir / "extracts" / f"{stem}.md").is_file()
