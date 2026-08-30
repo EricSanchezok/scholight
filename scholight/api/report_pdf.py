@@ -50,6 +50,9 @@ _STYLE_ATTRIBUTE_PATTERN = re.compile(
 _MATH_DISPLAY_PATTERN = re.compile(r"(?<!\\)\$\$(?P<formula>.+?)(?<!\\)\$\$", re.DOTALL)
 _MATH_INLINE_PATTERN = re.compile(r"(?<!\\)\$(?!\$)(?P<formula>[^$\n]+?)(?<!\\)\$")
 _MATH_MAX_CHARS = 2_000
+_FIGURE_CAPTION_PATTERN = re.compile(
+    r"(<p><img(?![^>]*class=\"math-)[^>]*>)</p>\s*<p><em>([^<]+)</em></p>",
+)
 
 # Print typography mirrors the web report (DESIGN.md): Literata carries the
 # wordmark and headings, Manrope carries body copy, and the single accent is
@@ -364,11 +367,17 @@ def build_report_html(
     generated_on: date,
 ) -> str:
     """Assemble the self-contained print HTML document for one Survey report."""
-    cleaned_markdown = _HTML_COMMENT_PATTERN.sub("", markdown_text)
+    from scholight.survey.math_format import normalize_report_math
+
+    cleaned_markdown = normalize_report_math(_HTML_COMMENT_PATTERN.sub("", markdown_text))
     body_html = markdown_lib.markdown(
         _render_math_markdown(cleaned_markdown),
         extensions=["tables", "fenced_code"],
         output_format="html5",
+    )
+    body_html = _FIGURE_CAPTION_PATTERN.sub(
+        lambda match: f'{match.group(1)}<p class="chart-caption">{match.group(2)}</p>',
+        body_html,
     )
     body_html = _embed_images(body_html, images)
     body_html = _sanitize_body_html(body_html)

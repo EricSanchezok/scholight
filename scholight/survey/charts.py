@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import html
 import json
 import math
 import os
@@ -391,6 +390,21 @@ def _alt_text(spec: _ChartSpec) -> str:
     return label.replace("[", "\\[").replace("]", "\\]").replace("(", "\\(").replace(")", "\\)")
 
 
+def _caption_text(spec: _ChartSpec) -> str:
+    label = spec.get("caption")
+    if not isinstance(label, str):
+        return ""
+    return (
+        label.replace("\\", "\\\\")
+        .replace("*", "\\*")
+        .replace("_", "\\_")
+        .replace("[", "\\[")
+        .replace("]", "\\]")
+        .replace("(", "\\(")
+        .replace(")", "\\)")
+    )
+
+
 def render_section_charts(
     section_text: str,
     figures_dir: Path,
@@ -421,11 +435,7 @@ def render_section_charts(
             rejected_count += 1
             continue
         caption = spec.get("caption")
-        visible_caption = (
-            f'\n\n<p class="chart-caption">{html.escape(caption)}</p>'
-            if isinstance(caption, str)
-            else ""
-        )
+        visible_caption = f"\n\n*{_caption_text(spec)}*" if isinstance(caption, str) else ""
         replacements.append(
             (start, end, f"\n\n![{_alt_text(spec)}](figures/{filename}){visible_caption}\n\n")
         )
