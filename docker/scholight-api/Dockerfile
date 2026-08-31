@@ -144,7 +144,9 @@ FROM runtime-base AS survey
 
 USER root
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends graphviz poppler-utils \
+    && apt-get install -y --no-install-recommends \
+        graphviz poppler-utils libpango-1.0-0 libpangoft2-1.0-0 \
+        fonts-dejavu-core fonts-noto-cjk \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=survey-builder /app/.venv/ /app/.venv/

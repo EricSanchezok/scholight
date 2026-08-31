@@ -3775,10 +3775,12 @@ survey = [
     { name = "boto3" },
     { name = "cryptography" },
     { name = "graphviz" },
+    { name = "markdown" },
     { name = "markdownify" },
     { name = "matplotlib" },
     { name = "pyjwt" },
     { name = "pymupdf4llm" },
+    { name = "weasyprint" },
 ]
 
 [package.dev-dependencies]
@@ -3806,6 +3808,7 @@ requires-dist = [
     { name = "grpcio", marker = "extra == 'ingest'", specifier = ">=1.60,<2" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "markdown", marker = "extra == 'api'", specifier = ">=3.8" },
+    { name = "markdown", marker = "extra == 'survey'", specifier = ">=3.8" },
     { name = "markdownify", marker = "extra == 'extract'", specifier = ">=0.13,<2" },
     { name = "markdownify", marker = "extra == 'survey'", specifier = ">=0.13,<2" },
     { name = "matplotlib", marker = "extra == 'api'", specifier = ">=3.8" },
@@ -3834,6 +3837,7 @@ requires-dist = [
     { name = "uvicorn", extras = ["standard"], marker = "extra == 'extract'", specifier = ">=0.30" },
     { name = "vulture", marker = "extra == 'dev'", specifier = ">=2.14" },
     { name = "weasyprint", marker = "extra == 'api'", specifier = ">=62" },
+    { name = "weasyprint", marker = "extra == 'survey'", specifier = ">=62" },
 ]
 provides-extras = ["api", "extract", "ingest", "survey", "dev"]
 

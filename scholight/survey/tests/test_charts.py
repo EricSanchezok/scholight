@@ -346,7 +346,8 @@ def test_render_section_charts_escapes_markdown_characters_in_captions(
 
     assert (rendered, rejected) == (1, 0)
     assert "![Share \\(2020\\) \\[all\\]](figures/esc-1.png)" in new_text
-    assert '<p class="chart-caption">Share (2020) [all]</p>' in new_text
+    assert "*Share \\(2020\\) \\[all\\]*" in new_text
+    assert "chart-caption" not in new_text
 
 
 def test_render_section_charts_keeps_surrounding_text_when_all_blocks_rejected(

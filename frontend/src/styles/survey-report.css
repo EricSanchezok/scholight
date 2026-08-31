@@ -203,9 +203,20 @@
   margin: 30px auto 10px;
 }
 
-.surveyMarkdownCompact {
-  font-size: 14px;
-  line-height: 22px;
+.surveyMarkdown .katex {
+  line-height: normal;
+}
+
+.surveyMarkdown .katex-display {
+  margin: 1.5em 0;
+}
+
+.surveyMarkdown .katex-display > .katex {
+  white-space: normal;
+}
+
+.surveyMarkdownCompact .katex-display {
+  margin: 1em 0;
 }
 
 .surveyMarkdownCompact h1,

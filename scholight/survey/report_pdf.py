@@ -50,6 +50,11 @@ _STYLE_ATTRIBUTE_PATTERN = re.compile(
 _MATH_DISPLAY_PATTERN = re.compile(r"(?<!\\)\$\$(?P<formula>.+?)(?<!\\)\$\$", re.DOTALL)
 _MATH_INLINE_PATTERN = re.compile(r"(?<!\\)\$(?!\$)(?P<formula>[^$\n]+?)(?<!\\)\$")
 _MATH_MAX_CHARS = 2_000
+_MATH_RENDER_DPI = 180
+_CSS_DPI = 96
+_FIGURE_CAPTION_PATTERN = re.compile(
+    r"(<p><img(?![^>]*class=\"math-)[^>]*>)</p>\s*<p><em>([^<]+)</em></p>",
+)
 
 # Print typography mirrors the web report (DESIGN.md): Literata carries the
 # wordmark and headings, Manrope carries body copy, and the single accent is
@@ -84,7 +89,7 @@ _PRINT_CSS = """
 }
 html { font-size: 10pt; }
 body {
-  font-family: 'Manrope';
+  font-family: 'Manrope', 'Noto Sans CJK SC', sans-serif;
   font-size: 10pt;
   line-height: 1.7;
   color: #2E2F36;
@@ -114,7 +119,7 @@ body {
   margin: 22mm 0 0;
 }
 .cover-title {
-  font-family: 'Literata';
+  font-family: 'Literata', 'Noto Serif CJK SC', serif;
   font-weight: 600;
   font-size: 26pt;
   line-height: 1.25;
@@ -129,7 +134,7 @@ body {
   margin-top: 6mm;
 }
 .report h1, .report h2, .report h3, .report h4 {
-  font-family: 'Literata';
+  font-family: 'Literata', 'Noto Serif CJK SC', serif;
   font-weight: 600;
   color: #0E0F14;
   line-height: 1.3;
@@ -198,15 +203,15 @@ body {
 }
 .report img.math-inline {
   display: inline;
-  width: auto;
-  max-height: 1.6em;
-  vertical-align: -0.3em;
+  height: auto;
+  vertical-align: -0.35em;
   margin: 0 0.12em;
 }
 .report img.math-display {
-  width: auto;
   max-width: 100%;
+  height: auto;
   margin: 4mm auto;
+  page-break-inside: avoid;
 }
 .report .math-fallback {
   font-family: 'DejaVu Sans Mono', monospace;
@@ -300,8 +305,24 @@ def _sanitize_body_html(body_html: str) -> str:
     return _STYLE_ATTRIBUTE_PATTERN.sub("", sanitized)
 
 
+def _png_dimensions(payload: BytesIO) -> tuple[int, int]:
+    """Read pixel dimensions straight from the PNG IHDR chunk."""
+    header = payload.getvalue()[:24]
+    if len(header) < 24 or header[12:16] != b"IHDR":
+        raise ValueError("rendered formula is not a valid PNG")
+    return (
+        int.from_bytes(header[16:20], "big"),
+        int.from_bytes(header[20:24], "big"),
+    )
+
+
 def _render_math_formula(formula: str, *, display: bool) -> str:
-    """Render a bounded LaTeX formula to a self-contained PNG or safe text."""
+    """Render a bounded LaTeX formula to a self-contained PNG or safe text.
+
+    The PNG is rasterized above screen resolution for print sharpness, and
+    explicit width/height attributes rescale it to CSS pixels so WeasyPrint
+    uses the intended size instead of the raw high-dpi pixel dimensions.
+    """
     normalized = formula.strip()
     delimiter = "$$" if display else "$"
     fallback = escape(f"{delimiter}{normalized}{delimiter}")
@@ -311,13 +332,17 @@ def _render_math_formula(formula: str, *, display: bool) -> str:
         from matplotlib.mathtext import math_to_image
 
         output = BytesIO()
-        math_to_image(f"${normalized}$", output, format="png", dpi=180)
+        math_to_image(f"${normalized}$", output, format="png", dpi=_MATH_RENDER_DPI)
+        pixel_width, pixel_height = _png_dimensions(output)
     except Exception:
         return f'<span class="math-fallback">{fallback}</span>'
     encoded = base64.b64encode(output.getvalue()).decode("ascii")
+    scale = _CSS_DPI / _MATH_RENDER_DPI
     class_name = "math-display" if display else "math-inline"
     return (
         f'<img class="{class_name}" src="data:image/png;base64,{encoded}" '
+        f'width="{max(1, round(pixel_width * scale))}" '
+        f'height="{max(1, round(pixel_height * scale))}" '
         f'alt="{escape(normalized)}" />'
     )
 
@@ -364,11 +389,17 @@ def build_report_html(
     generated_on: date,
 ) -> str:
     """Assemble the self-contained print HTML document for one Survey report."""
-    cleaned_markdown = _HTML_COMMENT_PATTERN.sub("", markdown_text)
+    from scholight.survey.math_format import normalize_report_math
+
+    cleaned_markdown = normalize_report_math(_HTML_COMMENT_PATTERN.sub("", markdown_text))
     body_html = markdown_lib.markdown(
         _render_math_markdown(cleaned_markdown),
         extensions=["tables", "fenced_code"],
         output_format="html5",
+    )
+    body_html = _FIGURE_CAPTION_PATTERN.sub(
+        lambda match: f'{match.group(1)}<p class="chart-caption">{match.group(2)}</p>',
+        body_html,
     )
     body_html = _embed_images(body_html, images)
     body_html = _sanitize_body_html(body_html)
@@ -395,8 +426,11 @@ def build_report_html(
 
 
 def _load_weasyprint() -> Any:
+    import logging
+
     import weasyprint
 
+    logging.getLogger("fontTools").setLevel(logging.ERROR)
     return weasyprint
 
 
@@ -447,5 +481,14 @@ def render_report_pdf(
 __all__ = [
     "ReportPdfError",
     "build_report_html",
+    "fallback_title",
     "render_report_pdf",
 ]
+
+
+def fallback_title(initial_request: str) -> str:
+    """Derive a short display title from a request's first line."""
+    first_line = next((line.strip() for line in initial_request.splitlines() if line.strip()), "")
+    if len(first_line) <= 96:
+        return first_line or "Untitled survey"
+    return f"{first_line[:95].rstrip()}…"

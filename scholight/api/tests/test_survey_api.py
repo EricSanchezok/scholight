@@ -14,7 +14,6 @@ from fastapi import FastAPI
 from sanchezcloud_identity.models.user import UserRecord
 
 from scholight.api.deps import get_current_user
-from scholight.api.report_pdf import ReportPdfError
 from scholight.api.routes.survey import _artifact_store
 from scholight.config import settings
 from scholight.db.queries_survey import (
@@ -31,6 +30,7 @@ from scholight.db.queries_survey_views import (
     SurveySummaryPage,
 )
 from scholight.survey.artifacts import SurveyArtifactNotFoundError, SurveyArtifactStream
+from scholight.survey.report_pdf import ReportPdfError
 
 pytestmark = pytest.mark.asyncio
 
@@ -898,6 +898,62 @@ async def test_report_pdf_returns_branded_pdf_for_owner(
         images={},
         generated_on=date(2026, 8, 29),
     )
+
+
+@pytest.mark.asyncio
+async def test_report_pdf_streams_prerendered_archive_without_rendering(
+    api_app: FastAPI,
+    api_client: httpx.AsyncClient,
+    active_user: UserRecord,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _authenticate(api_app, active_user)
+    monkeypatch.setattr(settings, "survey_runtime_enabled", True)
+    monkeypatch.setattr(settings, "survey_public_mode", "all")
+    survey_id = uuid4()
+    job_id = uuid4()
+    storage_prefix = f"surveys/v1/{active_user.id}/{job_id}"
+    reference = SurveyArtifactReference(
+        survey_id=survey_id,
+        user_id=active_user.id,
+        job_id=job_id,
+        survey_status="succeeded",
+        job_status="finished",
+        terminal_outcome="succeeded",
+        storage_bucket="private-bucket",
+        storage_prefix=storage_prefix,
+        manifest_key=f"{storage_prefix}/manifest.json",
+    )
+    stream = SurveyArtifactStream(
+        path="run/08_survey.pdf",
+        size=13,
+        sha256="b" * 64,
+        content_type="application/pdf",
+        _body=io.BytesIO(b"%PDF-prerender"),
+    )
+    store = AsyncMock()
+    store.open_artifact.return_value = stream
+    with (
+        patch(
+            "scholight.api.routes.survey.get_survey_artifact_reference",
+            new_callable=AsyncMock,
+            return_value=reference,
+        ),
+        patch("scholight.api.routes.survey._artifact_store", return_value=store),
+        patch("scholight.api.routes.survey.render_report_pdf") as render,
+    ):
+        response = await api_client.get(f"/surveys/{survey_id}/report.pdf")
+
+    assert response.status_code == 200
+    assert response.content == b"%PDF-prerender"
+    assert response.headers["content-type"] == "application/pdf"
+    assert response.headers["etag"] == f'"{"b" * 64}"'
+    assert response.headers["content-length"] == "13"
+    store.open_artifact.assert_awaited_once_with(
+        manifest_key=f"{storage_prefix}/manifest.json",
+        path="run/08_survey.pdf",
+    )
+    render.assert_not_called()
 
 
 @pytest.mark.asyncio

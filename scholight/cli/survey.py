@@ -118,6 +118,17 @@ def _verify_extract_runtime() -> dict[str, object]:
     }
 
 
+def _verify_report_pdf_runtime() -> dict[str, object]:
+    """Require the branded PDF render stack (WeasyPrint native backend)."""
+    import markdown as markdown_lib
+    import weasyprint
+
+    return {
+        "markdown": markdown_lib.__version__,
+        "weasyprint": weasyprint.__version__,
+    }
+
+
 def _model_canary_workflow() -> Path:
     return Path(__file__).parents[1] / "survey" / "workflow" / "rcm" / "model_canary.rcm"
 
@@ -936,6 +947,7 @@ def smoke(json_output: bool) -> None:
         pdftotext = await asyncio.to_thread(_verify_full_text_runtime)
         chart_runtime = await asyncio.to_thread(_verify_chart_runtime)
         extract_runtime = await asyncio.to_thread(_verify_extract_runtime)
+        report_pdf_runtime = await asyncio.to_thread(_verify_report_pdf_runtime)
         await asyncio.to_thread(_verify_diagnostic_workspace, Path(settings.data_root))
         await create_pool()
         try:
@@ -954,6 +966,7 @@ def smoke(json_output: bool) -> None:
                 "full_text_runtime": Path(pdftotext).name,
                 "chart_runtime": chart_runtime,
                 "extract_runtime": extract_runtime,
+                "report_pdf_runtime": report_pdf_runtime,
                 "runtime_schema": "compatible",
                 "cleanup_dead": cleanup.dead,
                 "diagnostics_writable": True,
