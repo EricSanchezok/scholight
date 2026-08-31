@@ -4,7 +4,8 @@ import { MemoryRouter, useLocation } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { authApi } from "../api/domain";
-import { CheckEmailPage, RegisterPage } from "./AuthPages";
+import { ApiError } from "../api/errors";
+import { authRequestErrorMessage, CheckEmailPage, RegisterPage } from "./AuthPages";
 
 vi.mock("../api/domain", () => ({
   authApi: {
@@ -22,6 +23,15 @@ describe("registration boundary", () => {
   beforeEach(() => {
     vi.mocked(authApi.register).mockReset();
     vi.mocked(authApi.resendVerification).mockReset();
+  });
+
+  it("explains when the local API cannot be reached", () => {
+    expect(authRequestErrorMessage(new TypeError("Failed to fetch"), "fallback")).toContain(
+      "local service",
+    );
+    expect(authRequestErrorMessage(new ApiError(503, "Service unavailable"), "fallback")).toBe(
+      "Service unavailable",
+    );
   });
 
   it("always continues successful registration to the neutral check-email page", async () => {

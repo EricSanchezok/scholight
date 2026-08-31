@@ -78,6 +78,14 @@ function FormMessage({ error, success }: { error?: string; success?: string }) {
   return null;
 }
 
+export function authRequestErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof ApiError) return error.message;
+  if (error instanceof TypeError) {
+    return "Unable to reach Scholight. Check the local service and try again.";
+  }
+  return fallback;
+}
+
 export function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -94,9 +102,7 @@ export function LoginPage() {
       await login(values);
       navigate(safeReturnTo(params.get("returnTo")), { replace: true });
     } catch (error) {
-      setServerError(
-        error instanceof ApiError ? error.message : "Unable to sign in. Please try again.",
-      );
+      setServerError(authRequestErrorMessage(error, "Unable to sign in. Please try again."));
     }
   });
   return (
@@ -155,9 +161,7 @@ export function RegisterPage() {
       navigate(withQuery(routes.checkEmail.path, { email: values.email }));
     } catch (error) {
       setServerError(
-        error instanceof ApiError
-          ? error.message
-          : "Unable to create your account. Please try again.",
+        authRequestErrorMessage(error, "Unable to create your account. Please try again."),
       );
     }
   });
