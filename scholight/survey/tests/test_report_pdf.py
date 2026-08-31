@@ -253,3 +253,37 @@ def test_single_line_display_math_still_renders_as_display() -> None:
 
     assert 'class="math-display"' in html
     assert 'class="math-fallback"' not in html
+
+
+def test_math_images_carry_dpi_corrected_pixel_dimensions() -> None:
+    html = build_report_html(
+        title="Sizing report",
+        markdown_text="Value $E = mc^2$ and display:\n\n$$\n\\mathcal{L}(\\theta)\n$$\n",
+        images={},
+        generated_on=GENERATED_ON,
+    )
+
+    import re
+
+    tags = re.findall(r'<img class="math-(?:inline|display)"[^>]*>', html)
+    assert tags, "expected rendered math images"
+    for tag in tags:
+        match = re.search(r'width="(\d+)" height="(\d+)"', tag)
+        assert match is not None, f"missing CSS-pixel dimensions: {tag[:120]}"
+        width, height = int(match.group(1)), int(match.group(2))
+        # dpi-corrected: a 10pt-ish inline glyph must stay far below its raw
+        # 180-dpi pixel height (which would be roughly 2x larger)
+        assert 1 <= height <= 40, f"unexpected inline height {height}"
+        assert width >= 1
+
+
+def test_print_css_declares_cjk_font_fallbacks() -> None:
+    html = build_report_html(
+        title="中文标题回退",
+        markdown_text="正文包含中文段落。\n",
+        images={},
+        generated_on=GENERATED_ON,
+    )
+
+    assert "'Noto Sans CJK SC', sans-serif" in html
+    assert "'Noto Serif CJK SC', serif" in html
