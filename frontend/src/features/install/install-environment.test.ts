@@ -37,4 +37,14 @@ describe("install environment", () => {
       supported: false,
     });
   });
+
+  it("recognizes iPadOS desktop-mode Safari from touch support", () => {
+    expect(
+      detectInstallEnvironment(
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) Version/17.5 Safari",
+        false,
+        5,
+      ),
+    ).toMatchObject({ kind: "ios", mobile: true, supported: true });
+  });
 });
