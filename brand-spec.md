@@ -38,8 +38,9 @@ derivative. Never draw a separate small-size expression, pose, crop, or silhouet
 ## Shared family language
 
 - Square raster artwork with a strong circular badge and a silhouette that reads
-  at small sizes. The area outside the circular badge is transparent so the same
-  mark can sit cleanly on the warm canvas at any responsive size.
+  at small sizes. On product pages the area outside the authored ivory portrait is
+  transparent. Launcher assets add one concentric near-black disc behind a scaled
+  copy of that portrait, while standard icon corners remain transparent.
 - Quiet near-black, charcoal, ivory, and soft-gray base palette.
 - Broad tonal planes and a restrained editorial illustration; avoid generic flat
   vector clip-art, fine fur texture, and noisy photorealism.
@@ -71,6 +72,8 @@ device.
   the product icon.
 - No tiny details that disappear below approximately 32px. At 16px the silhouette
   and ivory face must remain distinguishable.
+- No CSS border, gray outline, or second concentric keyline around the portrait or
+  launcher badge. The single near-black launcher ring is the only dark enclosure.
 
 ## Generated asset pipeline
 
@@ -82,12 +85,17 @@ npm run brand:check
 ```
 
 It validates the master hash and dimensions, then generates favicon ICO entries
-(16/32/48), Apple touch icon (180), web/PWA icons (192/512), an opaque maskable
-512px icon, 64/128 UI portraits, a 1200 × 630 social image, and 64/128/256/512/1024
-native handoff files. Generated output must not be edited directly.
+(16/32/48), Apple touch icon (180), launcher-badged web/PWA icons (192/512), an
+opaque maskable 512px icon, 64/128/256/512 unframed UI portraits, a 1200 × 630
+social image, and 64/128/256/512/1024 native handoff files. The standard launcher
+badge uses one near-black outer disc and the same master scaled concentrically;
+the maskable export applies the same geometry inside its safe area. Generated
+output must not be edited directly.
 
 The standard site header keeps the Scholight wordmark as its primary identity. The
 lynx is used in the desktop home hero, authentication, documentation lead-in,
 empty/error states, PWA/browser chrome, and social previews; it is not repeated
-beside every paper result or account row. Below 768px the home hero prioritizes the
-search task and hides the artwork instead of introducing a separate mobile crop.
+beside every paper result or account row. In-page product marks and social previews
+use the unframed portrait; only launcher and browser-chrome assets use the dark
+badge. Below 768px the home hero prioritizes the search task and hides the artwork
+instead of introducing a separate mobile crop.

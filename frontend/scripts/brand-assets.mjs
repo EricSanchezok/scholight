@@ -59,6 +59,12 @@ const pngOptions = {
   dither: 1,
 };
 
+const launcherInk = "#0E0F14";
+const launcherCanvas = "#FBFAF5";
+// A narrow concentric ring matches Scholens at launcher size without framing in-page artwork.
+const launcherDiscRatio = 31 / 32;
+const launcherArtworkRatio = 119 / 128;
+
 function portrait(size) {
   return sharp(master)
     .resize(size, size, { fit: "cover", position: "centre" })
@@ -67,11 +73,31 @@ function portrait(size) {
     .toBuffer();
 }
 
-function faviconFrame(size) {
-  return sharp(master)
-    .resize(size, size, { fit: "cover", position: "centre" })
-    .toColourspace("srgb")
-    .ensureAlpha()
+async function launcherBadge(size) {
+  const discSize = Math.round(size * launcherDiscRatio);
+  const artworkSize = Math.round(size * launcherArtworkRatio);
+  const discInset = Math.round((size - discSize) / 2);
+  const artworkInset = Math.round((size - artworkSize) / 2);
+  const artwork = await portrait(artworkSize);
+  const radius = (discSize - 1) / 2;
+  const disc = Buffer.from(
+    `<svg width="${discSize}" height="${discSize}" viewBox="0 0 ${discSize} ${discSize}">
+      <circle cx="${radius}" cy="${radius}" r="${radius}" fill="${launcherInk}" />
+    </svg>`,
+  );
+
+  return sharp({
+    create: {
+      width: size,
+      height: size,
+      channels: 4,
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    },
+  })
+    .composite([
+      { input: disc, left: discInset, top: discInset },
+      { input: artwork, left: artworkInset, top: artworkInset },
+    ])
     .png(pngOptions)
     .toBuffer();
 }
@@ -100,18 +126,18 @@ function createIco(entries) {
   return Buffer.concat([header, directory, ...entries.map(({ image }) => image)]);
 }
 
-async function opaquePortrait(size, artworkSize = size) {
-  const artwork = await portrait(artworkSize);
-  const inset = Math.round((size - artworkSize) / 2);
+async function opaqueLauncherBadge(size, badgeSize = size) {
+  const badge = await launcherBadge(badgeSize);
+  const inset = Math.round((size - badgeSize) / 2);
   return sharp({
     create: {
       width: size,
       height: size,
       channels: 4,
-      background: "#FBFAF5",
+      background: launcherCanvas,
     },
   })
-    .composite([{ input: artwork, left: inset, top: inset }])
+    .composite([{ input: badge, left: inset, top: inset }])
     .png(pngOptions)
     .toBuffer();
 }
@@ -137,18 +163,20 @@ async function socialCard() {
 
 const faviconEntries = await Promise.all(
   [16, 32, 48].map(async (size) => ({
-    image: await faviconFrame(size),
+    image: await launcherBadge(size),
     size,
   })),
 );
 
 const portrait64 = await portrait(64);
 const portrait128 = await portrait(128);
-const touchIcon = await opaquePortrait(180);
-const portrait192 = await portrait(192);
 const portrait256 = await portrait(256);
 const portrait512 = await portrait(512);
 const portrait1024 = await portrait(1024);
+const touchIcon = await opaqueLauncherBadge(180);
+const launcher192 = await launcherBadge(192);
+const launcher512 = await launcherBadge(512);
+const maskableLauncher512 = await opaqueLauncherBadge(512, 410);
 const shareImage = await socialCard();
 
 const assets = new Map([
@@ -156,9 +184,11 @@ const assets = new Map([
   ["public/apple-touch-icon.png", touchIcon],
   ["public/brand/scholight-lynx-portrait-64.png", portrait64],
   ["public/brand/scholight-lynx-portrait-128.png", portrait128],
-  ["public/brand/icons/icon-192.png", portrait192],
-  ["public/brand/icons/icon-512.png", portrait512],
-  ["public/brand/icons/icon-maskable-512.png", await opaquePortrait(512, 410)],
+  ["public/brand/scholight-lynx-portrait-256.png", portrait256],
+  ["public/brand/scholight-lynx-portrait-512.png", portrait512],
+  ["public/brand/icons/icon-192.png", launcher192],
+  ["public/brand/icons/icon-512.png", launcher512],
+  ["public/brand/icons/icon-maskable-512.png", maskableLauncher512],
   ["public/brand/social/og-image.png", shareImage],
   ["brand/exports/native/scholight-lynx-64.png", portrait64],
   ["brand/exports/native/scholight-lynx-128.png", portrait128],
@@ -171,6 +201,8 @@ const rasterDimensions = new Map([
   ["public/apple-touch-icon.png", [180, 180]],
   ["public/brand/scholight-lynx-portrait-64.png", [64, 64]],
   ["public/brand/scholight-lynx-portrait-128.png", [128, 128]],
+  ["public/brand/scholight-lynx-portrait-256.png", [256, 256]],
+  ["public/brand/scholight-lynx-portrait-512.png", [512, 512]],
   ["public/brand/icons/icon-192.png", [192, 192]],
   ["public/brand/icons/icon-512.png", [512, 512]],
   ["public/brand/icons/icon-maskable-512.png", [512, 512]],
@@ -202,6 +234,29 @@ for (const relativePath of [
   const alpha = stats.channels[3];
   if (alpha && alpha.min !== 255) {
     throw new Error(`${relativePath} must be fully opaque.`);
+  }
+}
+
+async function readPixel(buffer, left, top) {
+  return sharp(buffer).ensureAlpha().extract({ left, top, width: 1, height: 1 }).raw().toBuffer();
+}
+
+for (const [relativePath, left, top] of [
+  ["public/apple-touch-icon.png", 90, 6],
+  ["public/brand/icons/icon-192.png", 96, 8],
+  ["public/brand/icons/icon-512.png", 256, 20],
+  ["public/brand/icons/icon-maskable-512.png", 256, 64],
+]) {
+  const pixel = await readPixel(assets.get(relativePath), left, top);
+  if (pixel[3] !== 255 || Math.max(pixel[0], pixel[1], pixel[2]) > 32) {
+    throw new Error(`${relativePath} must preserve the single near-black launcher ring.`);
+  }
+}
+
+for (const relativePath of ["public/brand/icons/icon-192.png", "public/brand/icons/icon-512.png"]) {
+  const pixel = await readPixel(assets.get(relativePath), 0, 0);
+  if (pixel[3] !== 0) {
+    throw new Error(`${relativePath} must keep transparent corners outside its round badge.`);
   }
 }
 

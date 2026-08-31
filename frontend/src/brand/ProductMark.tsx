@@ -11,8 +11,9 @@ export type ProductMarkProps = {
 };
 
 /**
- * The one Scholight product artwork. Every responsive size is a deterministic
- * raster export of the same lynx master; this component never swaps artwork.
+ * The unframed Scholight product artwork. Every responsive size is a
+ * deterministic raster export of the same lynx master; launcher framing stays
+ * isolated to PWA, browser-chrome, and mobile installation assets.
  */
 export function ProductMark({
   size = 128,
@@ -25,7 +26,7 @@ export function ProductMark({
   return (
     <img
       className={["productMark", className].filter(Boolean).join(" ")}
-      src={brandAssets.icon512}
+      src={brandAssets.portrait512}
       srcSet={brandMarkSources}
       sizes={typeof size === "number" ? `${size}px` : size}
       width={typeof size === "number" ? size : undefined}
