@@ -710,6 +710,9 @@ def test_python_images_have_explicit_minimal_runtime_targets() -> None:
     assert "/opt/scholight-package" not in dockerfile
     assert dockerfile.index("poppler-utils") > dockerfile.index("FROM runtime-base AS ingest")
     assert dockerfile.index("poppler-utils") < dockerfile.index("FROM runtime-base AS survey")
+    survey_target = dockerfile.split("FROM runtime-base AS survey", maxsplit=1)[1]
+    assert "fonts-noto-cjk" in survey_target, "survey image must carry CJK fonts for PDFs"
+    assert "fonts-dejavu-core" in survey_target
 
 
 def test_api_image_smoke_imports_the_public_application() -> None:
