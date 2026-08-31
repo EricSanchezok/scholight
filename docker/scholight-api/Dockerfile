@@ -2,6 +2,8 @@
 # only the libraries and system tools needed by that component.
 
 ARG PYTHON_IMAGE=python:3.11-slim-bookworm@sha256:b18992999dbe963a45a8a4da40ac2b1975be1a776d939d098c647482bcad5cba
+ARG NODE_IMAGE=node:20-bookworm-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0
+FROM ${NODE_IMAGE} AS node-base
 FROM ${PYTHON_IMAGE} AS builder-base
 
 RUN apt-get update \
@@ -153,6 +155,7 @@ COPY --from=survey-builder /app/.venv/ /app/.venv/
 COPY --from=survey-builder /app/migrations/ /app/migrations/
 COPY --from=survey-builder /app/bin/accelerate /usr/local/bin/accelerate
 COPY global-bundle.pem /etc/ssl/certs/global-bundle.pem
+COPY --from=node-base /usr/local/bin/node /usr/local/bin/node
 
 ENV PATH=/app/.venv/bin:${PATH}
 ENV SCHOLIGHT_DATA_ROOT=/data

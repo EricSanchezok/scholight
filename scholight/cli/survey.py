@@ -123,9 +123,12 @@ def _verify_report_pdf_runtime() -> dict[str, object]:
     import markdown as markdown_lib
     import weasyprint
 
+    from scholight.survey.katex_render import katex_render_runtime
+
     return {
         "markdown": markdown_lib.__version__,
         "weasyprint": weasyprint.__version__,
+        "katex": katex_render_runtime(),
     }
 
 

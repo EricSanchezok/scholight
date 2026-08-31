@@ -84,6 +84,10 @@ include = ["scholight*"]
     "workflow/schema/*.md",
     "assets/fonts/*.ttf",
     "assets/fonts/*.txt",
+    "assets/katex/*.js",
+    "assets/katex/*.css",
+    "assets/katex/LICENSE",
+    "assets/katex/fonts/*.ttf",
 ]
 
 
