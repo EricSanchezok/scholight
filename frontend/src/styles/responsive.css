@@ -72,6 +72,9 @@
     text-align: left;
     font-weight: 600;
   }
+  .installDialog {
+    padding: 26px 22px;
+  }
   .authPage {
     padding: 32px 20px;
   }

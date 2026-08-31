@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 
 import { styles } from "../styles/classes";
 
+/* eslint-disable jsx-a11y/no-noninteractive-tabindex -- scrollable code needs keyboard focus. */
+
 type CopyState = "idle" | "copied" | "error";
 
 type CopyCodeBlockProps = {
@@ -33,6 +35,8 @@ export function CopyCodeBlock({ code, language }: CopyCodeBlockProps) {
 
   const label =
     copyState === "copied" ? "Copied" : copyState === "error" ? "Copy failed" : "Copy code";
+  const accessibleLabel =
+    language + " code example: " + code.split("\n").slice(0, 2).join(" ").trim();
 
   return (
     <div className={styles.codeBlock}>
@@ -42,9 +46,12 @@ export function CopyCodeBlock({ code, language }: CopyCodeBlockProps) {
           {label}
         </button>
       </div>
-      <pre>
-        <code>{code}</code>
-      </pre>
+      {/* A keyboard-focusable region lets users scroll long code samples on touch and keyboard devices. */}
+      <div className={styles.codeScroll} role="region" tabIndex={0} aria-label={accessibleLabel}>
+        <pre>
+          <code>{code}</code>
+        </pre>
+      </div>
     </div>
   );
 }

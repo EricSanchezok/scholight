@@ -196,12 +196,14 @@
 .codeBlock pre {
   margin: 0;
   padding: 20px;
-  overflow-x: auto;
   color: var(--ink-soft);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 12px;
   line-height: 1.7;
   white-space: pre;
+}
+.codeScroll {
+  overflow-x: auto;
 }
 .docsSteps {
   display: grid;

@@ -177,3 +177,43 @@
 .mobileNav {
   overflow: hidden;
 }
+
+.installDialog {
+  position: fixed;
+  z-index: var(--z-dialog);
+  top: 50%;
+  left: 50%;
+  width: min(440px, calc(100% - 32px));
+  padding: 30px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-dialog);
+  transform: translate(-50%, -50%);
+}
+.installDialogTitle {
+  margin: 0 0 10px;
+  font-family: var(--font-display);
+  font-size: 27px;
+  line-height: 1.2;
+}
+.installDialogDescription {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+.installSteps {
+  display: grid;
+  margin: 22px 0 0;
+  padding-left: 22px;
+  color: var(--ink-soft);
+  gap: 10px;
+  line-height: 1.5;
+}
+.installSteps li::marker {
+  color: var(--brand);
+  font-weight: 700;
+}
+.installDialog .dialogActions {
+  margin-top: 26px;
+}

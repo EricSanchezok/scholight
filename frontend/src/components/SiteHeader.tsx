@@ -9,6 +9,7 @@ import { mobileMenuMotion } from "../app/motion";
 import { useI18n } from "../i18n/I18nProvider";
 import { styles } from "../styles/classes";
 import { usePublicCapabilities } from "../features/capabilities/usePublicCapabilities";
+import { useOptionalInstallExperience } from "../features/install/install-experience";
 import { AccountMenu } from "./AccountMenu";
 import { CloseIcon, MenuIcon } from "./icons";
 
@@ -18,6 +19,7 @@ export function SiteHeader() {
   const [open, setOpen] = useState(false);
   const location = useLocation();
   const capabilities = usePublicCapabilities();
+  const installExperience = useOptionalInstallExperience();
 
   const nav = (
     <>
@@ -83,6 +85,11 @@ export function SiteHeader() {
             {...mobileMenuMotion}
           >
             {nav}
+            {installExperience?.showInstallEntry ? (
+              <button type="button" onClick={() => void installExperience.openInstallExperience()}>
+                {messages.navigation.install}
+              </button>
+            ) : null}
             {status === "authenticated" ? (
               <>
                 {visibleAccountRoutes(adminCapabilities).map((route) => (
