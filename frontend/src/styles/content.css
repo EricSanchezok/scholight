@@ -308,16 +308,16 @@
 .authPage {
   display: flex;
   min-height: 100vh;
-  padding: 48px 32px;
+  padding: clamp(48px, 7vw, 88px) 32px;
   align-items: center;
   justify-content: center;
 }
 .authShell {
   display: grid;
-  width: min(1040px, 100%);
+  width: min(var(--container), 100%);
   align-items: stretch;
-  grid-template-columns: minmax(300px, 1fr) minmax(360px, 420px);
-  gap: clamp(64px, 10vw, 144px);
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 420px);
+  gap: clamp(72px, 9vw, 128px);
 }
 .authBrand {
   display: flex;
@@ -330,8 +330,8 @@
   font-size: 28px;
 }
 .authMark {
-  align-self: center;
-  width: min(320px, 100%);
+  align-self: flex-start;
+  width: min(360px, 100%);
   height: auto;
 }
 .authIntroBlock {
@@ -356,7 +356,7 @@
 .authContent {
   display: flex;
   width: 100%;
-  padding-top: 8px;
+  max-width: 420px;
   flex-direction: column;
   gap: 20px;
 }

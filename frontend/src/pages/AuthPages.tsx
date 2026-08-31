@@ -45,7 +45,7 @@ function AuthShell({
           </Link>
           <ProductMark
             className={styles.authMark}
-            size="clamp(220px, 26vw, 320px)"
+            size="clamp(280px, 30vw, 360px)"
             decorative
             priority
           />

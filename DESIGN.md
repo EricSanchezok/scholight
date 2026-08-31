@@ -194,8 +194,9 @@ Sign-in, registration, and verification views use a quiet two-column editorial l
 desktop: the Scholight wordmark anchors the upper leading corner, a large product mark
 anchors the lower leading area, and the page heading, explanation, and form or status
 action occupy the trailing column. The page has no decorative card; spacing and shared
-alignment provide the grouping. Below 768px the columns stack, the large product mark is
-hidden, and the controls stay close to the heading instead of forming a tall brand stack.
+alignment provide the grouping. The mark is the transparent master artwork itself, with no
+CSS frame or outline added around it. Below 768px the columns stack, the large product mark
+is hidden, and the controls stay close to the heading instead of forming a tall brand stack.
 
 ### Search Results
 

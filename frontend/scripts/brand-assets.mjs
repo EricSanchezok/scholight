@@ -8,7 +8,7 @@ import sharp from "sharp";
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const webRoot = path.resolve(scriptDirectory, "..");
 const masterPath = path.join(webRoot, "brand/source/scholight-lynx-master.png");
-const expectedMasterHash = "f27109dc3c4787ad23aed3bc24c008092c558aa47f379f59d17be0e1ce0063ff";
+const expectedMasterHash = "996d7777c6aa35932227196cb56b9ca32c0cc3b2be5a6c321d3b6001f3fc0579";
 
 const mode = process.argv[2];
 if (mode !== "build" && mode !== "check") {

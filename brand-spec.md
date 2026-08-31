@@ -29,7 +29,7 @@ The approved master is:
 
 - `frontend/brand/source/scholight-lynx-master.png`
 - 720 × 720 px, indexed RGBA PNG with transparent pixels outside the circular badge
-- SHA-256: `f27109dc3c4787ad23aed3bc24c008092c558aa47f379f59d17be0e1ce0063ff`
+- SHA-256: `996d7777c6aa35932227196cb56b9ca32c0cc3b2be5a6c321d3b6001f3fc0579`
 
 The master is the only authored artwork. Small sizes are deterministic resizes of
 this file; if a size loses legibility, revise the master once and regenerate every
