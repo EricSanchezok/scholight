@@ -32,6 +32,13 @@
   max-width: 760px;
   margin-bottom: 64px;
 }
+.docsMark {
+  width: 64px;
+  height: 64px;
+  margin: 24px 0 22px;
+  border: 1px solid var(--line-soft);
+  border-radius: 50%;
+}
 .eyebrow {
   margin: 0 0 11px;
   color: var(--brand);
@@ -314,6 +321,12 @@
   display: inline-block;
   align-self: flex-start;
   font-size: 24px;
+}
+.authMark {
+  width: 96px;
+  height: 96px;
+  border: 1px solid var(--line-soft);
+  border-radius: 50%;
 }
 .authIntroBlock {
   display: flex;

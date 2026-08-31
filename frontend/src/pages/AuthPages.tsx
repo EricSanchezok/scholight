@@ -8,6 +8,7 @@ import { authApi } from "../api/domain";
 import { ApiError } from "../api/errors";
 import { routes, withQuery } from "../app/routes";
 import { useAuth } from "../auth/context";
+import { ProductMark } from "../brand/ProductMark";
 import { safeReturnTo } from "../auth/redirect";
 import { styles } from "../styles/classes";
 
@@ -41,6 +42,7 @@ function AuthShell({
         <Link className="wordmark" to={routes.home.path}>
           scholight
         </Link>
+        <ProductMark className={styles.authMark} size={96} decorative priority />
         <div className={styles.authIntroBlock}>
           <h1>{title}</h1>
           {intro && <p className={styles.authIntro}>{intro}</p>}

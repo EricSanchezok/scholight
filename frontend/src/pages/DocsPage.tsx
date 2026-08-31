@@ -1,4 +1,5 @@
 import { CopyCodeBlock } from "../components/CopyCodeBlock";
+import { ProductMark } from "../brand/ProductMark";
 import { buildDeploymentUrls, runtimeConfig } from "../config/runtime";
 import { buildDocsExamples } from "../features/docs/examples";
 import { styles } from "../styles/classes";
@@ -62,6 +63,7 @@ export function DocsPage({ origin }: DocsPageProps = {}) {
     <main className={styles.docs}>
       <header className={styles.docsHero}>
         <div className={styles.accentLine} />
+        <ProductMark className={styles.docsMark} size={64} decorative />
         <p className={styles.eyebrow}>Documentation</p>
         <h1>Using Scholight</h1>
         <p>
