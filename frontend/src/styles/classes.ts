@@ -48,7 +48,6 @@ export const styles: Readonly<Record<string, string>> = Object.freeze({
   authFields: "authFields",
   authFoot: "authFoot",
   authForm: "authForm",
-  authIdentity: "authIdentity",
   authMark: "authMark",
   authInfo: "authInfo",
   authIntro: "authIntro",

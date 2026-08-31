@@ -40,18 +40,23 @@ function AuthShell({
     <main className={styles.authPage}>
       <div className={styles.authShell}>
         <div className={styles.authBrand}>
-          <div className={styles.authIdentity}>
-            <Link className="wordmark" to={routes.home.path}>
-              scholight
-            </Link>
-            <ProductMark className={styles.authMark} size={72} decorative priority />
-          </div>
+          <Link className="wordmark" to={routes.home.path}>
+            scholight
+          </Link>
+          <ProductMark
+            className={styles.authMark}
+            size="clamp(220px, 26vw, 320px)"
+            decorative
+            priority
+          />
+        </div>
+        <div className={styles.authContent}>
           <div className={styles.authIntroBlock}>
             <h1>{title}</h1>
             {intro && <p className={styles.authIntro}>{intro}</p>}
           </div>
+          {children}
         </div>
-        <div className={styles.authContent}>{children}</div>
       </div>
     </main>
   );

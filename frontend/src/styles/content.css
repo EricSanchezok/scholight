@@ -314,28 +314,26 @@
 }
 .authShell {
   display: grid;
-  width: min(900px, 100%);
-  align-items: center;
-  grid-template-columns: minmax(220px, 0.8fr) minmax(360px, 420px);
-  gap: clamp(48px, 8vw, 96px);
+  width: min(1040px, 100%);
+  align-items: stretch;
+  grid-template-columns: minmax(300px, 1fr) minmax(360px, 420px);
+  gap: clamp(64px, 10vw, 144px);
 }
 .authBrand {
   display: flex;
+  min-height: clamp(420px, 56vh, 500px);
   flex-direction: column;
-  gap: 30px;
+  align-items: flex-start;
+  justify-content: space-between;
 }
-.authIdentity {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-.authIdentity > .wordmark {
+.authBrand > .wordmark {
   display: inline-block;
   font-size: 28px;
 }
 .authMark {
-  width: 72px;
-  height: 72px;
+  align-self: center;
+  width: min(320px, 100%);
+  height: auto;
   border-radius: 50%;
   outline: 1px solid oklch(0 0 0 / 0.1);
   outline-offset: -1px;
@@ -362,6 +360,7 @@
 .authContent {
   display: flex;
   width: 100%;
+  padding-top: 8px;
   flex-direction: column;
   gap: 20px;
 }
