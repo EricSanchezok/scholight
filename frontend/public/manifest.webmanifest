@@ -1,0 +1,29 @@
+{
+  "name": "Scholight",
+  "short_name": "Scholight",
+  "description": "Academic search built for AI research.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#FBFAF5",
+  "theme_color": "#FBFAF5",
+  "icons": [
+    {
+      "src": "/brand/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/brand/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/brand/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

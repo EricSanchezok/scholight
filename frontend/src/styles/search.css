@@ -2,6 +2,7 @@
   min-height: calc(100vh - 88px);
 }
 .hero {
+  position: relative;
   display: flex;
   width: min(var(--container), calc(100% - 64px));
   margin: 0 auto;
@@ -44,6 +45,147 @@
   color: var(--text-secondary);
   font-size: 18px;
   line-height: 30px;
+}
+.heroCopy {
+  min-width: 0;
+  position: relative;
+  z-index: 1;
+}
+.heroArtFrame {
+  position: absolute;
+  z-index: 0;
+  top: 80px;
+  right: 0;
+  display: flex;
+  width: min(300px, 100%);
+  align-items: center;
+  flex-direction: column;
+  gap: 16px;
+}
+.productMark {
+  display: block;
+  max-width: 100%;
+  object-fit: cover;
+  user-select: none;
+}
+.homeHeroNote {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+.homeExamples {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.homeExamples > span {
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+.homeExample {
+  color: var(--brand-link);
+  text-decoration: underline;
+  text-decoration-color: var(--line);
+  text-underline-offset: 4px;
+}
+.homeExample:hover {
+  text-decoration-color: var(--brand-link);
+}
+.homeSections {
+  width: min(var(--container), calc(100% - 64px));
+  margin: 0 auto;
+  padding: 0 0 120px;
+}
+.homeSection {
+  display: grid;
+  padding: 74px 0;
+  border-top: 1px solid var(--line);
+  grid-template-columns: minmax(260px, 0.8fr) minmax(0, 1.4fr);
+  gap: 80px;
+}
+.homeSectionIntro {
+  max-width: 420px;
+}
+.homeSectionIntro h2,
+.homeCta h2 {
+  margin: 0 0 16px;
+  font-family: var(--font-display);
+  font-size: 32px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.025em;
+}
+.homeSectionIntro > p:last-child {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.7;
+}
+.homeFeatureGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.homeFeature {
+  min-height: 190px;
+  padding: 0 24px;
+  border-left: 1px solid var(--line-soft);
+}
+.homeFeature:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+.homeFeature > span {
+  display: block;
+  margin-bottom: 24px;
+  color: var(--brand);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.homeFeature h3 {
+  margin: 0 0 9px;
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.homeFeature p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.65;
+}
+.homeFeature a {
+  display: inline-block;
+  margin-top: 18px;
+  color: var(--brand-link);
+  font-size: 12px;
+  font-weight: 600;
+}
+.homeFeature a:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.homeCta {
+  display: flex;
+  padding: 42px 0 0;
+  border-top: 1px solid var(--ink);
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 32px;
+}
+.homeCta h2 {
+  max-width: 490px;
+  margin-bottom: 0;
+}
+.homeCtaActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 .searchForm {
   position: relative;
@@ -631,6 +773,13 @@
 .errorState {
   padding: 95px 0;
   text-align: center;
+}
+.stateMark {
+  width: 88px;
+  height: 88px;
+  margin: 0 auto 24px;
+  border: 1px solid var(--line-soft);
+  border-radius: 50%;
 }
 .state h1,
 .errorState h1 {

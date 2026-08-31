@@ -9,6 +9,7 @@ export const en = {
     survey: "Survey",
     signIn: "Sign in",
     signOut: "Sign out",
+    install: "Install Scholight",
     menu: "Menu",
     close: "Close",
     mainLabel: "Main navigation",
@@ -21,6 +22,35 @@ export const en = {
     adminOverview: "Administration overview",
     quotaAdmin: "Quota administration",
     adminOperations: "Operations",
+  },
+  installExperience: {
+    close: "Close",
+    android: {
+      title: "Install Scholight",
+      description: "Add Scholight to your home screen for quick access to research search.",
+      steps: [
+        "Open your browser menu.",
+        "Choose Install app or Add to Home screen.",
+        "Confirm the installation.",
+      ],
+    },
+    ios: {
+      title: "Add Scholight to your Home Screen",
+      description: "Safari can save Scholight as an app on your iPhone or iPad.",
+      steps: [
+        "Open the Share menu in Safari.",
+        "Choose Add to Home Screen.",
+        "Tap Add to confirm.",
+      ],
+    },
+    "in-app": {
+      title: "Open Scholight in your browser",
+      description: "This in-app browser cannot install web apps directly.",
+      steps: [
+        "Open the browser menu and choose Open in browser.",
+        "Use the browser menu to install Scholight or add it to your Home screen.",
+      ],
+    },
   },
   common: {
     retry: "Retry",

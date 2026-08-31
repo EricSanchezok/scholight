@@ -5,6 +5,7 @@ import { accountApi } from "../api/domain";
 import { queryKeys } from "../app/queryKeys";
 import { avatarInitials } from "../lib/format";
 import { styles } from "../styles/classes";
+import { nextAvatarRefreshInterval } from "../lib/query/avatar-refresh";
 
 type SharedAvatarProps = {
   displayName: string | null | undefined;
@@ -17,6 +18,7 @@ export function SharedAvatar({ displayName, email, size = "compact" }: SharedAva
     queryKey: queryKeys.avatar,
     queryFn: accountApi.avatar,
     retry: false,
+    refetchInterval: (query) => nextAvatarRefreshInterval([query.state.data]),
     staleTime: 10 * 60_000,
   });
   const [failedVersion, setFailedVersion] = useState<string | null>(null);
@@ -29,7 +31,12 @@ export function SharedAvatar({ displayName, email, size = "compact" }: SharedAva
       aria-hidden="true"
     >
       {showImage ? (
-        <img src={avatar.data?.url} alt="" onError={() => version && setFailedVersion(version)} />
+        <img
+          src={avatar.data?.url}
+          alt=""
+          referrerPolicy="no-referrer"
+          onError={() => version && setFailedVersion(version)}
+        />
       ) : (
         avatarInitials(displayName, email)
       )}

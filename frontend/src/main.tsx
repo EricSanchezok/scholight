@@ -12,6 +12,7 @@ import "./styles/tokens.css";
 import "./styles/app.css";
 import "./styles/global.css";
 import { ThemeProvider } from "./theme/ThemeProvider";
+import { InstallExperienceProvider } from "./features/install/install-experience";
 
 const root = document.getElementById("root");
 
@@ -23,7 +24,9 @@ createRoot(root).render(
   <StrictMode>
     <ThemeProvider>
       <I18nProvider>
-        <App />
+        <InstallExperienceProvider>
+          <App />
+        </InstallExperienceProvider>
       </I18nProvider>
     </ThemeProvider>
   </StrictMode>,
