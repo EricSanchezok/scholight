@@ -287,3 +287,40 @@ def test_print_css_declares_cjk_font_fallbacks() -> None:
 
     assert "'Noto Sans CJK SC', sans-serif" in html
     assert "'Noto Serif CJK SC', serif" in html
+
+
+def test_ams_environments_flatten_to_renderable_formula() -> None:
+    """cases/split/array environments are flattened for mathtext so they
+    render as images instead of raw-LaTeX fallback text."""
+    from scholight.survey.report_pdf import _flatten_mathtext_formula
+
+    flattened = _flatten_mathtext_formula(
+        r"\begin{cases}R^{1}=r^{1}\quad&\text{if }x\\"
+        r"R^{2}=r^{2}\quad&\text{otherwise}\end{cases}"
+    )
+
+    assert "\\begin" not in flattened
+    assert "\\end" not in flattened
+    assert flattened.startswith(r"\left\{")
+    assert "\\quad" in flattened
+
+
+def test_mathtext_unsupported_commands_render_as_images_not_fallback() -> None:
+    """argmin/bm/emph/tfrac/And are converted so they render as images."""
+    html = build_report_html(
+        title="Math commands report",
+        markdown_text=(
+            "$$\n\\argmin_{x} f(x)\n$$\n\n"
+            "Inline $\\bm{v} \\cdot \\bm{w}$ and $\\tfrac{1}{2}$ and $a \\And b$\n"
+        ),
+        images={},
+        generated_on=GENERATED_ON,
+    )
+
+    assert 'class="math-fallback"' not in html
+    assert 'class="math-display"' in html
+    assert 'class="math-inline"' in html
+    assert "\\argmin" not in html
+    assert "\\bm" not in html
+    assert "\\tfrac" not in html
+    assert "\\And" not in html

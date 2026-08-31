@@ -31,6 +31,13 @@ _MATH_COMMAND_SUBSTITUTIONS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"\\mathds(?![a-zA-Z])"), r"\\mathbf"),
     (re.compile(r"\\mathbbm(?![a-zA-Z])"), r"\\mathbf"),
     (re.compile(r"\\iff(?![a-zA-Z])"), r"\\Longleftrightarrow"),
+    # Operator-name aliases undefined by mathtext; \operatorname renders
+    # identically on both renderers.
+    (re.compile(r"\\argmin(?![a-zA-Z])"), r"\\operatorname{argmin}"),
+    (re.compile(r"\\argmax(?![a-zA-Z])"), r"\\operatorname{argmax}"),
+    # Bold/emphasis shorthands undefined by mathtext.
+    (re.compile(r"\\bm(?![a-zA-Z])"), r"\\mathbf"),
+    (re.compile(r"\\emph(?![a-zA-Z])"), r"\\mathit"),
     # Size/flow prefixes exist only in full LaTeX; both renderers fail on
     # them, so they are dropped together with one trailing space or tab.
     (

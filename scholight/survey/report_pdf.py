@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import re
+from collections.abc import Callable
 from datetime import date
 from html import escape, unescape
 from io import BytesIO
@@ -316,6 +317,71 @@ def _png_dimensions(payload: BytesIO) -> tuple[int, int]:
     )
 
 
+_MATHTEXT_ENV_OPEN: dict[str, str] = {
+    "cases": r"\left\{",
+    "array": "",
+    "split": "",
+    "aligned": "",
+    "gathered": "",
+    "matrix": "",
+    "pmatrix": r"\left(",
+    "bmatrix": r"\left[",
+    "vmatrix": r"\left|",
+}
+_MATHTEXT_ENV_CLOSE: dict[str, str] = {
+    "cases": r"\right.",
+    "array": "",
+    "split": "",
+    "aligned": "",
+    "gathered": "",
+    "matrix": "",
+    "pmatrix": r"\right)",
+    "bmatrix": r"\right]",
+    "vmatrix": r"\right|",
+}
+
+
+def _constant_substitution(replacement: str) -> Callable[[re.Match[str]], str]:
+    """Build a re.sub replacement callable that ignores the match."""
+
+    def replace(_match: re.Match[str]) -> str:
+        return replacement
+
+    return replace
+
+
+def _flatten_mathtext_formula(formula: str) -> str:
+    """Flatten AMS environments matplotlib mathtext cannot parse.
+
+    KaTeX renders ``cases``/``split``/``array`` natively, but matplotlib
+    mathtext only understands flat one-line math.  The environment wrapper is
+    replaced by its mathematical delimiters (``cases`` keeps a left brace,
+    ``pmatrix`` keeps parentheses), multi-row ``\\`` breaks and ``&``
+    alignment tabs become ``\\quad`` spacing, and ``\\And``/``\\tfrac`` are
+    spelled in mathtext-supported forms.  The web report keeps the original
+    environments (KaTeX renders them); only the PDF rasterization path uses
+    this flatten.
+    """
+    for env, opener in _MATHTEXT_ENV_OPEN.items():
+        formula = re.sub(
+            rf"\\begin\{{{env}\}}(?:\{{[^{{}}]*\}})?",
+            _constant_substitution(opener),
+            formula,
+        )
+        formula = re.sub(
+            rf"\\end\{{{env}\}}",
+            _constant_substitution(_MATHTEXT_ENV_CLOSE[env]),
+            formula,
+        )
+    # \And and \tfrac render natively in KaTeX but not in mathtext.
+    formula = formula.replace(r"\And", r"\quad\text{and}\quad")
+    formula = formula.replace(r"\tfrac", r"\frac")
+    # Row breaks (\\ plus any trailing newline/indent) become spacing;
+    # mathtext rejects newlines inside a formula.
+    formula = re.sub(r"\\\\\s*", r"\\quad ", formula)
+    return formula.replace("&", r"\quad ")
+
+
 def _render_math_formula(formula: str, *, display: bool) -> str:
     """Render a bounded LaTeX formula to a self-contained PNG or safe text.
 
@@ -323,7 +389,7 @@ def _render_math_formula(formula: str, *, display: bool) -> str:
     explicit width/height attributes rescale it to CSS pixels so WeasyPrint
     uses the intended size instead of the raw high-dpi pixel dimensions.
     """
-    normalized = formula.strip()
+    normalized = _flatten_mathtext_formula(formula.strip())
     delimiter = "$$" if display else "$"
     fallback = escape(f"{delimiter}{normalized}{delimiter}")
     if not normalized or len(normalized) > _MATH_MAX_CHARS:

@@ -93,3 +93,17 @@ def test_textrm_with_spacing_command_becomes_text() -> None:
 
     assert "\\textrm" not in normalized
     assert "\\text{for \\;}i" in normalized
+
+
+def test_mathtext_aliases_substituted_inside_math_only() -> None:
+    text = (
+        "$$\\argmin_{\\mathcal{F}} \\quad \\bm{g} \\quad \\emph{ToGrow}$$\n\n"
+        "Prose keeps \\argmin and \\bm literal.\n"
+    )
+
+    normalized = normalize_report_math(text)
+
+    assert "\\operatorname{argmin}" in normalized
+    assert "\\mathbf{g}" in normalized
+    assert "\\mathit{ToGrow}" in normalized
+    assert "Prose keeps \\argmin and \\bm literal." in normalized
