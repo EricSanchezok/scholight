@@ -4575,7 +4575,7 @@
     },
     "/surveys/{survey_id}/report.pdf": {
       "get": {
-        "description": "Render the archived final report as a branded PDF document.",
+        "description": "Stream the archived branded PDF, rendering it synchronously only as a fallback.\n\nThe worker pre-renders the PDF at archive time; older archives without one\nfall back to an in-request render, which large reports cannot complete\nwithin the gateway timeout, so the stream is preferred whenever present.",
         "operationId": "survey_report_pdf_surveys__survey_id__report_pdf_get",
         "parameters": [
           {

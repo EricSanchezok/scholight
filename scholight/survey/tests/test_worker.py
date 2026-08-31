@@ -2231,3 +2231,87 @@ async def test_repaired_report_records_chart_diagnostics_and_metrics(
     event_types = {json.loads(line).get("type") for line in trace.splitlines()}
     assert "survey_charts_rendered" in event_types
     assert "survey_chart_rejected" in event_types
+
+
+@pytest.mark.asyncio
+async def test_archive_prerenders_report_pdf_before_upload(tmp_path: Path) -> None:
+    job_id = uuid4()
+    worker_id = uuid4()
+    job_root = tmp_path / str(job_id)
+    run_root = job_root / "run"
+    run_root.mkdir(parents=True)
+    (run_root / "08_survey.md").write_text("# Draft\n\nBody.\n", encoding="utf-8")
+    artifact_store = AsyncMock()
+    with (
+        patch("scholight.survey.worker._job_root", return_value=job_root),
+        patch("scholight.survey.worker._heartbeat", new_callable=AsyncMock),
+        patch("scholight.survey.worker.shutil.rmtree"),
+        patch(
+            "scholight.survey.worker.finish_survey_archive",
+            new_callable=AsyncMock,
+        ),
+        patch(
+            "scholight.survey.worker.get_survey",
+            new_callable=AsyncMock,
+            return_value=None,
+        ),
+        patch(
+            "scholight.survey.worker.render_report_pdf",
+            return_value=b"%PDF-prerendered",
+        ) as render,
+    ):
+        await process_survey_job(
+            job=_job(
+                job_id=job_id,
+                worker_id=worker_id,
+                status="archiving",
+                outcome="succeeded",
+            ),
+            worker_id=worker_id,
+            artifact_store=artifact_store,
+        )
+
+    render.assert_called_once()
+    archived_root = artifact_store.archive_run.await_args.kwargs["run_root"]
+    assert (archived_root / "08_survey.pdf").read_bytes() == b"%PDF-prerendered"
+
+
+@pytest.mark.asyncio
+async def test_prerender_failure_does_not_block_archiving(tmp_path: Path) -> None:
+    job_id = uuid4()
+    worker_id = uuid4()
+    job_root = tmp_path / str(job_id)
+    run_root = job_root / "run"
+    run_root.mkdir(parents=True)
+    (run_root / "08_survey.md").write_text("# Draft\n\nBody.\n", encoding="utf-8")
+    artifact_store = AsyncMock()
+    with (
+        patch("scholight.survey.worker._job_root", return_value=job_root),
+        patch("scholight.survey.worker._heartbeat", new_callable=AsyncMock),
+        patch(
+            "scholight.survey.worker.finish_survey_archive",
+            new_callable=AsyncMock,
+        ) as finish,
+        patch(
+            "scholight.survey.worker.get_survey",
+            new_callable=AsyncMock,
+            return_value=None,
+        ),
+        patch(
+            "scholight.survey.worker.render_report_pdf",
+            side_effect=OSError("native backend unavailable"),
+        ),
+    ):
+        await process_survey_job(
+            job=_job(
+                job_id=job_id,
+                worker_id=worker_id,
+                status="archiving",
+                outcome="succeeded",
+            ),
+            worker_id=worker_id,
+            artifact_store=artifact_store,
+        )
+
+    artifact_store.archive_run.assert_awaited_once()
+    finish.assert_awaited_once()
