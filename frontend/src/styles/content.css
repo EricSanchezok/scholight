@@ -306,46 +306,64 @@
   font-size: 13px !important;
 }
 .authPage {
-  display: grid;
+  display: flex;
   min-height: 100vh;
-  padding: 40px 20px;
-  place-items: center;
+  padding: 48px 32px;
+  align-items: center;
+  justify-content: center;
 }
 .authShell {
-  display: flex;
-  width: min(420px, 100%);
-  flex-direction: column;
-  gap: 22px;
+  display: grid;
+  width: min(900px, 100%);
+  align-items: center;
+  grid-template-columns: minmax(220px, 0.8fr) minmax(360px, 420px);
+  gap: clamp(48px, 8vw, 96px);
 }
-.authShell > .wordmark {
+.authBrand {
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+}
+.authIdentity {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.authIdentity > .wordmark {
   display: inline-block;
-  align-self: flex-start;
-  font-size: 24px;
+  font-size: 28px;
 }
 .authMark {
-  width: 96px;
-  height: 96px;
-  border: 1px solid var(--line-soft);
+  width: 72px;
+  height: 72px;
   border-radius: 50%;
+  outline: 1px solid oklch(0 0 0 / 0.1);
+  outline-offset: -1px;
 }
 .authIntroBlock {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 }
 .authShell h1 {
   margin: 0;
   font-family: var(--font-display);
-  font-size: 34px;
+  font-size: 46px;
   font-weight: 600;
-  line-height: 1.25;
+  line-height: 1.1;
   letter-spacing: -0.02em;
 }
 .authIntro {
   margin: 0;
   color: var(--text-auth-intro);
-  font-size: 14px;
-  line-height: 22px;
+  font-size: 15px;
+  line-height: 24px;
+}
+.authContent {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 20px;
 }
 .authForm {
   display: flex;

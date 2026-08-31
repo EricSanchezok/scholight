@@ -188,6 +188,15 @@ Scholight is flat by default. Depth comes from surface tone and hairline structu
 
 The header remains visually still while content changes. Desktop navigation contains only Home, Docs, and identity actions. Authenticated destinations live in one account menu; mobile exposes the same information architecture in a vertical menu. The current destination uses one concise blue marker.
 
+### Authentication
+
+Sign-in, registration, and verification views use a quiet two-column editorial layout on
+desktop: the Scholight identity and page explanation sit on the leading side while the
+form or status action sits on the trailing side. The page has no decorative card; spacing
+and shared alignment provide the grouping. Below 768px the columns stack, with the
+wordmark and product mark kept in one compact identity row so authentication does not
+become a tall sequence of repeated brand blocks.
+
 ### Search Results
 
 Results form a 920px continuous reading column with title, authors, arXiv metadata, score, abstract, and text actions. Hairline dividers create rhythm; individual paper cards are prohibited.
