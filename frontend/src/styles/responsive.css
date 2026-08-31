@@ -526,10 +526,7 @@
 
 @media (max-width: 767px) {
   .heroArtFrame {
-    position: static;
-    order: 4;
-    width: 100%;
-    align-items: flex-start;
+    display: none;
   }
   .heroCopy {
     order: 1;
@@ -539,12 +536,6 @@
   }
   .hero > .homeExamples {
     order: 5;
-  }
-  .heroArt {
-    align-self: center;
-  }
-  .homeHeroNote {
-    align-self: center;
   }
   .homeExamples {
     align-items: flex-start;

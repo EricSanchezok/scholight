@@ -28,8 +28,8 @@ connections in unfamiliar literature.
 The approved master is:
 
 - `frontend/brand/source/scholight-lynx-master.png`
-- 720 × 720 px, opaque indexed PNG
-- SHA-256: `fb6c8da9d7564fdc04cf8a6606312a1300081ae732d3b361bb23a85e1d1ef8e3`
+- 720 × 720 px, indexed RGBA PNG with transparent pixels outside the circular badge
+- SHA-256: `f27109dc3c4787ad23aed3bc24c008092c558aa47f379f59d17be0e1ce0063ff`
 
 The master is the only authored artwork. Small sizes are deterministic resizes of
 this file; if a size loses legibility, revise the master once and regenerate every
@@ -38,7 +38,8 @@ derivative. Never draw a separate small-size expression, pose, crop, or silhouet
 ## Shared family language
 
 - Square raster artwork with a strong circular badge and a silhouette that reads
-  at small sizes.
+  at small sizes. The area outside the circular badge is transparent so the same
+  mark can sit cleanly on the warm canvas at any responsive size.
 - Quiet near-black, charcoal, ivory, and soft-gray base palette.
 - Broad tonal planes and a restrained editorial illustration; avoid generic flat
   vector clip-art, fine fur texture, and noisy photorealism.
@@ -86,6 +87,7 @@ It validates the master hash and dimensions, then generates favicon ICO entries
 native handoff files. Generated output must not be edited directly.
 
 The standard site header keeps the Scholight wordmark as its primary identity. The
-lynx is used in the home hero, authentication, documentation lead-in, empty/error
-states, PWA/browser chrome, and social previews; it is not repeated beside every
-paper result or account row.
+lynx is used in the desktop home hero, authentication, documentation lead-in,
+empty/error states, PWA/browser chrome, and social previews; it is not repeated
+beside every paper result or account row. Below 768px the home hero prioritizes the
+search task and hides the artwork instead of introducing a separate mobile crop.

@@ -20,7 +20,7 @@ export function HomePage() {
           <p>Find the research that matters to your work.</p>
         </div>
         <div className={styles.heroArtFrame}>
-          <ProductMark className={styles.heroArt} size="clamp(220px, 34vw, 420px)" priority />
+          <ProductMark size="clamp(220px, 34vw, 420px)" priority />
           <p className={styles.homeHeroNote}>A quiet lens on the literature.</p>
         </div>
         <SearchForm />

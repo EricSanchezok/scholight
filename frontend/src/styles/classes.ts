@@ -143,7 +143,6 @@ export const styles: Readonly<Record<string, string>> = Object.freeze({
   headerInner: "headerInner",
   headerLinks: "headerLinks",
   hero: "hero",
-  heroArt: "heroArt",
   heroArtFrame: "heroArtFrame",
   heroCopy: "heroCopy",
   homeCta: "homeCta",

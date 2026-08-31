@@ -8,7 +8,7 @@ import sharp from "sharp";
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const webRoot = path.resolve(scriptDirectory, "..");
 const masterPath = path.join(webRoot, "brand/source/scholight-lynx-master.png");
-const expectedMasterHash = "fb6c8da9d7564fdc04cf8a6606312a1300081ae732d3b361bb23a85e1d1ef8e3";
+const expectedMasterHash = "f27109dc3c4787ad23aed3bc24c008092c558aa47f379f59d17be0e1ce0063ff";
 
 const mode = process.argv[2];
 if (mode !== "build" && mode !== "check") {
@@ -28,6 +28,27 @@ if (masterMetadata.width !== 720 || masterMetadata.height !== 720) {
   throw new Error(
     `Scholight lynx master must remain 720 × 720; received ${masterMetadata.width} × ${masterMetadata.height}.`,
   );
+}
+
+if (masterMetadata.channels !== 4) {
+  throw new Error(
+    `Scholight lynx master must be an RGBA PNG with transparent outer corners; received ${masterMetadata.channels} channels.`,
+  );
+}
+
+const cornerCoordinates = [
+  [0, 0],
+  [719, 0],
+  [0, 719],
+  [719, 719],
+];
+const masterCorners = await Promise.all(
+  cornerCoordinates.map(([left, top]) =>
+    sharp(master).ensureAlpha().extract({ left, top, width: 1, height: 1 }).raw().toBuffer(),
+  ),
+);
+if (masterCorners.some((corner) => corner[3] !== 0)) {
+  throw new Error("Scholight lynx master must keep its outer corners transparent.");
 }
 
 const pngOptions = {
@@ -79,25 +100,37 @@ function createIco(entries) {
   return Buffer.concat([header, directory, ...entries.map(({ image }) => image)]);
 }
 
-async function maskableIcon() {
-  const insetPortrait = await portrait(410);
+async function opaquePortrait(size, artworkSize = size) {
+  const artwork = await portrait(artworkSize);
+  const inset = Math.round((size - artworkSize) / 2);
   return sharp({
     create: {
-      width: 512,
-      height: 512,
+      width: size,
+      height: size,
       channels: 4,
-      background: "#0E0F14",
+      background: "#FBFAF5",
     },
   })
-    .composite([{ input: insetPortrait, left: 51, top: 51 }])
+    .composite([{ input: artwork, left: inset, top: inset }])
     .png(pngOptions)
     .toBuffer();
 }
 
 async function socialCard() {
-  return sharp(master)
-    .resize(1200, 630, { fit: "cover", position: "centre" })
+  const artwork = await sharp(master)
+    .resize(630, 630, { fit: "contain", position: "centre" })
     .toColourspace("srgb")
+    .png()
+    .toBuffer();
+  return sharp({
+    create: {
+      width: 1200,
+      height: 630,
+      channels: 4,
+      background: "#FBFAF5",
+    },
+  })
+    .composite([{ input: artwork, left: 285, top: 0 }])
     .png(pngOptions)
     .toBuffer();
 }
@@ -111,7 +144,7 @@ const faviconEntries = await Promise.all(
 
 const portrait64 = await portrait(64);
 const portrait128 = await portrait(128);
-const portrait180 = await portrait(180);
+const touchIcon = await opaquePortrait(180);
 const portrait192 = await portrait(192);
 const portrait256 = await portrait(256);
 const portrait512 = await portrait(512);
@@ -120,12 +153,12 @@ const shareImage = await socialCard();
 
 const assets = new Map([
   ["public/favicon.ico", createIco(faviconEntries)],
-  ["public/apple-touch-icon.png", portrait180],
+  ["public/apple-touch-icon.png", touchIcon],
   ["public/brand/scholight-lynx-portrait-64.png", portrait64],
   ["public/brand/scholight-lynx-portrait-128.png", portrait128],
   ["public/brand/icons/icon-192.png", portrait192],
   ["public/brand/icons/icon-512.png", portrait512],
-  ["public/brand/icons/icon-maskable-512.png", await maskableIcon()],
+  ["public/brand/icons/icon-maskable-512.png", await opaquePortrait(512, 410)],
   ["public/brand/social/og-image.png", shareImage],
   ["brand/exports/native/scholight-lynx-64.png", portrait64],
   ["brand/exports/native/scholight-lynx-128.png", portrait128],
@@ -160,10 +193,16 @@ for (const [relativePath, [expectedWidth, expectedHeight]] of rasterDimensions) 
   }
 }
 
-const maskableStats = await sharp(assets.get("public/brand/icons/icon-maskable-512.png")).stats();
-const maskableAlpha = maskableStats.channels[3];
-if (maskableAlpha && maskableAlpha.min !== 255) {
-  throw new Error("Maskable launcher artwork must be fully opaque.");
+for (const relativePath of [
+  "public/apple-touch-icon.png",
+  "public/brand/icons/icon-maskable-512.png",
+  "public/brand/social/og-image.png",
+]) {
+  const stats = await sharp(assets.get(relativePath)).stats();
+  const alpha = stats.channels[3];
+  if (alpha && alpha.min !== 255) {
+    throw new Error(`${relativePath} must be fully opaque.`);
+  }
 }
 
 const failures = [];

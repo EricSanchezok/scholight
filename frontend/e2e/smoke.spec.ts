@@ -873,6 +873,7 @@ test("mobile home has no horizontal overflow", async ({ page }, testInfo) => {
   }));
   expect(widths.scroll).toBe(widths.client);
   await expect(page.getByRole("button", { name: "Menu" })).toBeVisible();
+  await expect(page.getByRole("img", { name: "Scholight lynx mark" })).toBeHidden();
 });
 
 test("mobile account center keeps navigation and pages inside the viewport", async ({

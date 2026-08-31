@@ -13,6 +13,8 @@ Run the complete frontend quality gate with `npm run verify`. The generated Open
 ## Brand assets
 
 Scholight has one canonical lynx artwork at `brand/source/scholight-lynx-master.png`.
+The outer corners of that square source are transparent; only the circular badge
+and lynx artwork remain visible when it is placed on a page.
 All browser, PWA, social, UI, and native-handoff files are deterministic derivatives
 of that master; do not redraw a separate mobile or small-size icon. After an intentional
 master change, run `npm run brand:build` and commit the source and generated outputs
