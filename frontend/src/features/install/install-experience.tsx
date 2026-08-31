@@ -61,10 +61,15 @@ export function InstallExperienceProvider({ children }: { children: ReactNode })
   const openInstallExperience = useCallback(async () => {
     if (installed) return;
     if (prompt) {
-      await prompt.prompt();
-      const choice = await prompt.userChoice;
-      if (choice.outcome === "accepted") setInstalled(true);
-      setPrompt(null);
+      try {
+        await prompt.prompt();
+        const choice = await prompt.userChoice;
+        if (choice.outcome === "accepted") setInstalled(true);
+      } catch {
+        setInstructionsOpen(true);
+      } finally {
+        setPrompt(null);
+      }
       return;
     }
     setInstructionsOpen(true);
