@@ -319,13 +319,12 @@ def test_math_fallback_when_renderer_fails(monkeypatch: pytest.MonkeyPatch) -> N
 
 def test_math_oversized_formula_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
     called: list[tuple[int, str, bool]] = []
-    monkeypatch.setattr(
-        "scholight.survey.katex_render.render_formulas",
-        lambda formulas, **kwargs: (
-            called.extend(formulas),
-            {formula_id: "<katex/>" for formula_id, _tex, _ in formulas},
-        )[1],
-    )
+
+    def fake_render(formulas: list[tuple[int, str, bool]], **kwargs: object) -> dict[int, str]:
+        called.extend(formulas)
+        return {formula_id: "<katex/>" for formula_id, _tex, _ in formulas}
+
+    monkeypatch.setattr("scholight.survey.katex_render.render_formulas", fake_render)
 
     html = build_report_html(
         title="Oversized report",
