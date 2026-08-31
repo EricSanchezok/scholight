@@ -188,6 +188,19 @@ Scholight is flat by default. Depth comes from surface tone and hairline structu
 
 The header remains visually still while content changes. Desktop navigation contains only Home, Docs, and identity actions. Authenticated destinations live in one account menu; mobile exposes the same information architecture in a vertical menu. The current destination uses one concise blue marker.
 
+On supported mobile browsers, the mobile navigation also exposes “Install Scholight”.
+The action opens the browser install prompt where available and otherwise gives
+platform-specific instructions. The desktop header does not gain a second install
+control.
+
+### Shared profile avatar
+
+The authenticated account trigger and account page use the Identity avatar as a
+read-only image source. A signed URL is requested through Scholight’s presentation
+adapter, refreshed before expiry, and rendered with \`no-referrer\`; initials remain the
+quiet fallback. Avatar upload and editing belong to SanchezCloud Identity, not this
+product.
+
 ### Authentication
 
 Sign-in, registration, and verification views use a quiet two-column editorial layout on

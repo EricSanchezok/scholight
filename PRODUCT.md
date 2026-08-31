@@ -44,3 +44,16 @@ The product should feel calm enough for extended reading, rigorous enough to tru
 Scholight targets WCAG 2.1 AA across desktop and mobile. All workflows must support keyboard navigation, visible focus, semantic landmarks, clear labels and errors, sufficient text contrast, and screen-reader status announcements.
 
 Reduced-motion preferences are authoritative. Motion must communicate state or continuity, remain short and low-amplitude, and become a static state or simple crossfade when the user requests less motion. Content must remain usable at 200% zoom and from a 320px viewport without horizontal page overflow.
+
+## Shared identity and installability
+
+The account trigger consumes the read-only avatar view provided by
+\`sanchezcloud-identity\`. Signed avatar URLs are refreshed before expiry and fall back to
+initials when no avatar is configured or the image cannot be loaded. Scholight does not
+create a product-specific avatar store or upload flow.
+
+Scholight is installable as a progressive web app on supported mobile browsers. The
+manifest uses standalone display, while the service worker is network-only and never
+caches papers, account data, or API responses. Mobile navigation exposes an install
+action; Android browsers can open their native install prompt, while iOS and in-app
+browsers receive platform-specific instructions.
