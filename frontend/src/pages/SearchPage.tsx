@@ -11,6 +11,7 @@ import { queryKeys } from "../app/queryKeys";
 import { routes } from "../app/routes";
 import { resultRowMotion, resultsRevealMotion, sectionRevealMotion } from "../app/motion";
 import { useAuth } from "../auth/context";
+import { ProductMark } from "../brand/ProductMark";
 import { productConfig } from "../config/product";
 import { SearchForm } from "../components/SearchForm";
 import { SearchResultsSkeleton } from "../components/SearchResultsSkeleton";
@@ -164,6 +165,7 @@ export function SearchPage() {
         <FilterChips filters={parsed.filters} onRemove={removeFilter} />
         {!parsed.query && (
           <div className={styles.state}>
+            <ProductMark className={styles.stateMark} size={88} decorative />
             <h1>{messages.search.startTitle}</h1>
             <p>{messages.search.startHint}</p>
           </div>
@@ -200,6 +202,7 @@ export function SearchPage() {
             </m.div>
           ) : result.data && result.data.hits.length === 0 ? (
             <m.div className={styles.state} key="search-empty" {...sectionRevealMotion}>
+              <ProductMark className={styles.stateMark} size={88} decorative />
               <h1>{messages.search.noPapers}</h1>
               <p>{messages.search.noPapersHint}</p>
             </m.div>

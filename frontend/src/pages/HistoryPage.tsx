@@ -8,6 +8,7 @@ import { ApiError } from "../api/errors";
 import { queryKeys } from "../app/queryKeys";
 import { routes } from "../app/routes";
 import { ledgerRowMotion } from "../app/motion";
+import { ProductMark } from "../brand/ProductMark";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { EditorialRowsSkeleton } from "../components/EditorialSkeleton";
 import { DeleteSearchIcon, SearchIcon, TrashIcon } from "../components/icons";
@@ -149,9 +150,7 @@ export function HistoryPage() {
           <EditorialRowsSkeleton label="Loading search history" rows={4} />
         ) : !history.error && items.length === 0 ? (
           <div className={styles.emptyHistory}>
-            <div className={styles.emptyMark} aria-hidden="true">
-              <SearchIcon />
-            </div>
+            <ProductMark className={styles.emptyMark} size={64} decorative />
             <h2>{urlFilter ? "No matching searches" : "No searches yet"}</h2>
             <p>
               {urlFilter
