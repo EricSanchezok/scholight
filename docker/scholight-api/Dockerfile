@@ -103,6 +103,7 @@ RUN apt-get update \
         fonts-dejavu-core fonts-noto-cjk \
     && rm -rf /var/lib/apt/lists/*
 
+COPY --from=node-base /usr/local/bin/node /usr/local/bin/node
 COPY --from=api-builder /app/.venv/ /app/.venv/
 COPY --from=api-builder /app/migrations/ /app/migrations/
 COPY global-bundle.pem /etc/ssl/certs/global-bundle.pem
