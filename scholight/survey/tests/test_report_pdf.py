@@ -349,6 +349,32 @@ def test_math_tokens_not_injected_outside_math() -> None:
     assert 'class="katex"' in html
 
 
+def test_body_dollar_escapes_render_as_plain_dollar() -> None:
+    html = build_report_html(
+        title="Cost math",
+        markdown_text="Runs cost roughly \\$300-500 per iteration and $x+y$.\n",
+        images={},
+        generated_on=GENERATED_ON,
+    )
+
+    assert "\\$300" not in html
+    assert "&#36;300" in html
+    assert 'class="katex"' in html
+
+
+def test_dollar_escapes_survive_inside_code_spans() -> None:
+    html = build_report_html(
+        title="Code math",
+        markdown_text=("Inline `a\\$b` stays literal.\n\n```bash\necho cost \\$300\n```\n"),
+        images={},
+        generated_on=GENERATED_ON,
+    )
+
+    assert "&#36;" not in html
+    assert "\\$300" in html
+    assert "a\\$b" in html
+
+
 def test_print_css_declares_cjk_font_fallbacks() -> None:
     html = build_report_html(
         title="中文标题回退",

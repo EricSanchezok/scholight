@@ -53,6 +53,8 @@ _MATH_DISPLAY_PATTERN = re.compile(r"(?<!\\)\$\$(?P<formula>.+?)(?<!\\)\$\$", re
 _MATH_INLINE_PATTERN = re.compile(r"(?<!\\)\$(?!\$)(?P<formula>[^$\n]+?)(?<!\\)\$")
 _MATH_MAX_CHARS = 2_000
 _MATH_TOKEN_PREFIX = "MATHTOKEN_"
+_FENCED_CODE_SPAN_PATTERN = re.compile(r"(```.*?```)", re.DOTALL)
+_INLINE_CODE_SPAN_PATTERN = re.compile(r"`+[^`\n]*`+")
 _FIGURE_CAPTION_PATTERN = re.compile(
     r"(<p><img(?![^>]*class=\"math-)[^>]*>)</p>\s*<p><em>([^<]+)</em></p>",
 )
@@ -368,7 +370,35 @@ def _extract_math_spans(text: str) -> tuple[str, dict[str, tuple[str, bool]]]:
     text = _MATH_INLINE_PATTERN.sub(
         lambda match: tokenize(match.group("formula"), display=False), text
     )
+    text = _replace_body_dollar_escapes(text)
     return text, {token: key for key, token in tokens.items()}
+
+
+def _replace_body_dollar_escapes(text: str) -> str:
+    """Rewrite body-text ``\\$`` escapes to an HTML entity outside code spans.
+
+    Model-written prose routinely writes amounts as ``\\$300``; Python-Markdown
+    passes the backslash through, so the PDF shows a literal ``\\$``.  Math
+    spans are already tokenized before this runs, so a ``\\$`` inside real
+    math (a literal dollar glyph handled by KaTeX) is untouched.  Inside
+    fenced or inline code the escape is preserved verbatim, because Markdown
+    would render the entity as literal text there.
+    """
+
+    def replace_plain(segment: str) -> str:
+        pieces: list[str] = []
+        cursor = 0
+        for match in _INLINE_CODE_SPAN_PATTERN.finditer(segment):
+            pieces.append(segment[cursor : match.start()].replace(r"\$", "&#36;"))
+            pieces.append(match.group(0))
+            cursor = match.end()
+        pieces.append(segment[cursor:].replace(r"\$", "&#36;"))
+        return "".join(pieces)
+
+    parts = _FENCED_CODE_SPAN_PATTERN.split(text)
+    for index in range(0, len(parts), 2):
+        parts[index] = replace_plain(parts[index])
+    return "".join(parts)
 
 
 def _inject_math_html(body_html: str, html_by_token: dict[str, str]) -> str:

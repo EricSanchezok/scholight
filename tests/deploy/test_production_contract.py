@@ -738,6 +738,19 @@ def test_survey_image_embeds_node_for_katex_rendering() -> None:
         assert asset_glob in project, f"pyproject package-data must ship {asset_glob}"
 
 
+def test_api_image_embeds_node_for_pdf_fallback_rendering() -> None:
+    """The API image must also carry Node so the report.pdf fallback renderer
+    (used when an archived report has no prerendered PDF) can run KaTeX."""
+    dockerfile = (ROOT / "docker/scholight-api/Dockerfile").read_text(encoding="utf-8")
+
+    api_target = dockerfile.split("FROM runtime-base AS api", maxsplit=1)[1].split(
+        "FROM runtime-base AS ingest", maxsplit=1
+    )[0]
+    assert "COPY --from=node-base /usr/local/bin/node /usr/local/bin/node" in api_target, (
+        "api image must copy the Node binary for KaTeX fallback rendering"
+    )
+
+
 def test_api_image_smoke_imports_the_public_application() -> None:
     workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     api_build = workflow.split("- name: Build API image", maxsplit=1)[1].split(
