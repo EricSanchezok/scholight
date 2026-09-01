@@ -16,6 +16,28 @@ from scholight.survey.report_pdf import (
 GENERATED_ON = date(2026, 8, 29)
 
 
+@pytest.fixture(autouse=True)
+def _fake_katex(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Deterministic KaTeX renderer for pipeline tests.
+
+    Real Node/KaTeX integration is covered by test_katex_render.py; here the
+    renderer is faked so token extraction, injection order, and fallback
+    behavior are exercised without a Node binary.
+    """
+
+    def fake_render(formulas: list[tuple[int, str, bool]], **kwargs: object) -> dict[int, str]:
+        return {
+            formula_id: (
+                f'<span class="katex-display"><span class="katex">{tex}</span></span>'
+                if display
+                else f'<span class="katex">{tex}</span>'
+            )
+            for formula_id, tex, display in formulas
+        }
+
+    monkeypatch.setattr("scholight.survey.katex_render.render_formulas", fake_render)
+
+
 def test_markdown_renders_gfm_tables_and_fenced_code() -> None:
     html = build_report_html(
         title="Efficient inference",
@@ -37,7 +59,26 @@ def test_markdown_renders_gfm_tables_and_fenced_code() -> None:
     assert "print('hello')" in html
 
 
-def test_markdown_renders_math_formulas_as_self_contained_images() -> None:
+def test_markdown_renders_math_formulas_as_katex_html(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rendered = {
+        0: '<span class="katex"><span class="katex-html" aria-hidden="true">'
+        '<span class="base"><span class="strut" style="height:0.8141em;"></span>'
+        '<span class="mord mathnormal">x</span><span class="mord mtight">2</span>'
+        "</span></span></span>",
+        1: '<span class="katex-display"><span class="katex"><span class="katex-html" '
+        'aria-hidden="true"><span class="base"><span class="strut" '
+        'style="height:1.2em;vertical-align:-0.35em;"></span><span class="mord">'
+        "mathcal</span></span></span></span></span>",
+    }
+    monkeypatch.setattr(
+        "scholight.survey.katex_render.render_formulas",
+        lambda formulas, **kwargs: {
+            formula_id: rendered[formula_id] for formula_id, _tex, _ in formulas
+        },
+    )
+
     html = build_report_html(
         title="Formula report",
         markdown_text="Inline $x^2$ and display:\n\n$$\\mathcal{L}(\\theta)$$\n",
@@ -45,10 +86,12 @@ def test_markdown_renders_math_formulas_as_self_contained_images() -> None:
         generated_on=GENERATED_ON,
     )
 
-    assert 'class="math-inline"' in html
-    assert 'class="math-display"' in html
-    assert 'src="data:image/png;base64,' in html
+    assert 'class="katex"' in html
+    assert 'class="katex-display"' in html
+    assert 'class="math-fallback"' not in html
     assert "$$\\mathcal{L}" not in html
+    # KaTeX strut styles survive because injection happens after sanitize.
+    assert 'style="height:0.8141em;"' in html
 
 
 def test_internal_html_comments_are_removed() -> None:
@@ -235,8 +278,8 @@ def test_renderer_unsupported_math_commands_render_as_images_not_fallback() -> N
         generated_on=GENERATED_ON,
     )
 
-    assert 'class="math-display"' in html
-    assert 'class="math-inline"' in html
+    assert 'class="katex-display"' in html
+    assert 'class="katex"' in html
     assert 'class="math-fallback"' not in html
     assert "\\textsc" not in html
     assert "\\textbf" not in html
@@ -251,30 +294,59 @@ def test_single_line_display_math_still_renders_as_display() -> None:
         generated_on=GENERATED_ON,
     )
 
-    assert 'class="math-display"' in html
+    assert 'class="katex-display"' in html
     assert 'class="math-fallback"' not in html
 
 
-def test_math_images_carry_dpi_corrected_pixel_dimensions() -> None:
+def test_math_fallback_when_renderer_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "scholight.survey.katex_render.render_formulas",
+        lambda formulas, **kwargs: {formula_id: None for formula_id, _tex, _ in formulas},
+    )
+
     html = build_report_html(
-        title="Sizing report",
-        markdown_text="Value $E = mc^2$ and display:\n\n$$\n\\mathcal{L}(\\theta)\n$$\n",
+        title="Fallback report",
+        markdown_text="Inline $x^2$ and display:\n\n$$\\mathcal{L}(\\theta)$$\n",
         images={},
         generated_on=GENERATED_ON,
     )
 
-    import re
+    assert 'class="math-fallback"' in html
+    assert "\\mathcal{L}(\\theta)" in html
+    assert "\\theta" in html
+    assert "MATHTOKEN_" not in html
 
-    tags = re.findall(r'<img class="math-(?:inline|display)"[^>]*>', html)
-    assert tags, "expected rendered math images"
-    for tag in tags:
-        match = re.search(r'width="(\d+)" height="(\d+)"', tag)
-        assert match is not None, f"missing CSS-pixel dimensions: {tag[:120]}"
-        width, height = int(match.group(1)), int(match.group(2))
-        # dpi-corrected: a 10pt-ish inline glyph must stay far below its raw
-        # 180-dpi pixel height (which would be roughly 2x larger)
-        assert 1 <= height <= 40, f"unexpected inline height {height}"
-        assert width >= 1
+
+def test_math_oversized_formula_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    called: list[tuple[int, str, bool]] = []
+
+    def fake_render(formulas: list[tuple[int, str, bool]], **kwargs: object) -> dict[int, str]:
+        called.extend(formulas)
+        return {formula_id: "<katex/>" for formula_id, _tex, _ in formulas}
+
+    monkeypatch.setattr("scholight.survey.katex_render.render_formulas", fake_render)
+
+    html = build_report_html(
+        title="Oversized report",
+        markdown_text=f"$${'x' * 2500}$$\n",
+        images={},
+        generated_on=GENERATED_ON,
+    )
+
+    assert called == []
+    assert 'class="math-fallback"' in html
+
+
+def test_math_tokens_not_injected_outside_math() -> None:
+    html = build_report_html(
+        title="Token hygiene",
+        markdown_text="No formulas here. $x$ still renders.\n",
+        images={},
+        generated_on=GENERATED_ON,
+    )
+
+    assert "MATHTOKEN_" not in html
+    assert 'class="katex"' in html
 
 
 def test_print_css_declares_cjk_font_fallbacks() -> None:

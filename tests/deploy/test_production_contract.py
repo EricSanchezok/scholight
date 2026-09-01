@@ -715,6 +715,29 @@ def test_python_images_have_explicit_minimal_runtime_targets() -> None:
     assert "fonts-dejavu-core" in survey_target
 
 
+def test_survey_image_embeds_node_for_katex_rendering() -> None:
+    """The survey image must carry a Node binary and the vendored KaTeX assets."""
+    dockerfile = (ROOT / "docker/scholight-api/Dockerfile").read_text(encoding="utf-8")
+    project = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+
+    assert "ARG NODE_IMAGE=node:20-bookworm-slim@sha256:" in dockerfile
+    assert "FROM ${NODE_IMAGE} AS node-base" in dockerfile
+    survey_target = dockerfile.split("FROM runtime-base AS survey", maxsplit=1)[1]
+    # BuildKit rejects variable expansion in COPY --from; the node image is
+    # aliased to a stage so the survey target can copy the binary from it.
+    assert "COPY --from=node-base /usr/local/bin/node /usr/local/bin/node" in survey_target, (
+        "survey image must copy the Node binary for KaTeX rendering"
+    )
+
+    for asset_glob in (
+        "assets/katex/*.js",
+        "assets/katex/*.css",
+        "assets/katex/LICENSE",
+        "assets/katex/fonts/*.ttf",
+    ):
+        assert asset_glob in project, f"pyproject package-data must ship {asset_glob}"
+
+
 def test_api_image_smoke_imports_the_public_application() -> None:
     workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     api_build = workflow.split("- name: Build API image", maxsplit=1)[1].split(

@@ -9,12 +9,13 @@ from __future__ import annotations
 
 import base64
 import re
+from collections.abc import Callable
 from datetime import date
 from html import escape, unescape
-from io import BytesIO
 from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import unquote, urlsplit
+from uuid import uuid4
 
 import markdown as markdown_lib
 
@@ -27,6 +28,7 @@ _FONT_FILES = (
 )
 
 _FONTS_DIR = Path(__file__).resolve().parent / "assets" / "fonts"
+_KATEX_DIR = Path(__file__).resolve().parent / "assets" / "katex"
 
 _IMAGE_MIME_BY_SUFFIX = {
     ".png": "image/png",
@@ -50,8 +52,7 @@ _STYLE_ATTRIBUTE_PATTERN = re.compile(
 _MATH_DISPLAY_PATTERN = re.compile(r"(?<!\\)\$\$(?P<formula>.+?)(?<!\\)\$\$", re.DOTALL)
 _MATH_INLINE_PATTERN = re.compile(r"(?<!\\)\$(?!\$)(?P<formula>[^$\n]+?)(?<!\\)\$")
 _MATH_MAX_CHARS = 2_000
-_MATH_RENDER_DPI = 180
-_CSS_DPI = 96
+_MATH_TOKEN_PREFIX = "MATHTOKEN_"
 _FIGURE_CAPTION_PATTERN = re.compile(
     r"(<p><img(?![^>]*class=\"math-)[^>]*>)</p>\s*<p><em>([^<]+)</em></p>",
 )
@@ -201,17 +202,15 @@ body {
   display: block;
   margin: 4mm auto 2mm;
 }
-.report img.math-inline {
-  display: inline;
-  height: auto;
-  vertical-align: -0.35em;
-  margin: 0 0.12em;
+.katex {
+  /* KaTeX inline formulas sit slightly high against Manrope body text in
+     WeasyPrint; nudge the math axis down to match the text baseline. */
+  vertical-align: -0.15em;
 }
-.report img.math-display {
-  max-width: 100%;
-  height: auto;
-  margin: 4mm auto;
-  page-break-inside: avoid;
+.katex-display .katex {
+  /* Display math is a block element; the vertical-align nudge must not
+     apply inside centered display blocks. */
+  vertical-align: baseline;
 }
 .report .math-fallback {
   font-family: 'DejaVu Sans Mono', monospace;
@@ -277,8 +276,6 @@ def _embed_images(body_html: str, images: dict[str, bytes]) -> str:
     def replace(match: re.Match[str]) -> str:
         tag = match.group(0)
         src = _first_attribute(_SRC_ATTRIBUTE_PATTERN, tag)
-        if "math-inline" in tag or "math-display" in tag:
-            return tag
         resolved = _resolve_image(src, images)
         if resolved is None:
             return ""
@@ -305,63 +302,122 @@ def _sanitize_body_html(body_html: str) -> str:
     return _STYLE_ATTRIBUTE_PATTERN.sub("", sanitized)
 
 
-def _png_dimensions(payload: BytesIO) -> tuple[int, int]:
-    """Read pixel dimensions straight from the PNG IHDR chunk."""
-    header = payload.getvalue()[:24]
-    if len(header) < 24 or header[12:16] != b"IHDR":
-        raise ValueError("rendered formula is not a valid PNG")
-    return (
-        int.from_bytes(header[16:20], "big"),
-        int.from_bytes(header[20:24], "big"),
-    )
+def _katex_css() -> str:
+    """Return the vendored KaTeX layout stylesheet for the print document."""
+    return (_KATEX_DIR / "katex.css").read_text(encoding="utf-8")
 
 
-def _render_math_formula(formula: str, *, display: bool) -> str:
-    """Render a bounded LaTeX formula to a self-contained PNG or safe text.
+def _katex_font_faces() -> str:
+    """@font-face declarations for the vendored KaTeX fonts.
 
-    The PNG is rasterized above screen resolution for print sharpness, and
-    explicit width/height attributes rescale it to CSS pixels so WeasyPrint
-    uses the intended size instead of the raw high-dpi pixel dimensions.
+    The vendored katex.css intentionally drops KaTeX's own @font-face
+    blocks (they reference woff2/woff URLs that are not bundled); the
+    print stylesheet rebuilds them from the ttf files WeasyPrint can load.
     """
-    normalized = formula.strip()
-    delimiter = "$$" if display else "$"
-    fallback = escape(f"{delimiter}{normalized}{delimiter}")
-    if not normalized or len(normalized) > _MATH_MAX_CHARS:
-        return f'<span class="math-fallback">{fallback}</span>'
+    faces = []
+    for font_file in sorted((_KATEX_DIR / "fonts").glob("*.ttf")):
+        name = font_file.stem  # e.g. KaTeX_Main-BoldItalic
+        family = name[: name.rfind("-")]
+        variant = name[name.rfind("-") + 1 :]
+        weight = "700" if variant in ("Bold", "BoldItalic") else "400"
+        style = "italic" if variant in ("Italic", "BoldItalic") else "normal"
+        faces.append(
+            f"@font-face {{ font-family: '{family}'; font-weight: {weight}; "
+            f"font-style: {style}; src: url('{font_file.as_uri()}'); }}"
+        )
+    return "\n".join(faces)
+
+
+def _constant_substitution(replacement: str) -> Callable[[re.Match[str]], str]:
+    """Build a re.sub replacement callable that always returns one string."""
+
+    def replace(_match: re.Match[str]) -> str:
+        return replacement
+
+    return replace
+
+
+def _is_within(path: Path, root: Path) -> bool:
+    """Return whether ``path`` resolves inside the allowed ``root`` directory."""
     try:
-        from matplotlib.mathtext import math_to_image
-
-        output = BytesIO()
-        math_to_image(f"${normalized}$", output, format="png", dpi=_MATH_RENDER_DPI)
-        pixel_width, pixel_height = _png_dimensions(output)
-    except Exception:
-        return f'<span class="math-fallback">{fallback}</span>'
-    encoded = base64.b64encode(output.getvalue()).decode("ascii")
-    scale = _CSS_DPI / _MATH_RENDER_DPI
-    class_name = "math-display" if display else "math-inline"
-    return (
-        f'<img class="{class_name}" src="data:image/png;base64,{encoded}" '
-        f'width="{max(1, round(pixel_width * scale))}" '
-        f'height="{max(1, round(pixel_height * scale))}" '
-        f'alt="{escape(normalized)}" />'
-    )
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
 
 
-def _render_math_markdown(markdown_text: str) -> str:
-    """Replace Markdown dollar-delimited formulas before Markdown conversion."""
-    rendered: dict[tuple[str, bool], str] = {}
+def _extract_math_spans(text: str) -> tuple[str, dict[str, tuple[str, bool]]]:
+    """Swap dollar-delimited formulas for unique ASCII tokens.
 
-    def replace(match: re.Match[str], *, display: bool) -> str:
-        formula = match.group("formula")
+    The tokenized text passes through Markdown and sanitization untouched;
+    identical (formula, display) pairs share one token so they render once.
+    """
+    tokens: dict[tuple[str, bool], str] = {}
+
+    def tokenize(formula: str, *, display: bool) -> str:
         key = (formula, display)
-        if key not in rendered:
-            rendered[key] = _render_math_formula(formula, display=display)
-        return rendered[key]
+        token = tokens.get(key)
+        if token is None:
+            token = f"{_MATH_TOKEN_PREFIX}{uuid4().hex[:8]}"
+            tokens[key] = token
+        return token
 
-    markdown_text = _MATH_DISPLAY_PATTERN.sub(
-        lambda match: replace(match, display=True), markdown_text
+    text = _MATH_DISPLAY_PATTERN.sub(
+        lambda match: tokenize(match.group("formula"), display=True), text
     )
-    return _MATH_INLINE_PATTERN.sub(lambda match: replace(match, display=False), markdown_text)
+    text = _MATH_INLINE_PATTERN.sub(
+        lambda match: tokenize(match.group("formula"), display=False), text
+    )
+    return text, {token: key for key, token in tokens.items()}
+
+
+def _inject_math_html(body_html: str, html_by_token: dict[str, str]) -> str:
+    """Replace math tokens with rendered KaTeX HTML.
+
+    Called after ``_sanitize_body_html``: KaTeX's strut ``style``
+    attributes must not pass through the sanitizer.  Display tokens own
+    their whole paragraph (``normalize_report_math`` puts display math on
+    its own line), which is replaced by the centered ``katex-display``
+    block; inline tokens are plain text and are swapped in place.
+    """
+    for token, html in html_by_token.items():
+        body_html = re.sub(
+            rf"<p>(?P<token>{re.escape(token)})</p>",
+            _constant_substitution(html),
+            body_html,
+        )
+    for token, html in html_by_token.items():
+        body_html = body_html.replace(token, html)
+    return body_html
+
+
+def _render_math_html(body_html: str, token_map: dict[str, tuple[str, bool]]) -> str:
+    """Batch-render extracted formulas and inject their KaTeX HTML."""
+    from scholight.survey.katex_render import render_formulas
+
+    tokens = list(token_map)
+    formulas: list[tuple[int, str, bool]] = []
+    oversized: set[int] = set()
+    for index, token in enumerate(tokens):
+        formula, display = token_map[token]
+        if formula.strip() and len(formula) <= _MATH_MAX_CHARS:
+            formulas.append((index, formula, display))
+        else:
+            oversized.add(index)
+    rendered = render_formulas(formulas)
+    html_by_token: dict[str, str] = {}
+    for index, token in enumerate(tokens):
+        formula, display = token_map[token]
+        if index in oversized or rendered.get(index) is None:
+            delimiter = "$$" if display else "$"
+            html_by_token[token] = (
+                f'<span class="math-fallback">{escape(f"{delimiter}{formula}{delimiter}")}</span>'
+            )
+        else:
+            html = rendered[index]
+            assert html is not None
+            html_by_token[token] = html
+    return _inject_math_html(body_html, html_by_token)
 
 
 def _normalized_heading_text(heading_html: str) -> str:
@@ -392,8 +448,9 @@ def build_report_html(
     from scholight.survey.math_format import normalize_report_math
 
     cleaned_markdown = normalize_report_math(_HTML_COMMENT_PATTERN.sub("", markdown_text))
+    tokenized, token_map = _extract_math_spans(cleaned_markdown)
     body_html = markdown_lib.markdown(
-        _render_math_markdown(cleaned_markdown),
+        tokenized,
         extensions=["tables", "fenced_code"],
         output_format="html5",
     )
@@ -403,6 +460,7 @@ def build_report_html(
     )
     body_html = _embed_images(body_html, images)
     body_html = _sanitize_body_html(body_html)
+    body_html = _render_math_html(body_html, token_map)
     body_html = _drop_leading_duplicate_title(body_html, title)
     return (
         "<!DOCTYPE html>\n"
@@ -410,7 +468,8 @@ def build_report_html(
         "<head>\n"
         '<meta charset="utf-8" />\n'
         f"<title>{escape(title)}</title>\n"
-        f"<style>\n{_font_faces()}\n{_PRINT_CSS}\n</style>\n"
+        f"<style>\n{_font_faces()}\n{_katex_font_faces()}\n"
+        f"{_katex_css()}\n{_PRINT_CSS}\n</style>\n"
         "</head>\n"
         "<body>\n"
         '<section class="cover">\n'
@@ -460,11 +519,10 @@ def render_report_pdf(
         if parsed.scheme == "data":
             return default_url_fetcher(url, *args, **kwargs)
         if parsed.scheme == "file":
-            font_path = Path(unquote(parsed.path)).resolve()
-            try:
-                font_path.relative_to(_FONTS_DIR.resolve())
-            except ValueError as exc:
-                raise ValueError("PDF resources must be bundled assets") from exc
+            resource_path = Path(unquote(parsed.path)).resolve()
+            allowed_roots = (_FONTS_DIR.resolve(), (_KATEX_DIR / "fonts").resolve())
+            if not any(_is_within(resource_path, root) for root in allowed_roots):
+                raise ValueError("PDF resources must be bundled assets")
             return default_url_fetcher(url, *args, **kwargs)
         raise ValueError("PDF resources must be bundled assets")
 
