@@ -53,6 +53,33 @@ gates:
 These gates are not a compatibility layer. They let operators verify the real
 RCM, artifact, queue, and email boundaries before the first public activation.
 
+### Event execution compatibility layer
+
+Migration `014_survey_compute_attempts.sql` is the additive Expand stage for
+job-scoped Survey compute. It does not change the public Survey states or HTTP
+contract, and the released long-lived workers may continue to ignore it during
+an N-1 rollback. The new `scholight.survey_compute_attempts` table is the
+internal record of one exact standalone task attempt. Its partial unique
+indexes allow at most one `reserved`, `launching`, `launched`, or `running`
+attempt per Draft or Full job.
+
+The control plane reserves capacity before `RunTask`; the task then claims only
+the Draft/job and attempt IDs carried in its command. The attempt UUID is also
+the database lease owner. A second task for the same attempt, an old attempt,
+or a task whose lease has expired cannot update progress or commit a
+checkpoint. ECS event versions are monotonic fences: an older duplicate
+`STOPPED` event cannot replace the recorded exit cause. Failure details use a
+strict scalar allowlist and must never contain prompts, paper text, model
+output, credentials, or user identifiers.
+
+Full-job checkpoint pointers are nullable until the first successful commit.
+Thereafter every pointer update is a compare-and-swap on both the current
+sequence and `lease_owner`. `execution_deadline_at` is assigned by the first
+successful exact claim and is not extended by resume attempts. OOM is retained
+as the primary attempt failure class so the next attempt can select the
+high-memory task definition; a later checkpoint restore error is supplemental
+diagnostic data and must not replace that cause.
+
 Survey capacity has three independent limits. PostgreSQL enforces the global
 and per-user limits atomically across every task; each worker separately bounds
 its local process concurrency:

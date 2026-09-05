@@ -347,3 +347,22 @@ def test_survey_migration_is_product_scoped_and_expand_only() -> None:
     assert "drop table" not in sql
     assert "truncate " not in sql
     assert "delete from" not in sql
+
+
+def test_survey_compute_attempts_migration_is_additive_and_fenced() -> None:
+    migration = Path(__file__).parents[3] / "migrations/014_survey_compute_attempts.sql"
+    raw_sql = migration.read_text(encoding="utf-8")
+    sql = " ".join(raw_sql.split()).lower()
+
+    assert "create table scholight.survey_compute_attempts" in sql
+    assert "checkpoint_manifest_key" in sql
+    assert "checkpoint_manifest_sha256" in sql
+    assert "execution_deadline_at" in sql
+    assert "create unique index survey_compute_attempts_active_draft_idx" in sql
+    assert "create unique index survey_compute_attempts_active_job_idx" in sql
+    assert "drop table" not in sql
+    assert "drop column" not in sql
+    assert "truncate " not in sql
+    assert "delete from" not in sql
+
+    validate_expand_only_sql(raw_sql)
