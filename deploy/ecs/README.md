@@ -230,6 +230,12 @@ Created once and updated deliberately. It owns persistent resources:
 - GitHub OIDC image-publish, database-production, and production roles;
 - the CloudFormation service role used by the runtime stack.
 
+The Survey repository policy grants only the fixed
+`sanchezcloud-scholight-survey-control` Lambda function the two ECR read actions
+required to retrieve its digest-pinned container image. Keep this resource
+policy in the foundation stack so runtime creation does not depend on an
+implicit repository-policy mutation by the deployment principal.
+
 The protected production role may register and run only the temporary
 `sanchezcloud-scholight-survey-canary` task family on the production cluster.
 It can pass only the Survey execution and task roles and can read only the

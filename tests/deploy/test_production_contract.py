@@ -320,6 +320,16 @@ def test_event_driven_survey_control_is_bounded_and_recoverable() -> None:
     assert "ExpireSurveyCheckpoints" in foundation
     assert "Prefix: surveys/_checkpoints/" in foundation
     assert "ExpirationInDays: 14" in foundation
+    survey_repository = foundation.split("  SurveyRepository:", maxsplit=1)[1].split(
+        "  DatabaseRuntimeSecret:", maxsplit=1
+    )[0]
+    assert "RepositoryPolicyText:" in survey_repository
+    assert "Principal: { Service: lambda.amazonaws.com }" in survey_repository
+    assert "Action: [ecr:BatchGetImage, ecr:GetDownloadUrlForLayer]" in survey_repository
+    assert (
+        "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:"
+        "sanchezcloud-scholight-survey-control" in survey_repository
+    )
     assert example["SurveyDispatchMode"] == "legacy"
 
 
