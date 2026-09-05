@@ -137,6 +137,37 @@ async def test_create_survey_reserves_slot_and_queues_initial_draft(
     assert call.kwargs["daily_limit"] == 5
 
 
+async def test_create_survey_succeeds_when_control_wakeup_is_not_accepted(
+    api_app: FastAPI,
+    api_client: httpx.AsyncClient,
+    active_user: UserRecord,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _authenticate(api_app, active_user)
+    monkeypatch.setattr(settings, "survey_runtime_enabled", True)
+    monkeypatch.setattr(settings, "survey_public_mode", "all")
+    survey_id = uuid4()
+    wake = AsyncMock(return_value=False)
+    with (
+        patch(
+            "scholight.api.routes.survey.create_survey",
+            new_callable=AsyncMock,
+            return_value=_survey(survey_id=survey_id),
+        ),
+        patch("scholight.api.routes.survey.wake_survey_control", wake),
+    ):
+        response = await api_client.post(
+            "/surveys",
+            json={
+                "initial_request": "retrieval augmented generation",
+                "client_request_id": str(uuid4()),
+            },
+        )
+
+    assert response.status_code == 201
+    wake.assert_awaited_once_with(reason="draft_submitted")
+
+
 async def test_create_survey_persists_generated_navigation_title(
     api_app: FastAPI,
     api_client: httpx.AsyncClient,

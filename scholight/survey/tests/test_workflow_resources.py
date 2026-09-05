@@ -86,7 +86,15 @@ def test_stage_rejects_symlinked_packaged_prompt(tmp_path: Path) -> None:
 def test_prepare_workspace_creates_only_listable_contract_directories(tmp_path: Path) -> None:
     prepared = prepare_workflow_workspace(tmp_path)
 
-    assert {path.name for path in prepared} == {"pdfs", "cards", "sections", "extracts"}
+    assert {path.name for path in prepared} == {
+        "pdfs",
+        "cards",
+        "sections",
+        "extracts",
+        "reference_inputs",
+        "reference_results",
+        "shard_results",
+    }
     assert all((tmp_path / name).is_dir() for name in ("pdfs", "cards", "sections", "extracts"))
     assert not (tmp_path / "03b_citation_expansion.md").exists()
 

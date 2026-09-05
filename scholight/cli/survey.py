@@ -22,6 +22,7 @@ import httpx
 
 from scholight.config import (
     settings,
+    validate_survey_compute_settings,
     validate_survey_draft_worker_settings,
     validate_survey_worker_settings,
 )
@@ -516,6 +517,56 @@ def serve_draft_worker() -> None:
             await close_pool()
 
     asyncio.run(_run())
+
+
+@survey_group.command("run-draft")
+@click.option("--draft-id", type=click.UUID, required=True)
+@click.option("--attempt-id", type=click.UUID, required=True)
+def run_draft(draft_id: UUID, attempt_id: UUID) -> None:
+    """Run one exact Draft attempt and exit."""
+    configure_logging()
+    try:
+        validate_survey_compute_settings(full=False)
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    async def _run() -> bool:
+        from scholight.survey.one_shot import run_exact_draft
+
+        await create_pool()
+        try:
+            return await run_exact_draft(draft_id=draft_id, attempt_id=attempt_id)
+        finally:
+            await close_pool()
+
+    claimed = asyncio.run(_run())
+    click.echo("completed" if claimed else "not-claimed")
+
+
+@survey_group.command("run-job")
+@click.option("--job-id", type=click.UUID, required=True)
+@click.option("--attempt-id", type=click.UUID, required=True)
+def run_job(job_id: UUID, attempt_id: UUID) -> None:
+    """Run one exact Full Survey attempt and exit."""
+    configure_logging()
+    try:
+        validate_survey_compute_settings(full=True)
+        _installed_rcm_version()
+        _verify_full_text_runtime()
+    except (OSError, subprocess.SubprocessError, RuntimeError, ValueError) as exc:
+        raise click.ClickException("Survey compute runtime checks did not pass") from exc
+
+    async def _run() -> bool:
+        from scholight.survey.one_shot import run_exact_job
+
+        await create_pool()
+        try:
+            return await run_exact_job(job_id=job_id, attempt_id=attempt_id)
+        finally:
+            await close_pool()
+
+    claimed = asyncio.run(_run())
+    click.echo("completed" if claimed else "not-claimed")
 
 
 @survey_group.command("status")

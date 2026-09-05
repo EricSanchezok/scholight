@@ -10,7 +10,15 @@ import tempfile
 from pathlib import Path
 
 _SCHEMA_REFERENCE = re.compile(r"(?<![A-Za-z0-9_./-])schema/([A-Za-z0-9_.-]+\.md)\b")
-_WORKSPACE_DIRECTORIES = ("pdfs", "cards", "sections", "extracts")
+_WORKSPACE_DIRECTORIES = (
+    "pdfs",
+    "cards",
+    "sections",
+    "extracts",
+    "reference_inputs",
+    "reference_results",
+    "shard_results",
+)
 
 
 class WorkflowResourceError(RuntimeError):

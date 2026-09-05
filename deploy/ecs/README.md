@@ -19,10 +19,13 @@ target so a large Survey or ingestion runtime cannot leak into the Search API.
 | `sanchezcloud-scholight-ingest` | `ingest` | Metadata sync and bounded paper-ingestion tasks |
 | `sanchezcloud-scholight-survey` | `survey` | Survey draft/full workers and the pinned RCM runtime |
 
-The API PDF endpoint renders archived Survey reports with WeasyPrint and the API
-`matplotlib` dependency. Formula images and chart assets are embedded in the
-document; the renderer rejects external report resources and runs as the
-non-root `scholight` user.
+New Full tasks pre-render PDFs in a one-render child process. The child receives
+only a local request-file path on argv, accepts only report-root and bundled
+font file URLs, loads only images referenced by final Markdown, writes directly
+to a file with a disk cache, and has independent wall-clock and address-space
+limits. A timeout, backend failure, or child OOM removes the partial PDF but
+does not block Markdown publication. The API retains its byte-render fallback
+only for archives created before pre-rendering was introduced.
 
 The API and Extract processes share only the lightweight models in
 `scholight.web_extract.contracts`. Importing the API application must not load
@@ -41,17 +44,86 @@ the API and Extract services publish the `api` and `extract` discovery names.
 Nginx therefore reaches `http://api:8000` through Service Connect without a
 public endpoint or a hard-coded task address.
 
-Survey is a first-release capability. There is no legacy Survey mode, alias,
-container entrypoint, or configuration fallback. The only controls are rollout
-gates:
+Survey has an explicit compute-dispatch compatibility switch in addition to
+the public rollout gates:
 
 - `SurveyRuntimeEnabled=false` keeps both Survey services at desired count zero.
 - `SurveyPublicMode=off` makes `/capabilities` report Survey as unavailable and
   protects the public routes.
 - `SurveyPublicMode=all` is accepted only when the runtime is enabled.
+- `SurveyDispatchMode=legacy` keeps the released resident Draft/Full services
+  available for rollback.
+- `SurveyDispatchMode=event` sets both service desired counts to zero and
+  enables the serialized control Lambda, its one-minute reconciliation rule,
+  and the ECS `STOPPED` rule.
 
-These gates are not a compatibility layer. They let operators verify the real
-RCM, artifact, queue, and email boundaries before the first public activation.
+The dispatch switch is temporary Expand/Adopt compatibility. It must remain
+`legacy` until migration 014, the one-shot image, Lambda IAM, checkpoint
+lifecycle, and staging fault matrix have all passed. Public HTTP states remain
+unchanged in either mode.
+
+### Event execution compatibility layer
+
+Migration `014_survey_compute_attempts.sql` is the additive Expand stage for
+job-scoped Survey compute. It does not change the public Survey states or HTTP
+contract, and the released long-lived workers may continue to ignore it during
+an N-1 rollback. The new `scholight.survey_compute_attempts` table is the
+internal record of one exact standalone task attempt. Its partial unique
+indexes allow at most one `reserved`, `launching`, `launched`, or `running`
+attempt per Draft or Full job.
+
+The control plane reserves capacity before `RunTask`; the task then claims only
+the Draft/job and attempt IDs carried in its command. The attempt UUID is also
+the database lease owner. A second task for the same attempt, an old attempt,
+or a task whose lease has expired cannot update progress or commit a
+checkpoint. ECS event versions are monotonic fences: an older duplicate
+`STOPPED` event cannot replace the recorded exit cause. Failure details use a
+strict scalar allowlist and must never contain prompts, paper text, model
+output, credentials, or user identifiers.
+
+Full-job checkpoint pointers are nullable until the first successful commit.
+Thereafter every pointer update is a compare-and-swap on both the current
+sequence and `lease_owner`. `execution_deadline_at` is assigned by the first
+successful exact claim and is not extended by resume attempts. OOM is retained
+as the primary attempt failure class so the next attempt can select the
+high-memory task definition; a later checkpoint restore error is supplemental
+diagnostic data and must not replace that cause.
+
+Event-mode Full tasks use `survey-dag-v1`, a host-owned durable DAG. RCM remains
+the research-unit runtime, but it no longer owns cross-stage scheduling. Every
+stage must produce and validate its declared file contract before the host can
+publish a checkpoint or start a downstream stage. Reference seeds run with a
+maximum concurrency of 2, paper cards with 4, and report sections with 4. Card
+and section plan JSON is durable before fan-out; a restored task schedules only
+units absent from the checkpoint's `completed_units` set.
+
+Checkpoints use
+`surveys/_checkpoints/v1/{user_id}/{job_id}/objects/{sha256}` and immutable
+manifests under the same job prefix. The task uploads new content-addressed
+objects with `If-None-Match: *`, publishes and reads back the manifest, then
+compare-and-swaps the PostgreSQL pointer using the owning attempt and expected
+sequence. A new attempt also searches for exactly one valid `sequence + 1`
+manifest whose parent hash and workflow/executor versions match. This closes
+the crash window between S3 publication and the database CAS without replaying
+the completed model unit. Multiple matching successors fail closed.
+
+Restore always begins in an empty local workspace. It validates ownership,
+path traversal, per-file and aggregate size, object key/content hash, and the
+8-MiB manifest ceiling before atomically installing each file. Only durable
+contracts, cards, sections, PDFs, extracts, reference shard inputs/results, and
+report assets are retained. Workflow schema is restaged from the image;
+trajectory and transient diagnostics are never checkpointed. The final
+Markdown is checkpointed before optional PDF rendering and final archive.
+
+The exact standalone commands are:
+
+```text
+scholight survey run-draft --draft-id <uuid> --attempt-id <uuid>
+scholight survey run-job --job-id <uuid> --attempt-id <uuid>
+```
+
+They return `not-claimed` and exit successfully when the attempt is duplicated
+or stale. This is expected idempotent behavior, not a worker failure.
 
 Survey capacity has three independent limits. PostgreSQL enforces the global
 and per-user limits atomically across every task; each worker separately bounds
@@ -59,8 +131,8 @@ its local process concurrency:
 
 | Queue | Global hard limit | Per-user limit | Per-worker limit |
 | --- | ---: | ---: | ---: |
-| Draft | 64 | 8 | 8 |
-| Full Survey | 16 | 4 | 2 |
+| Draft | 8 | 8 | 1 per standalone task |
+| Full Survey | 2 | 1 | 1 per standalone task |
 
 The Full Survey daily quota remains 3 by default and is independent from these
 simultaneous-execution limits. A quota override may permit more daily work but
@@ -97,13 +169,13 @@ memory, or 300 requests per target per minute. Extract uses 0.5 vCPU and 1 GiB a
 one to three tasks on its existing CPU and memory targets. Every long-running service enables
 the ECS deployment circuit breaker with automatic rollback.
 
-Autoscaling uses aggregate `outstanding / running ECS tasks` metric math with
-targets of 8 Drafts and 2 Full Surveys per task. Each Draft worker has 0.25 vCPU
-and 0.5 GiB, while each Full worker has 0.5 vCPU and 1 GiB and runs at most two
-jobs concurrently. The per-user Full
-limit remains 4 and the global Full limit remains 16. Fargate supplies its
-20-GiB minimum ephemeral storage because the template no longer provisions the
-previous 40-GiB override; production samples used less than 1 GiB per task.
+Legacy-mode autoscaling uses aggregate `outstanding / running ECS tasks` metric math with
+targets of 8 Drafts and 2 Full Surveys per task. Event mode does not use these
+scaling policies: a Draft gets a 0.25-vCPU/0.5-GiB task, and a Full Survey gets
+a 1-vCPU/4-GiB task. Only a recorded standard-profile OOM selects the
+1-vCPU/8-GiB definition on the next compute attempt. Every task uses the
+20-GiB Fargate default because S3 checkpoints, not local disk, are the recovery
+source.
 Scale-out waits 60 seconds;
 scale-in waits 15 minutes so short queue gaps do not terminate expensive
 workers. `SurveyDraftMaxTasks` and `SurveyFullMaxTasks` are deployment ceilings,
@@ -320,7 +392,7 @@ manual database-production(release SHA)
   -> run one Fargate migration task
   -> inspect exit code
 
-manual production(release SHA)
+manual production(release SHA, Survey dispatch mode)
   -> verify manifest
   -> defer a changed Survey image while Draft or Full leases are active
   -> verify final-stage AWS and provider capacity
@@ -332,6 +404,19 @@ manual production(release SHA)
 Application rollback selects an older manifest SHA. It does not move an image
 tag, rebuild code, restore a database snapshot, or reverse an additive schema
 migration.
+
+For Survey compute rollback, set `SurveyDispatchMode=legacy`. This disables
+both EventBridge rules and returns the two ECS services to desired count one.
+Do not delete migration 014, attempt rows, or checkpoint objects. Already
+running standalone tasks are fenced by their attempt lease and may finish; a
+resident worker cannot claim the same work while that lease remains valid.
+
+For event-mode adoption, first wait until legacy Draft and Full leases are
+empty, then deploy the same digest with `SurveyDispatchMode=event`. Verify the
+Lambda DLQ is empty, queued-to-RUNNING p95 is at most 120 seconds, and both
+Survey ECS services stay at zero desired/running tasks. A non-empty control DLQ
+pages immediately. API wakeup is asynchronous and best effort; the one-minute
+rule is the durable latency bound when invocation fails.
 
 The production workflow reads only aggregate CloudWatch activity metrics before
 replacing a changed Survey worker image. Any active Draft or Full lease keeps
@@ -382,13 +467,18 @@ least three image calls fail with no success in a six-hour window. Any finalizer
 failure alerts immediately because it means paid research completed without a
 deliverable report.
 
-RCM completion failures are likewise content-free. RCM 0.2.19 emits only the
-completion outcome, HTTP status, stable failure kind, retryability, and elapsed
-time; Scholight also recognizes the legacy `taken` hitch shape during a rolling
-upgrade without archiving its text. Terminal model failures and full-text
-runtime failures have one-event alarms. The Dashboard shows their stable codes,
-full/partial/abstract evidence counts, and aggregate full-text coverage without
-paper, topic, user, or Survey dimensions.
+RCM completion failures are likewise content-free. The pinned RCM 0.2.21 emits
+the completion outcome, HTTP status, stable failure kind, retryability, and
+elapsed time. Scholight accepts its additive
+request-shape contract: serialized request bytes, estimated tokens, message and
+tool counts, thinking/reasoning shape, unmatched or duplicate tool-call counts,
+sanitized provider identifiers, and `request_size`, `thinking_tool_history`, or
+`unknown_request`. Arbitrary event fields are discarded, and the legacy `taken`
+hitch shape remains a rolling-upgrade facade whose text is never archived.
+Terminal model failures and full-text runtime failures have one-event alarms.
+The Dashboard shows their stable codes, full/partial/abstract evidence counts,
+and aggregate full-text coverage without paper, topic, user, or Survey
+dimensions.
 
 A zero-exit RCM run may retain a classified model failure from the optional
 `image_planner` component. The Survey worker still runs its deterministic evidence
@@ -398,11 +488,26 @@ optional image-path failure alone must not discard otherwise complete research;
 it also cannot mask an earlier required-component failure. If local checks cannot
 produce a valid report, the model failure remains terminal.
 
-RCM 0.2.19 preserves provider reasoning and reconstructs visible assistant text
+RCM 0.2.21 preserves provider reasoning and reconstructs visible assistant text
 plus its tool calls as one assistant turn; call-correlated failed tool results
 are replayed as valid outcomes without re-splitting the turn. This is required
 by DeepSeek thinking mode when that mixed turn is replayed with its original
 `reasoning_content`.
+
+RCM 0.2.21 additionally replaces HTTP provider response bodies on the machine
+tape with a status-only hitch and publishes the content-free request class on
+`completion_end`. The standalone DAG treats a failed terminal completion as a
+unit failure even when the RCM process exits zero. A reference seed classified
+as `request_size` is halved and retried once; `thinking_tool_history` switches
+once to the canaried non-thinking workflow; `unknown_request` is not replayed.
+The latest sanitized failure is retained on the exact compute attempt and a
+clean ECS exit cannot erase it.
+
+The Survey image pins the 0.2.21 Linux archive from the primary RCM repository
+with its published SHA-256. A source commit, local binary, or guessed checksum
+is not a release artifact. The production deployment must still pass the fixed
+model, image, and full-text canaries against the candidate Survey image before
+the pinned runtime reaches the service.
 
 Run the fixed provider canary from a one-off task cloned from the Survey task
 definition; it bypasses model completion and never prints its prompt, key, or

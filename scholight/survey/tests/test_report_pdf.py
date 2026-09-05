@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 from datetime import date
+from pathlib import Path
 
 import pytest
 
@@ -11,6 +12,7 @@ from scholight.survey.report_pdf import (
     ReportPdfError,
     build_report_html,
     render_report_pdf,
+    render_report_pdf_to_file,
 )
 
 GENERATED_ON = date(2026, 8, 29)
@@ -167,6 +169,30 @@ def test_unknown_and_remote_images_are_dropped() -> None:
     assert "<img" not in html
 
 
+def test_file_mode_links_only_referenced_images_below_report_root(tmp_path: Path) -> None:
+    referenced = tmp_path / "figures" / "used.png"
+    referenced.parent.mkdir()
+    referenced.write_bytes(b"used")
+    (tmp_path / "unused.png").write_bytes(b"must-not-be-loaded")
+
+    html = build_report_html(
+        title="Survey",
+        markdown_text=(
+            "![Used](figures/used.png)\n"
+            "![Missing](figures/missing.png)\n"
+            "![Escape](../outside.png)\n"
+        ),
+        images={},
+        image_root=tmp_path,
+        generated_on=GENERATED_ON,
+    )
+
+    assert referenced.as_uri() in html
+    assert "data:image" not in html
+    assert "unused.png" not in html
+    assert html.count("<img") == 1
+
+
 def test_leading_title_h1_is_not_duplicated() -> None:
     html = build_report_html(
         title="Reliable model evaluation",
@@ -252,6 +278,47 @@ def test_render_report_pdf_returns_pdf_bytes() -> None:
 
     assert pdf[:5] == b"%PDF-"
     assert len(pdf) > 2000
+
+
+def test_file_renderer_writes_target_and_uses_disk_cache(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    report = tmp_path / "08_survey.md"
+    output = tmp_path / "08_survey.pdf"
+    cache = tmp_path / ".cache"
+    report.write_text("# Survey\n\nBody.", encoding="utf-8")
+    calls: list[dict[str, object]] = []
+
+    class FakeHTML:
+        def __init__(self, **kwargs: object) -> None:
+            calls.append(kwargs)
+
+        def write_pdf(self, **kwargs: object) -> None:
+            calls.append(kwargs)
+            Path(str(kwargs["target"])).write_bytes(b"%PDF-file")
+
+    class FakeWeasyPrint:
+        HTML = FakeHTML
+
+        @staticmethod
+        def default_url_fetcher(url: str, *args: object, **kwargs: object) -> object:
+            return {"url": url}
+
+    monkeypatch.setattr("scholight.survey.report_pdf._load_weasyprint", FakeWeasyPrint)
+
+    render_report_pdf_to_file(
+        title="Survey",
+        markdown_path=report,
+        output_path=output,
+        asset_root=tmp_path,
+        cache_dir=cache,
+        generated_on=GENERATED_ON,
+    )
+
+    assert output.read_bytes() == b"%PDF-file"
+    assert calls[1]["cache"] == str(cache)
+    assert str(calls[1]["target"]).endswith(".08_survey.pdf.tmp")
 
 
 def test_figure_captions_after_images_get_caption_styling() -> None:

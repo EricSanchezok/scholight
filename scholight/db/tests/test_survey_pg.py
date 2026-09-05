@@ -31,6 +31,17 @@ from scholight.db.queries_survey import (
     start_survey,
     update_survey_job_progress,
 )
+from scholight.db.queries_survey_attempts import (
+    claim_exact_survey_draft,
+    claim_exact_survey_job,
+    commit_survey_job_checkpoint,
+    heartbeat_compute_attempt,
+    mark_compute_attempt_launched,
+    record_compute_attempt_diagnostics,
+    record_compute_attempt_stopped,
+    record_compute_attempt_succeeded,
+    reserve_next_compute_attempt,
+)
 from scholight.db.queries_survey_capacity import get_survey_capacity_snapshot
 from scholight.db.queries_survey_cleanup import get_artifact_cleanup_status
 from scholight.db.queries_survey_drafts import (
@@ -119,6 +130,329 @@ async def _usage(pool: asyncpg.Pool) -> tuple[int, int]:
     )
     assert row is not None
     return int(row["reserved_count"]), int(row["succeeded_count"])
+
+
+@pytest.mark.asyncio
+async def test_exact_compute_attempt_claim_and_checkpoint_are_fenced(
+    survey_pool: asyncpg.Pool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("scholight.db.queries_survey.get_pool", lambda: survey_pool)
+    monkeypatch.setattr("scholight.db.queries_survey_drafts.get_pool", lambda: survey_pool)
+    monkeypatch.setattr("scholight.db.queries_survey_attempts.get_pool", lambda: survey_pool)
+    survey_id = await _create()
+    await _complete_next_draft(markdown="# Ready\n\nA reviewed plan.")
+    job_id = uuid4()
+    await start_survey(
+        survey_id=survey_id,
+        user_id=42,
+        job_id=job_id,
+        client_request_id=uuid4(),
+        request_hash="1" * 64,
+    )
+
+    attempt = await reserve_next_compute_attempt(
+        work_kind="full",
+        task_definition_arn="arn:aws:ecs:ap-southeast-1:123456789012:task-definition/full:1",
+        global_concurrency=2,
+        per_user_concurrency=1,
+    )
+    assert attempt is not None
+    assert attempt.job_id == job_id
+    assert attempt.attempt_no == 1
+    assert attempt.resource_profile == "full-standard"
+
+    task_arn = "arn:aws:ecs:ap-southeast-1:123456789012:task/cluster/task-1"
+    launched = await mark_compute_attempt_launched(
+        attempt_id=attempt.id,
+        task_arn=task_arn,
+    )
+    assert launched.ecs_task_arn == task_arn
+
+    claimed = await claim_exact_survey_job(
+        job_id=job_id,
+        attempt_id=attempt.id,
+        lease_seconds=120,
+        workflow_version="workflow-v1",
+        executor_version="executor-v1",
+        execution_timeout_seconds=86400,
+    )
+    assert claimed is not None
+    assert claimed.status == "running"
+    assert claimed.lease_owner == attempt.id
+    assert (
+        await claim_exact_survey_job(
+            job_id=job_id,
+            attempt_id=attempt.id,
+            lease_seconds=120,
+            workflow_version="workflow-v1",
+            executor_version="executor-v1",
+            execution_timeout_seconds=86400,
+        )
+        is None
+    )
+
+    assert await commit_survey_job_checkpoint(
+        job_id=job_id,
+        attempt_id=attempt.id,
+        expected_sequence=0,
+        stage="query_plan",
+        manifest_key=f"surveys/_checkpoints/v1/42/{job_id}/manifests/1.json",
+        manifest_sha256="a" * 64,
+    )
+    assert not await commit_survey_job_checkpoint(
+        job_id=job_id,
+        attempt_id=attempt.id,
+        expected_sequence=0,
+        stage="query_plan",
+        manifest_key=f"surveys/_checkpoints/v1/42/{job_id}/manifests/stale.json",
+        manifest_sha256="b" * 64,
+    )
+
+    row = await survey_pool.fetchrow(
+        "SELECT checkpoint_sequence, checkpoint_stage, checkpoint_manifest_sha256 "
+        "FROM scholight.survey_jobs WHERE id = $1",
+        job_id,
+    )
+    assert row is not None
+    assert dict(row) == {
+        "checkpoint_sequence": 1,
+        "checkpoint_stage": "query_plan",
+        "checkpoint_manifest_sha256": "a" * 64,
+    }
+
+
+@pytest.mark.asyncio
+async def test_exact_draft_attempt_claims_only_its_reserved_revision(
+    survey_pool: asyncpg.Pool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("scholight.db.queries_survey.get_pool", lambda: survey_pool)
+    monkeypatch.setattr("scholight.db.queries_survey_drafts.get_pool", lambda: survey_pool)
+    monkeypatch.setattr("scholight.db.queries_survey_attempts.get_pool", lambda: survey_pool)
+    survey_id = await _create()
+    draft_id = await survey_pool.fetchval(
+        "SELECT id FROM scholight.survey_drafts WHERE survey_id = $1",
+        survey_id,
+    )
+    attempt = await reserve_next_compute_attempt(
+        work_kind="draft",
+        task_definition_arn="arn:aws:ecs:ap-southeast-1:123456789012:task-definition/draft:1",
+        global_concurrency=8,
+        per_user_concurrency=8,
+    )
+    assert attempt is not None
+    assert attempt.draft_id == draft_id
+
+    await mark_compute_attempt_launched(attempt_id=attempt.id, task_arn=f"task/{attempt.id}")
+    claimed = await claim_exact_survey_draft(
+        draft_id=draft_id,
+        attempt_id=attempt.id,
+        lease_seconds=120,
+    )
+    assert claimed is not None
+    assert claimed.status == "running"
+    assert claimed.lease_owner == attempt.id
+
+
+@pytest.mark.asyncio
+async def test_provider_diagnostics_survive_clean_terminal_task_exit(
+    survey_pool: asyncpg.Pool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("scholight.db.queries_survey.get_pool", lambda: survey_pool)
+    monkeypatch.setattr("scholight.db.queries_survey_drafts.get_pool", lambda: survey_pool)
+    monkeypatch.setattr("scholight.db.queries_survey_attempts.get_pool", lambda: survey_pool)
+    survey_id = await _create()
+    await _complete_next_draft(markdown="# Ready\n\nA reviewed plan.")
+    job_id = uuid4()
+    await start_survey(
+        survey_id=survey_id,
+        user_id=42,
+        job_id=job_id,
+        client_request_id=uuid4(),
+        request_hash="1" * 64,
+    )
+    attempt = await reserve_next_compute_attempt(
+        work_kind="full",
+        task_definition_arn="standard:1",
+        global_concurrency=2,
+        per_user_concurrency=1,
+    )
+    assert attempt is not None
+    await mark_compute_attempt_launched(attempt_id=attempt.id, task_arn=f"task/{attempt.id}")
+    assert await claim_exact_survey_job(
+        job_id=job_id,
+        attempt_id=attempt.id,
+        lease_seconds=120,
+        workflow_version="workflow-v1",
+        executor_version="executor-v1",
+        execution_timeout_seconds=86400,
+    )
+
+    recorded = await record_compute_attempt_diagnostics(
+        attempt_id=attempt.id,
+        failure_class="provider_request_size",
+        failure_details={
+            "provider_status": 400,
+            "provider_code": "context_length_exceeded",
+            "provider_request_class": "request_size",
+            "request_bytes": 900_000,
+            "tool_call_count": 5,
+            "prompt": "must be dropped",
+        },
+    )
+
+    assert recorded is not None
+    assert recorded.failure_class == "provider_request_size"
+    assert recorded.failure_details == {
+        "provider_status": 400,
+        "provider_code": "context_length_exceeded",
+        "provider_request_class": "request_size",
+        "request_bytes": 900_000,
+        "tool_call_count": 5,
+    }
+    await survey_pool.execute(
+        "UPDATE scholight.survey_jobs SET status = 'finished', terminal_outcome = 'failed', "
+        "storage_bucket = 'bucket', storage_prefix = 'surveys/v1/test', "
+        "manifest_key = 'surveys/v1/test/manifest.json', finished_at = now() WHERE id = $1",
+        job_id,
+    )
+    succeeded = await record_compute_attempt_succeeded(
+        attempt_id=attempt.id,
+        event_version=10,
+    )
+    assert succeeded.status == "succeeded"
+    assert succeeded.failure_class == "provider_request_size"
+    assert succeeded.failure_details == recorded.failure_details
+
+
+@pytest.mark.asyncio
+async def test_oom_stop_event_is_idempotent_and_escalates_the_next_attempt(
+    survey_pool: asyncpg.Pool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("scholight.db.queries_survey.get_pool", lambda: survey_pool)
+    monkeypatch.setattr("scholight.db.queries_survey_drafts.get_pool", lambda: survey_pool)
+    monkeypatch.setattr("scholight.db.queries_survey_attempts.get_pool", lambda: survey_pool)
+    survey_id = await _create()
+    await _complete_next_draft(markdown="# Ready\n\nA reviewed plan.")
+    job_id = uuid4()
+    await start_survey(
+        survey_id=survey_id,
+        user_id=42,
+        job_id=job_id,
+        client_request_id=uuid4(),
+        request_hash="1" * 64,
+    )
+    first = await reserve_next_compute_attempt(
+        work_kind="full",
+        task_definition_arn="standard:1",
+        global_concurrency=2,
+        per_user_concurrency=1,
+    )
+    assert first is not None
+    await mark_compute_attempt_launched(attempt_id=first.id, task_arn=f"task/{first.id}")
+    assert await claim_exact_survey_job(
+        job_id=job_id,
+        attempt_id=first.id,
+        lease_seconds=120,
+        workflow_version="workflow-v1",
+        executor_version="executor-v1",
+        execution_timeout_seconds=86400,
+    )
+    assert await heartbeat_compute_attempt(attempt_id=first.id, lease_seconds=120) == "owned"
+
+    stopped = await record_compute_attempt_stopped(
+        attempt_id=first.id,
+        event_version=10,
+        exit_code=137,
+        stop_code="EssentialContainerExited",
+        stopped_reason="OutOfMemoryError: container killed",
+        failure_class="oom",
+        failure_details={"container_reason": "OutOfMemoryError", "prompt": "must be dropped"},
+        retryable=True,
+    )
+    assert stopped.status == "retryable"
+    assert stopped.failure_class == "oom"
+    assert stopped.failure_details == {"container_reason": "OutOfMemoryError"}
+
+    duplicate = await record_compute_attempt_stopped(
+        attempt_id=first.id,
+        event_version=9,
+        exit_code=1,
+        stop_code="stale",
+        stopped_reason="stale",
+        failure_class="unknown",
+        failure_details={},
+        retryable=False,
+    )
+    assert duplicate.status == "retryable"
+    assert duplicate.ecs_event_version == 10
+    assert duplicate.failure_class == "oom"
+
+    second = await reserve_next_compute_attempt(
+        work_kind="full",
+        task_definition_arn="standard:1",
+        high_memory_task_definition_arn="high-memory:1",
+        global_concurrency=2,
+        per_user_concurrency=1,
+    )
+    assert second is not None
+    assert second.job_id == job_id
+    assert second.attempt_no == 2
+    assert second.resource_profile == "full-high-memory"
+    assert second.task_definition_arn == "high-memory:1"
+
+    await mark_compute_attempt_launched(attempt_id=second.id, task_arn=f"task/{second.id}")
+    assert await claim_exact_survey_job(
+        job_id=job_id,
+        attempt_id=second.id,
+        lease_seconds=120,
+        workflow_version="workflow-v1",
+        executor_version="executor-v1",
+        execution_timeout_seconds=86400,
+    )
+    await settle_survey_execution(
+        job_id=job_id,
+        worker_id=second.id,
+        outcome="failed",
+        error_code="survey_compute_oom",
+        error_message="Survey generation could not be completed.",
+        chargeable=False,
+    )
+    await record_compute_attempt_stopped(
+        attempt_id=second.id,
+        event_version=11,
+        exit_code=137,
+        stop_code="EssentialContainerExited",
+        stopped_reason="OutOfMemoryError: container killed",
+        failure_class="oom",
+        failure_details={"container_reason": "OutOfMemoryError"},
+        retryable=False,
+    )
+    archive = await reserve_next_compute_attempt(
+        work_kind="full",
+        task_definition_arn="standard:1",
+        high_memory_task_definition_arn="high-memory:1",
+        global_concurrency=2,
+        per_user_concurrency=1,
+    )
+    assert archive is not None
+    assert archive.attempt_no == 3
+    assert archive.resource_profile == "full-high-memory"
+    await mark_compute_attempt_launched(attempt_id=archive.id, task_arn=f"task/{archive.id}")
+    archive_job = await claim_exact_survey_job(
+        job_id=job_id,
+        attempt_id=archive.id,
+        lease_seconds=120,
+        workflow_version="workflow-v1",
+        executor_version="executor-v1",
+        execution_timeout_seconds=86400,
+    )
+    assert archive_job is not None
+    assert archive_job.status == "archiving"
+    assert archive_job.terminal_outcome == "failed"
 
 
 @pytest.mark.asyncio

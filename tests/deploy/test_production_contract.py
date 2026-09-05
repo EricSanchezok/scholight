@@ -243,7 +243,7 @@ def test_survey_capacity_contract_is_explicit_and_staged() -> None:
         "  IngestTaskDefinition:", maxsplit=1
     )[0]
     full_task = runtime.split("  SurveyTaskDefinition:", maxsplit=1)[1].split(
-        "  MigrationTaskDefinition:", maxsplit=1
+        "  SurveyFullTaskDefinition:", maxsplit=1
     )[0]
 
     assert 'SCHOLIGHT_SURVEY_DRAFT_GLOBAL_CONCURRENCY, Value: "64"' in draft_task
@@ -287,6 +287,37 @@ def test_survey_capacity_contract_is_explicit_and_staged() -> None:
     assert "1/1|2/2|4/4|8/8" in workflow
     assert "8/16" not in workflow
     assert "scripts/check_survey_capacity_stage.py" in workflow
+
+
+def test_event_driven_survey_control_is_bounded_and_recoverable() -> None:
+    runtime = (ECS / "scholight-production.yml").read_text(encoding="utf-8")
+    foundation = (ECS / "scholight-foundation.yml").read_text(encoding="utf-8")
+    example = yaml.safe_load(
+        (ECS / "production.parameters.example.json").read_text(encoding="utf-8")
+    )
+
+    assert "SurveyDispatchMode:" in runtime
+    assert "AllowedValues: [legacy, event]" in runtime
+    assert "ReservedConcurrentExecutions: 1" in runtime
+    assert "MemorySize: 512" in runtime
+    assert "Timeout: 60" in runtime
+    assert "ScheduleExpression: rate(1 minute)" in runtime
+    assert "detail-type: [ECS Task State Change]" in runtime
+    assert "lastStatus: [STOPPED]" in runtime
+    assert "SurveyControlDeadLetterQueue:" in runtime
+    assert "ApproximateNumberOfMessagesVisible" in runtime
+    assert "EntryPoint: [python, -m, awslambdaric]" in runtime
+    assert "SurveyFullTaskDefinition:" in runtime
+    assert 'Memory: "4096"' in runtime
+    assert "SurveyFullHighMemoryTaskDefinition:" in runtime
+    assert 'Memory: "8192"' in runtime
+    assert runtime.count("EphemeralStorage: { SizeInGiB: 20 }") == 2
+    assert "Action: lambda:InvokeFunction" in runtime
+    assert "clientToken" not in runtime  # generated from the durable attempt in Python
+    assert "ExpireSurveyCheckpoints" in foundation
+    assert "Prefix: surveys/_checkpoints/" in foundation
+    assert "ExpirationInDays: 14" in foundation
+    assert example["SurveyDispatchMode"] == "legacy"
 
 
 def test_survey_worker_autoscaling_and_protection_are_bounded() -> None:
@@ -755,14 +786,16 @@ def test_survey_image_pins_verified_rcm_release() -> None:
     worker = (ROOT / "scholight/survey/worker.py").read_text(encoding="utf-8")
     workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
 
-    assert "ARG RCM_VERSION=v0.2.19" in dockerfile
-    assert 'RCM_VERSION = "0.2.19"' in worker
-    assert "afe5c1c6fb7ad6842543faffa418c19ce8b145a2c955b93cd65e5ecd80a688f1" in dockerfile
+    assert "ARG RCM_VERSION=v0.2.21" in dockerfile
+    assert 'RCM_VERSION = "0.2.21"' in worker
+    assert "1df945a49c7980b13ae28c1f3019e541e8f009cb5731471b0b51242dfa14c2d7" in dockerfile
+    assert "EricSanchezok/recursive-context-machine/releases/download" in dockerfile
+    assert "EricSanchezok/rcm-dist" not in dockerfile
     assert "sha256sum --check" in dockerfile
     assert "COPY --from=survey-builder /app/bin/accelerate /usr/local/bin/accelerate" in dockerfile
     assert "/releases/latest/" not in dockerfile
     assert "test -x /usr/local/bin/accelerate" in workflow
-    assert '"accelerate 0.2.19"' in workflow
+    assert '"accelerate 0.2.21"' in workflow
 
 
 def test_pull_request_ci_builds_and_executes_survey_fulltext_image() -> None:

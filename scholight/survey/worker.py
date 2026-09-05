@@ -7,11 +7,12 @@ import json
 import re
 import shutil
 import stat
+import sys
 import time
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 from uuid import UUID, uuid4
 
 import structlog
@@ -30,6 +31,7 @@ from scholight.db.queries_survey import (
     settle_survey_execution,
     update_survey_job_progress,
 )
+from scholight.db.queries_survey_attempts import heartbeat_compute_attempt
 from scholight.db.queries_survey_capacity import get_survey_capacity_snapshot
 from scholight.logging.emf import emit_emf
 from scholight.sources.arxiv import arxiv_artifact_stem
@@ -63,9 +65,9 @@ from scholight.survey.process import (
     write_stdin,
 )
 from scholight.survey.progress import stage_for_component
+from scholight.survey.rcm_diagnostics import sanitize_completion_failure
 from scholight.survey.report_pdf import (
     fallback_title as report_fallback_title,
-    render_report_pdf,
 )
 from scholight.survey.runtime import survey_environment
 from scholight.survey.workflow_resources import (
@@ -77,7 +79,7 @@ from scholight.survey.workflow_runtime import workflow_file
 
 logger = structlog.get_logger(__name__)
 
-RCM_VERSION = "0.2.19"
+RCM_VERSION = "0.2.21"
 WORKFLOW_VERSION = "scholight-survey-v2.1"
 _IDLE_SECONDS = 1
 _RECOVERY_SECONDS = 30
@@ -159,10 +161,11 @@ def _classify_model_hitch(preview: object, *, role: object = None) -> dict[str, 
 
 def _classify_completion_failure(event: dict[str, object]) -> dict[str, object]:
     """Map new RCM completion metadata to stable diagnostics without content."""
-    failure_kind = event.get("failure_kind")
+    sanitized = sanitize_completion_failure(event)
+    failure_kind = sanitized.get("failure_kind")
     declared_kind = failure_kind if isinstance(failure_kind, str) else "unknown"
     kind = declared_kind
-    http_status = event.get("http_status")
+    http_status = sanitized.get("http_status")
     status = http_status if isinstance(http_status, int) and 100 <= http_status <= 599 else None
     error_codes = {
         "rate_limited": "model_rate_limited",
@@ -199,11 +202,30 @@ def _classify_completion_failure(event: dict[str, object]) -> dict[str, object]:
     }
     if status is not None:
         result["http_status"] = status
-    if isinstance(event.get("retryable"), bool):
-        result["retryable"] = event["retryable"]
-    duration_ms = event.get("duration_ms")
+    if isinstance(sanitized.get("retryable"), bool):
+        result["retryable"] = sanitized["retryable"]
+    duration_ms = sanitized.get("duration_ms")
     if isinstance(duration_ms, int) and duration_ms >= 0:
         result["duration_ms"] = duration_ms
+    for field in (
+        "request_class",
+        "provider_code",
+        "provider_type",
+        "request_id",
+        "serialized_request_bytes",
+        "estimated_input_tokens",
+        "message_count",
+        "tool_definition_count",
+        "tool_call_count",
+        "tool_result_count",
+        "thinking_enabled",
+        "reasoning_content_present",
+        "reasoning_content_bytes",
+        "unmatched_tool_call_count",
+        "duplicate_tool_call_count",
+    ):
+        if field in sanitized:
+            result[field] = sanitized[field]
     return result
 
 
@@ -353,6 +375,16 @@ class SurveyExecutionResult:
     stderr_tail: str | None = None
     diagnostics: dict[str, Any] | None = None
     chargeable: bool = True
+
+
+class SurveyJobExecutor(Protocol):
+    async def __call__(
+        self,
+        job: SurveyJob,
+        run_root: Path,
+        *,
+        control: ProcessControl,
+    ) -> SurveyExecutionResult: ...
 
 
 def _retained_stderr_tail(
@@ -1660,6 +1692,7 @@ async def _heartbeat(
     worker_id: UUID,
     stop: asyncio.Event,
     control: ProcessControl,
+    attempt_id: UUID | None = None,
 ) -> None:
     last_owned = time.monotonic()
     while not stop.is_set():
@@ -1669,11 +1702,17 @@ async def _heartbeat(
         except TimeoutError:
             started_at = time.perf_counter()
             try:
-                state = await heartbeat_survey_job(
-                    job_id=job_id,
-                    worker_id=worker_id,
-                    lease_seconds=settings.survey_lease_seconds,
-                )
+                if attempt_id is None:
+                    state = await heartbeat_survey_job(
+                        job_id=job_id,
+                        worker_id=worker_id,
+                        lease_seconds=settings.survey_lease_seconds,
+                    )
+                else:
+                    state = await heartbeat_compute_attempt(
+                        attempt_id=attempt_id,
+                        lease_seconds=settings.survey_lease_seconds,
+                    )
             except Exception as exc:
                 logger.warning(
                     "survey_heartbeat_failed",
@@ -1744,18 +1783,6 @@ def _run_metadata(job: SurveyJob, result: SurveyExecutionResult | None) -> dict[
     }
 
 
-def _report_image_assets(run_root: Path) -> dict[str, bytes]:
-    """Collect run-relative image bytes referenced by the finalized report."""
-    assets: dict[str, bytes] = {}
-    for pattern in ("*.png", "*.jpg", "*.jpeg", "*.gif", "*.webp"):
-        for path in run_root.rglob(pattern):
-            if not path.is_file():
-                continue
-            relative = path.relative_to(run_root).as_posix()
-            assets[relative] = path.read_bytes()
-    return assets
-
-
 def _draft_heading_title(draft_markdown: str) -> str:
     for line in draft_markdown.splitlines():
         text = line.lstrip("#").strip()
@@ -1786,24 +1813,74 @@ async def _prerender_report_pdf(*, job: SurveyJob, run_root: Path) -> None:
     if not report.is_file():
         return
     try:
-        markdown_text = await asyncio.to_thread(report.read_text, "utf-8")
-        images = await asyncio.to_thread(_report_image_assets, run_root)
         title = await _report_pdf_title(job)
-        pdf = await asyncio.to_thread(
-            render_report_pdf,
+        await _render_report_pdf_child(
             title=title,
-            markdown_text=markdown_text,
-            images=images,
+            report=report,
+            output=run_root / "08_survey.pdf",
+            run_root=run_root,
             generated_on=datetime.now(UTC).date(),
         )
-        await asyncio.to_thread((run_root / "08_survey.pdf").write_bytes, pdf)
-        logger.info("survey_report_pdf_prerendered", job_id=str(job.id), size=len(pdf))
+        size = (run_root / "08_survey.pdf").stat().st_size
+        logger.info("survey_report_pdf_prerendered", job_id=str(job.id), size=size)
     except Exception as exc:
         logger.warning(
             "survey_report_pdf_prerender_failed",
             job_id=str(job.id),
             error_type=type(exc).__name__,
         )
+
+
+async def _render_report_pdf_child(
+    *,
+    title: str,
+    report: Path,
+    output: Path,
+    run_root: Path,
+    generated_on: date,
+) -> None:
+    """Render one PDF in a fresh process and keep user content off argv."""
+    request_root = run_root.parent / f".pdf-render-{uuid4().hex}"
+    request_root.mkdir(mode=0o700)
+    request_path = request_root / "request.json"
+    request_path.write_text(
+        json.dumps(
+            {
+                "title": title,
+                "generated_on": generated_on.isoformat(),
+                "asset_root": str(run_root.resolve()),
+                "markdown_path": str(report.resolve()),
+                "output_path": str(output.resolve()),
+            },
+            separators=(",", ":"),
+        ),
+        encoding="utf-8",
+    )
+    try:
+        process = await asyncio.create_subprocess_exec(
+            sys.executable,
+            "-m",
+            "scholight.survey.pdf_child",
+            "--request",
+            str(request_path),
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        try:
+            return_code = await asyncio.wait_for(
+                process.wait(),
+                timeout=settings.survey_pdf_timeout_seconds,
+            )
+        except TimeoutError:
+            await terminate_process_group(process)
+            raise RuntimeError("Survey PDF child timed out") from None
+        if return_code != 0 or not output.is_file():
+            output.unlink(missing_ok=True)
+            raise RuntimeError("Survey PDF child failed")
+    finally:
+        shutil.rmtree(request_root, ignore_errors=True)
 
 
 async def _archive(
@@ -1875,6 +1952,8 @@ async def process_survey_job(
     job: SurveyJob,
     worker_id: UUID,
     artifact_store: SurveyArtifactStore,
+    attempt_id: UUID | None = None,
+    execute_job: SurveyJobExecutor | None = None,
 ) -> None:
     """Execute a pending claim or resume archiving without rerunning RCM."""
     run_root = _job_root(job.id) / "run"
@@ -1882,13 +1961,20 @@ async def process_survey_job(
     stop = asyncio.Event()
     control = ProcessControl()
     heartbeat = asyncio.create_task(
-        _heartbeat(job_id=job.id, worker_id=worker_id, stop=stop, control=control)
+        _heartbeat(
+            job_id=job.id,
+            worker_id=worker_id,
+            stop=stop,
+            control=control,
+            attempt_id=attempt_id,
+        )
     )
     try:
         if job.status == "running":
             run_root.mkdir(parents=True, exist_ok=True)
             try:
-                result = await execute_survey(job, run_root, control=control)
+                executor = execute_job or execute_survey
+                result = await executor(job, run_root, control=control)
             except SurveyLeaseLostError:
                 logger.info("survey_stopped_after_lease_loss", job_id=str(job.id))
                 return
@@ -2089,6 +2175,7 @@ __all__ = [
     "RCM_VERSION",
     "WORKFLOW_VERSION",
     "SurveyExecutionResult",
+    "SurveyJobExecutor",
     "execute_survey",
     "process_survey_job",
     "serve_survey_worker",

@@ -52,7 +52,7 @@ _STYLE_ATTRIBUTE_PATTERN = re.compile(
 _MATH_DISPLAY_PATTERN = re.compile(r"(?<!\\)\$\$(?P<formula>.+?)(?<!\\)\$\$", re.DOTALL)
 _MATH_INLINE_PATTERN = re.compile(r"(?<!\\)\$(?!\$)(?P<formula>[^$\n]+?)(?<!\\)\$")
 _MATH_MAX_CHARS = 2_000
-_MATH_TOKEN_PREFIX = "MATHTOKEN_"
+_MATH_TOKEN_PREFIX = "MATHTOKEN_"  # nosec B105 -- document placeholder, not a secret.
 _FIGURE_CAPTION_PATTERN = re.compile(
     r"(<p><img(?![^>]*class=\"math-)[^>]*>)</p>\s*<p><em>([^<]+)</em></p>",
 )
@@ -252,6 +252,19 @@ def _first_attribute(pattern: re.Pattern[str], tag: str) -> str | None:
 
 def _resolve_image(src: str | None, images: dict[str, bytes]) -> tuple[bytes, str] | None:
     """Map a Markdown image reference onto a manifest-authorized asset."""
+    path = _normalized_image_path(src)
+    if path is None:
+        return None
+    data = images.get(path)
+    if data is None:
+        return None
+    mime = _IMAGE_MIME_BY_SUFFIX.get(PurePosixPath(path).suffix.lower())
+    if mime is None:
+        return None
+    return data, mime
+
+
+def _normalized_image_path(src: str | None) -> str | None:
     if not src or re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*:", src) or src.startswith(("/", "//")):
         return None
     clean = src.split("#", 1)[0].split("?", 1)[0]
@@ -262,14 +275,7 @@ def _resolve_image(src: str | None, images: dict[str, bytes]) -> tuple[bytes, st
         if part == "..":
             return None
         parts.append(part)
-    path = "/".join(parts)
-    data = images.get(path)
-    if data is None:
-        return None
-    mime = _IMAGE_MIME_BY_SUFFIX.get(PurePosixPath(path).suffix.lower())
-    if mime is None:
-        return None
-    return data, mime
+    return "/".join(parts)
 
 
 def _embed_images(body_html: str, images: dict[str, bytes]) -> str:
@@ -284,6 +290,25 @@ def _embed_images(body_html: str, images: dict[str, bytes]) -> str:
         alt = _first_attribute(_ALT_ATTRIBUTE_PATTERN, tag)
         alt_attribute = f' alt="{escape(alt)}"' if alt is not None else ""
         return f'<img src="data:{mime};base64,{encoded}"{alt_attribute} />'
+
+    return _IMG_TAG_PATTERN.sub(replace, body_html)
+
+
+def _link_local_images(body_html: str, image_root: Path) -> str:
+    """Keep only report-referenced image files below one trusted root."""
+    resolved_root = image_root.resolve()
+
+    def replace(match: re.Match[str]) -> str:
+        tag = match.group(0)
+        relative = _normalized_image_path(_first_attribute(_SRC_ATTRIBUTE_PATTERN, tag))
+        if relative is None or PurePosixPath(relative).suffix.lower() not in _IMAGE_MIME_BY_SUFFIX:
+            return ""
+        path = (resolved_root / relative).resolve()
+        if not _is_within(path, resolved_root) or not path.is_file():
+            return ""
+        alt = _first_attribute(_ALT_ATTRIBUTE_PATTERN, tag)
+        alt_attribute = f' alt="{escape(alt)}"' if alt is not None else ""
+        return f'<img src="{path.as_uri()}"{alt_attribute} />'
 
     return _IMG_TAG_PATTERN.sub(replace, body_html)
 
@@ -408,15 +433,14 @@ def _render_math_html(body_html: str, token_map: dict[str, tuple[str, bool]]) ->
     html_by_token: dict[str, str] = {}
     for index, token in enumerate(tokens):
         formula, display = token_map[token]
-        if index in oversized or rendered.get(index) is None:
+        rendered_html = rendered.get(index)
+        if index in oversized or rendered_html is None:
             delimiter = "$$" if display else "$"
             html_by_token[token] = (
                 f'<span class="math-fallback">{escape(f"{delimiter}{formula}{delimiter}")}</span>'
             )
         else:
-            html = rendered[index]
-            assert html is not None
-            html_by_token[token] = html
+            html_by_token[token] = rendered_html
     return _inject_math_html(body_html, html_by_token)
 
 
@@ -443,6 +467,7 @@ def build_report_html(
     markdown_text: str,
     images: dict[str, bytes],
     generated_on: date,
+    image_root: Path | None = None,
 ) -> str:
     """Assemble the self-contained print HTML document for one Survey report."""
     from scholight.survey.math_format import normalize_report_math
@@ -458,7 +483,11 @@ def build_report_html(
         lambda match: f'{match.group(1)}<p class="chart-caption">{match.group(2)}</p>',
         body_html,
     )
-    body_html = _embed_images(body_html, images)
+    body_html = (
+        _link_local_images(body_html, image_root)
+        if image_root is not None
+        else _embed_images(body_html, images)
+    )
     body_html = _sanitize_body_html(body_html)
     body_html = _render_math_html(body_html, token_map)
     body_html = _drop_leading_duplicate_title(body_html, title)
@@ -512,19 +541,7 @@ def render_report_pdf(
     except (ImportError, OSError) as exc:
         raise ReportPdfError("PDF backend is unavailable on this host") from exc
 
-    default_url_fetcher = weasyprint.default_url_fetcher
-
-    def safe_url_fetcher(url: str, *args: Any, **kwargs: Any) -> Any:
-        parsed = urlsplit(url)
-        if parsed.scheme == "data":
-            return default_url_fetcher(url, *args, **kwargs)
-        if parsed.scheme == "file":
-            resource_path = Path(unquote(parsed.path)).resolve()
-            allowed_roots = (_FONTS_DIR.resolve(), (_KATEX_DIR / "fonts").resolve())
-            if not any(_is_within(resource_path, root) for root in allowed_roots):
-                raise ValueError("PDF resources must be bundled assets")
-            return default_url_fetcher(url, *args, **kwargs)
-        raise ValueError("PDF resources must be bundled assets")
+    safe_url_fetcher = _safe_url_fetcher(weasyprint, allow_data=True)
 
     try:
         return bytes(weasyprint.HTML(string=html, url_fetcher=safe_url_fetcher).write_pdf())
@@ -536,11 +553,91 @@ def render_report_pdf(
         raise ReportPdfError("Survey report PDF could not be rendered") from exc
 
 
+def render_report_pdf_to_file(
+    *,
+    title: str,
+    markdown_path: Path,
+    output_path: Path,
+    asset_root: Path,
+    cache_dir: Path,
+    generated_on: date,
+) -> None:
+    """Render directly to a file using only Markdown-referenced local assets."""
+    resolved_root = asset_root.resolve()
+    resolved_markdown = markdown_path.resolve()
+    resolved_output = output_path.resolve()
+    if not _is_within(resolved_markdown, resolved_root) or not resolved_markdown.is_file():
+        raise ReportPdfError("PDF Markdown input is outside the report root")
+    if not _is_within(resolved_output, resolved_root):
+        raise ReportPdfError("PDF output is outside the report root")
+    try:
+        markdown_text = resolved_markdown.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise ReportPdfError("PDF Markdown input is unavailable") from exc
+    html = build_report_html(
+        title=title,
+        markdown_text=markdown_text,
+        images={},
+        generated_on=generated_on,
+        image_root=resolved_root,
+    )
+    try:
+        weasyprint = _load_weasyprint()
+    except (ImportError, OSError) as exc:
+        raise ReportPdfError("PDF backend is unavailable on this host") from exc
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    temporary = resolved_output.with_name(f".{resolved_output.name}.tmp")
+    safe_url_fetcher = _safe_url_fetcher(
+        weasyprint,
+        allow_data=False,
+        extra_roots=(resolved_root,),
+    )
+    try:
+        weasyprint.HTML(string=html, url_fetcher=safe_url_fetcher).write_pdf(
+            target=str(temporary),
+            cache=str(cache_dir),
+        )
+        temporary.replace(resolved_output)
+    except OSError as exc:
+        raise ReportPdfError("PDF backend is unavailable on this host") from exc
+    except Exception as exc:
+        raise ReportPdfError("Survey report PDF could not be rendered") from exc
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _safe_url_fetcher(
+    weasyprint: Any,
+    *,
+    allow_data: bool,
+    extra_roots: tuple[Path, ...] = (),
+) -> Callable[..., Any]:
+    default_url_fetcher = weasyprint.default_url_fetcher
+    allowed_roots = (
+        _FONTS_DIR.resolve(),
+        (_KATEX_DIR / "fonts").resolve(),
+        *(root.resolve() for root in extra_roots),
+    )
+
+    def fetch(url: str, *args: Any, **kwargs: Any) -> Any:
+        parsed = urlsplit(url)
+        if allow_data and parsed.scheme == "data":
+            return default_url_fetcher(url, *args, **kwargs)
+        if parsed.scheme == "file":
+            resource_path = Path(unquote(parsed.path)).resolve()
+            if any(_is_within(resource_path, root) for root in allowed_roots):
+                return default_url_fetcher(url, *args, **kwargs)
+        raise ValueError("PDF resources must be bundled or report-local assets")
+
+    return fetch
+
+
 __all__ = [
     "ReportPdfError",
     "build_report_html",
     "fallback_title",
     "render_report_pdf",
+    "render_report_pdf_to_file",
 ]
 
 

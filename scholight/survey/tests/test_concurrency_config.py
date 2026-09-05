@@ -15,10 +15,10 @@ ROOT = Path(__file__).parents[3]
 def test_survey_concurrency_defaults_are_split_by_scope() -> None:
     loaded = Settings(_env_file=None)  # type: ignore[call-arg]
 
-    assert loaded.survey_draft_global_concurrency == 64
-    assert loaded.survey_job_global_concurrency == 16
+    assert loaded.survey_draft_global_concurrency == 8
+    assert loaded.survey_job_global_concurrency == 2
     assert loaded.survey_draft_per_user_concurrency == 8
-    assert loaded.survey_job_per_user_concurrency == 4
+    assert loaded.survey_job_per_user_concurrency == 1
     assert loaded.survey_draft_worker_concurrency == 8
     assert loaded.survey_job_worker_concurrency == 2
     assert loaded.survey_provider_max_attempts == 3
@@ -45,16 +45,21 @@ def test_environment_template_uses_only_explicit_concurrency_scopes() -> None:
     template = (ROOT / ".env.example").read_text(encoding="utf-8")
 
     for name, value in (
-        ("SCHOLIGHT_SURVEY_DRAFT_GLOBAL_CONCURRENCY", 64),
-        ("SCHOLIGHT_SURVEY_JOB_GLOBAL_CONCURRENCY", 16),
+        ("SCHOLIGHT_SURVEY_DRAFT_GLOBAL_CONCURRENCY", 8),
+        ("SCHOLIGHT_SURVEY_JOB_GLOBAL_CONCURRENCY", 2),
         ("SCHOLIGHT_SURVEY_DRAFT_PER_USER_CONCURRENCY", 8),
-        ("SCHOLIGHT_SURVEY_JOB_PER_USER_CONCURRENCY", 4),
+        ("SCHOLIGHT_SURVEY_JOB_PER_USER_CONCURRENCY", 1),
         ("SCHOLIGHT_SURVEY_DRAFT_WORKER_CONCURRENCY", 8),
         ("SCHOLIGHT_SURVEY_JOB_WORKER_CONCURRENCY", 2),
     ):
         assert f"{name}={value}" in template
     assert "SCHOLIGHT_SURVEY_DRAFT_CONCURRENCY=" not in template
     assert "SCHOLIGHT_SURVEY_JOB_CONCURRENCY=" not in template
+
+
+def test_event_dispatch_requires_control_function_name() -> None:
+    with pytest.raises(ValidationError, match="SCHOLIGHT_SURVEY_CONTROL_FUNCTION_NAME"):
+        Settings(_env_file=None, survey_dispatch_mode="event")  # type: ignore[call-arg]
 
 
 @pytest.mark.parametrize(

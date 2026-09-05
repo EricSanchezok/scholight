@@ -67,6 +67,7 @@ from scholight.survey.progress import (
 )
 from scholight.survey.report_pdf import ReportPdfError, render_report_pdf
 from scholight.survey.title import generate_survey_title
+from scholight.survey.wakeup import wake_survey_control
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
@@ -435,6 +436,7 @@ async def submit_survey(
         ) from exc
     except DBError as exc:
         raise _service_unavailable() from exc
+    await wake_survey_control(reason="draft_submitted")
     if survey.title is None:
         title = await generate_survey_title(body.initial_request)
         if title is not None:
@@ -855,6 +857,7 @@ async def revise_survey_draft(
         raise _state_error(exc) from exc
     except DBError as exc:
         raise _service_unavailable() from exc
+    await wake_survey_control(reason="draft_revision_submitted")
     return _draft_response(draft)
 
 
@@ -921,6 +924,7 @@ async def start_survey_execution(
         raise _state_error(exc) from exc
     except DBError as exc:
         raise _service_unavailable() from exc
+    await wake_survey_control(reason="survey_execution_submitted")
     return _survey_response(updated)
 
 

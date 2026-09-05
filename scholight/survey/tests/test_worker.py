@@ -50,7 +50,7 @@ def _stub_durable_progress_update() -> Iterator[AsyncMock]:
 
 
 def test_worker_expects_pinned_rcm_release() -> None:
-    assert RCM_VERSION == "0.2.19"
+    assert RCM_VERSION == "0.2.21"
 
 
 def _job(
@@ -1749,7 +1749,14 @@ async def test_stage_collector_consumes_sanitized_completion_failure_fields(
         b'{"type":"completion_end","fragments":1,"input_tokens":0,'
         b'"output_tokens":0,"total_tokens":0,"outcome":"failure",'
         b'"http_status":503,"failure_kind":"provider_error",'
-        b'"retryable":true,"duration_ms":240001}\n'
+        b'"retryable":true,"duration_ms":240001,'
+        b'"provider_code":"upstream_unavailable","request_id":"req-123",'
+        b'"serialized_request_bytes":524288,"estimated_input_tokens":131072,'
+        b'"message_count":12,"tool_definition_count":6,"tool_call_count":4,'
+        b'"tool_result_count":3,"thinking_enabled":true,'
+        b'"reasoning_content_present":true,"reasoning_content_bytes":4096,'
+        b'"unmatched_tool_call_count":1,"duplicate_tool_call_count":0,'
+        b'"message":"PRIVATE PAPER BODY"}\n'
     )
     stream.feed_eof()
     diagnostics = SurveyDiagnostics(
@@ -1769,12 +1776,27 @@ async def test_stage_collector_consumes_sanitized_completion_failure_fields(
         "retryable": True,
         "duration_ms": 240001,
         "failure_kind": "provider_error",
+        "provider_code": "upstream_unavailable",
+        "request_id": "req-123",
+        "serialized_request_bytes": 524288,
+        "estimated_input_tokens": 131072,
+        "message_count": 12,
+        "tool_definition_count": 6,
+        "tool_call_count": 4,
+        "tool_result_count": 3,
+        "thinking_enabled": True,
+        "reasoning_content_present": True,
+        "reasoning_content_bytes": 4096,
+        "unmatched_tool_call_count": 1,
+        "duplicate_tool_call_count": 0,
     }
     assert emit.call_args.kwargs == {
         "service": "survey-full-worker",
         "outcome": "provider_error",
         "metrics": {"SurveyModelCompletionFailure": (1, "Count")},
     }
+    trace = (tmp_path / "trajectory.jsonl").read_text(encoding="utf-8")
+    assert "PRIVATE PAPER BODY" not in trace
 
 
 @pytest.mark.asyncio
@@ -2242,6 +2264,12 @@ async def test_archive_prerenders_report_pdf_before_upload(tmp_path: Path) -> No
     run_root.mkdir(parents=True)
     (run_root / "08_survey.md").write_text("# Draft\n\nBody.\n", encoding="utf-8")
     artifact_store = AsyncMock()
+
+    async def render_child(**kwargs: object) -> None:
+        output = kwargs["output"]
+        assert isinstance(output, Path)
+        output.write_bytes(b"%PDF-prerendered")
+
     with (
         patch("scholight.survey.worker._job_root", return_value=job_root),
         patch("scholight.survey.worker._heartbeat", new_callable=AsyncMock),
@@ -2256,8 +2284,9 @@ async def test_archive_prerenders_report_pdf_before_upload(tmp_path: Path) -> No
             return_value=None,
         ),
         patch(
-            "scholight.survey.worker.render_report_pdf",
-            return_value=b"%PDF-prerendered",
+            "scholight.survey.worker._render_report_pdf_child",
+            new_callable=AsyncMock,
+            side_effect=render_child,
         ) as render,
     ):
         await process_survey_job(
@@ -2271,7 +2300,7 @@ async def test_archive_prerenders_report_pdf_before_upload(tmp_path: Path) -> No
             artifact_store=artifact_store,
         )
 
-    render.assert_called_once()
+    render.assert_awaited_once()
     archived_root = artifact_store.archive_run.await_args.kwargs["run_root"]
     assert (archived_root / "08_survey.pdf").read_bytes() == b"%PDF-prerendered"
 
@@ -2298,7 +2327,8 @@ async def test_prerender_failure_does_not_block_archiving(tmp_path: Path) -> Non
             return_value=None,
         ),
         patch(
-            "scholight.survey.worker.render_report_pdf",
+            "scholight.survey.worker._render_report_pdf_child",
+            new_callable=AsyncMock,
             side_effect=OSError("native backend unavailable"),
         ),
     ):

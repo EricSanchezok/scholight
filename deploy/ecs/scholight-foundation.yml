@@ -87,6 +87,11 @@ Resources:
           - Id: AbortIncompleteMultipartUploads
             Status: Enabled
             AbortIncompleteMultipartUpload: { DaysAfterInitiation: 7 }
+          - Id: ExpireSurveyCheckpoints
+            Status: Enabled
+            Prefix: surveys/_checkpoints/
+            ExpirationInDays: 14
+            NoncurrentVersionExpiration: { NoncurrentDays: 14 }
       OwnershipControls:
         Rules: [{ ObjectOwnership: BucketOwnerEnforced }]
       PublicAccessBlockConfiguration:
@@ -411,6 +416,32 @@ Resources:
                   - ec2:RevokeSecurityGroupIngress
                   - ecs:*
                   - elasticloadbalancing:*
+                  - events:DeleteRule
+                  - events:DescribeRule
+                  - events:DisableRule
+                  - events:EnableRule
+                  - events:ListTagsForResource
+                  - events:PutRule
+                  - events:PutTargets
+                  - events:RemoveTargets
+                  - events:TagResource
+                  - events:UntagResource
+                  - lambda:AddPermission
+                  - lambda:CreateFunction
+                  - lambda:DeleteFunction
+                  - lambda:DeleteFunctionConcurrency
+                  - lambda:DeleteFunctionEventInvokeConfig
+                  - lambda:GetFunction
+                  - lambda:GetFunctionConfiguration
+                  - lambda:GetPolicy
+                  - lambda:ListTags
+                  - lambda:PutFunctionConcurrency
+                  - lambda:PutFunctionEventInvokeConfig
+                  - lambda:RemovePermission
+                  - lambda:TagResource
+                  - lambda:UntagResource
+                  - lambda:UpdateFunctionCode
+                  - lambda:UpdateFunctionConfiguration
                   - logs:CreateLogGroup
                   - logs:DeleteLogGroup
                   - logs:DescribeLogGroups
@@ -420,6 +451,14 @@ Resources:
                   - scheduler:GetSchedule
                   - scheduler:UpdateSchedule
                   - sns:ListTopics
+                  - sqs:CreateQueue
+                  - sqs:DeleteQueue
+                  - sqs:GetQueueAttributes
+                  - sqs:GetQueueUrl
+                  - sqs:ListQueueTags
+                  - sqs:SetQueueAttributes
+                  - sqs:TagQueue
+                  - sqs:UntagQueue
                 Resource: "*"
               - Effect: Allow
                 Action: s3:GetObject

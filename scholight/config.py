@@ -173,20 +173,24 @@ class Settings(BaseSettings):
     # remains fail-closed. Survey has never shipped, so there is no legacy switch.
     survey_runtime_enabled: bool = False
     survey_public_mode: Literal["off", "all"] = "off"
+    survey_dispatch_mode: Literal["legacy", "event"] = "legacy"
+    survey_control_function_name: str = ""
     survey_daily_limit: int = Field(default=3, ge=1, le=100)
     survey_draft_timeout_seconds: int = Field(default=1800, ge=60, le=3600)
     survey_job_timeout_seconds: int = Field(default=86400, ge=60, le=172800)
     survey_provider_max_attempts: int = Field(default=3, ge=1, le=5)
     survey_provider_retry_base_seconds: float = Field(default=2.0, ge=0.0, le=30.0)
     survey_provider_retry_max_seconds: float = Field(default=30.0, ge=0.0, le=120.0)
-    survey_draft_global_concurrency: int = Field(default=64, ge=1, le=64)
-    survey_job_global_concurrency: int = Field(default=16, ge=1, le=16)
+    survey_draft_global_concurrency: int = Field(default=8, ge=1, le=64)
+    survey_job_global_concurrency: int = Field(default=2, ge=1, le=16)
     survey_draft_per_user_concurrency: int = Field(default=8, ge=1, le=64)
-    survey_job_per_user_concurrency: int = Field(default=4, ge=1, le=16)
+    survey_job_per_user_concurrency: int = Field(default=1, ge=1, le=16)
     survey_draft_worker_concurrency: int = Field(default=8, ge=1, le=64)
     survey_job_worker_concurrency: int = Field(default=2, ge=1, le=16)
     survey_heartbeat_seconds: int = Field(default=15, ge=5, le=60)
     survey_lease_seconds: int = Field(default=120, ge=30, le=600)
+    survey_pdf_timeout_seconds: int = Field(default=600, ge=60, le=1800)
+    survey_pdf_memory_limit_mib: int = Field(default=2048, ge=256, le=4096)
 
     @model_validator(mode="after")
     def _validate_survey_concurrency(self) -> "Settings":
@@ -207,6 +211,10 @@ class Settings(BaseSettings):
             raise ValueError(
                 "SCHOLIGHT_SURVEY_PROVIDER_RETRY_BASE_SECONDS must not exceed "
                 "SCHOLIGHT_SURVEY_PROVIDER_RETRY_MAX_SECONDS"
+            )
+        if self.survey_dispatch_mode == "event" and not self.survey_control_function_name.strip():
+            raise ValueError(
+                "SCHOLIGHT_SURVEY_CONTROL_FUNCTION_NAME is required in event dispatch mode"
             )
         if self.survey_draft_per_user_concurrency > self.survey_draft_global_concurrency:
             raise ValueError(
@@ -356,3 +364,10 @@ def validate_survey_draft_worker_settings() -> None:
         raise ValueError("DEEPSEEK_API_KEY is required by the Survey Draft worker")
     if len(settings.survey_mcp_jwt_secret.encode("utf-8")) < 32:
         raise ValueError("SCHOLIGHT_SURVEY_MCP_JWT_SECRET must contain at least 32 UTF-8 bytes")
+
+
+def validate_survey_compute_settings(*, full: bool) -> None:
+    """Validate a one-shot task without requiring notification credentials."""
+    validate_survey_draft_worker_settings()
+    if full and not settings.survey_s3_bucket.strip():
+        raise ValueError("SCHOLIGHT_SURVEY_S3_BUCKET is required by the Full Survey task")
