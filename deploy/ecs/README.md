@@ -81,6 +81,14 @@ checkpoint. ECS event versions are monotonic fences: an older duplicate
 strict scalar allowlist and must never contain prompts, paper text, model
 output, credentials, or user identifiers.
 
+Each attempt pins the exact task-definition revision used to create its ECS
+idempotency token. The control role can run historical revisions only within
+the three standalone Survey task families, so a stack release cannot strand a
+reserved attempt by removing permission for its pinned revision. The role can
+tag only tasks created by `RunTask` in the production cluster; this permission
+is required by the launch envelope's managed and `survey-attempt` tags. Launch
+failure logs retain only the allowlisted failure class and AWS operation name.
+
 Full-job checkpoint pointers are nullable until the first successful commit.
 Thereafter every pointer update is a compare-and-swap on both the current
 sequence and `lease_owner`. `execution_deadline_at` is assigned by the first

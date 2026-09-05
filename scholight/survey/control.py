@@ -165,14 +165,17 @@ class SurveyControl:
             )
             return True
         except (BotoCoreError, ClientError, TimeoutError) as exc:
+            failure_class = _aws_error_class(exc)
             await record_compute_launch_failure(
                 attempt_id=launching.id,
-                reason=_aws_error_class(exc),
+                reason=failure_class,
             )
             logger.warning(
                 "survey_compute_task_launch_failed",
                 attempt_id=str(launching.id),
                 error_type=type(exc).__name__,
+                failure_class=failure_class,
+                aws_operation=_aws_operation(exc),
             )
             return False
 
@@ -370,12 +373,19 @@ def _aws_error_class(exc: Exception) -> str:
         allowed = {
             "accessdeniedexception": "ecs_access_denied",
             "clientexception": "ecs_client_error",
-            "clusterNotfoundexception": "ecs_cluster_missing",
+            "clusternotfoundexception": "ecs_cluster_missing",
             "serverexception": "ecs_server_error",
             "throttlingexception": "ecs_throttled",
         }
         return allowed.get(code, "ecs_client_error")
     return "ecs_transport_error"
+
+
+def _aws_operation(exc: Exception) -> str | None:
+    if not isinstance(exc, ClientError):
+        return None
+    operation = str(exc.operation_name)
+    return operation if operation in {"DescribeTasks", "RunTask"} else "unknown"
 
 
 def _event_version(detail: dict[str, Any]) -> int:
