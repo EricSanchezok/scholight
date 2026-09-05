@@ -189,6 +189,8 @@ class Settings(BaseSettings):
     survey_job_worker_concurrency: int = Field(default=2, ge=1, le=16)
     survey_heartbeat_seconds: int = Field(default=15, ge=5, le=60)
     survey_lease_seconds: int = Field(default=120, ge=30, le=600)
+    survey_pdf_timeout_seconds: int = Field(default=600, ge=60, le=1800)
+    survey_pdf_memory_limit_mib: int = Field(default=2048, ge=256, le=4096)
 
     @model_validator(mode="after")
     def _validate_survey_concurrency(self) -> "Settings":

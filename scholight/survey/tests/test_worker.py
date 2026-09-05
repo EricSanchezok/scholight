@@ -2242,6 +2242,12 @@ async def test_archive_prerenders_report_pdf_before_upload(tmp_path: Path) -> No
     run_root.mkdir(parents=True)
     (run_root / "08_survey.md").write_text("# Draft\n\nBody.\n", encoding="utf-8")
     artifact_store = AsyncMock()
+
+    async def render_child(**kwargs: object) -> None:
+        output = kwargs["output"]
+        assert isinstance(output, Path)
+        output.write_bytes(b"%PDF-prerendered")
+
     with (
         patch("scholight.survey.worker._job_root", return_value=job_root),
         patch("scholight.survey.worker._heartbeat", new_callable=AsyncMock),
@@ -2256,8 +2262,9 @@ async def test_archive_prerenders_report_pdf_before_upload(tmp_path: Path) -> No
             return_value=None,
         ),
         patch(
-            "scholight.survey.worker.render_report_pdf",
-            return_value=b"%PDF-prerendered",
+            "scholight.survey.worker._render_report_pdf_child",
+            new_callable=AsyncMock,
+            side_effect=render_child,
         ) as render,
     ):
         await process_survey_job(
@@ -2271,7 +2278,7 @@ async def test_archive_prerenders_report_pdf_before_upload(tmp_path: Path) -> No
             artifact_store=artifact_store,
         )
 
-    render.assert_called_once()
+    render.assert_awaited_once()
     archived_root = artifact_store.archive_run.await_args.kwargs["run_root"]
     assert (archived_root / "08_survey.pdf").read_bytes() == b"%PDF-prerendered"
 
@@ -2298,7 +2305,8 @@ async def test_prerender_failure_does_not_block_archiving(tmp_path: Path) -> Non
             return_value=None,
         ),
         patch(
-            "scholight.survey.worker.render_report_pdf",
+            "scholight.survey.worker._render_report_pdf_child",
+            new_callable=AsyncMock,
             side_effect=OSError("native backend unavailable"),
         ),
     ):

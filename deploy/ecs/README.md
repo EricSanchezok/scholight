@@ -19,10 +19,13 @@ target so a large Survey or ingestion runtime cannot leak into the Search API.
 | `sanchezcloud-scholight-ingest` | `ingest` | Metadata sync and bounded paper-ingestion tasks |
 | `sanchezcloud-scholight-survey` | `survey` | Survey draft/full workers and the pinned RCM runtime |
 
-The API PDF endpoint renders archived Survey reports with WeasyPrint and the API
-`matplotlib` dependency. Formula images and chart assets are embedded in the
-document; the renderer rejects external report resources and runs as the
-non-root `scholight` user.
+New Full tasks pre-render PDFs in a one-render child process. The child receives
+only a local request-file path on argv, accepts only report-root and bundled
+font file URLs, loads only images referenced by final Markdown, writes directly
+to a file with a disk cache, and has independent wall-clock and address-space
+limits. A timeout, backend failure, or child OOM removes the partial PDF but
+does not block Markdown publication. The API retains its byte-render fallback
+only for archives created before pre-rendering was introduced.
 
 The API and Extract processes share only the lightweight models in
 `scholight.web_extract.contracts`. Importing the API application must not load

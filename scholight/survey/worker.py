@@ -7,9 +7,10 @@ import json
 import re
 import shutil
 import stat
+import sys
 import time
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal, Protocol
 from uuid import UUID, uuid4
@@ -66,7 +67,6 @@ from scholight.survey.process import (
 from scholight.survey.progress import stage_for_component
 from scholight.survey.report_pdf import (
     fallback_title as report_fallback_title,
-    render_report_pdf,
 )
 from scholight.survey.runtime import survey_environment
 from scholight.survey.workflow_resources import (
@@ -1762,18 +1762,6 @@ def _run_metadata(job: SurveyJob, result: SurveyExecutionResult | None) -> dict[
     }
 
 
-def _report_image_assets(run_root: Path) -> dict[str, bytes]:
-    """Collect run-relative image bytes referenced by the finalized report."""
-    assets: dict[str, bytes] = {}
-    for pattern in ("*.png", "*.jpg", "*.jpeg", "*.gif", "*.webp"):
-        for path in run_root.rglob(pattern):
-            if not path.is_file():
-                continue
-            relative = path.relative_to(run_root).as_posix()
-            assets[relative] = path.read_bytes()
-    return assets
-
-
 def _draft_heading_title(draft_markdown: str) -> str:
     for line in draft_markdown.splitlines():
         text = line.lstrip("#").strip()
@@ -1804,24 +1792,74 @@ async def _prerender_report_pdf(*, job: SurveyJob, run_root: Path) -> None:
     if not report.is_file():
         return
     try:
-        markdown_text = await asyncio.to_thread(report.read_text, "utf-8")
-        images = await asyncio.to_thread(_report_image_assets, run_root)
         title = await _report_pdf_title(job)
-        pdf = await asyncio.to_thread(
-            render_report_pdf,
+        await _render_report_pdf_child(
             title=title,
-            markdown_text=markdown_text,
-            images=images,
+            report=report,
+            output=run_root / "08_survey.pdf",
+            run_root=run_root,
             generated_on=datetime.now(UTC).date(),
         )
-        await asyncio.to_thread((run_root / "08_survey.pdf").write_bytes, pdf)
-        logger.info("survey_report_pdf_prerendered", job_id=str(job.id), size=len(pdf))
+        size = (run_root / "08_survey.pdf").stat().st_size
+        logger.info("survey_report_pdf_prerendered", job_id=str(job.id), size=size)
     except Exception as exc:
         logger.warning(
             "survey_report_pdf_prerender_failed",
             job_id=str(job.id),
             error_type=type(exc).__name__,
         )
+
+
+async def _render_report_pdf_child(
+    *,
+    title: str,
+    report: Path,
+    output: Path,
+    run_root: Path,
+    generated_on: date,
+) -> None:
+    """Render one PDF in a fresh process and keep user content off argv."""
+    request_root = run_root.parent / f".pdf-render-{uuid4().hex}"
+    request_root.mkdir(mode=0o700)
+    request_path = request_root / "request.json"
+    request_path.write_text(
+        json.dumps(
+            {
+                "title": title,
+                "generated_on": generated_on.isoformat(),
+                "asset_root": str(run_root.resolve()),
+                "markdown_path": str(report.resolve()),
+                "output_path": str(output.resolve()),
+            },
+            separators=(",", ":"),
+        ),
+        encoding="utf-8",
+    )
+    try:
+        process = await asyncio.create_subprocess_exec(
+            sys.executable,
+            "-m",
+            "scholight.survey.pdf_child",
+            "--request",
+            str(request_path),
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        try:
+            return_code = await asyncio.wait_for(
+                process.wait(),
+                timeout=settings.survey_pdf_timeout_seconds,
+            )
+        except TimeoutError:
+            await terminate_process_group(process)
+            raise RuntimeError("Survey PDF child timed out") from None
+        if return_code != 0 or not output.is_file():
+            output.unlink(missing_ok=True)
+            raise RuntimeError("Survey PDF child failed")
+    finally:
+        shutil.rmtree(request_root, ignore_errors=True)
 
 
 async def _archive(
