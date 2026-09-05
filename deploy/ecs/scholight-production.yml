@@ -958,7 +958,7 @@ Resources:
       Architectures: [x86_64]
       MemorySize: 512
       Timeout: 60
-      ReservedConcurrentExecutions: 1
+      ReservedConcurrentExecutions: !If [RunSurveyControl, 1, !Ref AWS::NoValue]
       Role: !GetAtt SurveyControlRole.Arn
       ImageConfig:
         EntryPoint: [python, -m, awslambdaric]

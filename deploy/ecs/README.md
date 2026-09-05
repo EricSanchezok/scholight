@@ -408,6 +408,7 @@ manual database-production(release SHA)
 
 manual production(release SHA, Survey dispatch mode)
   -> verify manifest
+  -> verify Lambda concurrency capacity before event-mode adoption
   -> defer a changed Survey image while Draft or Full leases are active
   -> verify final-stage AWS and provider capacity
   -> deploy digest-qualified runtime stack
@@ -422,6 +423,15 @@ in-band attestations for the Survey image only and reads the pushed object back
 from ECR before manifest publication. It accepts only a single Docker v2 or OCI
 image manifest with Lambda-compatible config and gzip layer media types. The
 other four images retain their SBOM and provenance attestations.
+
+Legacy dispatch creates the dormant Survey Control function without reserving
+regional Lambda concurrency. Event dispatch conditionally reserves exactly one
+execution so duplicate wakeups cannot multiply database connections. Before an
+event-mode update, the release workflow checks the current function reservation
+and account-level unreserved concurrency, and fails before model canaries or
+CloudFormation unless Lambda can retain its required unreserved pool after the
+one-unit reservation. This supports reduced-quota new AWS accounts during the
+Expand stage without weakening the final event-mode concurrency boundary.
 
 Application rollback selects an older manifest SHA. It does not move an image
 tag, rebuild code, restore a database snapshot, or reverse an additive schema
