@@ -467,9 +467,9 @@ least three image calls fail with no success in a six-hour window. Any finalizer
 failure alerts immediately because it means paid research completed without a
 deliverable report.
 
-RCM completion failures are likewise content-free. The currently pinned RCM
-0.2.19 emits the completion outcome, HTTP status, stable failure kind,
-retryability, and elapsed time. Scholight also accepts the additive 0.2.21
+RCM completion failures are likewise content-free. The pinned RCM 0.2.21 emits
+the completion outcome, HTTP status, stable failure kind, retryability, and
+elapsed time. Scholight accepts its additive
 request-shape contract: serialized request bytes, estimated tokens, message and
 tool counts, thinking/reasoning shape, unmatched or duplicate tool-call counts,
 sanitized provider identifiers, and `request_size`, `thinking_tool_history`, or
@@ -488,7 +488,7 @@ optional image-path failure alone must not discard otherwise complete research;
 it also cannot mask an earlier required-component failure. If local checks cannot
 produce a valid report, the model failure remains terminal.
 
-RCM 0.2.19 preserves provider reasoning and reconstructs visible assistant text
+RCM 0.2.21 preserves provider reasoning and reconstructs visible assistant text
 plus its tool calls as one assistant turn; call-correlated failed tool results
 are replayed as valid outcomes without re-splitting the turn. This is required
 by DeepSeek thinking mode when that mixed turn is replayed with its original
@@ -503,10 +503,11 @@ once to the canaried non-thinking workflow; `unknown_request` is not replayed.
 The latest sanitized failure is retained on the exact compute attempt and a
 clean ECS exit cannot erase it.
 
-Do not change `RCM_VERSION` or the Docker checksum until the 0.2.21 Linux archive
-and checksum are published from the RCM repository and the fixed model canary
-passes against that digest. A source commit, local binary, or guessed checksum
-is not a release artifact.
+The Survey image pins the 0.2.21 Linux archive from the primary RCM repository
+with its published SHA-256. A source commit, local binary, or guessed checksum
+is not a release artifact. The production deployment must still pass the fixed
+model, image, and full-text canaries against the candidate Survey image before
+the pinned runtime reaches the service.
 
 Run the fixed provider canary from a one-off task cloned from the Survey task
 definition; it bypasses model completion and never prints its prompt, key, or

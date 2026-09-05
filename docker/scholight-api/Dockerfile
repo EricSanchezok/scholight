@@ -56,15 +56,15 @@ RUN uv pip install --no-deps /app
 
 FROM survey-python-builder AS survey-builder
 
-ARG RCM_VERSION=v0.2.19
-ARG RCM_LINUX_X86_64_SHA256=afe5c1c6fb7ad6842543faffa418c19ce8b145a2c955b93cd65e5ecd80a688f1
+ARG RCM_VERSION=v0.2.21
+ARG RCM_LINUX_X86_64_SHA256=1df945a49c7980b13ae28c1f3019e541e8f009cb5731471b0b51242dfa14c2d7
 ARG TARGETARCH
 
 RUN test "${TARGETARCH}" = amd64 \
     && mkdir -p /app/bin /tmp/rcm \
     && curl --fail --location --silent --show-error \
         --output /tmp/accelerate.tar.gz \
-        "https://github.com/EricSanchezok/rcm-dist/releases/download/${RCM_VERSION}/accelerate-x86_64-linux.tar.gz" \
+        "https://github.com/EricSanchezok/recursive-context-machine/releases/download/${RCM_VERSION}/accelerate-x86_64-linux.tar.gz" \
     && printf '%s  %s\n' \
         "${RCM_LINUX_X86_64_SHA256}" \
         /tmp/accelerate.tar.gz \
