@@ -224,6 +224,16 @@ Resources:
       RepositoryName: sanchezcloud-scholight-survey
       ImageScanningConfiguration: { ScanOnPush: true }
       ImageTagMutability: IMMUTABLE
+      RepositoryPolicyText:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: LambdaECRImageRetrievalPolicy
+            Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: [ecr:BatchGetImage, ecr:GetDownloadUrlForLayer]
+            Condition:
+              ArnLike:
+                "aws:SourceArn": !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:sanchezcloud-scholight-survey-control
       LifecyclePolicy:
         LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"Retain 30 release images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":30},"action":{"type":"expire"}}]}'
 
