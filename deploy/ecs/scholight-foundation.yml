@@ -574,6 +574,12 @@ Resources:
                 Action: servicequotas:GetServiceQuota
                 Resource: "*"
               - Effect: Allow
+                Action: lambda:GetAccountSettings
+                Resource: "*"
+              - Effect: Allow
+                Action: lambda:GetFunctionConcurrency
+                Resource: !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:sanchezcloud-scholight-survey-control
+              - Effect: Allow
                 Action: cloudformation:ListExports
                 Resource: "*"
               - Effect: Allow

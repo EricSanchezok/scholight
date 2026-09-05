@@ -298,7 +298,7 @@ def test_event_driven_survey_control_is_bounded_and_recoverable() -> None:
 
     assert "SurveyDispatchMode:" in runtime
     assert "AllowedValues: [legacy, event]" in runtime
-    assert "ReservedConcurrentExecutions: 1" in runtime
+    assert "ReservedConcurrentExecutions: !If [RunSurveyControl, 1, !Ref AWS::NoValue]" in runtime
     assert "MemorySize: 512" in runtime
     assert "Timeout: 60" in runtime
     assert "ScheduleExpression: rate(1 minute)" in runtime
@@ -424,6 +424,14 @@ def test_release_defers_active_worker_images_and_gates_final_capacity() -> None:
     assert "SURVEY WORKERS IDLE" in workflow
     assert "survey_capacity_prerequisites_confirmed" in workflow
     assert "L-3032A538" in workflow
+    assert "Verify Survey control concurrency capacity" in workflow
+    assert "inputs.survey_dispatch_mode == 'event'" in workflow
+    assert "aws lambda get-account-settings" in workflow
+    assert "UnreservedConcurrentExecutions" in workflow
+    assert "sanchezcloud-scholight-survey-control" in workflow
+    assert workflow.index("Verify Survey control concurrency capacity") < workflow.index(
+        "Register candidate Survey canary task"
+    )
     assert "inputs.survey_capacity_stage == '8/8'" in workflow
     assert "db.t4g.small or larger" not in workflow
 
@@ -511,6 +519,21 @@ def test_production_deploy_role_can_wait_for_scholight_services() -> None:
         "sanchezcloud-production/scholight-*" in deploy_policy
     )
     assert "Action: ecs:*" not in deploy_policy
+
+
+def test_production_deploy_role_can_preflight_survey_lambda_concurrency() -> None:
+    foundation = (ECS / "scholight-foundation.yml").read_text(encoding="utf-8")
+    deploy_policy = foundation.split("ProductionDeployRole:", maxsplit=1)[1].split(
+        "DatabaseDeployRole:", maxsplit=1
+    )[0]
+
+    assert "Action: lambda:GetAccountSettings" in deploy_policy
+    assert "Action: lambda:GetFunctionConcurrency" in deploy_policy
+    assert (
+        "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:"
+        "sanchezcloud-scholight-survey-control" in deploy_policy
+    )
+    assert "lambda:PutFunctionConcurrency" not in deploy_policy
 
 
 def test_production_deploy_role_can_run_candidate_survey_canaries() -> None:

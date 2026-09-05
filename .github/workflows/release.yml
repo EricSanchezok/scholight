@@ -125,6 +125,25 @@ jobs:
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
+      - name: Verify Survey control concurrency capacity
+        if: inputs.survey_dispatch_mode == 'event'
+        run: |
+          unreserved=$(aws lambda get-account-settings \
+            --query 'AccountLimit.UnreservedConcurrentExecutions' \
+            --output text)
+          current_reserved=0
+          if concurrency=$(aws lambda get-function-concurrency \
+            --function-name sanchezcloud-scholight-survey-control 2>/dev/null); then
+            current_reserved=$(jq -r '.ReservedConcurrentExecutions // 0' <<<"$concurrency")
+          fi
+          additional_reservation=$((current_reserved >= 1 ? 0 : 1))
+          required_unreserved=$((10 + additional_reservation))
+          if (( unreserved < required_unreserved )); then
+            echo "Event dispatch requires one reserved Survey control execution" >&2
+            echo "Lambda must retain at least 10 unreserved executions after reservation" >&2
+            echo "Current unreserved: ${unreserved}; required before update: ${required_unreserved}" >&2
+            exit 1
+          fi
       - name: Download and verify release manifest
         env:
           AWS_REGION: ${{ vars.AWS_REGION }}
