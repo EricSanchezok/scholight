@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -48,9 +48,11 @@ describe("registration boundary", () => {
     await user.type(screen.getByPlaceholderText("Create a password"), "a-secure-password");
     await user.click(screen.getByRole("button", { name: "Create account" }));
 
-    expect(screen.getByTestId("location")).toHaveTextContent(
-      "/check-email?email=reader%40example.com",
-    );
+    await waitFor(() => {
+      expect(screen.getByTestId("location")).toHaveTextContent(
+        "/check-email?email=reader%40example.com",
+      );
+    });
   });
 
   it("does not claim that the submitted address is a new account", () => {
