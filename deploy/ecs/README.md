@@ -394,7 +394,8 @@ permissions.
 push main
   -> CI
   -> five immutable linux/amd64 images
-  -> SBOM/provenance
+  -> SBOM/provenance for the non-Lambda images
+  -> Lambda-compatible single-manifest Survey image
   -> immutable release manifest
   -> no production change
 
@@ -413,6 +414,14 @@ manual production(release SHA, Survey dispatch mode)
   -> wait for every ECS service
   -> external smoke tests
 ```
+
+The Survey image is shared by ECS and the Survey Control Lambda. Buildx
+in-band SBOM/provenance attestations wrap a single-platform image in an OCI
+index, which Lambda rejects. The publish workflow therefore disables those two
+in-band attestations for the Survey image only and reads the pushed object back
+from ECR before manifest publication. It accepts only a single Docker v2 or OCI
+image manifest with Lambda-compatible config and gzip layer media types. The
+other four images retain their SBOM and provenance attestations.
 
 Application rollback selects an older manifest SHA. It does not move an image
 tag, rebuild code, restore a database snapshot, or reverse an additive schema

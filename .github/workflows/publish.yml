@@ -159,8 +159,43 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: ${{ steps.ecr.outputs.registry }}/sanchezcloud-scholight-survey:git-${{ needs.prepare.outputs.release_sha }}
-          provenance: mode=max
-          sbom: true
+          # Lambda rejects the OCI index Buildx emits for in-band attestations.
+          provenance: false
+          sbom: false
+      - name: Verify Survey image is Lambda compatible
+        env:
+          SURVEY_DIGEST: ${{ steps.survey.outputs.digest }}
+        run: |
+          aws ecr batch-get-image \
+            --repository-name sanchezcloud-scholight-survey \
+            --image-ids "imageDigest=${SURVEY_DIGEST}" \
+            --accepted-media-types \
+              application/vnd.docker.distribution.manifest.v2+json \
+              application/vnd.oci.image.manifest.v1+json \
+            > survey-image-record.json
+          jq -e '
+            (.failures | length) == 0 and
+            (.images | length) == 1 and
+            (
+              .images[0].imageManifestMediaType ==
+                "application/vnd.docker.distribution.manifest.v2+json" or
+              .images[0].imageManifestMediaType ==
+                "application/vnd.oci.image.manifest.v1+json"
+            )
+          ' survey-image-record.json >/dev/null
+          jq -r '.images[0].imageManifest' survey-image-record.json \
+            > survey-image-manifest.json
+          jq -e '
+            (
+              .config.mediaType == "application/vnd.docker.container.image.v1+json" or
+              .config.mediaType == "application/vnd.oci.image.config.v1+json"
+            ) and
+            all(
+              .layers[];
+              .mediaType == "application/vnd.docker.image.rootfs.diff.tar.gzip" or
+              .mediaType == "application/vnd.oci.image.layer.v1.tar+gzip"
+            )
+          ' survey-image-manifest.json >/dev/null
       - name: Create deterministic release manifest
         env:
           RELEASE_SHA: ${{ needs.prepare.outputs.release_sha }}
