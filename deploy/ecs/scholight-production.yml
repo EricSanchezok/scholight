@@ -519,12 +519,18 @@ Resources:
               - Effect: Allow
                 Action: ecs:RunTask
                 Resource:
-                  - !Ref SurveyDraftTaskDefinition
-                  - !Ref SurveyFullTaskDefinition
-                  - !Ref SurveyFullHighMemoryTaskDefinition
+                  - !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/sanchezcloud-scholight-survey-draft:*
+                  - !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/sanchezcloud-scholight-survey-full-standalone:*
+                  - !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/sanchezcloud-scholight-survey-full-high-memory:*
                 Condition:
                   ArnEquals:
                     ecs:cluster: !ImportValue sanchezcloud-production-cluster-arn
+              - Effect: Allow
+                Action: ecs:TagResource
+                Resource: !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task/sanchezcloud-production/*
+                Condition:
+                  StringEquals:
+                    "ecs:CreateAction": RunTask
               - Effect: Allow
                 Action: ecs:DescribeTasks
                 Resource: "*"

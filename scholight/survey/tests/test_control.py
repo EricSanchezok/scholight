@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 from typing import Any, cast
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
 
 import pytest
+from botocore.exceptions import ClientError
 
 from scholight.db.client import DBError
-from scholight.survey.control import SurveyControl, SurveyControlConfig
+from scholight.survey.control import SurveyControl, SurveyControlConfig, _aws_error_class
 
 
 class _ECS:
@@ -108,6 +109,64 @@ async def test_launch_retry_after_database_crash_reuses_the_same_token(
 
     assert [call["clientToken"] for call in ecs.calls] == [str(attempt.id), str(attempt.id)]
     assert [call["startedBy"] for call in ecs.calls] == [str(attempt.id), str(attempt.id)]
+
+
+@pytest.mark.asyncio
+async def test_launch_access_denied_logs_safe_actionable_diagnostics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempt = SimpleNamespace(
+        id=uuid4(),
+        work_kind="draft",
+        draft_id=uuid4(),
+        job_id=None,
+        task_definition_arn="arn:task-definition/draft:1",
+        resource_profile="draft",
+    )
+    monkeypatch.setattr(
+        "scholight.survey.control.mark_compute_attempt_launching",
+        AsyncMock(return_value=attempt),
+    )
+    launch_failure = AsyncMock()
+    monkeypatch.setattr("scholight.survey.control.record_compute_launch_failure", launch_failure)
+    warning = Mock()
+    monkeypatch.setattr("scholight.survey.control.logger.warning", warning)
+
+    class _DeniedECS(_ECS):
+        def run_task(self, **kwargs: object) -> dict[str, object]:
+            raise ClientError(
+                {
+                    "Error": {
+                        "Code": "AccessDeniedException",
+                        "Message": "sensitive principal and resource details",
+                    }
+                },
+                "RunTask",
+            )
+
+    control = SurveyControl(config=_config(), ecs_client=_DeniedECS())
+
+    assert not await control.launch_attempt(cast(Any, attempt))
+    launch_failure.assert_awaited_once_with(
+        attempt_id=attempt.id,
+        reason="ecs_access_denied",
+    )
+    assert warning.call_args is not None
+    assert warning.call_args.kwargs == {
+        "attempt_id": str(attempt.id),
+        "error_type": "ClientError",
+        "failure_class": "ecs_access_denied",
+        "aws_operation": "RunTask",
+    }
+
+
+def test_cluster_not_found_has_a_specific_launch_failure_class() -> None:
+    error = ClientError(
+        {"Error": {"Code": "ClusterNotFoundException", "Message": "not found"}},
+        "RunTask",
+    )
+
+    assert _aws_error_class(error) == "ecs_cluster_missing"
 
 
 @pytest.mark.asyncio

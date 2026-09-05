@@ -601,6 +601,39 @@ def test_production_deploy_role_can_run_candidate_survey_canaries() -> None:
     assert "Action: ecs:*" not in deploy_policy
 
 
+def test_survey_control_can_tag_only_tasks_created_by_run_task() -> None:
+    production = (ECS / "scholight-production.yml").read_text(encoding="utf-8")
+    control_role = production.split("SurveyControlRole:", maxsplit=1)[1].split(
+        "WebLogGroup:", maxsplit=1
+    )[0]
+
+    assert "Action: ecs:TagResource" in control_role
+    assert (
+        "arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task/"
+        "sanchezcloud-production/*" in control_role
+    )
+    assert '"ecs:CreateAction": RunTask' in control_role
+    assert "Action: ecs:*" not in control_role
+
+
+def test_survey_control_can_resume_attempts_pinned_to_an_older_task_revision() -> None:
+    production = (ECS / "scholight-production.yml").read_text(encoding="utf-8")
+    control_role = production.split("SurveyControlRole:", maxsplit=1)[1].split(
+        "WebLogGroup:", maxsplit=1
+    )[0]
+
+    for family in (
+        "sanchezcloud-scholight-survey-draft",
+        "sanchezcloud-scholight-survey-full-standalone",
+        "sanchezcloud-scholight-survey-full-high-memory",
+    ):
+        assert f"task-definition/{family}:*" in control_role
+    assert "- !Ref SurveyDraftTaskDefinition" not in control_role
+    assert "- !Ref SurveyFullTaskDefinition" not in control_role
+    assert "- !Ref SurveyFullHighMemoryTaskDefinition" not in control_role
+    assert "task-definition/sanchezcloud-scholight-survey-*" not in control_role
+
+
 def test_production_deploy_role_can_run_owner_preserving_survey_reruns() -> None:
     foundation = (ECS / "scholight-foundation.yml").read_text(encoding="utf-8")
     deploy_policy = foundation.split("ProductionDeployRole:", maxsplit=1)[1].split(
