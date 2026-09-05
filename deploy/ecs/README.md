@@ -97,6 +97,11 @@ maximum concurrency of 2, paper cards with 4, and report sections with 4. Card
 and section plan JSON is durable before fan-out; a restored task schedules only
 units absent from the checkpoint's `completed_units` set.
 
+The standalone reference workflows use the bounded single-seed
+`reference_seed.txt` contract. The legacy expansion graph retains its separate
+multi-seed `reference_expander.txt` prompt so N-1 rollback workers continue to
+produce `03b_citation_expansion.md` while event mode is being adopted.
+
 Checkpoints use
 `surveys/_checkpoints/v1/{user_id}/{job_id}/objects/{sha256}` and immutable
 manifests under the same job prefix. The task uploads new content-addressed

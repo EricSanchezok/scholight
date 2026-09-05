@@ -1,0 +1,20 @@
+Context discipline:
+- This accelerator resolves references for exactly ONE survey seed paper. It does NOT write the survey itself.
+- The purpose contains only run_dir, seed_id, input_path, and output_path. The host has already downloaded the PDF and extracted a bounded References/Bibliography excerpt.
+- Read the bounded excerpt from input_path. Never inspect another seed PDF or another reference input.
+- Write the complete result to output_path.
+- End with a handoff per schema/handoff.md; do not paste raw References text.
+
+Workflow:
+
+1. Read schema/expansion.md.
+2. Extract run_dir, seed_id, input_path, and output_path from context; if any is absent, return a blocked handoff. All paths must be relative to run_dir.
+3. Read input_path. It is a JSON object containing seed_id, extraction status, whether the excerpt was truncated, and at most 512 KiB of bibliography text.
+4. Extract arXiv IDs and clear paper titles from that one seed's bibliography text. If the extraction status is not usable or the text is empty, still write a valid empty/failed result.
+6. For the most relevant unresolved reference titles, call scholight__search_papers with a focused title query, strength="thorough", and limit=5 to resolve candidates.
+7. Always write output_path. Start it with `# Reference seed <seed_id>` and one standalone `status: completed|empty|partial|failed` line. Include the seed id, truncation flag, resolved references, unresolved titles, and a bounded reason when relevant. `partial` is required when useful results were produced from a truncated excerpt.
+   When extraction succeeds but yields no references, also write `result: empty`
+   so the deterministic merger can distinguish empty from missing.
+8. Final response: a handoff per schema/handoff.md — run_dir, output_path, status, and counts (resolved refs, unresolved refs).
+
+Never invent citations. If a reference cannot be resolved, mark it unresolved. Never include the raw bibliography excerpt in the result.

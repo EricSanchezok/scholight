@@ -135,12 +135,27 @@ def test_search_strengths_match_survey_retrieval_policy() -> None:
         assert 'strength="standard"' in source
         assert "limit=10" in source
 
-    reference = (prompts / "reference_expander.txt").read_text(encoding="utf-8")
-    assert "scholight__search_papers" in reference
-    assert 'strength="thorough"' in reference
-    assert "limit=5" in reference
-    assert "host has already downloaded the PDF" in reference
-    assert "at most 512 KiB" in reference
+    legacy_reference = (prompts / "reference_expander.txt").read_text(encoding="utf-8")
+    reference_seed = (prompts / "reference_seed.txt").read_text(encoding="utf-8")
+    for reference in (legacy_reference, reference_seed):
+        assert "scholight__search_papers" in reference
+        assert 'strength="thorough"' in reference
+        assert "limit=5" in reference
+    assert "run_dir/03a_seed_papers.md" in legacy_reference
+    assert "Download each selected arXiv PDF" in legacy_reference
+    assert "host has already downloaded the PDF" in reference_seed
+    assert "at most 512 KiB" in reference_seed
+
+
+def test_reference_seed_workflows_do_not_replace_the_legacy_expansion_prompt() -> None:
+    rcm = _WORKFLOW / "rcm"
+    legacy = (rcm / "expansion.rcm").read_text(encoding="utf-8")
+    thinking = (rcm / "reference_seed.rcm").read_text(encoding="utf-8")
+    non_thinking = (rcm / "reference_seed_non_thinking.rcm").read_text(encoding="utf-8")
+
+    assert 'file "../prompts/reference_expander.txt"' in legacy
+    assert 'file "../prompts/reference_seed.txt"' in thinking
+    assert 'file "../prompts/reference_seed.txt"' in non_thinking
 
 
 def test_cli_run_directory_is_the_single_artifact_root() -> None:
@@ -207,10 +222,13 @@ def test_card_repair_supports_only_app_selected_invalid_evidence_items() -> None
 
 
 def test_empty_citation_expansion_has_an_explicit_artifact_state() -> None:
-    reference = (_WORKFLOW / "prompts" / "reference_expander.txt").read_text(encoding="utf-8")
+    prompts = _WORKFLOW / "prompts"
+    legacy_reference = (prompts / "reference_expander.txt").read_text(encoding="utf-8")
+    reference_seed = (prompts / "reference_seed.txt").read_text(encoding="utf-8")
     expansion = (_WORKFLOW / "schema" / "expansion.md").read_text(encoding="utf-8")
 
-    assert "result: empty" in reference
+    assert "result: empty" in legacy_reference
+    assert "result: empty" in reference_seed
     assert "result: empty" in expansion
 
 
