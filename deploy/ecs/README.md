@@ -41,17 +41,23 @@ the API and Extract services publish the `api` and `extract` discovery names.
 Nginx therefore reaches `http://api:8000` through Service Connect without a
 public endpoint or a hard-coded task address.
 
-Survey is a first-release capability. There is no legacy Survey mode, alias,
-container entrypoint, or configuration fallback. The only controls are rollout
-gates:
+Survey has an explicit compute-dispatch compatibility switch in addition to
+the public rollout gates:
 
 - `SurveyRuntimeEnabled=false` keeps both Survey services at desired count zero.
 - `SurveyPublicMode=off` makes `/capabilities` report Survey as unavailable and
   protects the public routes.
 - `SurveyPublicMode=all` is accepted only when the runtime is enabled.
+- `SurveyDispatchMode=legacy` keeps the released resident Draft/Full services
+  available for rollback.
+- `SurveyDispatchMode=event` sets both service desired counts to zero and
+  enables the serialized control Lambda, its one-minute reconciliation rule,
+  and the ECS `STOPPED` rule.
 
-These gates are not a compatibility layer. They let operators verify the real
-RCM, artifact, queue, and email boundaries before the first public activation.
+The dispatch switch is temporary Expand/Adopt compatibility. It must remain
+`legacy` until migration 014, the one-shot image, Lambda IAM, checkpoint
+lifecycle, and staging fault matrix have all passed. Public HTTP states remain
+unchanged in either mode.
 
 ### Event execution compatibility layer
 
@@ -122,8 +128,8 @@ its local process concurrency:
 
 | Queue | Global hard limit | Per-user limit | Per-worker limit |
 | --- | ---: | ---: | ---: |
-| Draft | 64 | 8 | 8 |
-| Full Survey | 16 | 4 | 2 |
+| Draft | 8 | 8 | 1 per standalone task |
+| Full Survey | 2 | 1 | 1 per standalone task |
 
 The Full Survey daily quota remains 3 by default and is independent from these
 simultaneous-execution limits. A quota override may permit more daily work but
@@ -160,13 +166,13 @@ memory, or 300 requests per target per minute. Extract uses 0.5 vCPU and 1 GiB a
 one to three tasks on its existing CPU and memory targets. Every long-running service enables
 the ECS deployment circuit breaker with automatic rollback.
 
-Autoscaling uses aggregate `outstanding / running ECS tasks` metric math with
-targets of 8 Drafts and 2 Full Surveys per task. Each Draft worker has 0.25 vCPU
-and 0.5 GiB, while each Full worker has 0.5 vCPU and 1 GiB and runs at most two
-jobs concurrently. The per-user Full
-limit remains 4 and the global Full limit remains 16. Fargate supplies its
-20-GiB minimum ephemeral storage because the template no longer provisions the
-previous 40-GiB override; production samples used less than 1 GiB per task.
+Legacy-mode autoscaling uses aggregate `outstanding / running ECS tasks` metric math with
+targets of 8 Drafts and 2 Full Surveys per task. Event mode does not use these
+scaling policies: a Draft gets a 0.25-vCPU/0.5-GiB task, and a Full Survey gets
+a 1-vCPU/4-GiB task. Only a recorded standard-profile OOM selects the
+1-vCPU/8-GiB definition on the next compute attempt. Every task uses the
+20-GiB Fargate default because S3 checkpoints, not local disk, are the recovery
+source.
 Scale-out waits 60 seconds;
 scale-in waits 15 minutes so short queue gaps do not terminate expensive
 workers. `SurveyDraftMaxTasks` and `SurveyFullMaxTasks` are deployment ceilings,
@@ -383,7 +389,7 @@ manual database-production(release SHA)
   -> run one Fargate migration task
   -> inspect exit code
 
-manual production(release SHA)
+manual production(release SHA, Survey dispatch mode)
   -> verify manifest
   -> defer a changed Survey image while Draft or Full leases are active
   -> verify final-stage AWS and provider capacity
@@ -395,6 +401,19 @@ manual production(release SHA)
 Application rollback selects an older manifest SHA. It does not move an image
 tag, rebuild code, restore a database snapshot, or reverse an additive schema
 migration.
+
+For Survey compute rollback, set `SurveyDispatchMode=legacy`. This disables
+both EventBridge rules and returns the two ECS services to desired count one.
+Do not delete migration 014, attempt rows, or checkpoint objects. Already
+running standalone tasks are fenced by their attempt lease and may finish; a
+resident worker cannot claim the same work while that lease remains valid.
+
+For event-mode adoption, first wait until legacy Draft and Full leases are
+empty, then deploy the same digest with `SurveyDispatchMode=event`. Verify the
+Lambda DLQ is empty, queued-to-RUNNING p95 is at most 120 seconds, and both
+Survey ECS services stay at zero desired/running tasks. A non-empty control DLQ
+pages immediately. API wakeup is asynchronous and best effort; the one-minute
+rule is the durable latency bound when invocation fails.
 
 The production workflow reads only aggregate CloudWatch activity metrics before
 replacing a changed Survey worker image. Any active Draft or Full lease keeps

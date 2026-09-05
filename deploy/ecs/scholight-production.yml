@@ -42,6 +42,11 @@ Parameters:
     Type: String
     Default: "off"
     AllowedValues: ["off", "all"]
+  SurveyDispatchMode:
+    Type: String
+    Default: legacy
+    AllowedValues: [legacy, event]
+    Description: Event uses Lambda plus standalone tasks; legacy keeps resident services for rollback
   ImageGenApiUrl:
     Type: String
     Default: ""
@@ -85,9 +90,17 @@ Rules:
 
 Conditions:
   RunApplication: !Equals [!Ref ApplicationEnabled, "true"]
+  RunSurveyRuntime: !And
+    - !Equals [!Ref ApplicationEnabled, "true"]
+    - !Equals [!Ref SurveyRuntimeEnabled, "true"]
   RunSurveyWorkers: !And
     - !Equals [!Ref ApplicationEnabled, "true"]
     - !Equals [!Ref SurveyRuntimeEnabled, "true"]
+    - !Equals [!Ref SurveyDispatchMode, legacy]
+  RunSurveyControl: !And
+    - !Equals [!Ref ApplicationEnabled, "true"]
+    - !Equals [!Ref SurveyRuntimeEnabled, "true"]
+    - !Equals [!Ref SurveyDispatchMode, event]
 
 Resources:
   AlbSecurityGroup:
@@ -305,7 +318,6 @@ Resources:
                 Condition:
                   StringEquals:
                     "kms:ViaService": !Sub secretsmanager.${AWS::Region}.${AWS::URLSuffix}
-
   ApiTaskRole:
     Type: AWS::IAM::Role
     Properties:
@@ -317,6 +329,16 @@ Resources:
             Principal: { Service: ecs-tasks.amazonaws.com }
             Action: sts:AssumeRole
       Policies:
+        - !If
+          - RunSurveyControl
+          - PolicyName: WakeSurveyControl
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - Effect: Allow
+                  Action: lambda:InvokeFunction
+                  Resource: !GetAtt SurveyControlFunction.Arn
+          - !Ref AWS::NoValue
         - PolicyName: ReadSurveyArtifacts
           PolicyDocument:
             Version: "2012-10-17"
@@ -411,6 +433,94 @@ Resources:
                 Action: iam:PassRole
                 Resource: !GetAtt ExecutionRole.Arn
 
+  SurveyControlDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Condition: RunSurveyRuntime
+    Properties:
+      QueueName: sanchezcloud-scholight-survey-control-dlq
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+
+  SurveyControlDeadLetterQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Condition: RunSurveyRuntime
+    Properties:
+      Queues: [!Ref SurveyControlDeadLetterQueue]
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: events.amazonaws.com }
+            Action: sqs:SendMessage
+            Resource: !GetAtt SurveyControlDeadLetterQueue.Arn
+            Condition:
+              StringEquals: { "aws:SourceAccount": !Ref AWS::AccountId }
+
+  SurveyControlRole:
+    Type: AWS::IAM::Role
+    Condition: RunSurveyRuntime
+    Properties:
+      RoleName: SanchezCloudScholightSurveyControlRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+      Policies:
+        - PolicyName: SurveyControlRuntime
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [secretsmanager:DescribeSecret, secretsmanager:GetSecretValue]
+                Resource:
+                  - !ImportValue sanchezcloud-scholight-database-runtime-secret-arn
+                  - !ImportValue sanchezcloud-scholight-mail-secret-arn
+              - Effect: Allow
+                Action: kms:Decrypt
+                Resource: !ImportValue sanchezcloud-scholight-configuration-key-arn
+                Condition:
+                  StringEquals:
+                    "kms:ViaService": !Sub secretsmanager.${AWS::Region}.${AWS::URLSuffix}
+              - Effect: Allow
+                Action: [s3:GetObject, s3:DeleteObject]
+                Resource:
+                  Fn::Sub:
+                    - ${BucketArn}/surveys/*
+                    - BucketArn: !ImportValue sanchezcloud-scholight-artifact-bucket-arn
+              - Effect: Allow
+                Action: s3:ListBucket
+                Resource: !ImportValue sanchezcloud-scholight-artifact-bucket-arn
+                Condition: { StringLike: { "s3:prefix": [surveys/*] } }
+              - Effect: Allow
+                Action: [kms:Decrypt, kms:GenerateDataKey]
+                Resource: !ImportValue sanchezcloud-scholight-artifact-key-arn
+              - Effect: Allow
+                Action: ecs:RunTask
+                Resource:
+                  - !Ref SurveyDraftTaskDefinition
+                  - !Ref SurveyFullTaskDefinition
+                  - !Ref SurveyFullHighMemoryTaskDefinition
+                Condition:
+                  ArnEquals:
+                    ecs:cluster: !ImportValue sanchezcloud-production-cluster-arn
+              - Effect: Allow
+                Action: ecs:DescribeTasks
+                Resource: "*"
+                Condition:
+                  ArnEquals:
+                    ecs:cluster: !ImportValue sanchezcloud-production-cluster-arn
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource: [!GetAtt ExecutionRole.Arn, !GetAtt SurveyTaskRole.Arn]
+              - Effect: Allow
+                Action: sqs:SendMessage
+                Resource: !GetAtt SurveyControlDeadLetterQueue.Arn
+
   WebLogGroup:
     Type: AWS::Logs::LogGroup
     Properties: { LogGroupName: /sanchezcloud/scholight/web, RetentionInDays: 30 }
@@ -426,6 +536,12 @@ Resources:
   SurveyLogGroup:
     Type: AWS::Logs::LogGroup
     Properties: { LogGroupName: /sanchezcloud/scholight/survey, RetentionInDays: 30 }
+  SurveyControlLogGroup:
+    Type: AWS::Logs::LogGroup
+    Condition: RunSurveyRuntime
+    Properties:
+      LogGroupName: /aws/lambda/sanchezcloud-scholight-survey-control
+      RetentionInDays: 30
   MetadataLogGroup:
     Type: AWS::Logs::LogGroup
     Properties: { LogGroupName: /sanchezcloud/scholight/metadata-sync, RetentionInDays: 30 }
@@ -490,10 +606,13 @@ Resources:
             - { Name: SCHOLIGHT_EXTRACT_SERVICE_URL, Value: "http://extract:8001" }
             - { Name: SCHOLIGHT_SURVEY_RUNTIME_ENABLED, Value: !Ref SurveyRuntimeEnabled }
             - { Name: SCHOLIGHT_SURVEY_PUBLIC_MODE, Value: !Ref SurveyPublicMode }
-            - { Name: SCHOLIGHT_SURVEY_DRAFT_GLOBAL_CONCURRENCY, Value: "64" }
-            - { Name: SCHOLIGHT_SURVEY_JOB_GLOBAL_CONCURRENCY, Value: "16" }
+            - { Name: SCHOLIGHT_SURVEY_DISPATCH_MODE, Value: !Ref SurveyDispatchMode }
+            - Name: SCHOLIGHT_SURVEY_CONTROL_FUNCTION_NAME
+              Value: sanchezcloud-scholight-survey-control
+            - { Name: SCHOLIGHT_SURVEY_DRAFT_GLOBAL_CONCURRENCY, Value: "8" }
+            - { Name: SCHOLIGHT_SURVEY_JOB_GLOBAL_CONCURRENCY, Value: "2" }
             - { Name: SCHOLIGHT_SURVEY_DRAFT_PER_USER_CONCURRENCY, Value: "8" }
-            - { Name: SCHOLIGHT_SURVEY_JOB_PER_USER_CONCURRENCY, Value: "4" }
+            - { Name: SCHOLIGHT_SURVEY_JOB_PER_USER_CONCURRENCY, Value: "1" }
             - Name: SCHOLIGHT_SURVEY_S3_BUCKET
               Value: !ImportValue sanchezcloud-scholight-artifact-bucket-name
             - { Name: AWS_REGION, Value: !Ref AWS::Region }
@@ -724,6 +843,235 @@ Resources:
               awslogs-group: !Ref SurveyLogGroup
               awslogs-region: !Ref AWS::Region
               awslogs-stream-prefix: full
+
+  SurveyFullTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: sanchezcloud-scholight-survey-full-standalone
+      Cpu: "1024"
+      Memory: "4096"
+      EphemeralStorage: { SizeInGiB: 20 }
+      NetworkMode: awsvpc
+      RequiresCompatibilities: [FARGATE]
+      RuntimePlatform: { CpuArchitecture: X86_64, OperatingSystemFamily: LINUX }
+      ExecutionRoleArn: !GetAtt ExecutionRole.Arn
+      TaskRoleArn: !GetAtt SurveyTaskRole.Arn
+      ContainerDefinitions:
+        - Name: survey
+          Image: !Ref SurveyImage
+          Essential: true
+          StopTimeout: 120
+          Command: [scholight, survey, run-job, --help]
+          Environment:
+            - { Name: SCHOLIGHT_SURVEY_RUNTIME_ENABLED, Value: "true" }
+            - { Name: SCHOLIGHT_SURVEY_DISPATCH_MODE, Value: event }
+            - { Name: SCHOLIGHT_SURVEY_MCP_URL, Value: !Sub "https://${DomainName}/api/mcp" }
+            - { Name: SCHOLIGHT_SURVEY_JOB_GLOBAL_CONCURRENCY, Value: "2" }
+            - { Name: SCHOLIGHT_SURVEY_JOB_PER_USER_CONCURRENCY, Value: "1" }
+            - { Name: SCHOLIGHT_SURVEY_JOB_WORKER_CONCURRENCY, Value: "1" }
+            - { Name: SCHOLIGHT_SURVEY_PROVIDER_MAX_ATTEMPTS, Value: "3" }
+            - { Name: SCHOLIGHT_SURVEY_PROVIDER_RETRY_BASE_SECONDS, Value: "2" }
+            - { Name: SCHOLIGHT_SURVEY_PROVIDER_RETRY_MAX_SECONDS, Value: "30" }
+            - { Name: IMAGE_GEN_API_URL, Value: !Ref ImageGenApiUrl }
+            - { Name: IMAGE_GEN_TRUSTED_HOSTS, Value: !Ref ImageGenTrustedHosts }
+            - { Name: SCHOLIGHT_PG_POOL_MIN_SIZE, Value: "1" }
+            - { Name: SCHOLIGHT_PG_POOL_MAX_SIZE, Value: "2" }
+            - { Name: SCHOLIGHT_SURVEY_S3_BUCKET, Value: !ImportValue sanchezcloud-scholight-artifact-bucket-name }
+            - { Name: SCHOLIGHT_PUBLIC_WEB_URL, Value: !Sub "https://${DomainName}" }
+            - { Name: AWS_REGION, Value: !Ref AWS::Region }
+            - { Name: AWS_DEFAULT_REGION, Value: !Ref AWS::Region }
+          Secrets:
+            - { Name: SCHOLIGHT_PG_HOST, ValueFrom: !Sub ["${Secret}:host::", { Secret: !ImportValue sanchezcloud-scholight-database-runtime-secret-arn }] }
+            - { Name: SCHOLIGHT_PG_PORT, ValueFrom: !Sub ["${Secret}:port::", { Secret: !ImportValue sanchezcloud-scholight-database-runtime-secret-arn }] }
+            - { Name: SCHOLIGHT_PG_DATABASE, ValueFrom: !Sub ["${Secret}:dbname::", { Secret: !ImportValue sanchezcloud-scholight-database-runtime-secret-arn }] }
+            - { Name: SCHOLIGHT_PG_USER, ValueFrom: !Sub ["${Secret}:username::", { Secret: !ImportValue sanchezcloud-scholight-database-runtime-secret-arn }] }
+            - { Name: SCHOLIGHT_PG_PASSWORD, ValueFrom: !Sub ["${Secret}:password::", { Secret: !ImportValue sanchezcloud-scholight-database-runtime-secret-arn }] }
+            - { Name: DEEPSEEK_API_KEY, ValueFrom: !Sub ["${Secret}:deepseek_api_key::", { Secret: !ImportValue sanchezcloud-scholight-survey-secret-arn }] }
+            - { Name: IMAGE_GEN_API_KEY, ValueFrom: !Sub ["${Secret}:image_gen_api_key::", { Secret: !ImportValue sanchezcloud-scholight-survey-secret-arn }] }
+            - { Name: SCHOLIGHT_SURVEY_MCP_JWT_SECRET, ValueFrom: !Sub ["${Secret}:survey_mcp_jwt_secret::", { Secret: !ImportValue sanchezcloud-scholight-core-secret-arn }] }
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref SurveyLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: full-task
+
+  SurveyFullHighMemoryTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: sanchezcloud-scholight-survey-full-high-memory
+      Cpu: "1024"
+      Memory: "8192"
+      EphemeralStorage: { SizeInGiB: 20 }
+      NetworkMode: awsvpc
+      RequiresCompatibilities: [FARGATE]
+      RuntimePlatform: { CpuArchitecture: X86_64, OperatingSystemFamily: LINUX }
+      ExecutionRoleArn: !GetAtt ExecutionRole.Arn
+      TaskRoleArn: !GetAtt SurveyTaskRole.Arn
+      ContainerDefinitions:
+        - Name: survey
+          Image: !Ref SurveyImage
+          Essential: true
+          StopTimeout: 120
+          Command: [scholight, survey, run-job, --help]
+          Environment:
+            - { Name: SCHOLIGHT_SURVEY_RUNTIME_ENABLED, Value: "true" }
+            - { Name: SCHOLIGHT_SURVEY_DISPATCH_MODE, Value: event }
+            - { Name: SCHOLIGHT_SURVEY_MCP_URL, Value: !Sub "https://${DomainName}/api/mcp" }
+            - { Name: SCHOLIGHT_SURVEY_JOB_GLOBAL_CONCURRENCY, Value: "2" }
+            - { Name: SCHOLIGHT_SURVEY_JOB_PER_USER_CONCURRENCY, Value: "1" }
+            - { Name: SCHOLIGHT_SURVEY_JOB_WORKER_CONCURRENCY, Value: "1" }
+            - { Name: SCHOLIGHT_SURVEY_PROVIDER_MAX_ATTEMPTS, Value: "3" }
+            - { Name: SCHOLIGHT_SURVEY_PROVIDER_RETRY_BASE_SECONDS, Value: "2" }
+            - { Name: SCHOLIGHT_SURVEY_PROVIDER_RETRY_MAX_SECONDS, Value: "30" }
+            - { Name: IMAGE_GEN_API_URL, Value: !Ref ImageGenApiUrl }
+            - { Name: IMAGE_GEN_TRUSTED_HOSTS, Value: !Ref ImageGenTrustedHosts }
+            - { Name: SCHOLIGHT_PG_POOL_MIN_SIZE, Value: "1" }
+            - { Name: SCHOLIGHT_PG_POOL_MAX_SIZE, Value: "2" }
+            - { Name: SCHOLIGHT_SURVEY_S3_BUCKET, Value: !ImportValue sanchezcloud-scholight-artifact-bucket-name }
+            - { Name: SCHOLIGHT_PUBLIC_WEB_URL, Value: !Sub "https://${DomainName}" }
+            - { Name: AWS_REGION, Value: !Ref AWS::Region }
+            - { Name: AWS_DEFAULT_REGION, Value: !Ref AWS::Region }
+          Secrets:
+            - { Name: SCHOLIGHT_PG_HOST, ValueFrom: !Sub ["${Secret}:host::", { Secret: !ImportValue sanchezcloud-scholight-database-runtime-secret-arn }] }
+            - { Name: SCHOLIGHT_PG_PORT, ValueFrom: !Sub ["${Secret}:port::", { Secret: !ImportValue sanchezcloud-scholight-database-runtime-secret-arn }] }
+            - { Name: SCHOLIGHT_PG_DATABASE, ValueFrom: !Sub ["${Secret}:dbname::", { Secret: !ImportValue sanchezcloud-scholight-database-runtime-secret-arn }] }
+            - { Name: SCHOLIGHT_PG_USER, ValueFrom: !Sub ["${Secret}:username::", { Secret: !ImportValue sanchezcloud-scholight-database-runtime-secret-arn }] }
+            - { Name: SCHOLIGHT_PG_PASSWORD, ValueFrom: !Sub ["${Secret}:password::", { Secret: !ImportValue sanchezcloud-scholight-database-runtime-secret-arn }] }
+            - { Name: DEEPSEEK_API_KEY, ValueFrom: !Sub ["${Secret}:deepseek_api_key::", { Secret: !ImportValue sanchezcloud-scholight-survey-secret-arn }] }
+            - { Name: IMAGE_GEN_API_KEY, ValueFrom: !Sub ["${Secret}:image_gen_api_key::", { Secret: !ImportValue sanchezcloud-scholight-survey-secret-arn }] }
+            - { Name: SCHOLIGHT_SURVEY_MCP_JWT_SECRET, ValueFrom: !Sub ["${Secret}:survey_mcp_jwt_secret::", { Secret: !ImportValue sanchezcloud-scholight-core-secret-arn }] }
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref SurveyLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: full-high-task
+
+  SurveyControlFunction:
+    Type: AWS::Lambda::Function
+    Condition: RunSurveyRuntime
+    DependsOn: SurveyControlLogGroup
+    Properties:
+      FunctionName: sanchezcloud-scholight-survey-control
+      Description: Fair reconciliation and dispatch for one-shot Survey compute
+      PackageType: Image
+      Code: { ImageUri: !Ref SurveyImage }
+      Architectures: [x86_64]
+      MemorySize: 512
+      Timeout: 60
+      ReservedConcurrentExecutions: 1
+      Role: !GetAtt SurveyControlRole.Arn
+      ImageConfig:
+        EntryPoint: [python, -m, awslambdaric]
+        Command: [scholight.survey.control_lambda.handler]
+        WorkingDirectory: /app
+      VpcConfig:
+        SecurityGroupIds: [!Ref TaskSecurityGroup]
+        SubnetIds:
+          - !ImportValue sanchezcloud-production-private-subnet-1
+          - !ImportValue sanchezcloud-production-private-subnet-2
+      Environment:
+        Variables:
+          SCHOLIGHT_LOG_JSON: "1"
+          SCHOLIGHT_SURVEY_RUNTIME_ENABLED: "true"
+          SCHOLIGHT_SURVEY_DISPATCH_MODE: event
+          SCHOLIGHT_SURVEY_CONTROL_FUNCTION_NAME: sanchezcloud-scholight-survey-control
+          SCHOLIGHT_SURVEY_DRAFT_GLOBAL_CONCURRENCY: "8"
+          SCHOLIGHT_SURVEY_JOB_GLOBAL_CONCURRENCY: "2"
+          SCHOLIGHT_SURVEY_DRAFT_PER_USER_CONCURRENCY: "8"
+          SCHOLIGHT_SURVEY_JOB_PER_USER_CONCURRENCY: "1"
+          SCHOLIGHT_SURVEY_S3_BUCKET: !ImportValue sanchezcloud-scholight-artifact-bucket-name
+          SCHOLIGHT_PUBLIC_WEB_URL: !Sub "https://${DomainName}"
+          SURVEY_DATABASE_SECRET_ARN: !ImportValue sanchezcloud-scholight-database-runtime-secret-arn
+          SURVEY_MAIL_SECRET_ARN: !ImportValue sanchezcloud-scholight-mail-secret-arn
+          SURVEY_ECS_CLUSTER_ARN: !ImportValue sanchezcloud-production-cluster-arn
+          SURVEY_DRAFT_TASK_DEFINITION_ARN: !Ref SurveyDraftTaskDefinition
+          SURVEY_FULL_TASK_DEFINITION_ARN: !Ref SurveyFullTaskDefinition
+          SURVEY_FULL_HIGH_TASK_DEFINITION_ARN: !Ref SurveyFullHighMemoryTaskDefinition
+          SURVEY_SUBNET_IDS: !Join
+            - ","
+            - - !ImportValue sanchezcloud-production-private-subnet-1
+              - !ImportValue sanchezcloud-production-private-subnet-2
+          SURVEY_SECURITY_GROUP_ID: !Ref TaskSecurityGroup
+
+  SurveyControlEventInvokeConfig:
+    Type: AWS::Lambda::EventInvokeConfig
+    Condition: RunSurveyControl
+    Properties:
+      FunctionName: !Ref SurveyControlFunction
+      Qualifier: $LATEST
+      MaximumEventAgeInSeconds: 3600
+      MaximumRetryAttempts: 2
+      DestinationConfig:
+        OnFailure: { Destination: !GetAtt SurveyControlDeadLetterQueue.Arn }
+
+  SurveyControlScheduleRule:
+    Type: AWS::Events::Rule
+    Condition: RunSurveyControl
+    Properties:
+      Name: sanchezcloud-scholight-survey-control-minute
+      Description: Reconcile durable Survey work every minute
+      ScheduleExpression: rate(1 minute)
+      State: ENABLED
+      Targets:
+        - Id: SurveyControl
+          Arn: !GetAtt SurveyControlFunction.Arn
+          DeadLetterConfig: { Arn: !GetAtt SurveyControlDeadLetterQueue.Arn }
+          RetryPolicy: { MaximumEventAgeInSeconds: 3600, MaximumRetryAttempts: 2 }
+
+  SurveyControlStoppedRule:
+    Type: AWS::Events::Rule
+    Condition: RunSurveyControl
+    Properties:
+      Name: sanchezcloud-scholight-survey-control-stopped
+      Description: Reconcile tracked Survey standalone tasks immediately when they stop
+      EventPattern:
+        source: [aws.ecs]
+        detail-type: [ECS Task State Change]
+        detail:
+          clusterArn: [!ImportValue sanchezcloud-production-cluster-arn]
+          lastStatus: [STOPPED]
+      State: ENABLED
+      Targets:
+        - Id: SurveyControl
+          Arn: !GetAtt SurveyControlFunction.Arn
+          DeadLetterConfig: { Arn: !GetAtt SurveyControlDeadLetterQueue.Arn }
+          RetryPolicy: { MaximumEventAgeInSeconds: 3600, MaximumRetryAttempts: 2 }
+
+  SurveyControlSchedulePermission:
+    Type: AWS::Lambda::Permission
+    Condition: RunSurveyControl
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref SurveyControlFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt SurveyControlScheduleRule.Arn
+
+  SurveyControlStoppedPermission:
+    Type: AWS::Lambda::Permission
+    Condition: RunSurveyControl
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref SurveyControlFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt SurveyControlStoppedRule.Arn
+
+  SurveyControlDeadLetterAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: RunSurveyRuntime
+    Properties:
+      AlarmName: sanchezcloud-scholight-survey-control-dlq
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions: [{ Name: QueueName, Value: !GetAtt SurveyControlDeadLetterQueue.QueueName }]
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!ImportValue sanchezcloud-scholight-alert-topic-arn]
 
   MigrationTaskDefinition:
     Type: AWS::ECS::TaskDefinition
@@ -1346,7 +1694,7 @@ Resources:
 
   SurveyRuntimeFailureAlarm:
     Type: AWS::CloudWatch::Alarm
-    Condition: RunSurveyWorkers
+    Condition: RunSurveyRuntime
     Properties:
       AlarmName: sanchezcloud-scholight-survey-runtime-failure
       Namespace: Scholight/Production
@@ -1362,7 +1710,7 @@ Resources:
 
   SurveyFinalizationFailureAlarm:
     Type: AWS::CloudWatch::Alarm
-    Condition: RunSurveyWorkers
+    Condition: RunSurveyRuntime
     Properties:
       AlarmName: sanchezcloud-scholight-survey-finalization-failure
       Namespace: Scholight/Production
@@ -1378,7 +1726,7 @@ Resources:
 
   SurveyReadablePublicationRateAlarm:
     Type: AWS::CloudWatch::Alarm
-    Condition: RunSurveyWorkers
+    Condition: RunSurveyRuntime
     Properties:
       AlarmName: sanchezcloud-scholight-survey-readable-publication-rate
       ComparisonOperator: GreaterThanThreshold
@@ -1427,7 +1775,7 @@ Resources:
 
   SurveyModelTerminalFailureAlarm:
     Type: AWS::CloudWatch::Alarm
-    Condition: RunSurveyWorkers
+    Condition: RunSurveyRuntime
     Properties:
       AlarmName: sanchezcloud-scholight-survey-model-terminal-failure
       Namespace: Scholight/Production
@@ -1443,7 +1791,7 @@ Resources:
 
   SurveyFullTextRuntimeFailureAlarm:
     Type: AWS::CloudWatch::Alarm
-    Condition: RunSurveyWorkers
+    Condition: RunSurveyRuntime
     Properties:
       AlarmName: sanchezcloud-scholight-survey-fulltext-runtime-failure
       Namespace: Scholight/Production
@@ -1459,7 +1807,7 @@ Resources:
 
   SurveyFullTextCanaryFailureAlarm:
     Type: AWS::CloudWatch::Alarm
-    Condition: RunSurveyWorkers
+    Condition: RunSurveyRuntime
     Properties:
       AlarmName: sanchezcloud-scholight-survey-fulltext-canary-failure
       Namespace: Scholight/Production
@@ -1477,7 +1825,7 @@ Resources:
 
   SurveyImageGenerationFailureAlarm:
     Type: AWS::CloudWatch::Alarm
-    Condition: RunSurveyWorkers
+    Condition: RunSurveyRuntime
     Properties:
       AlarmName: sanchezcloud-scholight-survey-image-generation-failure
       ComparisonOperator: GreaterThanOrEqualToThreshold
@@ -1515,7 +1863,7 @@ Resources:
 
   SurveyEmailDeadAlarm:
     Type: AWS::CloudWatch::Alarm
-    Condition: RunSurveyWorkers
+    Condition: RunSurveyRuntime
     Properties:
       AlarmName: sanchezcloud-scholight-survey-email-dead
       Namespace: Scholight/Production
@@ -1531,7 +1879,7 @@ Resources:
 
   SurveyDraftQueueAgeAlarm:
     Type: AWS::CloudWatch::Alarm
-    Condition: RunSurveyWorkers
+    Condition: RunSurveyRuntime
     Properties:
       AlarmName: sanchezcloud-scholight-survey-draft-oldest-queued-age
       Namespace: Scholight/Production
@@ -1548,7 +1896,7 @@ Resources:
 
   SurveyFullQueueAgeAlarm:
     Type: AWS::CloudWatch::Alarm
-    Condition: RunSurveyWorkers
+    Condition: RunSurveyRuntime
     Properties:
       AlarmName: sanchezcloud-scholight-survey-full-oldest-queued-age
       Namespace: Scholight/Production
@@ -1565,7 +1913,7 @@ Resources:
 
   SurveyClaimLatencyAlarm:
     Type: AWS::CloudWatch::Alarm
-    Condition: RunSurveyWorkers
+    Condition: RunSurveyRuntime
     Properties:
       AlarmName: sanchezcloud-scholight-survey-claim-p95-latency
       ComparisonOperator: GreaterThanThreshold
@@ -1600,7 +1948,7 @@ Resources:
 
   SurveyHeartbeatLatencyAlarm:
     Type: AWS::CloudWatch::Alarm
-    Condition: RunSurveyWorkers
+    Condition: RunSurveyRuntime
     Properties:
       AlarmName: sanchezcloud-scholight-survey-heartbeat-p95-latency
       ComparisonOperator: GreaterThanThreshold
@@ -1705,7 +2053,7 @@ Resources:
 
   SurveyDraftProviderThrottleAlarm:
     Type: AWS::CloudWatch::Alarm
-    Condition: RunSurveyWorkers
+    Condition: RunSurveyRuntime
     Properties:
       AlarmName: sanchezcloud-scholight-survey-draft-provider-throttle-rate
       ComparisonOperator: GreaterThanThreshold
@@ -1739,7 +2087,7 @@ Resources:
 
   SurveyFullProviderThrottleAlarm:
     Type: AWS::CloudWatch::Alarm
-    Condition: RunSurveyWorkers
+    Condition: RunSurveyRuntime
     Properties:
       AlarmName: sanchezcloud-scholight-survey-full-provider-throttle-rate
       ComparisonOperator: GreaterThanThreshold
@@ -1810,3 +2158,8 @@ Outputs:
   ExtractServiceName: { Value: !GetAtt ExtractService.Name }
   MigrationTaskDefinitionArn: { Value: !Ref MigrationTaskDefinition }
   TaskSecurityGroupId: { Value: !Ref TaskSecurityGroup }
+  SurveyControlFunctionName:
+    Condition: RunSurveyRuntime
+    Value: !Ref SurveyControlFunction
+  SurveyFullTaskDefinitionArn: { Value: !Ref SurveyFullTaskDefinition }
+  SurveyFullHighMemoryTaskDefinitionArn: { Value: !Ref SurveyFullHighMemoryTaskDefinition }

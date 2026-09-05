@@ -173,16 +173,18 @@ class Settings(BaseSettings):
     # remains fail-closed. Survey has never shipped, so there is no legacy switch.
     survey_runtime_enabled: bool = False
     survey_public_mode: Literal["off", "all"] = "off"
+    survey_dispatch_mode: Literal["legacy", "event"] = "legacy"
+    survey_control_function_name: str = ""
     survey_daily_limit: int = Field(default=3, ge=1, le=100)
     survey_draft_timeout_seconds: int = Field(default=1800, ge=60, le=3600)
     survey_job_timeout_seconds: int = Field(default=86400, ge=60, le=172800)
     survey_provider_max_attempts: int = Field(default=3, ge=1, le=5)
     survey_provider_retry_base_seconds: float = Field(default=2.0, ge=0.0, le=30.0)
     survey_provider_retry_max_seconds: float = Field(default=30.0, ge=0.0, le=120.0)
-    survey_draft_global_concurrency: int = Field(default=64, ge=1, le=64)
-    survey_job_global_concurrency: int = Field(default=16, ge=1, le=16)
+    survey_draft_global_concurrency: int = Field(default=8, ge=1, le=64)
+    survey_job_global_concurrency: int = Field(default=2, ge=1, le=16)
     survey_draft_per_user_concurrency: int = Field(default=8, ge=1, le=64)
-    survey_job_per_user_concurrency: int = Field(default=4, ge=1, le=16)
+    survey_job_per_user_concurrency: int = Field(default=1, ge=1, le=16)
     survey_draft_worker_concurrency: int = Field(default=8, ge=1, le=64)
     survey_job_worker_concurrency: int = Field(default=2, ge=1, le=16)
     survey_heartbeat_seconds: int = Field(default=15, ge=5, le=60)
@@ -207,6 +209,10 @@ class Settings(BaseSettings):
             raise ValueError(
                 "SCHOLIGHT_SURVEY_PROVIDER_RETRY_BASE_SECONDS must not exceed "
                 "SCHOLIGHT_SURVEY_PROVIDER_RETRY_MAX_SECONDS"
+            )
+        if self.survey_dispatch_mode == "event" and not self.survey_control_function_name.strip():
+            raise ValueError(
+                "SCHOLIGHT_SURVEY_CONTROL_FUNCTION_NAME is required in event dispatch mode"
             )
         if self.survey_draft_per_user_concurrency > self.survey_draft_global_concurrency:
             raise ValueError(

@@ -48,6 +48,7 @@ ingest = [
 survey = [
     "alibabacloud-credentials>=0.3.7",
     "alibabacloud-dm20151123>=1.2.2",
+    "awslambdaric>=3,<4",
     "beautifulsoup4>=4.12",
     "boto3>=1.35,<2",
     "cryptography>=50.0.0",

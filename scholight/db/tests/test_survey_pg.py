@@ -319,7 +319,8 @@ async def test_oom_stop_event_is_idempotent_and_escalates_the_next_attempt(
 
     second = await reserve_next_compute_attempt(
         work_kind="full",
-        task_definition_arn="high-memory:1",
+        task_definition_arn="standard:1",
+        high_memory_task_definition_arn="high-memory:1",
         global_concurrency=2,
         per_user_concurrency=1,
     )
@@ -327,6 +328,57 @@ async def test_oom_stop_event_is_idempotent_and_escalates_the_next_attempt(
     assert second.job_id == job_id
     assert second.attempt_no == 2
     assert second.resource_profile == "full-high-memory"
+    assert second.task_definition_arn == "high-memory:1"
+
+    await mark_compute_attempt_launched(attempt_id=second.id, task_arn=f"task/{second.id}")
+    assert await claim_exact_survey_job(
+        job_id=job_id,
+        attempt_id=second.id,
+        lease_seconds=120,
+        workflow_version="workflow-v1",
+        executor_version="executor-v1",
+        execution_timeout_seconds=86400,
+    )
+    await settle_survey_execution(
+        job_id=job_id,
+        worker_id=second.id,
+        outcome="failed",
+        error_code="survey_compute_oom",
+        error_message="Survey generation could not be completed.",
+        chargeable=False,
+    )
+    await record_compute_attempt_stopped(
+        attempt_id=second.id,
+        event_version=11,
+        exit_code=137,
+        stop_code="EssentialContainerExited",
+        stopped_reason="OutOfMemoryError: container killed",
+        failure_class="oom",
+        failure_details={"container_reason": "OutOfMemoryError"},
+        retryable=False,
+    )
+    archive = await reserve_next_compute_attempt(
+        work_kind="full",
+        task_definition_arn="standard:1",
+        high_memory_task_definition_arn="high-memory:1",
+        global_concurrency=2,
+        per_user_concurrency=1,
+    )
+    assert archive is not None
+    assert archive.attempt_no == 3
+    assert archive.resource_profile == "full-high-memory"
+    await mark_compute_attempt_launched(attempt_id=archive.id, task_arn=f"task/{archive.id}")
+    archive_job = await claim_exact_survey_job(
+        job_id=job_id,
+        attempt_id=archive.id,
+        lease_seconds=120,
+        workflow_version="workflow-v1",
+        executor_version="executor-v1",
+        execution_timeout_seconds=86400,
+    )
+    assert archive_job is not None
+    assert archive_job.status == "archiving"
+    assert archive_job.terminal_outcome == "failed"
 
 
 @pytest.mark.asyncio

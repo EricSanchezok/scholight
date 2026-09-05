@@ -30,6 +30,12 @@ on:
         default: "off"
         type: choice
         options: ["off", "all"]
+      survey_dispatch_mode:
+        description: Select legacy resident workers or event-driven standalone tasks
+        required: true
+        default: legacy
+        type: choice
+        options: [legacy, event]
       scheduler_state:
         description: Run ingest and metadata schedules
         required: true
@@ -77,6 +83,7 @@ jobs:
           APPLICATION_ENABLED: ${{ inputs.application_enabled }}
           SURVEY_RUNTIME_ENABLED: ${{ inputs.survey_runtime_enabled }}
           SURVEY_PUBLIC_MODE: ${{ inputs.survey_public_mode }}
+          SURVEY_DISPATCH_MODE: ${{ inputs.survey_dispatch_mode }}
           SURVEY_CAPACITY_STAGE: ${{ inputs.survey_capacity_stage }}
           SURVEY_CAPACITY_PREREQUISITES_CONFIRMED: ${{ inputs.survey_capacity_prerequisites_confirmed }}
           OPERATION: ${{ inputs.operation }}
@@ -373,6 +380,7 @@ jobs:
           APPLICATION_ENABLED: ${{ inputs.application_enabled }}
           SURVEY_RUNTIME_ENABLED: ${{ inputs.survey_runtime_enabled }}
           SURVEY_PUBLIC_MODE: ${{ inputs.survey_public_mode }}
+          SURVEY_DISPATCH_MODE: ${{ inputs.survey_dispatch_mode }}
           SCHEDULER_STATE: ${{ inputs.scheduler_state }}
         run: |
           account_id=$(aws sts get-caller-identity --query Account --output text)
@@ -402,6 +410,7 @@ jobs:
               ApplicationEnabled="$APPLICATION_ENABLED" \
               SurveyRuntimeEnabled="$SURVEY_RUNTIME_ENABLED" \
               SurveyPublicMode="$SURVEY_PUBLIC_MODE" \
+              SurveyDispatchMode="$SURVEY_DISPATCH_MODE" \
               SurveyDraftMaxTasks="$SURVEY_DRAFT_MAX_TASKS" \
               SurveyFullMaxTasks="$SURVEY_FULL_MAX_TASKS" \
               SchedulerState="$SCHEDULER_STATE"

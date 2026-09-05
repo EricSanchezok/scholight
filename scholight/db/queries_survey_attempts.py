@@ -147,6 +147,7 @@ async def reserve_next_compute_attempt(
     *,
     work_kind: WorkKind,
     task_definition_arn: str,
+    high_memory_task_definition_arn: str | None = None,
     global_concurrency: int,
     per_user_concurrency: int,
     max_compute_attempts: int = 3,
@@ -201,6 +202,12 @@ async def reserve_next_compute_attempt(
                     resource_profile = "full-high-memory"
                 else:
                     resource_profile = "full-standard"
+                selected_task_definition = (
+                    high_memory_task_definition_arn
+                    if resource_profile == "full-high-memory"
+                    and high_memory_task_definition_arn is not None
+                    else task_definition_arn
+                )
                 row = await connection.fetchrow(
                     "INSERT INTO scholight.survey_compute_attempts "
                     "(id, work_kind, survey_id, draft_id, job_id, attempt_no, "
@@ -213,7 +220,7 @@ async def reserve_next_compute_attempt(
                     target_id if work_kind == "full" else None,
                     attempt_no,
                     resource_profile,
-                    task_definition_arn,
+                    selected_task_definition,
                     str(attempt_id),
                 )
                 if row is None:
@@ -240,7 +247,9 @@ async def _compute_candidates(
         draft_rows = await connection.fetch(
             "WITH eligible AS ("
             "SELECT d.id AS target_id, d.survey_id, d.queued_at, s.user_id, "
-            "count(a.id)::integer AS attempt_count, false AS had_oom, "
+            "count(a.id)::integer AS attempt_count, "
+            "count(a.id) FILTER (WHERE a.started_at IS NOT NULL)::integer AS compute_count, "
+            "false AS had_oom, "
             "row_number() OVER (PARTITION BY s.user_id ORDER BY d.queued_at, d.id) AS turn "
             "FROM scholight.survey_drafts d JOIN scholight.surveys s ON s.id = d.survey_id "
             "LEFT JOIN scholight.survey_compute_attempts a ON a.draft_id = d.id "
@@ -253,7 +262,7 @@ async def _compute_candidates(
             "JOIN scholight.surveys s ON s.id = a.survey_id "
             "WHERE a.work_kind = 'draft' AND a.status = ANY($1::text[]) GROUP BY s.user_id) "
             "SELECT e.* FROM eligible e LEFT JOIN active_users u ON u.user_id = e.user_id "
-            "WHERE e.attempt_count < $2 AND coalesce(u.count, 0) < $3 "
+            "WHERE e.compute_count < $2 AND coalesce(u.count, 0) < $3 "
             "ORDER BY e.turn, e.queued_at, e.target_id LIMIT 32",
             list(_ACTIVE_STATUSES),
             max_compute_attempts,
@@ -262,16 +271,18 @@ async def _compute_candidates(
         return list(draft_rows)
     full_rows = await connection.fetch(
         "WITH eligible AS ("
-        "SELECT j.id AS target_id, j.survey_id, j.queued_at, s.user_id, "
+        "SELECT j.id AS target_id, j.survey_id, j.queued_at, j.status AS job_status, s.user_id, "
         "count(a.id)::integer AS attempt_count, "
+        "count(a.id) FILTER (WHERE a.started_at IS NOT NULL)::integer AS compute_count, "
         "coalesce(bool_or(a.failure_class = 'oom'), false) AS had_oom, "
         "row_number() OVER (PARTITION BY s.user_id ORDER BY "
         "CASE WHEN j.status = 'archiving' THEN 0 ELSE 1 END, j.queued_at, j.id) AS turn "
         "FROM scholight.survey_jobs j JOIN scholight.surveys s ON s.id = j.survey_id "
         "LEFT JOIN scholight.survey_compute_attempts a ON a.job_id = j.id "
         "WHERE j.status IN ('queued', 'running', 'archiving') "
-        "AND j.terminal_outcome IS NULL "
-        "AND (j.execution_deadline_at IS NULL OR j.execution_deadline_at > now()) "
+        "AND (j.status = 'archiving' OR j.terminal_outcome IS NULL) "
+        "AND (j.status = 'archiving' OR j.execution_deadline_at IS NULL "
+        "OR j.execution_deadline_at > now()) "
         "AND (j.lease_expires_at IS NULL OR j.lease_expires_at <= now()) "
         "AND NOT EXISTS (SELECT 1 FROM scholight.survey_compute_attempts active "
         "WHERE active.job_id = j.id AND active.status = ANY($1::text[])) "
@@ -281,7 +292,9 @@ async def _compute_candidates(
         "JOIN scholight.surveys s ON s.id = a.survey_id "
         "WHERE a.work_kind = 'full' AND a.status = ANY($1::text[]) GROUP BY s.user_id) "
         "SELECT e.* FROM eligible e LEFT JOIN active_users u ON u.user_id = e.user_id "
-        "WHERE e.attempt_count < $2 AND coalesce(u.count, 0) < $3 "
+        "WHERE ((e.job_status = 'archiving' AND e.attempt_count < $2 + 8) "
+        "OR (e.job_status <> 'archiving' AND e.compute_count < $2)) "
+        "AND coalesce(u.count, 0) < $3 "
         "ORDER BY e.turn, e.queued_at, e.target_id LIMIT 32",
         list(_ACTIVE_STATUSES),
         max_compute_attempts,
@@ -299,7 +312,7 @@ def _candidate_is_current(locked: Any, *, work_kind: WorkKind, target_id: UUID) 
         locked.job is not None
         and locked.job["id"] == target_id
         and locked.job["status"] in {"queued", "running", "archiving"}
-        and locked.job["terminal_outcome"] is None
+        and (locked.job["status"] == "archiving" or locked.job["terminal_outcome"] is None)
         and (
             locked.job["lease_expires_at"] is None
             or locked.job["lease_expires_at"] <= datetime.now(locked.job["queued_at"].tzinfo)
@@ -321,6 +334,96 @@ async def mark_compute_attempt_launching(*, attempt_id: UUID) -> SurveyComputeAt
     return _attempt(row) if row is not None else None
 
 
+async def list_due_compute_attempts(*, limit: int = 16) -> tuple[SurveyComputeAttempt, ...]:
+    """List existing reservations before creating more queue capacity."""
+    if limit < 1 or limit > 64:
+        raise ValueError("Survey launch reconciliation limit is invalid")
+    try:
+        rows = await get_pool().fetch(
+            "SELECT * FROM scholight.survey_compute_attempts "
+            "WHERE status IN ('reserved', 'launching') AND next_launch_at <= now() "
+            "ORDER BY next_launch_at, created_at, id LIMIT $1",
+            limit,
+        )
+    except asyncpg.PostgresError as exc:
+        raise DBError("Failed to list Survey compute attempts awaiting launch") from exc
+    return tuple(_attempt(row) for row in rows)
+
+
+async def list_active_compute_attempts(*, limit: int = 32) -> tuple[SurveyComputeAttempt, ...]:
+    """List launched/running attempts for bounded ECS reconciliation."""
+    if limit < 1 or limit > 128:
+        raise ValueError("Survey attempt reconciliation limit is invalid")
+    try:
+        rows = await get_pool().fetch(
+            "SELECT * FROM scholight.survey_compute_attempts "
+            "WHERE status IN ('launched', 'running') AND ecs_task_arn IS NOT NULL "
+            "ORDER BY coalesce(heartbeat_at, launched_at, created_at), id LIMIT $1",
+            limit,
+        )
+    except asyncpg.PostgresError as exc:
+        raise DBError("Failed to list active Survey compute attempts") from exc
+    return tuple(_attempt(row) for row in rows)
+
+
+async def get_compute_attempt_by_task_arn(task_arn: str) -> SurveyComputeAttempt | None:
+    try:
+        row = await get_pool().fetchrow(
+            "SELECT * FROM scholight.survey_compute_attempts WHERE ecs_task_arn = $1",
+            task_arn,
+        )
+    except asyncpg.PostgresError as exc:
+        raise DBError("Failed to locate Survey compute attempt") from exc
+    return _attempt(row) if row is not None else None
+
+
+async def count_started_compute_attempts(*, attempt_id: UUID) -> int:
+    """Count billable compute starts for the attempt's exact work item."""
+    try:
+        value = await get_pool().fetchval(
+            "SELECT count(started.id) FROM scholight.survey_compute_attempts current "
+            "JOIN scholight.survey_compute_attempts started ON "
+            "started.work_kind = current.work_kind AND "
+            "((current.draft_id IS NOT NULL AND started.draft_id = current.draft_id) OR "
+            "(current.job_id IS NOT NULL AND started.job_id = current.job_id)) "
+            "WHERE current.id = $1 AND started.started_at IS NOT NULL",
+            attempt_id,
+        )
+    except asyncpg.PostgresError as exc:
+        raise DBError("Failed to count Survey compute starts") from exc
+    return int(value or 0)
+
+
+async def record_compute_launch_failure(*, attempt_id: UUID, reason: str) -> SurveyComputeAttempt:
+    """Back off a placement/launch error without creating a compute retry."""
+    try:
+        async with get_pool().acquire() as connection, connection.transaction():
+            current = await connection.fetchrow(
+                "SELECT * FROM scholight.survey_compute_attempts WHERE id = $1 FOR UPDATE",
+                attempt_id,
+            )
+            if current is None or current["status"] not in {"reserved", "launching"}:
+                raise DBError("Survey compute attempt is no longer launchable")
+            failures = int(current["launch_failures"]) + 1
+            delays = (15, 30, 60, 120, 300)
+            delay = timedelta(seconds=delays[min(failures - 1, len(delays) - 1)])
+            row = await connection.fetchrow(
+                "UPDATE scholight.survey_compute_attempts SET status = 'reserved', "
+                "launch_failures = $2, next_launch_at = now() + $3, "
+                "failure_class = 'launch', failure_details = $4::jsonb "
+                "WHERE id = $1 RETURNING *",
+                attempt_id,
+                failures,
+                delay,
+                json.dumps({"container_reason": reason[:512]}),
+            )
+    except asyncpg.PostgresError as exc:
+        raise DBError("Failed to defer Survey compute launch") from exc
+    if row is None:
+        raise DBError("Survey compute launch failure was not recorded")
+    return _attempt(row)
+
+
 async def mark_compute_attempt_launched(*, attempt_id: UUID, task_arn: str) -> SurveyComputeAttempt:
     """Persist the idempotent ECS task identity returned by ``RunTask``."""
     try:
@@ -336,6 +439,64 @@ async def mark_compute_attempt_launched(*, attempt_id: UUID, task_arn: str) -> S
         raise DBError("Failed to record launched Survey compute attempt") from exc
     if row is None:
         raise DBError("Survey compute attempt is no longer launchable")
+    return _attempt(row)
+
+
+async def record_compute_attempt_succeeded(
+    *, attempt_id: UUID, event_version: int, exit_code: int = 0
+) -> SurveyComputeAttempt:
+    """Record clean task exit only when its target reached a durable terminal state."""
+    try:
+        async with get_pool().acquire() as connection, connection.transaction():
+            current = await connection.fetchrow(
+                "SELECT * FROM scholight.survey_compute_attempts WHERE id = $1 FOR UPDATE",
+                attempt_id,
+            )
+            if current is None:
+                raise DBError("Survey compute attempt was not found")
+            current_version = current["ecs_event_version"]
+            if current_version is not None and int(current_version) >= event_version:
+                return _attempt(current)
+            if current["work_kind"] == "draft":
+                terminal = await connection.fetchval(
+                    "SELECT status IN ('ready', 'failed', 'cancelled') "
+                    "FROM scholight.survey_drafts WHERE id = $1",
+                    current["draft_id"],
+                )
+            else:
+                terminal = await connection.fetchval(
+                    "SELECT status = 'finished' FROM scholight.survey_jobs WHERE id = $1",
+                    current["job_id"],
+                )
+            status = "succeeded" if bool(terminal) else "retryable"
+            row = await connection.fetchrow(
+                "UPDATE scholight.survey_compute_attempts SET status = $2, "
+                "ecs_event_version = $3, exit_code = $4, stopped_at = coalesce(stopped_at, now()), "
+                "failure_class = CASE WHEN $2 = 'retryable' THEN 'unexpected_clean_exit' "
+                "ELSE NULL END, failure_details = '{}'::jsonb WHERE id = $1 RETURNING *",
+                attempt_id,
+                status,
+                event_version,
+                exit_code,
+            )
+            if status == "retryable" and current["work_kind"] == "full":
+                await connection.execute(
+                    "UPDATE scholight.survey_jobs SET lease_owner = NULL, lease_expires_at = NULL "
+                    "WHERE id = $1 AND lease_owner = $2",
+                    current["job_id"],
+                    attempt_id,
+                )
+            if status == "retryable" and current["work_kind"] == "draft":
+                await connection.execute(
+                    "UPDATE scholight.survey_drafts SET status = 'queued', lease_owner = NULL, "
+                    "lease_expires_at = NULL WHERE id = $1 AND lease_owner = $2",
+                    current["draft_id"],
+                    attempt_id,
+                )
+    except asyncpg.PostgresError as exc:
+        raise DBError("Failed to record successful Survey compute exit") from exc
+    if row is None:
+        raise DBError("Survey compute success was not recorded")
     return _attempt(row)
 
 
@@ -413,7 +574,9 @@ async def claim_exact_survey_job(
             if locked is None or locked.job is None or locked.job["id"] != job_id:
                 return None
             job = locked.job
-            if job["terminal_outcome"] is not None or job["status"] == "finished":
+            if job["status"] == "finished" or (
+                job["terminal_outcome"] is not None and job["status"] != "archiving"
+            ):
                 return None
             now = datetime.now(job["queued_at"].tzinfo)
             if job["lease_expires_at"] is not None and job["lease_expires_at"] > now:
@@ -440,7 +603,7 @@ async def claim_exact_survey_job(
                 "execution_deadline_at = coalesce(execution_deadline_at, now() + $6), "
                 "resume_count = resume_count + CASE WHEN checkpoint_sequence IS NULL THEN 0 ELSE 1 END "
                 "WHERE id = $1 AND status IN ('queued', 'running', 'archiving') "
-                "AND terminal_outcome IS NULL RETURNING id",
+                "AND (status = 'archiving' OR terminal_outcome IS NULL) RETURNING id",
                 job_id,
                 attempt_id,
                 lease,
@@ -675,10 +838,16 @@ __all__ = [
     "claim_exact_survey_draft",
     "claim_exact_survey_job",
     "commit_survey_job_checkpoint",
+    "count_started_compute_attempts",
     "get_claimed_job_checkpoint",
+    "get_compute_attempt_by_task_arn",
     "heartbeat_compute_attempt",
+    "list_active_compute_attempts",
+    "list_due_compute_attempts",
     "mark_compute_attempt_launched",
     "mark_compute_attempt_launching",
+    "record_compute_attempt_succeeded",
     "record_compute_attempt_stopped",
+    "record_compute_launch_failure",
     "reserve_next_compute_attempt",
 ]
