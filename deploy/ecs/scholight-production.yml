@@ -1024,6 +1024,7 @@ Resources:
   SurveyControlScheduleRule:
     Type: AWS::Events::Rule
     Condition: RunSurveyControl
+    DependsOn: SurveyControlSchedulePermission
     Properties:
       Name: sanchezcloud-scholight-survey-control-minute
       Description: Reconcile durable Survey work every minute
@@ -1038,6 +1039,7 @@ Resources:
   SurveyControlStoppedRule:
     Type: AWS::Events::Rule
     Condition: RunSurveyControl
+    DependsOn: SurveyControlStoppedPermission
     Properties:
       Name: sanchezcloud-scholight-survey-control-stopped
       Description: Reconcile tracked Survey standalone tasks immediately when they stop
@@ -1061,7 +1063,7 @@ Resources:
       Action: lambda:InvokeFunction
       FunctionName: !Ref SurveyControlFunction
       Principal: events.amazonaws.com
-      SourceArn: !GetAtt SurveyControlScheduleRule.Arn
+      SourceArn: !Sub arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/sanchezcloud-scholight-survey-control-minute
 
   SurveyControlStoppedPermission:
     Type: AWS::Lambda::Permission
@@ -1070,7 +1072,7 @@ Resources:
       Action: lambda:InvokeFunction
       FunctionName: !Ref SurveyControlFunction
       Principal: events.amazonaws.com
-      SourceArn: !GetAtt SurveyControlStoppedRule.Arn
+      SourceArn: !Sub arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/sanchezcloud-scholight-survey-control-stopped
 
   SurveyControlDeadLetterAlarm:
     Type: AWS::CloudWatch::Alarm
