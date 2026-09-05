@@ -551,14 +551,16 @@ scholight survey model-canary --json-output
 ```
 
 The model canary uses the exact production OpenAI-compatible model declaration,
-including thinking-mode history compatibility. It reads one fixed non-sensitive
+including explicit thinking-mode selection and history compatibility. It reads one fixed non-sensitive
 file, then must emit visible text and an `fs` write in the same assistant turn
 before completing a third model turn. The command requires three successful
 completions, two complete tool round trips, a mixed response with at least two
 fragments, and the exact fixed output file. This catches providers that reject a
 missing `reasoning_content` field when visible text precedes a tool call. It
 discards completion text and provider response bodies, retaining only status,
-error code, HTTP status, retryability, and duration.
+error code, HTTP status, retryability, duration, the sanitized provider/request
+classification, and content-free request-shape counters. The canary output uses
+the same strict allowlist as Survey attempt diagnostics.
 
 The immutable release workflow enforces this contract before CloudFormation
 changes the running services. It clones the deployed Survey task definition,
