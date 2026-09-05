@@ -850,7 +850,6 @@ Resources:
       Family: sanchezcloud-scholight-survey-full-standalone
       Cpu: "1024"
       Memory: "4096"
-      EphemeralStorage: { SizeInGiB: 20 }
       NetworkMode: awsvpc
       RequiresCompatibilities: [FARGATE]
       RuntimePlatform: { CpuArchitecture: X86_64, OperatingSystemFamily: LINUX }
@@ -902,7 +901,6 @@ Resources:
       Family: sanchezcloud-scholight-survey-full-high-memory
       Cpu: "1024"
       Memory: "8192"
-      EphemeralStorage: { SizeInGiB: 20 }
       NetworkMode: awsvpc
       RequiresCompatibilities: [FARGATE]
       RuntimePlatform: { CpuArchitecture: X86_64, OperatingSystemFamily: LINUX }
