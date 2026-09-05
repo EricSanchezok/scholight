@@ -525,7 +525,7 @@ least three image calls fail with no success in a six-hour window. Any finalizer
 failure alerts immediately because it means paid research completed without a
 deliverable report.
 
-RCM completion failures are likewise content-free. The pinned RCM 0.2.24 emits
+RCM completion failures are likewise content-free. The pinned RCM 0.2.25 emits
 the completion outcome, HTTP status, stable failure kind, retryability, and
 elapsed time. Scholight accepts its additive
 request-shape contract: serialized request bytes, estimated tokens, message and
@@ -546,13 +546,15 @@ optional image-path failure alone must not discard otherwise complete research;
 it also cannot mask an earlier required-component failure. If local checks cannot
 produce a valid report, the model failure remains terminal.
 
-RCM 0.2.24 preserves provider reasoning and reconstructs visible assistant text
+RCM 0.2.25 preserves provider reasoning and reconstructs visible assistant text
 plus its tool calls as one assistant turn; call-correlated failed tool results
 are replayed as valid outcomes without re-splitting the turn. This is required
 by DeepSeek thinking mode when that mixed turn is replayed with its original
-`reasoning_content`.
+`reasoning_content`. Response decoding is order-independent: shared reasoning
+is attached to every tool call even when the provider adapter normalizes tool
+calls before its reasoning block.
 
-RCM 0.2.24 additionally replaces HTTP provider response bodies on the machine
+RCM 0.2.25 additionally replaces HTTP provider response bodies on the machine
 tape with a status-only hitch and publishes the content-free request class on
 `completion_end`. The standalone DAG treats a failed terminal completion as a
 unit failure even when the RCM process exits zero. A reference seed classified
@@ -561,7 +563,7 @@ once to the canaried non-thinking workflow; `unknown_request` is not replayed.
 The latest sanitized failure is retained on the exact compute attempt and a
 clean ECS exit cannot erase it.
 
-RCM 0.2.24 projects explicit `thinking = "true"` and `thinking = "false"`
+RCM 0.2.25 projects explicit `thinking = "true"` and `thinking = "false"`
 declarations to the matching `thinking.type` request field for declared OpenAI
 or DeepSeek transports. Declarations that omit `thinking` retain the provider's
 historical default, so the canaried non-thinking reference fallback disables
@@ -572,10 +574,11 @@ through the provider-native adapter, whose assistant `content` is a string even
 for a pure tool-call turn while the matching `reasoning_content`, tool calls,
 tool results, and configured `max_tokens` remain present. The prior generic
 OpenAI adapter emitted an empty text-parts array for this case, which DeepSeek
-rejected with HTTP 400. The workflow checkpoint version is v2.2, so an attempt
-cannot resume a v2.1 checkpoint across this transport-contract change.
+rejected with HTTP 400. The workflow checkpoint version is v2.3, so an attempt
+cannot resume a v2.2 checkpoint across the order-independent replay-contract
+change.
 
-The Survey image pins the 0.2.24 Linux archive from the primary RCM repository
+The Survey image pins the 0.2.25 Linux archive from the primary RCM repository
 with its published SHA-256. A source commit, local binary, or guessed checksum
 is not a release artifact. The production deployment must still pass the fixed
 model, image, and full-text canaries against the candidate Survey image before
