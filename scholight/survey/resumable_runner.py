@@ -20,10 +20,12 @@ import httpx
 import structlog
 
 from scholight.config import settings
+from scholight.db.client import DBError
 from scholight.db.queries_survey import SurveyJob, update_survey_job_progress
 from scholight.db.queries_survey_attempts import (
     SurveyCheckpointPointer,
     commit_survey_job_checkpoint,
+    record_compute_attempt_diagnostics,
 )
 from scholight.sources.arxiv import arxiv_artifact_stem
 from scholight.survey.checkpoints import SurveyCheckpoint, SurveyCheckpointStore
@@ -44,6 +46,11 @@ from scholight.survey.process import (
     read_sanitized_tail,
     terminate_process_group,
     write_stdin,
+)
+from scholight.survey.rcm_diagnostics import (
+    attempt_failure_details,
+    completion_failure_semantics,
+    terminal_completion_failure,
 )
 from scholight.survey.runtime import survey_environment
 from scholight.survey.workflow_resources import (
@@ -220,11 +227,40 @@ def merge_reference_shards(
 
 
 class _StageProcessError(Exception):
-    def __init__(self, code: str, message: str, *, stderr_tail: str = "") -> None:
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        stderr_tail: str = "",
+        diagnostics: dict[str, object] | None = None,
+    ) -> None:
         super().__init__(message)
         self.code = code
         self.public_message = message
         self.stderr_tail = stderr_tail
+        self.diagnostics = diagnostics or {}
+
+
+async def _persist_attempt_completion_failure(job: SurveyJob, failure: dict[str, object]) -> None:
+    attempt_id = getattr(job, "lease_owner", None)
+    if not isinstance(attempt_id, UUID):
+        return
+    details = attempt_failure_details(failure)
+    if not details:
+        return
+    request_class = details.get("provider_request_class")
+    failure_class = f"provider_{request_class}" if isinstance(request_class, str) else "provider"
+    try:
+        await record_compute_attempt_diagnostics(
+            attempt_id=attempt_id,
+            failure_class=failure_class,
+            failure_details=details,
+        )
+    except DBError:
+        # The query layer already emitted a content-free warning. A diagnostic
+        # write failure cannot replace the model failure being handled here.
+        return
 
 
 async def _run_rcm_once(
@@ -287,7 +323,23 @@ async def _run_rcm_once(
                 "Survey generation exceeded its execution window.",
             )
         return_code = await wait_task
+        stdout_tail = await stdout_task
         stderr_tail = await stderr_task
+        completion_failure = terminal_completion_failure(stdout_tail)
+        if completion_failure is not None:
+            code, message = completion_failure_semantics(completion_failure)
+            await _persist_attempt_completion_failure(job, completion_failure)
+            logger.warning(
+                "survey_rcm_completion_failed",
+                unit=unit.name,
+                **completion_failure,
+            )
+            raise _StageProcessError(
+                code,
+                message,
+                stderr_tail=stderr_tail,
+                diagnostics=completion_failure,
+            )
         if return_code != 0:
             code, message = classify_rcm_error(stderr_tail)
             if re.search(r"(?:status|http)\D{0,8}400", stderr_tail, re.I):
@@ -478,7 +530,7 @@ async def _run_reference_seed(
     run_root: Path,
     control: ProcessControl,
     deadline: datetime,
-) -> None:
+) -> dict[str, object] | None:
     item = cast(dict[str, str], json.loads(unit.purpose))
     paper_id = item["seed_id"]
     stem = item["stem"]
@@ -492,7 +544,8 @@ async def _run_reference_seed(
     )
     if not usable:
         _write_reference_failure(output_path, paper_id=paper_id, reason="bibliography_unavailable")
-        return
+        return None
+    failure_diagnostics: dict[str, object] | None = None
     try:
         await _run_rcm_with_retries(
             unit=unit,
@@ -502,7 +555,11 @@ async def _run_reference_seed(
             deadline=deadline,
         )
     except _StageProcessError as exc:
-        if exc.code == "survey_model_request_rejected" and _CONTEXT_400.search(exc.stderr_tail):
+        failure_diagnostics = dict(exc.diagnostics) or None
+        request_class = exc.diagnostics.get("request_class")
+        if exc.code == "survey_model_request_rejected" and (
+            request_class == "request_size" or _CONTEXT_400.search(exc.stderr_tail)
+        ):
             _shrink_reference_input(input_path)
             try:
                 await _run_rcm_once(
@@ -512,11 +569,14 @@ async def _run_reference_seed(
                     control=control,
                     deadline=deadline,
                 )
-            except _StageProcessError:
+            except _StageProcessError as fallback_error:
+                failure_diagnostics = dict(fallback_error.diagnostics) or failure_diagnostics
                 _write_reference_failure(
                     output_path, paper_id=paper_id, reason="provider_request_size_rejected"
                 )
-        elif exc.code == "survey_model_request_rejected" and _THINKING_400.search(exc.stderr_tail):
+        elif exc.code == "survey_model_request_rejected" and (
+            request_class == "thinking_tool_history" or _THINKING_400.search(exc.stderr_tail)
+        ):
             fallback = DurableUnit(
                 name=unit.name,
                 workflow="reference_seed_non_thinking.rcm",
@@ -531,7 +591,8 @@ async def _run_reference_seed(
                     control=control,
                     deadline=deadline,
                 )
-            except _StageProcessError:
+            except _StageProcessError as fallback_error:
+                failure_diagnostics = dict(fallback_error.diagnostics) or failure_diagnostics
                 _write_reference_failure(
                     output_path, paper_id=paper_id, reason="provider_tool_history_rejected"
                 )
@@ -543,6 +604,7 @@ async def _run_reference_seed(
             )
     if not output_path.is_file():
         _write_reference_failure(output_path, paper_id=paper_id, reason="result_missing")
+    return failure_diagnostics
 
 
 def _shard_result_path(run_root: Path, *, kind: str, name: str) -> Path:
@@ -559,8 +621,9 @@ async def _run_nonblocking_shard(
     kind: str,
     stem: str,
     expected_artifact: str,
-) -> None:
+) -> dict[str, object] | None:
     result_path = _shard_result_path(run_root, kind=kind, name=stem)
+    failure_diagnostics: dict[str, object] | None = None
     try:
         await _run_rcm_with_retries(
             unit=unit,
@@ -572,6 +635,8 @@ async def _run_nonblocking_shard(
         ArtifactContract(expected_artifact).validate(run_root)
         result = {"schema_version": 1, "status": "completed", "unit": unit.name}
     except (_StageProcessError, SurveyArtifactContractError) as exc:
+        if isinstance(exc, _StageProcessError):
+            failure_diagnostics = dict(exc.diagnostics) or None
         result = {
             "schema_version": 1,
             "status": "failed",
@@ -579,6 +644,7 @@ async def _run_nonblocking_shard(
             "reason": exc.code if isinstance(exc, _StageProcessError) else "artifact_invalid",
         }
     _write_json_atomic(result_path, result)
+    return failure_diagnostics
 
 
 def _reference_merge_unit(run_root: Path, seeds: tuple[tuple[str, str], ...]) -> None:
@@ -618,6 +684,7 @@ async def execute_resumable_survey(
 
     started_at = datetime.now(UTC)
     timings: list[dict[str, object]] = []
+    provider_failures: list[dict[str, object]] = []
     current_sequence = checkpoint_pointer.sequence
     current_hash = checkpoint_pointer.manifest_sha256
     completed = restored_checkpoint.completed_units if restored_checkpoint is not None else ()
@@ -663,50 +730,58 @@ async def execute_resumable_survey(
         async def _run_unit(unit: DurableUnit) -> None:
             nonlocal seed_cache
             unit_started = time.perf_counter()
-            if unit.name.startswith("reference_seed:"):
-                await _run_reference_seed(
-                    unit=unit,
-                    job=job,
-                    run_root=run_root,
-                    control=control,
-                    deadline=checkpoint_pointer.execution_deadline_at,
-                )
-            elif unit.name.startswith("paper_card:"):
-                stem = unit.name.split(":", 1)[1]
-                await _run_nonblocking_shard(
-                    unit=unit,
-                    job=job,
-                    run_root=run_root,
-                    control=control,
-                    deadline=checkpoint_pointer.execution_deadline_at,
-                    kind="cards",
-                    stem=stem,
-                    expected_artifact=f"cards/{stem}.md",
-                )
-            elif unit.name == "reference_merge":
-                await asyncio.to_thread(_reference_merge_unit, run_root, seed_cache)
-            elif unit.name == "image_planner":
-                await _run_nonblocking_shard(
-                    unit=unit,
-                    job=job,
-                    run_root=run_root,
-                    control=control,
-                    deadline=checkpoint_pointer.execution_deadline_at,
-                    kind="optional",
-                    stem="image_planner",
-                    expected_artifact="08_global_picture.png",
-                )
-            elif unit.name == "final_markdown":
-                await asyncio.to_thread(audit_survey_evidence, run_root)
-                await asyncio.to_thread(finalize_survey, run_root)
-            else:
-                await _run_rcm_with_retries(
-                    unit=unit,
-                    job=job,
-                    run_root=run_root,
-                    control=control,
-                    deadline=checkpoint_pointer.execution_deadline_at,
-                )
+            failure_diagnostics: dict[str, object] | None = None
+            try:
+                if unit.name.startswith("reference_seed:"):
+                    failure_diagnostics = await _run_reference_seed(
+                        unit=unit,
+                        job=job,
+                        run_root=run_root,
+                        control=control,
+                        deadline=checkpoint_pointer.execution_deadline_at,
+                    )
+                elif unit.name.startswith("paper_card:"):
+                    stem = unit.name.split(":", 1)[1]
+                    failure_diagnostics = await _run_nonblocking_shard(
+                        unit=unit,
+                        job=job,
+                        run_root=run_root,
+                        control=control,
+                        deadline=checkpoint_pointer.execution_deadline_at,
+                        kind="cards",
+                        stem=stem,
+                        expected_artifact=f"cards/{stem}.md",
+                    )
+                elif unit.name == "reference_merge":
+                    await asyncio.to_thread(_reference_merge_unit, run_root, seed_cache)
+                elif unit.name == "image_planner":
+                    failure_diagnostics = await _run_nonblocking_shard(
+                        unit=unit,
+                        job=job,
+                        run_root=run_root,
+                        control=control,
+                        deadline=checkpoint_pointer.execution_deadline_at,
+                        kind="optional",
+                        stem="image_planner",
+                        expected_artifact="08_global_picture.png",
+                    )
+                elif unit.name == "final_markdown":
+                    await asyncio.to_thread(audit_survey_evidence, run_root)
+                    await asyncio.to_thread(finalize_survey, run_root)
+                else:
+                    await _run_rcm_with_retries(
+                        unit=unit,
+                        job=job,
+                        run_root=run_root,
+                        control=control,
+                        deadline=checkpoint_pointer.execution_deadline_at,
+                    )
+            except _StageProcessError as exc:
+                if exc.diagnostics:
+                    provider_failures.append({"unit": unit.name, **exc.diagnostics})
+                raise
+            if failure_diagnostics is not None:
+                provider_failures.append({"unit": unit.name, **failure_diagnostics})
             timings.append(
                 {
                     "component": unit.name,
@@ -916,6 +991,7 @@ async def execute_resumable_survey(
             "shard_failure_count": shard_failures,
             "reference_status_counts": reference_counts,
             "evidence_coverage_percent": evidence.coverage_percent,
+            "provider_failures": provider_failures,
         }
         return SurveyExecutionResult(
             outcome="succeeded",
@@ -958,6 +1034,7 @@ async def execute_resumable_survey(
             return_code=1,
             termination_reason="unit_failed",
             stderr_tail=None,
+            diagnostics={"provider_failures": provider_failures},
         )
     except SurveyEvidenceAuditError as exc:
         return SurveyExecutionResult(

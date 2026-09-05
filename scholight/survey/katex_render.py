@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 import shutil
-import subprocess
+import subprocess  # nosec B404 -- fixed local Node binary and vendored script only.
 from pathlib import Path
 
 __all__ = ["render_formulas", "katex_render_runtime"]
@@ -53,7 +53,7 @@ def render_formulas(
         }
     ).encode("utf-8")
     try:
-        completed = subprocess.run(
+        completed = subprocess.run(  # nosec B603
             [node, str(_RENDER_BUNDLE)],
             input=payload,
             capture_output=True,
@@ -87,7 +87,7 @@ def katex_render_runtime() -> dict[str, str | bool]:
     if node is None:
         return {"available": False, "node_version": "", "render_ok": False}
     try:
-        version = subprocess.run(
+        version = subprocess.run(  # nosec B603
             [node, "--version"], capture_output=True, timeout=10.0, check=False
         )
         node_version = version.stdout.decode("utf-8").strip()

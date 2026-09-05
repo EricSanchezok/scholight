@@ -1749,7 +1749,14 @@ async def test_stage_collector_consumes_sanitized_completion_failure_fields(
         b'{"type":"completion_end","fragments":1,"input_tokens":0,'
         b'"output_tokens":0,"total_tokens":0,"outcome":"failure",'
         b'"http_status":503,"failure_kind":"provider_error",'
-        b'"retryable":true,"duration_ms":240001}\n'
+        b'"retryable":true,"duration_ms":240001,'
+        b'"provider_code":"upstream_unavailable","request_id":"req-123",'
+        b'"serialized_request_bytes":524288,"estimated_input_tokens":131072,'
+        b'"message_count":12,"tool_definition_count":6,"tool_call_count":4,'
+        b'"tool_result_count":3,"thinking_enabled":true,'
+        b'"reasoning_content_present":true,"reasoning_content_bytes":4096,'
+        b'"unmatched_tool_call_count":1,"duplicate_tool_call_count":0,'
+        b'"message":"PRIVATE PAPER BODY"}\n'
     )
     stream.feed_eof()
     diagnostics = SurveyDiagnostics(
@@ -1769,12 +1776,27 @@ async def test_stage_collector_consumes_sanitized_completion_failure_fields(
         "retryable": True,
         "duration_ms": 240001,
         "failure_kind": "provider_error",
+        "provider_code": "upstream_unavailable",
+        "request_id": "req-123",
+        "serialized_request_bytes": 524288,
+        "estimated_input_tokens": 131072,
+        "message_count": 12,
+        "tool_definition_count": 6,
+        "tool_call_count": 4,
+        "tool_result_count": 3,
+        "thinking_enabled": True,
+        "reasoning_content_present": True,
+        "reasoning_content_bytes": 4096,
+        "unmatched_tool_call_count": 1,
+        "duplicate_tool_call_count": 0,
     }
     assert emit.call_args.kwargs == {
         "service": "survey-full-worker",
         "outcome": "provider_error",
         "metrics": {"SurveyModelCompletionFailure": (1, "Count")},
     }
+    trace = (tmp_path / "trajectory.jsonl").read_text(encoding="utf-8")
+    assert "PRIVATE PAPER BODY" not in trace
 
 
 @pytest.mark.asyncio

@@ -37,7 +37,9 @@ from scholight.db.queries_survey_attempts import (
     commit_survey_job_checkpoint,
     heartbeat_compute_attempt,
     mark_compute_attempt_launched,
+    record_compute_attempt_diagnostics,
     record_compute_attempt_stopped,
+    record_compute_attempt_succeeded,
     reserve_next_compute_attempt,
 )
 from scholight.db.queries_survey_capacity import get_survey_capacity_snapshot
@@ -251,6 +253,78 @@ async def test_exact_draft_attempt_claims_only_its_reserved_revision(
     assert claimed is not None
     assert claimed.status == "running"
     assert claimed.lease_owner == attempt.id
+
+
+@pytest.mark.asyncio
+async def test_provider_diagnostics_survive_clean_terminal_task_exit(
+    survey_pool: asyncpg.Pool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("scholight.db.queries_survey.get_pool", lambda: survey_pool)
+    monkeypatch.setattr("scholight.db.queries_survey_drafts.get_pool", lambda: survey_pool)
+    monkeypatch.setattr("scholight.db.queries_survey_attempts.get_pool", lambda: survey_pool)
+    survey_id = await _create()
+    await _complete_next_draft(markdown="# Ready\n\nA reviewed plan.")
+    job_id = uuid4()
+    await start_survey(
+        survey_id=survey_id,
+        user_id=42,
+        job_id=job_id,
+        client_request_id=uuid4(),
+        request_hash="1" * 64,
+    )
+    attempt = await reserve_next_compute_attempt(
+        work_kind="full",
+        task_definition_arn="standard:1",
+        global_concurrency=2,
+        per_user_concurrency=1,
+    )
+    assert attempt is not None
+    await mark_compute_attempt_launched(attempt_id=attempt.id, task_arn=f"task/{attempt.id}")
+    assert await claim_exact_survey_job(
+        job_id=job_id,
+        attempt_id=attempt.id,
+        lease_seconds=120,
+        workflow_version="workflow-v1",
+        executor_version="executor-v1",
+        execution_timeout_seconds=86400,
+    )
+
+    recorded = await record_compute_attempt_diagnostics(
+        attempt_id=attempt.id,
+        failure_class="provider_request_size",
+        failure_details={
+            "provider_status": 400,
+            "provider_code": "context_length_exceeded",
+            "provider_request_class": "request_size",
+            "request_bytes": 900_000,
+            "tool_call_count": 5,
+            "prompt": "must be dropped",
+        },
+    )
+
+    assert recorded is not None
+    assert recorded.failure_class == "provider_request_size"
+    assert recorded.failure_details == {
+        "provider_status": 400,
+        "provider_code": "context_length_exceeded",
+        "provider_request_class": "request_size",
+        "request_bytes": 900_000,
+        "tool_call_count": 5,
+    }
+    await survey_pool.execute(
+        "UPDATE scholight.survey_jobs SET status = 'finished', terminal_outcome = 'failed', "
+        "storage_bucket = 'bucket', storage_prefix = 'surveys/v1/test', "
+        "manifest_key = 'surveys/v1/test/manifest.json', finished_at = now() WHERE id = $1",
+        job_id,
+    )
+    succeeded = await record_compute_attempt_succeeded(
+        attempt_id=attempt.id,
+        event_version=10,
+    )
+    assert succeeded.status == "succeeded"
+    assert succeeded.failure_class == "provider_request_size"
+    assert succeeded.failure_details == recorded.failure_details
 
 
 @pytest.mark.asyncio

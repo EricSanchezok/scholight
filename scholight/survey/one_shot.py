@@ -7,17 +7,20 @@ from pathlib import Path
 from uuid import UUID
 
 from scholight.config import settings
+from scholight.db.client import DBError
 from scholight.db.queries_survey import SurveyJob
 from scholight.db.queries_survey_attempts import (
     claim_exact_survey_draft,
     claim_exact_survey_job,
     commit_survey_job_checkpoint,
     get_claimed_job_checkpoint,
+    record_compute_attempt_diagnostics,
 )
 from scholight.survey.artifacts import SurveyArtifactStore
 from scholight.survey.checkpoints import SurveyCheckpointStore
 from scholight.survey.draft_worker import process_survey_draft
 from scholight.survey.process import ProcessControl
+from scholight.survey.rcm_diagnostics import attempt_failure_details
 from scholight.survey.resumable_runner import execute_resumable_survey
 from scholight.survey.worker import (
     RCM_VERSION,
@@ -27,6 +30,35 @@ from scholight.survey.worker import (
 )
 
 EXECUTOR_VERSION = "survey-dag-v1"
+
+
+async def _record_result_provider_diagnostics(
+    *, attempt_id: UUID, result: SurveyExecutionResult
+) -> None:
+    diagnostics = result.diagnostics
+    if not isinstance(diagnostics, dict):
+        return
+    raw_failures = diagnostics.get("provider_failures")
+    if not isinstance(raw_failures, list):
+        return
+    failure = next((item for item in reversed(raw_failures) if isinstance(item, dict)), None)
+    if failure is None:
+        return
+    details = attempt_failure_details(failure)
+    if not details:
+        return
+    request_class = details.get("provider_request_class")
+    failure_class = f"provider_{request_class}" if isinstance(request_class, str) else "provider"
+    try:
+        await record_compute_attempt_diagnostics(
+            attempt_id=attempt_id,
+            failure_class=failure_class,
+            failure_details=details,
+        )
+    except DBError:
+        # The query layer emits a content-free operational error. Diagnostics
+        # are best effort and must not replace the Survey's actual outcome.
+        return
 
 
 def job_run_root(job_id: UUID) -> Path:
@@ -118,7 +150,7 @@ async def run_exact_job(*, job_id: UUID, attempt_id: UUID) -> bool:
     ) -> SurveyExecutionResult:
         if job is not claimed_job:
             raise RuntimeError("One-shot Survey executor received a different job")
-        return await execute_resumable_survey(
+        result = await execute_resumable_survey(
             claimed_job,
             run_root,
             control=control,
@@ -127,6 +159,8 @@ async def run_exact_job(*, job_id: UUID, attempt_id: UUID) -> bool:
             restored_checkpoint=restored,
             attempt_id=attempt_id,
         )
+        await _record_result_provider_diagnostics(attempt_id=attempt_id, result=result)
+        return result
 
     await process_survey_job(
         job=claimed_job,

@@ -11,7 +11,12 @@ import pytest
 
 from scholight.db.queries_survey import SurveyJob
 from scholight.db.queries_survey_attempts import SurveyCheckpointPointer
-from scholight.survey.one_shot import run_exact_draft, run_exact_job
+from scholight.survey.one_shot import (
+    _record_result_provider_diagnostics,
+    run_exact_draft,
+    run_exact_job,
+)
+from scholight.survey.worker import SurveyExecutionResult
 
 
 def _job(attempt_id: object) -> SurveyJob:
@@ -116,4 +121,50 @@ async def test_exact_job_restores_checkpoint_before_processing(
         artifact_store=artifact_store,
         attempt_id=attempt_id,
         execute_job=ANY,
+    )
+
+
+@pytest.mark.asyncio
+async def test_result_provider_diagnostics_are_mapped_to_attempt_allowlist(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempt_id = uuid4()
+    now = datetime.now(UTC)
+    record = AsyncMock()
+    monkeypatch.setattr(
+        "scholight.survey.one_shot.record_compute_attempt_diagnostics",
+        record,
+    )
+    result = SurveyExecutionResult(
+        outcome="succeeded",
+        error_code="survey_quality_degraded",
+        error_message=None,
+        started_at=now,
+        finished_at=now,
+        diagnostics={
+            "provider_failures": [
+                {
+                    "unit": "reference_seed:2401.00001",
+                    "http_status": 400,
+                    "provider_code": "context_length_exceeded",
+                    "request_class": "request_size",
+                    "serialized_request_bytes": 900_000,
+                    "prompt": "must not be retained",
+                }
+            ]
+        },
+        chargeable=False,
+    )
+
+    await _record_result_provider_diagnostics(attempt_id=attempt_id, result=result)
+
+    record.assert_awaited_once_with(
+        attempt_id=attempt_id,
+        failure_class="provider_request_size",
+        failure_details={
+            "provider_status": 400,
+            "provider_code": "context_length_exceeded",
+            "provider_request_class": "request_size",
+            "request_bytes": 900_000,
+        },
     )

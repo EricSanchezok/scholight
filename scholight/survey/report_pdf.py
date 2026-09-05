@@ -52,7 +52,7 @@ _STYLE_ATTRIBUTE_PATTERN = re.compile(
 _MATH_DISPLAY_PATTERN = re.compile(r"(?<!\\)\$\$(?P<formula>.+?)(?<!\\)\$\$", re.DOTALL)
 _MATH_INLINE_PATTERN = re.compile(r"(?<!\\)\$(?!\$)(?P<formula>[^$\n]+?)(?<!\\)\$")
 _MATH_MAX_CHARS = 2_000
-_MATH_TOKEN_PREFIX = "MATHTOKEN_"
+_MATH_TOKEN_PREFIX = "MATHTOKEN_"  # nosec B105 -- document placeholder, not a secret.
 _FIGURE_CAPTION_PATTERN = re.compile(
     r"(<p><img(?![^>]*class=\"math-)[^>]*>)</p>\s*<p><em>([^<]+)</em></p>",
 )
@@ -433,15 +433,14 @@ def _render_math_html(body_html: str, token_map: dict[str, tuple[str, bool]]) ->
     html_by_token: dict[str, str] = {}
     for index, token in enumerate(tokens):
         formula, display = token_map[token]
-        if index in oversized or rendered.get(index) is None:
+        rendered_html = rendered.get(index)
+        if index in oversized or rendered_html is None:
             delimiter = "$$" if display else "$"
             html_by_token[token] = (
                 f'<span class="math-fallback">{escape(f"{delimiter}{formula}{delimiter}")}</span>'
             )
         else:
-            html = rendered[index]
-            assert html is not None
-            html_by_token[token] = html
+            html_by_token[token] = rendered_html
     return _inject_math_html(body_html, html_by_token)
 
 

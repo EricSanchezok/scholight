@@ -20,11 +20,12 @@ _DATABASE_FIELDS = {
     "port": "pg_port",
     "dbname": "pg_database",
     "username": "pg_user",
-    "password": "pg_password",
+    "password": "pg_password",  # nosec B105 -- Secrets Manager JSON field name.
 }
 _MAIL_FIELDS = {
     "aliyun_access_key_id": "aliyun_dm_access_key_id",
-    "aliyun_access_key_secret": "aliyun_dm_access_key_secret",
+    # This is a Secrets Manager JSON field name, not a credential value.
+    "aliyun_access_key_secret": "aliyun_dm_access_key_secret",  # nosec B105
     "aliyun_account_name": "aliyun_dm_account_name",
 }
 

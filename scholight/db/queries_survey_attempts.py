@@ -40,10 +40,12 @@ _FAILURE_DETAIL_KEYS = frozenset(
         "provider_code",
         "provider_type",
         "provider_request_id",
+        "provider_request_class",
         "request_bytes",
         "estimated_tokens",
         "message_count",
         "tool_count",
+        "tool_call_count",
         "tool_result_count",
         "thinking_enabled",
         "reasoning_content_present",
@@ -473,7 +475,8 @@ async def record_compute_attempt_succeeded(
                 "UPDATE scholight.survey_compute_attempts SET status = $2, "
                 "ecs_event_version = $3, exit_code = $4, stopped_at = coalesce(stopped_at, now()), "
                 "failure_class = CASE WHEN $2 = 'retryable' THEN 'unexpected_clean_exit' "
-                "ELSE NULL END, failure_details = '{}'::jsonb WHERE id = $1 RETURNING *",
+                "ELSE failure_class END, failure_details = CASE WHEN $2 = 'retryable' "
+                "THEN '{}'::jsonb ELSE failure_details END WHERE id = $1 RETURNING *",
                 attempt_id,
                 status,
                 event_version,
@@ -498,6 +501,31 @@ async def record_compute_attempt_succeeded(
     if row is None:
         raise DBError("Survey compute success was not recorded")
     return _attempt(row)
+
+
+async def record_compute_attempt_diagnostics(
+    *,
+    attempt_id: UUID,
+    failure_class: str,
+    failure_details: dict[str, object],
+) -> SurveyComputeAttempt | None:
+    """Persist content-free application diagnostics while the exact task is running."""
+    try:
+        row = await get_pool().fetchrow(
+            "UPDATE scholight.survey_compute_attempts SET failure_class = $2, "
+            "failure_details = $3::jsonb, heartbeat_at = now() "
+            "WHERE id = $1 AND status = 'running' RETURNING *",
+            attempt_id,
+            failure_class[:64],
+            json.dumps(_sanitized_failure_details(failure_details)),
+        )
+    except asyncpg.PostgresError as exc:
+        logger.error(
+            "survey_compute_attempt_diagnostics_failed",
+            error_type=type(exc).__name__,
+        )
+        raise DBError("Failed to record Survey compute attempt diagnostics") from exc
+    return _attempt(row) if row is not None else None
 
 
 async def claim_exact_survey_draft(
@@ -847,6 +875,7 @@ __all__ = [
     "mark_compute_attempt_launched",
     "mark_compute_attempt_launching",
     "record_compute_attempt_succeeded",
+    "record_compute_attempt_diagnostics",
     "record_compute_attempt_stopped",
     "record_compute_launch_failure",
     "reserve_next_compute_attempt",

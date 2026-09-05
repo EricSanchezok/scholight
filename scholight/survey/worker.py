@@ -65,6 +65,7 @@ from scholight.survey.process import (
     write_stdin,
 )
 from scholight.survey.progress import stage_for_component
+from scholight.survey.rcm_diagnostics import sanitize_completion_failure
 from scholight.survey.report_pdf import (
     fallback_title as report_fallback_title,
 )
@@ -160,10 +161,11 @@ def _classify_model_hitch(preview: object, *, role: object = None) -> dict[str, 
 
 def _classify_completion_failure(event: dict[str, object]) -> dict[str, object]:
     """Map new RCM completion metadata to stable diagnostics without content."""
-    failure_kind = event.get("failure_kind")
+    sanitized = sanitize_completion_failure(event)
+    failure_kind = sanitized.get("failure_kind")
     declared_kind = failure_kind if isinstance(failure_kind, str) else "unknown"
     kind = declared_kind
-    http_status = event.get("http_status")
+    http_status = sanitized.get("http_status")
     status = http_status if isinstance(http_status, int) and 100 <= http_status <= 599 else None
     error_codes = {
         "rate_limited": "model_rate_limited",
@@ -200,11 +202,30 @@ def _classify_completion_failure(event: dict[str, object]) -> dict[str, object]:
     }
     if status is not None:
         result["http_status"] = status
-    if isinstance(event.get("retryable"), bool):
-        result["retryable"] = event["retryable"]
-    duration_ms = event.get("duration_ms")
+    if isinstance(sanitized.get("retryable"), bool):
+        result["retryable"] = sanitized["retryable"]
+    duration_ms = sanitized.get("duration_ms")
     if isinstance(duration_ms, int) and duration_ms >= 0:
         result["duration_ms"] = duration_ms
+    for field in (
+        "request_class",
+        "provider_code",
+        "provider_type",
+        "request_id",
+        "serialized_request_bytes",
+        "estimated_input_tokens",
+        "message_count",
+        "tool_definition_count",
+        "tool_call_count",
+        "tool_result_count",
+        "thinking_enabled",
+        "reasoning_content_present",
+        "reasoning_content_bytes",
+        "unmatched_tool_call_count",
+        "duplicate_tool_call_count",
+    ):
+        if field in sanitized:
+            result[field] = sanitized[field]
     return result
 
 

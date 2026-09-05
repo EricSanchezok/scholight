@@ -467,13 +467,18 @@ least three image calls fail with no success in a six-hour window. Any finalizer
 failure alerts immediately because it means paid research completed without a
 deliverable report.
 
-RCM completion failures are likewise content-free. RCM 0.2.19 emits only the
-completion outcome, HTTP status, stable failure kind, retryability, and elapsed
-time; Scholight also recognizes the legacy `taken` hitch shape during a rolling
-upgrade without archiving its text. Terminal model failures and full-text
-runtime failures have one-event alarms. The Dashboard shows their stable codes,
-full/partial/abstract evidence counts, and aggregate full-text coverage without
-paper, topic, user, or Survey dimensions.
+RCM completion failures are likewise content-free. The currently pinned RCM
+0.2.19 emits the completion outcome, HTTP status, stable failure kind,
+retryability, and elapsed time. Scholight also accepts the additive 0.2.21
+request-shape contract: serialized request bytes, estimated tokens, message and
+tool counts, thinking/reasoning shape, unmatched or duplicate tool-call counts,
+sanitized provider identifiers, and `request_size`, `thinking_tool_history`, or
+`unknown_request`. Arbitrary event fields are discarded, and the legacy `taken`
+hitch shape remains a rolling-upgrade facade whose text is never archived.
+Terminal model failures and full-text runtime failures have one-event alarms.
+The Dashboard shows their stable codes, full/partial/abstract evidence counts,
+and aggregate full-text coverage without paper, topic, user, or Survey
+dimensions.
 
 A zero-exit RCM run may retain a classified model failure from the optional
 `image_planner` component. The Survey worker still runs its deterministic evidence
@@ -488,6 +493,20 @@ plus its tool calls as one assistant turn; call-correlated failed tool results
 are replayed as valid outcomes without re-splitting the turn. This is required
 by DeepSeek thinking mode when that mixed turn is replayed with its original
 `reasoning_content`.
+
+RCM 0.2.21 additionally replaces HTTP provider response bodies on the machine
+tape with a status-only hitch and publishes the content-free request class on
+`completion_end`. The standalone DAG treats a failed terminal completion as a
+unit failure even when the RCM process exits zero. A reference seed classified
+as `request_size` is halved and retried once; `thinking_tool_history` switches
+once to the canaried non-thinking workflow; `unknown_request` is not replayed.
+The latest sanitized failure is retained on the exact compute attempt and a
+clean ECS exit cannot erase it.
+
+Do not change `RCM_VERSION` or the Docker checksum until the 0.2.21 Linux archive
+and checksum are published from the RCM repository and the fixed model canary
+passes against that digest. A source commit, local binary, or guessed checksum
+is not a release artifact.
 
 Run the fixed provider canary from a one-off task cloned from the Survey task
 definition; it bypasses model completion and never prints its prompt, key, or

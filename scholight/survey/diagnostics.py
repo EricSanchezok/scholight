@@ -425,6 +425,21 @@ class SurveyDiagnostics:
                         "failure_kind",
                         "retryable",
                         "duration_ms",
+                        "request_class",
+                        "provider_code",
+                        "provider_type",
+                        "request_id",
+                        "serialized_request_bytes",
+                        "estimated_input_tokens",
+                        "message_count",
+                        "tool_definition_count",
+                        "tool_call_count",
+                        "tool_result_count",
+                        "thinking_enabled",
+                        "reasoning_content_present",
+                        "reasoning_content_bytes",
+                        "unmatched_tool_call_count",
+                        "duplicate_tool_call_count",
                     )
                     if key in sanitized
                 }
