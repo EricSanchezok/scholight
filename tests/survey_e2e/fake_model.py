@@ -114,10 +114,17 @@ def _called_tools(messages: object) -> list[tuple[str, dict[str, Any]]]:
 def _tool_call(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     return {
         "role": "assistant",
-        "content": None,
+        # DeepSeek's chat-completion schema represents a pure tool-call turn
+        # with an empty string. Its provider-native adapter intentionally
+        # rejects the generic OpenAI fixture shape (``content: null``).
+        "content": "",
+        # Native DeepSeek thinking responses return this field, and every
+        # subsequent tool-result request must replay it unchanged.
+        "reasoning_content": "synthetic tool reasoning",
         "tool_calls": [
             {
                 "id": f"call_{uuid4().hex}",
+                "index": 0,
                 "type": "function",
                 "function": {"name": name, "arguments": json.dumps(arguments)},
             }
@@ -131,8 +138,21 @@ def _response(message: dict[str, Any], *, finish_reason: str) -> dict[str, Any]:
         "object": "chat.completion",
         "created": int(time.time()),
         "model": "deepseek-v4-flash",
-        "choices": [{"index": 0, "message": message, "finish_reason": finish_reason}],
-        "usage": {"prompt_tokens": 8, "completion_tokens": 8, "total_tokens": 16},
+        "choices": [
+            {
+                "index": 0,
+                "message": message,
+                "logprobs": None,
+                "finish_reason": finish_reason,
+            }
+        ],
+        "usage": {
+            "prompt_tokens": 8,
+            "completion_tokens": 8,
+            "prompt_cache_hit_tokens": 0,
+            "prompt_cache_miss_tokens": 0,
+            "total_tokens": 16,
+        },
     }
 
 
