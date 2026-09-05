@@ -21,6 +21,7 @@ from scholight.survey.evidence import SurveyEvidenceSummary
 from scholight.survey.process import ProcessControl
 from scholight.survey.worker import (
     RCM_VERSION,
+    WORKFLOW_VERSION,
     SurveyExecutionResult,
     _child_environment,
     _collect_stage_timings,
@@ -50,7 +51,8 @@ def _stub_durable_progress_update() -> Iterator[AsyncMock]:
 
 
 def test_worker_expects_pinned_rcm_release() -> None:
-    assert RCM_VERSION == "0.2.23"
+    assert RCM_VERSION == "0.2.24"
+    assert WORKFLOW_VERSION == "scholight-survey-v2.2"
 
 
 def _job(

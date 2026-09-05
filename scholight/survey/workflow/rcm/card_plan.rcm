@@ -1,7 +1,7 @@
 name = "Scholight Survey Card Plan"
 
 model deepseek-v4-flash {
-    protocol = "openai"
+    protocol = "deepseek"
     endpoint = "https://api.deepseek.com"
     credentials = { env = "DEEPSEEK_API_KEY" }
     timeout = "1800"

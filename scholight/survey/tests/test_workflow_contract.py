@@ -89,6 +89,23 @@ def test_deepseek_workflows_enable_thinking_tool_history_compatibility() -> None
             )
 
 
+def test_deepseek_workflows_use_provider_native_protocol() -> None:
+    model_files = [
+        path
+        for path in sorted((_WORKFLOW / "rcm").glob("*.rcm"))
+        if 'endpoint = "https://api.deepseek.com"' in path.read_text(encoding="utf-8")
+    ]
+
+    assert model_files
+    for path in model_files:
+        source = path.read_text(encoding="utf-8")
+        model_count = len(re.findall(r"(?m)^model\s+deepseek-v4-flash\s*\{", source))
+        protocol_count = len(re.findall(r'(?m)^\s*protocol\s*=\s*"deepseek"', source))
+        assert protocol_count == model_count, (
+            f"{path.name} must use the provider-native DeepSeek transport"
+        )
+
+
 def test_draft_workflow_is_single_node_mcp_only() -> None:
     source = (_WORKFLOW / "rcm" / "draft.rcm").read_text(encoding="utf-8")
 
