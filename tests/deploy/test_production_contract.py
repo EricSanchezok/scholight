@@ -461,6 +461,28 @@ def test_image_publish_role_can_verify_pushed_manifests_and_attestations() -> No
     assert "ecr:DeleteRepositoryPolicy" not in publish_policy
 
 
+def test_survey_release_image_is_lambda_compatible_before_manifest_publication() -> None:
+    workflow = (ROOT / ".github/workflows/publish.yml").read_text(encoding="utf-8")
+    survey_build = workflow.split("      - name: Build and push Survey", maxsplit=1)[1].split(
+        "      - name: Verify Survey image is Lambda compatible", maxsplit=1
+    )[0]
+    compatibility_check = workflow.split(
+        "      - name: Verify Survey image is Lambda compatible", maxsplit=1
+    )[1].split("      - name: Create deterministic release manifest", maxsplit=1)[0]
+
+    assert "platforms: linux/amd64" in survey_build
+    assert "provenance: false" in survey_build
+    assert "sbom: false" in survey_build
+    assert "aws ecr batch-get-image" in compatibility_check
+    assert "imageManifestMediaType" in compatibility_check
+    assert "application/vnd.docker.distribution.manifest.v2+json" in compatibility_check
+    assert "application/vnd.oci.image.manifest.v1+json" in compatibility_check
+    assert "application/vnd.docker.container.image.v1+json" in compatibility_check
+    assert "application/vnd.oci.image.config.v1+json" in compatibility_check
+    assert "application/vnd.docker.image.rootfs.diff.tar.gzip" in compatibility_check
+    assert "application/vnd.oci.image.layer.v1.tar+gzip" in compatibility_check
+
+
 def test_cloudformation_role_can_manage_scoped_task_role_policies() -> None:
     foundation = (ECS / "scholight-foundation.yml").read_text(encoding="utf-8")
     cloudformation_policy = foundation.split("CloudFormationServiceRole:", maxsplit=1)[1].split(
