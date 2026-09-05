@@ -476,18 +476,23 @@ one-minute rule is the durable latency bound when invocation fails. After a
 Lambda quota increase, redeploy with `SurveyControlReservedConcurrency=1` to
 add isolation without changing the database singleton or compute protocol.
 
-The production workflow reads only aggregate CloudWatch activity metrics before
-replacing a changed Survey worker image. Any active Draft or Full lease keeps
-the current Survey digest while the API, Web, and other safe services continue
-their release. Re-run the same release after the queue becomes idle to apply the
-desired Survey digest. Missing metrics fail closed; after directly confirming that
-both database queues have no active lease, the operator may enter the exact
-one-time phrase `SURVEY WORKERS IDLE`. This confirmation cannot override a
-positive activity metric. The workflow records any deferred digest in its job
-summary so the partial worker rollout cannot be mistaken for a complete one.
-Task CPU or memory changes are stricter: both activity metrics must be present
+In legacy mode, the production workflow reads only aggregate CloudWatch activity
+metrics before replacing a changed resident Survey worker image. Any active Draft
+or Full lease keeps the current Survey digest while the API, Web, and other safe
+services continue their release. Re-run the same release after the queue becomes
+idle to apply the desired Survey digest. Missing metrics fail closed; after
+directly confirming that both database queues have no active lease, the operator
+may enter the exact one-time phrase `SURVEY WORKERS IDLE`. This confirmation cannot
+override a positive activity metric. The workflow records any deferred digest in
+its job summary so the partial worker rollout cannot be mistaken for a complete
+one. Task CPU or memory changes are stricter: both activity metrics must be present
 and report zero running work, otherwise the release fails before CloudFormation.
-The Full Survey release canaries run with the candidate task CPU and memory.
+
+Event mode does not use the legacy worker-metric guard. Publishing a new task
+definition does not replace an already running standalone task: that task keeps
+its immutable definition and digest, remains fenced by its attempt lease, and may
+finish normally. Only later `RunTask` calls use the new Survey digest. The Full
+Survey release canaries run with the candidate task CPU and memory in both modes.
 
 ## First cutover
 
