@@ -61,6 +61,7 @@ from scholight.db.queries_survey_views import (
     get_survey_artifact_reference,
     list_survey_summaries,
 )
+from scholight.db.survey_locking import try_lock_survey_control, unlock_survey_control
 from scholight.db.tests.pg_ingestion_support import (
     isolated_database_url,
     reset_ingestion_database,
@@ -130,6 +131,18 @@ async def _usage(pool: asyncpg.Pool) -> tuple[int, int]:
     )
     assert row is not None
     return int(row["reserved_count"]), int(row["succeeded_count"])
+
+
+@pytest.mark.asyncio
+async def test_control_session_lock_fences_duplicate_database_connections(
+    survey_pool: asyncpg.Pool,
+) -> None:
+    async with survey_pool.acquire() as first, survey_pool.acquire() as duplicate:
+        assert await try_lock_survey_control(first)
+        assert not await try_lock_survey_control(duplicate)
+        assert await unlock_survey_control(first)
+        assert await try_lock_survey_control(duplicate)
+        assert await unlock_survey_control(duplicate)
 
 
 @pytest.mark.asyncio

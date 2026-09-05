@@ -11,6 +11,7 @@ import asyncpg
 # serialize per queue so that global and per-user capacity checks remain atomic
 # across every worker and ECS task.
 _SURVEY_CAPACITY_LOCK_NAMESPACE = 1_397_046_095
+_CONTROL_LOCK_KEY = 0
 _DRAFT_CAPACITY_LOCK_KEY = 1
 _JOB_CAPACITY_LOCK_KEY = 2
 
@@ -80,4 +81,30 @@ async def lock_survey_capacity(
     )
 
 
-__all__ = ["LockedSurveyAggregate", "lock_survey_aggregate", "lock_survey_capacity"]
+async def try_lock_survey_control(connection: asyncpg.Connection) -> bool:
+    """Try to own the event controller for the lifetime of this DB session."""
+    acquired = await connection.fetchval(
+        "SELECT pg_try_advisory_lock($1, $2)",
+        _SURVEY_CAPACITY_LOCK_NAMESPACE,
+        _CONTROL_LOCK_KEY,
+    )
+    return acquired is True
+
+
+async def unlock_survey_control(connection: asyncpg.Connection) -> bool:
+    """Release the event-controller session lock before returning the connection."""
+    released = await connection.fetchval(
+        "SELECT pg_advisory_unlock($1, $2)",
+        _SURVEY_CAPACITY_LOCK_NAMESPACE,
+        _CONTROL_LOCK_KEY,
+    )
+    return released is True
+
+
+__all__ = [
+    "LockedSurveyAggregate",
+    "lock_survey_aggregate",
+    "lock_survey_capacity",
+    "try_lock_survey_control",
+    "unlock_survey_control",
+]

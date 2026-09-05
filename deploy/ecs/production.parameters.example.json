@@ -11,6 +11,7 @@
   "SurveyRuntimeEnabled": "false",
   "SurveyPublicMode": "off",
   "SurveyDispatchMode": "legacy",
+  "SurveyControlReservedConcurrency": "0",
   "ImageGenApiUrl": "",
   "ImageGenTrustedHosts": "",
   "SurveyDraftMaxTasks": 1,

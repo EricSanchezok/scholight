@@ -7,13 +7,19 @@ import json
 import os
 from typing import Any
 
+import asyncpg
 import boto3
+import structlog
 
 from scholight.config import settings
-from scholight.db.client import close_pool, create_pool
+from scholight.db.client import bind_pool_connection, close_pool, create_pool
+from scholight.db.survey_locking import try_lock_survey_control, unlock_survey_control
 from scholight.logging import configure_logging
+from scholight.logging.emf import emit_emf
 from scholight.survey.control import SurveyControl, SurveyControlConfig
 from scholight.survey.email_notifications import AliyunSurveyEmailSender
+
+logger = structlog.get_logger(__name__)
 
 _DATABASE_FIELDS = {
     "host": "pg_host",
@@ -31,7 +37,7 @@ _MAIL_FIELDS = {
 
 
 def handler(event: dict[str, Any], context: object) -> dict[str, int]:
-    """Process one event/tick; reserved concurrency serializes all cycles."""
+    """Process one event/tick; PostgreSQL serializes duplicate cycles."""
     del context
     configure_logging(log_level=settings.log_level, use_json=True)
     return asyncio.run(_run(event))
@@ -49,7 +55,7 @@ async def _run(event: dict[str, Any]) -> dict[str, int]:
     )
     settings.pg_pool_min_size = 1
     settings.pg_pool_max_size = 1
-    await create_pool()
+    pool = await create_pool()
     try:
         sender = AliyunSurveyEmailSender(
             access_key_id=settings.aliyun_dm_access_key_id,
@@ -77,9 +83,45 @@ async def _run(event: dict[str, Any]) -> dict[str, int]:
             ecs_client=boto3.client("ecs"),
             email_sender=sender,
         )
-        return await control.run_cycle(event)
+        return await _run_control_cycle(pool=pool, control=control, event=event)
     finally:
         await close_pool()
+
+
+async def _run_control_cycle(
+    *,
+    pool: asyncpg.Pool,
+    control: SurveyControl,
+    event: dict[str, Any],
+) -> dict[str, int]:
+    """Run one cycle only when this invocation owns the database session lock."""
+    async with bind_pool_connection(pool) as connection:
+        if not await try_lock_survey_control(connection):
+            logger.info("survey_control_cycle_skipped", reason="database_lock_contended")
+            emit_emf(
+                service="survey-control",
+                outcome="lock_contended",
+                metrics={"SurveyControlLockContention": (1, "Count")},
+            )
+            return {
+                "lock_acquired": 0,
+                "event_stops": 0,
+                "reconciled": 0,
+                "launched": 0,
+                "cleanups": 0,
+                "notifications": 0,
+            }
+        try:
+            result = await control.run_cycle(event)
+            emit_emf(
+                service="survey-control",
+                outcome="completed",
+                metrics={"SurveyControlCycleCount": (1, "Count")},
+            )
+            return {"lock_acquired": 1, **result}
+        finally:
+            if not await unlock_survey_control(connection):
+                logger.error("survey_control_lock_release_missing")
 
 
 def _read_secret(client: Any, secret_arn: str) -> dict[str, object]:

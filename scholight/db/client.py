@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import ssl
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from contextvars import ContextVar
+from types import TracebackType
+from typing import Any, cast
 
 import asyncpg
 import structlog
@@ -21,6 +27,85 @@ class DBError(Exception):
 # ── Module-level pool ──────────────────────────────────────────────────────
 
 _pool: asyncpg.Pool | None = None
+_bound_pool: ContextVar[_PinnedConnectionPool | None] = ContextVar(
+    "scholight_bound_database_pool",
+    default=None,
+)
+
+
+class _PinnedAcquire:
+    """Serialize an ``acquire`` block onto one already-owned connection."""
+
+    def __init__(self, pool: _PinnedConnectionPool) -> None:
+        self._pool = pool
+
+    async def __aenter__(self) -> asyncpg.Connection:
+        await self._pool.operation_lock.acquire()
+        return self._pool.connection
+
+    async def __aexit__(
+        self,
+        _exc_type: type[BaseException] | None,
+        _exc_value: BaseException | None,
+        _traceback: TracebackType | None,
+    ) -> None:
+        self._pool.operation_lock.release()
+
+
+class _PinnedConnectionPool:
+    """Pool-shaped adapter that keeps a control cycle on one PostgreSQL session."""
+
+    def __init__(self, connection: asyncpg.Connection) -> None:
+        self.connection = connection
+        self.operation_lock = asyncio.Lock()
+
+    def acquire(self) -> _PinnedAcquire:
+        return _PinnedAcquire(self)
+
+    async def execute(
+        self,
+        query: str,
+        *args: Any,
+        timeout: float | None = None,
+    ) -> str:
+        async with self.operation_lock:
+            return cast(str, await self.connection.execute(query, *args, timeout=timeout))
+
+    async def fetch(
+        self,
+        query: str,
+        *args: Any,
+        timeout: float | None = None,
+    ) -> list[asyncpg.Record]:
+        async with self.operation_lock:
+            return cast(
+                list[asyncpg.Record],
+                await self.connection.fetch(query, *args, timeout=timeout),
+            )
+
+    async def fetchrow(
+        self,
+        query: str,
+        *args: Any,
+        timeout: float | None = None,
+    ) -> asyncpg.Record | None:
+        async with self.operation_lock:
+            return await self.connection.fetchrow(query, *args, timeout=timeout)
+
+    async def fetchval(
+        self,
+        query: str,
+        *args: Any,
+        column: int = 0,
+        timeout: float | None = None,
+    ) -> Any:
+        async with self.operation_lock:
+            return await self.connection.fetchval(
+                query,
+                *args,
+                column=column,
+                timeout=timeout,
+            )
 
 
 # ── Lifecycle ──────────────────────────────────────────────────────────────
@@ -80,11 +165,31 @@ async def close_pool() -> None:
         logger.info("postgres pool closed")
 
 
+@asynccontextmanager
+async def bind_pool_connection(pool: asyncpg.Pool) -> AsyncIterator[asyncpg.Connection]:
+    """Pin all ``get_pool`` calls in this async context to one owned session.
+
+    The adapter serializes direct pool operations and nested ``acquire`` blocks.
+    It is intended for short control-plane cycles that hold a session advisory
+    lock and must not create a second database connection.
+    """
+    async with pool.acquire() as connection:
+        pinned = _PinnedConnectionPool(cast(asyncpg.Connection, connection))
+        token = _bound_pool.set(pinned)
+        try:
+            yield pinned.connection
+        finally:
+            _bound_pool.reset(token)
+
+
 def get_pool() -> asyncpg.Pool:
     """Return the current connection pool.
 
     Raises :exc:`DBError` if the pool has not been initialised.
     """
+    bound_pool = _bound_pool.get()
+    if bound_pool is not None:
+        return cast(asyncpg.Pool, bound_pool)
     if _pool is None:
         raise DBError("Database pool not initialised. Call create_pool() first.")
     return _pool

@@ -298,7 +298,13 @@ def test_event_driven_survey_control_is_bounded_and_recoverable() -> None:
 
     assert "SurveyDispatchMode:" in runtime
     assert "AllowedValues: [legacy, event]" in runtime
-    assert "ReservedConcurrentExecutions: !If [RunSurveyControl, 1, !Ref AWS::NoValue]" in runtime
+    assert "SurveyControlReservedConcurrency:" in runtime
+    assert 'AllowedValues: ["0", "1"]' in runtime
+    assert "ReserveSurveyControlConcurrency:" in runtime
+    assert (
+        "ReservedConcurrentExecutions: !If "
+        "[ReserveSurveyControlConcurrency, 1, !Ref AWS::NoValue]" in runtime
+    )
     assert "MemorySize: 512" in runtime
     assert "Timeout: 60" in runtime
     assert "ScheduleExpression: rate(1 minute)" in runtime
@@ -306,6 +312,8 @@ def test_event_driven_survey_control_is_bounded_and_recoverable() -> None:
     assert "lastStatus: [STOPPED]" in runtime
     assert "SurveyControlDeadLetterQueue:" in runtime
     assert "ApproximateNumberOfMessagesVisible" in runtime
+    assert "SurveyControlThrottleAlarm:" in runtime
+    assert "MetricName: Throttles" in runtime
     assert "EntryPoint: [python, -m, awslambdaric]" in runtime
     assert "SurveyFullTaskDefinition:" in runtime
     assert 'Memory: "4096"' in runtime
@@ -331,6 +339,7 @@ def test_event_driven_survey_control_is_bounded_and_recoverable() -> None:
         "sanchezcloud-scholight-survey-control" in survey_repository
     )
     assert example["SurveyDispatchMode"] == "legacy"
+    assert example["SurveyControlReservedConcurrency"] == "0"
 
 
 def test_survey_worker_autoscaling_and_protection_are_bounded() -> None:
@@ -426,6 +435,8 @@ def test_release_defers_active_worker_images_and_gates_final_capacity() -> None:
     assert "L-3032A538" in workflow
     assert "Verify Survey control concurrency capacity" in workflow
     assert "inputs.survey_dispatch_mode == 'event'" in workflow
+    assert "survey_control_reserved_concurrency" in workflow
+    assert "SURVEY_CONTROL_RESERVED_CONCURRENCY" in workflow
     assert "aws lambda get-account-settings" in workflow
     assert "UnreservedConcurrentExecutions" in workflow
     assert "sanchezcloud-scholight-survey-control" in workflow
