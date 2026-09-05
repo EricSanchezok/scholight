@@ -292,6 +292,7 @@ def test_survey_capacity_contract_is_explicit_and_staged() -> None:
 def test_event_driven_survey_control_is_bounded_and_recoverable() -> None:
     runtime = (ECS / "scholight-production.yml").read_text(encoding="utf-8")
     foundation = (ECS / "scholight-foundation.yml").read_text(encoding="utf-8")
+    release = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
     example = yaml.safe_load(
         (ECS / "production.parameters.example.json").read_text(encoding="utf-8")
     )
@@ -341,9 +342,24 @@ def test_event_driven_survey_control_is_bounded_and_recoverable() -> None:
     assert 'Memory: "4096"' in runtime
     assert "SurveyFullHighMemoryTaskDefinition:" in runtime
     assert 'Memory: "8192"' in runtime
+    draft_one_shot_task = runtime.split("  SurveyDraftTaskDefinition:", maxsplit=1)[1].split(
+        "  SurveyTaskDefinition:", maxsplit=1
+    )[0]
     standalone_full_tasks = runtime.split("  SurveyFullTaskDefinition:", maxsplit=1)[1].split(
         "  SurveyControlFunction:", maxsplit=1
     )[0]
+    for task in (draft_one_shot_task, standalone_full_tasks):
+        assert "Name: SCHOLIGHT_SURVEY_DISPATCH_MODE, Value: event" in task
+        assert (
+            "Name: SCHOLIGHT_SURVEY_CONTROL_FUNCTION_NAME, "
+            "Value: sanchezcloud-scholight-survey-control" in task
+        )
+    candidate_canary = release.split(
+        "      - name: Register candidate Survey canary task", maxsplit=1
+    )[1].split("      - name: Run candidate Survey release canaries", maxsplit=1)[0]
+    assert 'name: "SCHOLIGHT_SURVEY_DISPATCH_MODE", value: "event"' in candidate_canary
+    assert 'name: "SCHOLIGHT_SURVEY_CONTROL_FUNCTION_NAME"' in candidate_canary
+    assert 'value: "sanchezcloud-scholight-survey-control"' in candidate_canary
     assert "EphemeralStorage:" not in standalone_full_tasks
     assert "Action: lambda:InvokeFunction" in runtime
     assert "clientToken" not in runtime  # generated from the durable attempt in Python

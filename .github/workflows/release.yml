@@ -254,6 +254,20 @@ jobs:
               ephemeralStorage
             }
             | .containerDefinitions[0].image = $image
+            | .containerDefinitions[0].environment = (
+                (.containerDefinitions[0].environment // [])
+                | map(select(
+                    .name != "SCHOLIGHT_SURVEY_DISPATCH_MODE"
+                    and .name != "SCHOLIGHT_SURVEY_CONTROL_FUNCTION_NAME"
+                  ))
+                + [
+                    {name: "SCHOLIGHT_SURVEY_DISPATCH_MODE", value: "event"},
+                    {
+                      name: "SCHOLIGHT_SURVEY_CONTROL_FUNCTION_NAME",
+                      value: "sanchezcloud-scholight-survey-control"
+                    }
+                  ]
+              )
             | .cpu = "512"
             | .memory = "1024"
             | with_entries(select(.value != null))

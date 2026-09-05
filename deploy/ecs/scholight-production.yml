@@ -787,6 +787,8 @@ Resources:
           Command: [scholight, survey, serve-draft-worker]
           Environment:
             - { Name: SCHOLIGHT_SURVEY_RUNTIME_ENABLED, Value: "true" }
+            - { Name: SCHOLIGHT_SURVEY_DISPATCH_MODE, Value: event }
+            - { Name: SCHOLIGHT_SURVEY_CONTROL_FUNCTION_NAME, Value: sanchezcloud-scholight-survey-control }
             - { Name: SCHOLIGHT_SURVEY_MCP_URL, Value: !Sub "https://${DomainName}/api/mcp" }
             - { Name: SCHOLIGHT_SURVEY_DRAFT_GLOBAL_CONCURRENCY, Value: "64" }
             - { Name: SCHOLIGHT_SURVEY_DRAFT_PER_USER_CONCURRENCY, Value: "8" }
@@ -887,6 +889,7 @@ Resources:
           Environment:
             - { Name: SCHOLIGHT_SURVEY_RUNTIME_ENABLED, Value: "true" }
             - { Name: SCHOLIGHT_SURVEY_DISPATCH_MODE, Value: event }
+            - { Name: SCHOLIGHT_SURVEY_CONTROL_FUNCTION_NAME, Value: sanchezcloud-scholight-survey-control }
             - { Name: SCHOLIGHT_SURVEY_MCP_URL, Value: !Sub "https://${DomainName}/api/mcp" }
             - { Name: SCHOLIGHT_SURVEY_JOB_GLOBAL_CONCURRENCY, Value: "2" }
             - { Name: SCHOLIGHT_SURVEY_JOB_PER_USER_CONCURRENCY, Value: "1" }
@@ -938,6 +941,7 @@ Resources:
           Environment:
             - { Name: SCHOLIGHT_SURVEY_RUNTIME_ENABLED, Value: "true" }
             - { Name: SCHOLIGHT_SURVEY_DISPATCH_MODE, Value: event }
+            - { Name: SCHOLIGHT_SURVEY_CONTROL_FUNCTION_NAME, Value: sanchezcloud-scholight-survey-control }
             - { Name: SCHOLIGHT_SURVEY_MCP_URL, Value: !Sub "https://${DomainName}/api/mcp" }
             - { Name: SCHOLIGHT_SURVEY_JOB_GLOBAL_CONCURRENCY, Value: "2" }
             - { Name: SCHOLIGHT_SURVEY_JOB_PER_USER_CONCURRENCY, Value: "1" }

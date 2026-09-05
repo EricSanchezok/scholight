@@ -89,6 +89,15 @@ tag only tasks created by `RunTask` in the production cluster; this permission
 is required by the launch envelope's managed and `survey-attempt` tags. Launch
 failure logs retain only the allowlisted failure class and AWS operation name.
 
+Every one-shot Draft, standard Full, and high-memory Full task declares both
+`SCHOLIGHT_SURVEY_DISPATCH_MODE=event` and the fixed production control function
+name. This is a startup contract: the shared settings validator rejects event
+mode without the function name before a task can claim work. Keep these
+variables on all three task profiles even though the worker itself does not
+invoke the controller. The pre-deployment Survey canary injects the same pair
+into its candidate task so settings validation exercises the event-mode startup
+path before CloudFormation changes production.
+
 Full-job checkpoint pointers are nullable until the first successful commit.
 Thereafter every pointer update is a compare-and-swap on both the current
 sequence and `lease_owner`. `execution_deadline_at` is assigned by the first
