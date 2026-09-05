@@ -63,12 +63,21 @@ def audit_workflow_contracts() -> tuple[WorkflowConflict, ...]:
 
     expansion_schema = _read("scholight/survey/workflow/schema/expansion.md")
     reference_prompt = _read("scholight/survey/workflow/prompts/reference_expander.txt")
-    if "result: empty" not in expansion_schema or "result: empty" not in reference_prompt:
+    reference_seed_prompt = _read("scholight/survey/workflow/prompts/reference_seed.txt")
+    if (
+        "result: empty" not in expansion_schema
+        or "result: empty" not in reference_prompt
+        or "result: empty" not in reference_seed_prompt
+    ):
         conflicts.append(
             WorkflowConflict(
                 code="empty_artifact_undefined",
                 summary="A valid empty citation result is not distinguished from a missing file.",
-                evidence=("schema/expansion.md", "prompts/reference_expander.txt"),
+                evidence=(
+                    "schema/expansion.md",
+                    "prompts/reference_expander.txt",
+                    "prompts/reference_seed.txt",
+                ),
             )
         )
 
