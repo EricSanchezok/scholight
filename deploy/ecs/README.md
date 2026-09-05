@@ -54,8 +54,8 @@ the public rollout gates:
 - `SurveyDispatchMode=legacy` keeps the released resident Draft/Full services
   available for rollback.
 - `SurveyDispatchMode=event` sets both service desired counts to zero and
-  enables the serialized control Lambda, its one-minute reconciliation rule,
-  and the ECS `STOPPED` rule.
+  enables the database-serialized control Lambda, its one-minute
+  reconciliation rule, and the ECS `STOPPED` rule.
 
 The dispatch switch is temporary Expand/Adopt compatibility. It must remain
 `legacy` until migration 014, the one-shot image, Lambda IAM, checkpoint
@@ -424,14 +424,30 @@ from ECR before manifest publication. It accepts only a single Docker v2 or OCI
 image manifest with Lambda-compatible config and gzip layer media types. The
 other four images retain their SBOM and provenance attestations.
 
-Legacy dispatch creates the dormant Survey Control function without reserving
-regional Lambda concurrency. Event dispatch conditionally reserves exactly one
-execution so duplicate wakeups cannot multiply database connections. Before an
-event-mode update, the release workflow checks the current function reservation
-and account-level unreserved concurrency, and fails before model canaries or
-CloudFormation unless Lambda can retain its required unreserved pool after the
-one-unit reservation. This supports reduced-quota new AWS accounts during the
-Expand stage without weakening the final event-mode concurrency boundary.
+Every Survey Control cycle pins the pool to one PostgreSQL session and takes a
+non-blocking session advisory lock before reading an event, reconciling tasks,
+dispatching work, or draining outboxes. A duplicate invocation that does not
+own the lock records bounded contention telemetry and exits successfully. The
+lock is released explicitly after the cycle and implicitly if the connection
+or Lambda execution is lost. Existing attempt fencing, capacity locks, and ECS
+client tokens remain the correctness boundary for duplicate or delayed events.
+
+`SurveyControlReservedConcurrency=0` leaves the function on the account's
+unreserved pool and is the supported event-mode setting for reduced-quota AWS
+accounts. `SurveyControlReservedConcurrency=1` is an optional isolation layer
+after account quota becomes available; it is not the singleton authority. The
+release workflow always verifies that event mode has at least one unreserved
+execution. When the optional reservation is requested, it additionally checks
+that Lambda can retain its required unreserved pool after allocating one unit.
+Legacy dispatch requires the parameter to remain zero and creates the dormant
+function without a reservation.
+
+Event mode alarms immediately on Lambda throttling and on a non-empty control
+DLQ. Throttled or duplicate wakeups do not remove database work: asynchronous
+delivery retries, the one-minute rule reconciles the database truth source, and
+the PostgreSQL control lock prevents concurrent control work or launches. Each
+invocation opens at most one short-lived database connection; contenders exit
+without reading queues or calling ECS.
 
 Application rollback selects an older manifest SHA. It does not move an image
 tag, rebuild code, restore a database snapshot, or reverse an additive schema
@@ -444,11 +460,14 @@ running standalone tasks are fenced by their attempt lease and may finish; a
 resident worker cannot claim the same work while that lease remains valid.
 
 For event-mode adoption, first wait until legacy Draft and Full leases are
-empty, then deploy the same digest with `SurveyDispatchMode=event`. Verify the
-Lambda DLQ is empty, queued-to-RUNNING p95 is at most 120 seconds, and both
-Survey ECS services stay at zero desired/running tasks. A non-empty control DLQ
-pages immediately. API wakeup is asynchronous and best effort; the one-minute
-rule is the durable latency bound when invocation fails.
+empty, then deploy the same digest with `SurveyDispatchMode=event` and
+`SurveyControlReservedConcurrency=0` on reduced-quota accounts. Verify the
+Lambda DLQ is empty, the Lambda throttle alarm is clear, queued-to-RUNNING p95
+is at most 120 seconds, and both Survey ECS services stay at zero
+desired/running tasks. API wakeup is asynchronous and best effort; the
+one-minute rule is the durable latency bound when invocation fails. After a
+Lambda quota increase, redeploy with `SurveyControlReservedConcurrency=1` to
+add isolation without changing the database singleton or compute protocol.
 
 The production workflow reads only aggregate CloudWatch activity metrics before
 replacing a changed Survey worker image. Any active Draft or Full lease keeps

@@ -47,6 +47,11 @@ Parameters:
     Default: legacy
     AllowedValues: [legacy, event]
     Description: Event uses Lambda plus standalone tasks; legacy keeps resident services for rollback
+  SurveyControlReservedConcurrency:
+    Type: String
+    Default: "0"
+    AllowedValues: ["0", "1"]
+    Description: Optional event-controller isolation; PostgreSQL remains the singleton authority
   ImageGenApiUrl:
     Type: String
     Default: ""
@@ -87,6 +92,15 @@ Rules:
           - !Equals [!Ref SurveyPublicMode, "off"]
           - !Equals [!Ref SurveyRuntimeEnabled, "true"]
         AssertDescription: Survey public mode all requires Survey workers to be enabled
+  SurveyControlReservationRequiresEvent:
+    Assertions:
+      - Assert: !Or
+          - !Equals [!Ref SurveyControlReservedConcurrency, "0"]
+          - !And
+            - !Equals [!Ref ApplicationEnabled, "true"]
+            - !Equals [!Ref SurveyRuntimeEnabled, "true"]
+            - !Equals [!Ref SurveyDispatchMode, event]
+        AssertDescription: Survey control reserved concurrency requires event dispatch
 
 Conditions:
   RunApplication: !Equals [!Ref ApplicationEnabled, "true"]
@@ -101,6 +115,9 @@ Conditions:
     - !Equals [!Ref ApplicationEnabled, "true"]
     - !Equals [!Ref SurveyRuntimeEnabled, "true"]
     - !Equals [!Ref SurveyDispatchMode, event]
+  ReserveSurveyControlConcurrency: !And
+    - !Condition RunSurveyControl
+    - !Equals [!Ref SurveyControlReservedConcurrency, "1"]
 
 Resources:
   AlbSecurityGroup:
@@ -958,7 +975,7 @@ Resources:
       Architectures: [x86_64]
       MemorySize: 512
       Timeout: 60
-      ReservedConcurrentExecutions: !If [RunSurveyControl, 1, !Ref AWS::NoValue]
+      ReservedConcurrentExecutions: !If [ReserveSurveyControlConcurrency, 1, !Ref AWS::NoValue]
       Role: !GetAtt SurveyControlRole.Arn
       ImageConfig:
         EntryPoint: [python, -m, awslambdaric]
@@ -1064,6 +1081,22 @@ Resources:
       MetricName: ApproximateNumberOfMessagesVisible
       Dimensions: [{ Name: QueueName, Value: !GetAtt SurveyControlDeadLetterQueue.QueueName }]
       Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!ImportValue sanchezcloud-scholight-alert-topic-arn]
+
+  SurveyControlThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: RunSurveyControl
+    Properties:
+      AlarmName: sanchezcloud-scholight-survey-control-throttled
+      Namespace: AWS/Lambda
+      MetricName: Throttles
+      Dimensions: [{ Name: FunctionName, Value: !Ref SurveyControlFunction }]
+      Statistic: Sum
       Period: 60
       EvaluationPeriods: 1
       Threshold: 0

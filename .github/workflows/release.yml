@@ -36,6 +36,12 @@ on:
         default: legacy
         type: choice
         options: [legacy, event]
+      survey_control_reserved_concurrency:
+        description: Optionally reserve one Lambda execution after account quota is available
+        required: true
+        default: "0"
+        type: choice
+        options: ["0", "1"]
       scheduler_state:
         description: Run ingest and metadata schedules
         required: true
@@ -84,6 +90,7 @@ jobs:
           SURVEY_RUNTIME_ENABLED: ${{ inputs.survey_runtime_enabled }}
           SURVEY_PUBLIC_MODE: ${{ inputs.survey_public_mode }}
           SURVEY_DISPATCH_MODE: ${{ inputs.survey_dispatch_mode }}
+          SURVEY_CONTROL_RESERVED_CONCURRENCY: ${{ inputs.survey_control_reserved_concurrency }}
           SURVEY_CAPACITY_STAGE: ${{ inputs.survey_capacity_stage }}
           SURVEY_CAPACITY_PREREQUISITES_CONFIRMED: ${{ inputs.survey_capacity_prerequisites_confirmed }}
           OPERATION: ${{ inputs.operation }}
@@ -98,6 +105,17 @@ jobs:
           fi
           if [[ "$SURVEY_PUBLIC_MODE" == all && "$SURVEY_RUNTIME_ENABLED" != true ]]; then
             echo "Survey cannot be public unless its workers are running" >&2
+            exit 1
+          fi
+          case "$SURVEY_CONTROL_RESERVED_CONCURRENCY" in
+            0|1) ;;
+            *)
+              echo "Survey control reserved concurrency must be zero or one" >&2
+              exit 1
+              ;;
+          esac
+          if [[ "$SURVEY_DISPATCH_MODE" != event && "$SURVEY_CONTROL_RESERVED_CONCURRENCY" != 0 ]]; then
+            echo "Survey control concurrency can be reserved only in event mode" >&2
             exit 1
           fi
           case "$SURVEY_CAPACITY_STAGE" in
@@ -127,10 +145,20 @@ jobs:
           aws-region: ${{ vars.AWS_REGION }}
       - name: Verify Survey control concurrency capacity
         if: inputs.survey_dispatch_mode == 'event'
+        env:
+          SURVEY_CONTROL_RESERVED_CONCURRENCY: ${{ inputs.survey_control_reserved_concurrency }}
         run: |
           unreserved=$(aws lambda get-account-settings \
             --query 'AccountLimit.UnreservedConcurrentExecutions' \
             --output text)
+          if (( unreserved < 1 )); then
+            echo "Event dispatch requires at least one unreserved Lambda execution" >&2
+            exit 1
+          fi
+          if [[ "$SURVEY_CONTROL_RESERVED_CONCURRENCY" == 0 ]]; then
+            echo "Event dispatch will serialize cycles with the PostgreSQL session lock."
+            exit 0
+          fi
           current_reserved=0
           if concurrency=$(aws lambda get-function-concurrency \
             --function-name sanchezcloud-scholight-survey-control 2>/dev/null); then
@@ -139,7 +167,7 @@ jobs:
           additional_reservation=$((current_reserved >= 1 ? 0 : 1))
           required_unreserved=$((10 + additional_reservation))
           if (( unreserved < required_unreserved )); then
-            echo "Event dispatch requires one reserved Survey control execution" >&2
+            echo "The requested Survey control reservation cannot be allocated" >&2
             echo "Lambda must retain at least 10 unreserved executions after reservation" >&2
             echo "Current unreserved: ${unreserved}; required before update: ${required_unreserved}" >&2
             exit 1
@@ -400,6 +428,7 @@ jobs:
           SURVEY_RUNTIME_ENABLED: ${{ inputs.survey_runtime_enabled }}
           SURVEY_PUBLIC_MODE: ${{ inputs.survey_public_mode }}
           SURVEY_DISPATCH_MODE: ${{ inputs.survey_dispatch_mode }}
+          SURVEY_CONTROL_RESERVED_CONCURRENCY: ${{ inputs.survey_control_reserved_concurrency }}
           SCHEDULER_STATE: ${{ inputs.scheduler_state }}
         run: |
           account_id=$(aws sts get-caller-identity --query Account --output text)
@@ -430,6 +459,7 @@ jobs:
               SurveyRuntimeEnabled="$SURVEY_RUNTIME_ENABLED" \
               SurveyPublicMode="$SURVEY_PUBLIC_MODE" \
               SurveyDispatchMode="$SURVEY_DISPATCH_MODE" \
+              SurveyControlReservedConcurrency="$SURVEY_CONTROL_RESERVED_CONCURRENCY" \
               SurveyDraftMaxTasks="$SURVEY_DRAFT_MAX_TASKS" \
               SurveyFullMaxTasks="$SURVEY_FULL_MAX_TASKS" \
               SchedulerState="$SCHEDULER_STATE"
@@ -477,6 +507,8 @@ jobs:
             echo "- Application: \`${{ inputs.application_enabled }}\`"
             echo "- Survey runtime: \`${{ inputs.survey_runtime_enabled }}\`"
             echo "- Survey public mode: \`${{ inputs.survey_public_mode }}\`"
+            echo "- Survey dispatch mode: \`${{ inputs.survey_dispatch_mode }}\`"
+            echo "- Survey control reserved concurrency: \`${{ inputs.survey_control_reserved_concurrency }}\`"
             echo "- Survey capacity stage (Draft/Full): \`${{ inputs.survey_capacity_stage }}\`"
             echo "- Final capacity prerequisites confirmed: \`${{ inputs.survey_capacity_prerequisites_confirmed }}\`"
             echo "- Survey image deferred: \`${SURVEY_IMAGE_DEFERRED:-false}\`"
