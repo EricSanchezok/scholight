@@ -30,13 +30,13 @@ def test_installed_rcm_version_accepts_reviewed_binary() -> None:
     completed = subprocess.CompletedProcess(
         args=["/usr/local/bin/accelerate", "--version"],
         returncode=0,
-        stdout="accelerate 0.2.21\n",
+        stdout="accelerate 0.2.22\n",
         stderr="",
     )
     with patch("scholight.cli.survey.subprocess.run", return_value=completed):
         version = _installed_rcm_version()
 
-    assert version == "0.2.21"
+    assert version == "0.2.22"
 
 
 def test_installed_rcm_version_rejects_unreviewed_binary() -> None:
