@@ -310,6 +310,28 @@ def test_event_driven_survey_control_is_bounded_and_recoverable() -> None:
     assert "ScheduleExpression: rate(1 minute)" in runtime
     assert "detail-type: [ECS Task State Change]" in runtime
     assert "lastStatus: [STOPPED]" in runtime
+    schedule_rule = runtime.split("  SurveyControlScheduleRule:", maxsplit=1)[1].split(
+        "  SurveyControlStoppedRule:", maxsplit=1
+    )[0]
+    stopped_rule = runtime.split("  SurveyControlStoppedRule:", maxsplit=1)[1].split(
+        "  SurveyControlSchedulePermission:", maxsplit=1
+    )[0]
+    schedule_permission = runtime.split("  SurveyControlSchedulePermission:", maxsplit=1)[1].split(
+        "  SurveyControlStoppedPermission:", maxsplit=1
+    )[0]
+    stopped_permission = runtime.split("  SurveyControlStoppedPermission:", maxsplit=1)[1].split(
+        "  SurveyControlDeadLetterAlarm:", maxsplit=1
+    )[0]
+    assert "DependsOn: SurveyControlSchedulePermission" in schedule_rule
+    assert "DependsOn: SurveyControlStoppedPermission" in stopped_rule
+    assert (
+        "SourceArn: !Sub arn:${AWS::Partition}:events:${AWS::Region}:"
+        "${AWS::AccountId}:rule/sanchezcloud-scholight-survey-control-minute" in schedule_permission
+    )
+    assert (
+        "SourceArn: !Sub arn:${AWS::Partition}:events:${AWS::Region}:"
+        "${AWS::AccountId}:rule/sanchezcloud-scholight-survey-control-stopped" in stopped_permission
+    )
     assert "SurveyControlDeadLetterQueue:" in runtime
     assert "ApproximateNumberOfMessagesVisible" in runtime
     assert "SurveyControlThrottleAlarm:" in runtime

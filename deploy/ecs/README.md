@@ -449,6 +449,13 @@ the PostgreSQL control lock prevents concurrent control work or launches. Each
 invocation opens at most one short-lived database connection; contenders exit
 without reading queues or calling ECS.
 
+Both EventBridge rules depend on their matching resource-based Lambda
+permission. The permission uses the deterministic, account-scoped rule ARN
+rather than referencing the rule resource, so CloudFormation can authorize
+EventBridge before it creates and enables the rule. This prevents the first
+scheduled tick from entering the DLQ with `NO_PERMISSIONS` during a new
+event-mode stack deployment.
+
 Application rollback selects an older manifest SHA. It does not move an image
 tag, rebuild code, restore a database snapshot, or reverse an additive schema
 migration.
