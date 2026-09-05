@@ -180,7 +180,9 @@ scaling policies: a Draft gets a 0.25-vCPU/0.5-GiB task, and a Full Survey gets
 a 1-vCPU/4-GiB task. Only a recorded standard-profile OOM selects the
 1-vCPU/8-GiB definition on the next compute attempt. Every task uses the
 20-GiB Fargate default because S3 checkpoints, not local disk, are the recovery
-source.
+source. The task definitions intentionally omit `EphemeralStorage`: ECS accepts
+that field only for values of at least 21 GiB, while omission selects the 20-GiB
+default.
 Scale-out waits 60 seconds;
 scale-in waits 15 minutes so short queue gaps do not terminate expensive
 workers. `SurveyDraftMaxTasks` and `SurveyFullMaxTasks` are deployment ceilings,

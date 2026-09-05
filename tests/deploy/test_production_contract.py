@@ -311,7 +311,10 @@ def test_event_driven_survey_control_is_bounded_and_recoverable() -> None:
     assert 'Memory: "4096"' in runtime
     assert "SurveyFullHighMemoryTaskDefinition:" in runtime
     assert 'Memory: "8192"' in runtime
-    assert runtime.count("EphemeralStorage: { SizeInGiB: 20 }") == 2
+    standalone_full_tasks = runtime.split("  SurveyFullTaskDefinition:", maxsplit=1)[1].split(
+        "  SurveyControlFunction:", maxsplit=1
+    )[0]
+    assert "EphemeralStorage:" not in standalone_full_tasks
     assert "Action: lambda:InvokeFunction" in runtime
     assert "clientToken" not in runtime  # generated from the durable attempt in Python
     assert "ExpireSurveyCheckpoints" in foundation
