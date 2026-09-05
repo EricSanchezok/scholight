@@ -33,6 +33,7 @@ from scholight.db.queries_survey_notifications import get_email_notification_sta
 from scholight.logging import configure_logging
 from scholight.logging.emf import MetricUnit, emit_emf
 from scholight.survey.process import classify_rcm_error
+from scholight.survey.rcm_diagnostics import sanitize_completion_failure
 from scholight.survey.runtime import image_canary_environment
 from scholight.survey.worker import RCM_VERSION, serve_survey_worker
 from scholight.survey.workflow_audit import workflow_audit_payload
@@ -50,6 +51,24 @@ _MODEL_CANARY_PURPOSE = "Execute the fixed non-sensitive mixed tool-turn protoco
 _MODEL_CANARY_TIMEOUT_SECONDS = 180
 _MODEL_CANARY_INPUT = "CANARY INPUT\n"
 _MODEL_CANARY_OUTPUT = "CANARY COMPLETE\n"
+_MODEL_CANARY_DIAGNOSTIC_FIELDS = (
+    "failure_kind",
+    "request_class",
+    "provider_code",
+    "provider_type",
+    "request_id",
+    "serialized_request_bytes",
+    "estimated_input_tokens",
+    "message_count",
+    "tool_definition_count",
+    "tool_call_count",
+    "tool_result_count",
+    "thinking_enabled",
+    "reasoning_content_present",
+    "reasoning_content_bytes",
+    "unmatched_tool_call_count",
+    "duplicate_tool_call_count",
+)
 
 
 def _echo_concurrency(concurrency: object) -> None:
@@ -173,6 +192,7 @@ def _run_model_canary() -> dict[str, object]:
     error_code: str | None = None
     http_status: int | None = None
     retryable = False
+    safe_diagnostics: dict[str, object] = {}
     try:
         with tempfile.TemporaryDirectory(
             prefix=".survey-model-canary-",
@@ -230,9 +250,15 @@ def _run_model_canary() -> dict[str, object]:
         if completion is None:
             error_code = "model_canary_invalid_result"
         elif completion.get("outcome") != "success" or completed.returncode != 0:
-            error_code, retryable = _classify_model_canary_failure(completion)
-            status = completion.get("http_status")
+            sanitized = sanitize_completion_failure(completion)
+            error_code, retryable = _classify_model_canary_failure(sanitized)
+            status = sanitized.get("http_status")
             http_status = status if isinstance(status, int) and 100 <= status <= 599 else None
+            safe_diagnostics = {
+                field: sanitized[field]
+                for field in _MODEL_CANARY_DIAGNOSTIC_FIELDS
+                if field in sanitized
+            }
         elif not (
             successful_completion_count >= 3
             and fs_tool_call_count >= 2
@@ -258,6 +284,7 @@ def _run_model_canary() -> dict[str, object]:
         "retryable": retryable,
         "duration_ms": duration_ms,
     }
+    result.update(safe_diagnostics)
     emit_emf(
         service="survey-model-canary",
         outcome=canary_status,

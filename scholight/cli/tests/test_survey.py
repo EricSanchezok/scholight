@@ -30,13 +30,13 @@ def test_installed_rcm_version_accepts_reviewed_binary() -> None:
     completed = subprocess.CompletedProcess(
         args=["/usr/local/bin/accelerate", "--version"],
         returncode=0,
-        stdout="accelerate 0.2.21\n",
+        stdout="accelerate 0.2.22\n",
         stderr="",
     )
     with patch("scholight.cli.survey.subprocess.run", return_value=completed):
         version = _installed_rcm_version()
 
-    assert version == "0.2.21"
+    assert version == "0.2.22"
 
 
 def test_installed_rcm_version_rejects_unreviewed_binary() -> None:
@@ -278,7 +278,15 @@ def test_model_canary_exposes_only_structured_provider_failure(
         returncode=1,
         stdout=(
             '{"type":"completion_end","outcome":"failure","http_status":503,'
-            '"failure_kind":"provider_error","retryable":true,"duration_ms":120000}\n'
+            '"failure_kind":"provider_error","retryable":true,"duration_ms":120000,'
+            '"request_class":"thinking_tool_history","provider_code":"invalid_request",'
+            '"provider_type":"invalid_request_error","request_id":"req-canary",'
+            '"serialized_request_bytes":4096,"estimated_input_tokens":1024,'
+            '"message_count":4,"tool_definition_count":1,"tool_call_count":1,'
+            '"tool_result_count":1,"thinking_enabled":true,'
+            '"reasoning_content_present":false,"reasoning_content_bytes":0,'
+            '"unmatched_tool_call_count":0,"duplicate_tool_call_count":0,'
+            '"message":"private provider response body"}\n'
         ),
         stderr="private provider response body and key",
     )
@@ -293,6 +301,22 @@ def test_model_canary_exposes_only_structured_provider_failure(
     assert payload["error_code"] == "model_provider_unavailable"
     assert payload["http_status"] == 503
     assert payload["retryable"] is True
+    assert payload["request_class"] == "thinking_tool_history"
+    assert payload["provider_code"] == "invalid_request"
+    assert payload["provider_type"] == "invalid_request_error"
+    assert payload["request_id"] == "req-canary"
+    assert payload["serialized_request_bytes"] == 4096
+    assert payload["estimated_input_tokens"] == 1024
+    assert payload["message_count"] == 4
+    assert payload["tool_definition_count"] == 1
+    assert payload["tool_call_count"] == 1
+    assert payload["tool_result_count"] == 1
+    assert payload["thinking_enabled"] is True
+    assert payload["reasoning_content_present"] is False
+    assert payload["reasoning_content_bytes"] == 0
+    assert payload["unmatched_tool_call_count"] == 0
+    assert payload["duplicate_tool_call_count"] == 0
+    assert "message" not in payload
     assert "private" not in result.output
 
 
