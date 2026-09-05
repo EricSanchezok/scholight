@@ -80,9 +80,13 @@ def test_deepseek_workflows_enable_thinking_tool_history_compatibility() -> None
         source = path.read_text(encoding="utf-8")
         model_count = len(re.findall(r"(?m)^model\s+deepseek-v4-flash\s*\{", source))
         thinking_count = len(re.findall(r'(?m)^\s*thinking\s*=\s*"true"', source))
-        assert thinking_count == model_count, (
-            f"{path.name} must preserve DeepSeek reasoning_content across tool turns"
-        )
+        if path.name == "reference_seed_non_thinking.rcm":
+            assert thinking_count == 0
+            assert 'thinking = "false"' in source
+        else:
+            assert thinking_count == model_count, (
+                f"{path.name} must preserve DeepSeek reasoning_content across tool turns"
+            )
 
 
 def test_draft_workflow_is_single_node_mcp_only() -> None:
@@ -135,7 +139,8 @@ def test_search_strengths_match_survey_retrieval_policy() -> None:
     assert "scholight__search_papers" in reference
     assert 'strength="thorough"' in reference
     assert "limit=5" in reference
-    assert "arxiv_download" in reference
+    assert "host has already downloaded the PDF" in reference
+    assert "at most 512 KiB" in reference
 
 
 def test_cli_run_directory_is_the_single_artifact_root() -> None:
@@ -179,15 +184,15 @@ def test_fan_out_plans_are_durable_and_restart_safe() -> None:
     normalized_card_plan = " ".join(card_plan.split())
     normalized_section_plan = " ".join(section_plan.split())
 
-    assert "write run_dir/00_card_plan.json before spawning" in normalized_card_plan
-    assert "Exclude cards that already exist" in card_plan
-    assert "one retry call" in card_plan
-    assert "write run_dir/00_sections.json before spawning" in normalized_section_plan
+    assert "write run_dir/00_card_plan.json" in normalized_card_plan
+    assert "host dispatches paper-card workers" in normalized_card_plan
+    assert "do not dispatch" in normalized_card_plan
+    assert "write run_dir/00_sections.json" in normalized_section_plan
+    assert "host dispatches section workers" in normalized_section_plan
     assert "write run_dir/00_outline.json before" in normalized_section_plan
     assert "schema/outline.md" in section_plan
     assert "exact canonical `id` values from `00_card_plan.json`" in normalized_section_plan
-    assert "Exclude section files that already exist" in section_plan
-    assert "one retry call" in section_plan
+    assert "do not write the sections yourself" in section_plan
 
 
 def test_card_repair_supports_only_app_selected_invalid_evidence_items() -> None:

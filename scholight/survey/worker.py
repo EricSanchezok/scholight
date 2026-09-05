@@ -11,7 +11,7 @@ import time
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 from uuid import UUID, uuid4
 
 import structlog
@@ -30,6 +30,7 @@ from scholight.db.queries_survey import (
     settle_survey_execution,
     update_survey_job_progress,
 )
+from scholight.db.queries_survey_attempts import heartbeat_compute_attempt
 from scholight.db.queries_survey_capacity import get_survey_capacity_snapshot
 from scholight.logging.emf import emit_emf
 from scholight.sources.arxiv import arxiv_artifact_stem
@@ -353,6 +354,16 @@ class SurveyExecutionResult:
     stderr_tail: str | None = None
     diagnostics: dict[str, Any] | None = None
     chargeable: bool = True
+
+
+class SurveyJobExecutor(Protocol):
+    async def __call__(
+        self,
+        job: SurveyJob,
+        run_root: Path,
+        *,
+        control: ProcessControl,
+    ) -> SurveyExecutionResult: ...
 
 
 def _retained_stderr_tail(
@@ -1660,6 +1671,7 @@ async def _heartbeat(
     worker_id: UUID,
     stop: asyncio.Event,
     control: ProcessControl,
+    attempt_id: UUID | None = None,
 ) -> None:
     last_owned = time.monotonic()
     while not stop.is_set():
@@ -1669,11 +1681,17 @@ async def _heartbeat(
         except TimeoutError:
             started_at = time.perf_counter()
             try:
-                state = await heartbeat_survey_job(
-                    job_id=job_id,
-                    worker_id=worker_id,
-                    lease_seconds=settings.survey_lease_seconds,
-                )
+                if attempt_id is None:
+                    state = await heartbeat_survey_job(
+                        job_id=job_id,
+                        worker_id=worker_id,
+                        lease_seconds=settings.survey_lease_seconds,
+                    )
+                else:
+                    state = await heartbeat_compute_attempt(
+                        attempt_id=attempt_id,
+                        lease_seconds=settings.survey_lease_seconds,
+                    )
             except Exception as exc:
                 logger.warning(
                     "survey_heartbeat_failed",
@@ -1875,6 +1893,8 @@ async def process_survey_job(
     job: SurveyJob,
     worker_id: UUID,
     artifact_store: SurveyArtifactStore,
+    attempt_id: UUID | None = None,
+    execute_job: SurveyJobExecutor | None = None,
 ) -> None:
     """Execute a pending claim or resume archiving without rerunning RCM."""
     run_root = _job_root(job.id) / "run"
@@ -1882,13 +1902,20 @@ async def process_survey_job(
     stop = asyncio.Event()
     control = ProcessControl()
     heartbeat = asyncio.create_task(
-        _heartbeat(job_id=job.id, worker_id=worker_id, stop=stop, control=control)
+        _heartbeat(
+            job_id=job.id,
+            worker_id=worker_id,
+            stop=stop,
+            control=control,
+            attempt_id=attempt_id,
+        )
     )
     try:
         if job.status == "running":
             run_root.mkdir(parents=True, exist_ok=True)
             try:
-                result = await execute_survey(job, run_root, control=control)
+                executor = execute_job or execute_survey
+                result = await executor(job, run_root, control=control)
             except SurveyLeaseLostError:
                 logger.info("survey_stopped_after_lease_loss", job_id=str(job.id))
                 return
@@ -2089,6 +2116,7 @@ __all__ = [
     "RCM_VERSION",
     "WORKFLOW_VERSION",
     "SurveyExecutionResult",
+    "SurveyJobExecutor",
     "execute_survey",
     "process_survey_job",
     "serve_survey_worker",

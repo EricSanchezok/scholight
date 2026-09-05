@@ -80,6 +80,42 @@ as the primary attempt failure class so the next attempt can select the
 high-memory task definition; a later checkpoint restore error is supplemental
 diagnostic data and must not replace that cause.
 
+Event-mode Full tasks use `survey-dag-v1`, a host-owned durable DAG. RCM remains
+the research-unit runtime, but it no longer owns cross-stage scheduling. Every
+stage must produce and validate its declared file contract before the host can
+publish a checkpoint or start a downstream stage. Reference seeds run with a
+maximum concurrency of 2, paper cards with 4, and report sections with 4. Card
+and section plan JSON is durable before fan-out; a restored task schedules only
+units absent from the checkpoint's `completed_units` set.
+
+Checkpoints use
+`surveys/_checkpoints/v1/{user_id}/{job_id}/objects/{sha256}` and immutable
+manifests under the same job prefix. The task uploads new content-addressed
+objects with `If-None-Match: *`, publishes and reads back the manifest, then
+compare-and-swaps the PostgreSQL pointer using the owning attempt and expected
+sequence. A new attempt also searches for exactly one valid `sequence + 1`
+manifest whose parent hash and workflow/executor versions match. This closes
+the crash window between S3 publication and the database CAS without replaying
+the completed model unit. Multiple matching successors fail closed.
+
+Restore always begins in an empty local workspace. It validates ownership,
+path traversal, per-file and aggregate size, object key/content hash, and the
+8-MiB manifest ceiling before atomically installing each file. Only durable
+contracts, cards, sections, PDFs, extracts, reference shard inputs/results, and
+report assets are retained. Workflow schema is restaged from the image;
+trajectory and transient diagnostics are never checkpointed. The final
+Markdown is checkpointed before optional PDF rendering and final archive.
+
+The exact standalone commands are:
+
+```text
+scholight survey run-draft --draft-id <uuid> --attempt-id <uuid>
+scholight survey run-job --job-id <uuid> --attempt-id <uuid>
+```
+
+They return `not-claimed` and exit successfully when the attempt is duplicated
+or stale. This is expected idempotent behavior, not a worker failure.
+
 Survey capacity has three independent limits. PostgreSQL enforces the global
 and per-user limits atomically across every task; each worker separately bounds
 its local process concurrency:

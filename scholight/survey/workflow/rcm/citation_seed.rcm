@@ -1,0 +1,19 @@
+name = "Scholight Survey Citation Seed Plan"
+
+model deepseek-v4-flash {
+    protocol = "openai"
+    endpoint = "https://api.deepseek.com"
+    credentials = { env = "DEEPSEEK_API_KEY" }
+    timeout = "1800"
+    thinking = "true"
+    limit = { context = "1000000", output = "393216" }
+    modalities = { input = ["text"], output = ["text"] }
+}
+
+accelerator {
+    purpose = "Scholight survey citation seed selector"
+    models = ["deepseek-v4-flash"]
+    policy = "captain"
+    prompts = { captain = file "../prompts/citation_seed_selector.txt" }
+    tools = ["fs"]
+}

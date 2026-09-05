@@ -89,6 +89,17 @@ class SurveyComputeAttempt:
     stopped_at: datetime | None
 
 
+@dataclass(frozen=True, slots=True)
+class SurveyCheckpointPointer:
+    sequence: int
+    stage: str | None
+    manifest_key: str | None
+    manifest_sha256: str | None
+    workflow_version: str
+    executor_version: str
+    execution_deadline_at: datetime
+
+
 def _attempt(row: asyncpg.Record | dict[str, Any]) -> SurveyComputeAttempt:
     return SurveyComputeAttempt(
         id=row["id"],
@@ -497,6 +508,37 @@ async def commit_survey_job_checkpoint(
         raise DBError("Failed to commit Survey checkpoint pointer") from exc
 
 
+async def get_claimed_job_checkpoint(*, job_id: UUID, attempt_id: UUID) -> SurveyCheckpointPointer:
+    """Read the checkpoint pointer only while the exact attempt owns the job."""
+    try:
+        row = await get_pool().fetchrow(
+            "SELECT checkpoint_sequence, checkpoint_stage, checkpoint_manifest_key, "
+            "checkpoint_manifest_sha256, workflow_version, executor_version, "
+            "execution_deadline_at FROM scholight.survey_jobs "
+            "WHERE id = $1 AND lease_owner = $2 AND status IN ('running', 'archiving')",
+            job_id,
+            attempt_id,
+        )
+    except asyncpg.PostgresError as exc:
+        raise DBError("Failed to read Survey checkpoint pointer") from exc
+    if (
+        row is None
+        or row["workflow_version"] is None
+        or row["executor_version"] is None
+        or row["execution_deadline_at"] is None
+    ):
+        raise DBError("Survey checkpoint pointer is not owned or initialized")
+    return SurveyCheckpointPointer(
+        sequence=int(row["checkpoint_sequence"] or 0),
+        stage=row["checkpoint_stage"],
+        manifest_key=row["checkpoint_manifest_key"],
+        manifest_sha256=row["checkpoint_manifest_sha256"],
+        workflow_version=str(row["workflow_version"]),
+        executor_version=str(row["executor_version"]),
+        execution_deadline_at=row["execution_deadline_at"],
+    )
+
+
 async def heartbeat_compute_attempt(*, attempt_id: UUID, lease_seconds: int) -> HeartbeatState:
     """Renew an attempt and its exact work lease in one transaction."""
     lease = timedelta(seconds=lease_seconds)
@@ -519,20 +561,23 @@ async def heartbeat_compute_attempt(*, attempt_id: UUID, lease_seconds: int) -> 
                     lease,
                 )
             else:
-                result = await connection.execute(
+                row = await connection.fetchrow(
                     "UPDATE scholight.survey_jobs SET heartbeat_at = now(), "
                     "lease_expires_at = now() + $3 WHERE id = $1 AND lease_owner = $2 "
-                    "AND status IN ('running', 'archiving')",
+                    "AND status IN ('running', 'archiving') RETURNING cancel_requested_at",
                     attempt["job_id"],
                     attempt_id,
                     lease,
                 )
+                result = "UPDATE 1" if row is not None else "UPDATE 0"
             if result != "UPDATE 1":
                 return "lost"
             await connection.execute(
                 "UPDATE scholight.survey_compute_attempts SET heartbeat_at = now() WHERE id = $1",
                 attempt_id,
             )
+            if attempt["work_kind"] == "full" and row["cancel_requested_at"] is not None:
+                return "cancel_requested"
             return "owned"
     except (asyncpg.PostgresError, DBError) as exc:
         logger.error("survey_compute_attempt_heartbeat_failed", error_type=type(exc).__name__)
@@ -624,11 +669,13 @@ async def record_compute_attempt_stopped(
 __all__ = [
     "AttemptStatus",
     "ResourceProfile",
+    "SurveyCheckpointPointer",
     "SurveyComputeAttempt",
     "WorkKind",
     "claim_exact_survey_draft",
     "claim_exact_survey_job",
     "commit_survey_job_checkpoint",
+    "get_claimed_job_checkpoint",
     "heartbeat_compute_attempt",
     "mark_compute_attempt_launched",
     "mark_compute_attempt_launching",

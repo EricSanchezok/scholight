@@ -73,13 +73,15 @@ def audit_workflow_contracts() -> tuple[WorkflowConflict, ...]:
         )
 
     if not (
-        "write run_dir/00_card_plan.json before spawning" in normalized_card_prompt
-        and "write run_dir/00_sections.json before spawning" in normalized_section_prompt
+        "write run_dir/00_card_plan.json" in normalized_card_prompt
+        and "host dispatches paper-card workers" in normalized_card_prompt
+        and "write run_dir/00_sections.json" in normalized_section_prompt
+        and "host dispatches section workers" in normalized_section_prompt
     ):
         conflicts.append(
             WorkflowConflict(
                 code="spawn_expectations_not_persisted",
-                summary="Spawned card and section expectations have no durable plan artifact.",
+                summary="Host-dispatched card and section expectations lack a durable plan.",
                 evidence=("prompts/card_plan.txt", "prompts/survey_outline.txt"),
             )
         )

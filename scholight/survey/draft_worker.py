@@ -11,6 +11,7 @@ from uuid import UUID, uuid4
 import structlog
 
 from scholight.config import settings
+from scholight.db.queries_survey_attempts import heartbeat_compute_attempt
 from scholight.db.queries_survey_capacity import get_survey_capacity_snapshot
 from scholight.db.queries_survey_drafts import (
     SurveyDraft,
@@ -259,6 +260,7 @@ async def _heartbeat(
     worker_id: UUID,
     stop: asyncio.Event,
     control: ProcessControl,
+    attempt_id: UUID | None = None,
 ) -> None:
     last_owned = time.monotonic()
     while not stop.is_set():
@@ -268,11 +270,17 @@ async def _heartbeat(
         except TimeoutError:
             started_at = time.perf_counter()
             try:
-                state = await heartbeat_survey_draft(
-                    draft_id=draft_id,
-                    worker_id=worker_id,
-                    lease_seconds=settings.survey_lease_seconds,
-                )
+                if attempt_id is None:
+                    state = await heartbeat_survey_draft(
+                        draft_id=draft_id,
+                        worker_id=worker_id,
+                        lease_seconds=settings.survey_lease_seconds,
+                    )
+                else:
+                    state = await heartbeat_compute_attempt(
+                        attempt_id=attempt_id,
+                        lease_seconds=settings.survey_lease_seconds,
+                    )
             except Exception as exc:
                 logger.warning(
                     "survey_draft_heartbeat_failed",
@@ -298,11 +306,19 @@ async def _heartbeat(
                 return
 
 
-async def process_survey_draft(*, draft: SurveyDraft, worker_id: UUID) -> None:
+async def process_survey_draft(
+    *, draft: SurveyDraft, worker_id: UUID, attempt_id: UUID | None = None
+) -> None:
     stop = asyncio.Event()
     control = ProcessControl()
     heartbeat = asyncio.create_task(
-        _heartbeat(draft_id=draft.id, worker_id=worker_id, stop=stop, control=control)
+        _heartbeat(
+            draft_id=draft.id,
+            worker_id=worker_id,
+            stop=stop,
+            control=control,
+            attempt_id=attempt_id,
+        )
     )
     try:
         context = await get_survey_draft_context(survey_id=draft.survey_id)

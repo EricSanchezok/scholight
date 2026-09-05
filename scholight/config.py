@@ -356,3 +356,10 @@ def validate_survey_draft_worker_settings() -> None:
         raise ValueError("DEEPSEEK_API_KEY is required by the Survey Draft worker")
     if len(settings.survey_mcp_jwt_secret.encode("utf-8")) < 32:
         raise ValueError("SCHOLIGHT_SURVEY_MCP_JWT_SECRET must contain at least 32 UTF-8 bytes")
+
+
+def validate_survey_compute_settings(*, full: bool) -> None:
+    """Validate a one-shot task without requiring notification credentials."""
+    validate_survey_draft_worker_settings()
+    if full and not settings.survey_s3_bucket.strip():
+        raise ValueError("SCHOLIGHT_SURVEY_S3_BUCKET is required by the Full Survey task")
