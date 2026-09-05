@@ -448,6 +448,9 @@ def test_survey_capacity_observability_has_no_identifier_dimensions() -> None:
 
 def test_release_defers_active_worker_images_and_gates_final_capacity() -> None:
     workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+    worker_guard = workflow.split(
+        "- name: Defer active Survey worker image replacements", maxsplit=1
+    )[1].split("- name: Deploy digest-qualified ECS release", maxsplit=1)[0]
 
     assert "scripts/check_survey_worker_update.py" in workflow
     assert "SurveyDraftRunning" in workflow
@@ -462,6 +465,12 @@ def test_release_defers_active_worker_images_and_gates_final_capacity() -> None:
     assert "aws lambda get-account-settings" in workflow
     assert "UnreservedConcurrentExecutions" in workflow
     assert "sanchezcloud-scholight-survey-control" in workflow
+    assert "SURVEY_DISPATCH_MODE: ${{ inputs.survey_dispatch_mode }}" in worker_guard
+    assert 'if [[ "$SURVEY_DISPATCH_MODE" == event ]]' in worker_guard
+    assert 'echo "SURVEY_IMAGE_OVERRIDE=$desired_image"' in worker_guard
+    assert worker_guard.index('if [[ "$SURVEY_DISPATCH_MODE" == event ]]') < worker_guard.index(
+        "aws cloudformation describe-stacks"
+    )
     assert workflow.index("Verify Survey control concurrency capacity") < workflow.index(
         "Register candidate Survey canary task"
     )

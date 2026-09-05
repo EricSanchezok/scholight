@@ -336,8 +336,14 @@ jobs:
         env:
           AWS_REGION: ${{ vars.AWS_REGION }}
           IDLE_CONFIRMATION: ${{ inputs.survey_workers_idle_confirmation }}
+          SURVEY_DISPATCH_MODE: ${{ inputs.survey_dispatch_mode }}
         run: |
           desired_image=$(jq -r .images.survey release-manifest.json)
+          if [[ "$SURVEY_DISPATCH_MODE" == event ]]; then
+            echo "SURVEY_IMAGE_OVERRIDE=$desired_image" >> "$GITHUB_ENV"
+            echo "Event-mode task definitions will use the new Survey digest; running standalone tasks remain unchanged." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           stack_error=$(mktemp)
           set +e
           stack=$(aws cloudformation describe-stacks \
