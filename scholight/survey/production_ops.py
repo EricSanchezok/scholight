@@ -1,9 +1,10 @@
-"""Bounded production operations for owner-preserving Survey reruns.
+"""Bounded production operations for owner-preserving Survey maintenance.
 
-This module is intentionally not exposed through the public API.  It is executed by a
-fixed production-environment workflow inside the deployed API task definition.  Inputs
-are UUIDs, the source owner is copied from the database, and output contains no request
-or paper content.
+This module is intentionally not exposed through the public API.  The rerun operation is
+executed inside the deployed API task definition, while evidence repair runs in the Survey
+image.  Keep Survey-only repair imports local to that operation so the lightweight rerun
+entrypoint remains compatible with the API dependency profile.  Inputs are UUIDs, the source
+owner is copied from the database, and output contains no request or paper content.
 """
 
 from __future__ import annotations
@@ -25,10 +26,6 @@ from scholight.config import settings
 from scholight.db.client import close_pool, create_pool, get_pool
 from scholight.db.queries_survey import create_survey, start_survey
 from scholight.survey.contracts import canonical_request_hash
-from scholight.survey.quality_repair import (
-    apply_archived_evidence_repair,
-    inspect_archived_evidence_repair,
-)
 
 _TERMINAL_SURVEY_STATUSES = frozenset({"succeeded", "failed", "cancelled"})
 _FORBIDDEN_REPORT_MARKERS = (
@@ -374,6 +371,11 @@ async def archived_evidence_repair_operation(
     expected_report_sha256: str,
 ) -> dict[str, object]:
     """Verify or apply one hash-guarded, owner-preserving archived repair."""
+    from scholight.survey.quality_repair import (
+        apply_archived_evidence_repair,
+        inspect_archived_evidence_repair,
+    )
+
     await create_pool()
     try:
         if apply:
