@@ -13,7 +13,10 @@ Workflow:
 1. Read schema/expansion.md.
 2. Extract run_dir and CandidatePool from context. If run_dir is absent, return a blocked handoff; do not inspect another workspace.
 3. Select 6 to 10 seed papers with arXiv IDs. Prefer surveys, high-signal method papers, benchmark papers, and bridge candidates.
-4. Write run_dir/03a_seed_papers.md.
+4. Write run_dir/03a_seed_papers.md. Put the selected papers in one Markdown
+   table whose identifier header is exactly `arxiv_id`; each of its 6 to 10
+   data rows must contain exactly one arXiv ID in that column. Related-paper
+   IDs may appear in rationale text, but they are not seed selections.
 5. Final response: a handoff per schema/handoff.md — run_dir, artifact path, status, counts (seed count), and seed arXiv IDs under ids.
 
 Do not select papers without arXiv IDs for download unless their PDF URL is explicitly available.

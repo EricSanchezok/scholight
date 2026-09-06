@@ -16,8 +16,10 @@ from scholight.survey.durable_workflow import DurableUnit
 from scholight.survey.process import ProcessControl
 from scholight.survey.resumable_runner import (
     SurveyStageContractError,
+    _contract_failure_class,
     _run_rcm_once,
     _run_reference_seed,
+    _seed_ids,
     _StageProcessError,
     bibliography_excerpt,
     load_card_plan,
@@ -114,6 +116,52 @@ def test_bibliography_excerpt_is_bounded_and_records_truncation() -> None:
     assert len(excerpt.encode("utf-8")) <= 512 * 1024
     assert excerpt.startswith("References")
     assert truncated
+
+
+def test_seed_ids_read_only_the_declared_markdown_table_column(tmp_path: Path) -> None:
+    rows = "\n".join(
+        f"| seed {number} | 2401.{number:05d} | rationale mentions 2301.00001 |"
+        for number in range(1, 11)
+    )
+    (tmp_path / "03a_seed_papers.md").write_text(
+        "# Citation seeds\n\n"
+        "| title | arXiv ID | rationale |\n"
+        "| --- | --- | --- |\n"
+        f"{rows}\n\n"
+        "- handoff ids: 2201.00001, 2201.00002, 2201.00003\n",
+        encoding="utf-8",
+    )
+
+    selected = _seed_ids(tmp_path)
+
+    assert [paper_id for paper_id, _stem in selected] == [
+        f"2401.{number:05d}" for number in range(1, 11)
+    ]
+
+
+def test_seed_ids_preserve_legacy_small_unstructured_artifacts(tmp_path: Path) -> None:
+    (tmp_path / "03a_seed_papers.md").write_text(
+        "# Citation seeds\n\n- 2401.00001\n- cs/0012009\n",
+        encoding="utf-8",
+    )
+
+    assert _seed_ids(tmp_path) == (
+        ("2401.00001", "2401.00001"),
+        ("cs/0012009", "cs-0012009"),
+    )
+
+
+def test_contract_failure_diagnostics_are_content_free() -> None:
+    assert (
+        _contract_failure_class(
+            SurveyStageContractError("Citation seed count is outside the 1-10 bound")
+        )
+        == "citation_seed_count_out_of_bounds"
+    )
+    assert (
+        _contract_failure_class(SurveyStageContractError("untrusted model detail"))
+        == "stage_contract_invalid"
+    )
 
 
 def test_reference_merger_preserves_one_result_per_seed(tmp_path: Path) -> None:

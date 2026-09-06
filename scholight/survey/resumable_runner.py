@@ -71,6 +71,7 @@ _SECTION_SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _REFERENCE_HEADING = re.compile(rb"(?im)^(?:references|bibliography)\s*$")
 _REFERENCE_STATUS = re.compile(r"(?im)^status:\s*(completed|empty|partial|failed)\s*$")
 _ARXIV_ID = re.compile(r"(?<![A-Za-z0-9./-])(\d{4}\.\d{4,5}(?:v\d+)?|[a-z-]+/\d{7})(?!\d)")
+_MARKDOWN_TABLE_SEPARATOR = re.compile(r"^:?-{3,}:?$")
 _CONTEXT_400 = re.compile(r"context|too (?:large|long)|maximum.*tokens|request.*size", re.I)
 _THINKING_400 = re.compile(r"reasoning_content|thinking|tool[_ -]?call|tool history", re.I)
 _READ_CHUNK_BYTES = 1024 * 1024
@@ -80,6 +81,30 @@ _PDF_TEXT_TAIL_BYTES = 8 * 1024 * 1024
 
 class SurveyStageContractError(Exception):
     """A durable stage plan or shard artifact violated its machine contract."""
+
+
+_STAGE_CONTRACT_FAILURE_CLASSES = (
+    ("Citation seed artifact is unavailable", "citation_seed_artifact_unavailable"),
+    ("Citation seed count is outside", "citation_seed_count_out_of_bounds"),
+    ("Reference result is missing", "reference_result_missing"),
+    ("Reference result status is missing", "reference_result_status_missing"),
+    ("Survey card plan", "card_plan_invalid"),
+    ("Survey section", "section_plan_invalid"),
+    ("seed_pdf_", "seed_pdf_invalid"),
+    ("pdftotext_unavailable", "pdf_extractor_unavailable"),
+    ("pdf_extraction_failed", "pdf_extraction_failed"),
+)
+
+
+def _contract_failure_class(exc: Exception) -> str:
+    """Return a content-free diagnostic class for a contract exception."""
+    if not isinstance(exc, SurveyStageContractError):
+        return "artifact_contract_invalid"
+    message = str(exc)
+    for prefix, failure_class in _STAGE_CONTRACT_FAILURE_CLASSES:
+        if message.startswith(prefix):
+            return failure_class
+    return "stage_contract_invalid"
 
 
 def _read_plan(run_root: Path, name: str) -> list[object]:
@@ -394,22 +419,73 @@ async def _run_rcm_with_retries(
             await asyncio.sleep(delay)
 
 
+def _table_cells(line: str) -> tuple[str, ...]:
+    value = line.strip()
+    if "|" not in value:
+        return ()
+    if value.startswith("|"):
+        value = value[1:]
+    if value.endswith("|"):
+        value = value[:-1]
+    return tuple(cell.strip() for cell in value.split("|"))
+
+
+def _seed_table_ids(content: str) -> tuple[str, ...] | None:
+    """Read only the declared arXiv-ID column from a Markdown seed table."""
+    lines = content.splitlines()
+    for index, line in enumerate(lines[:-1]):
+        header = _table_cells(line)
+        separator = _table_cells(lines[index + 1])
+        if (
+            not header
+            or len(separator) != len(header)
+            or not all(
+                _MARKDOWN_TABLE_SEPARATOR.fullmatch(cell.replace(" ", "")) for cell in separator
+            )
+        ):
+            continue
+        normalized = tuple(re.sub(r"[^a-z0-9]+", "_", cell.lower()).strip("_") for cell in header)
+        try:
+            id_column = normalized.index("arxiv_id")
+        except ValueError:
+            continue
+        result: list[str] = []
+        seen: set[str] = set()
+        for row_line in lines[index + 2 :]:
+            row = _table_cells(row_line)
+            if len(row) != len(header):
+                break
+            matches = tuple(_ARXIV_ID.finditer(row[id_column]))
+            if len(matches) != 1:
+                continue
+            paper_id = re.sub(r"v\d+$", "", matches[0].group(1))
+            if arxiv_artifact_stem(paper_id) is not None and paper_id not in seen:
+                seen.add(paper_id)
+                result.append(paper_id)
+        return tuple(result)
+    return None
+
+
 def _seed_ids(run_root: Path) -> tuple[tuple[str, str], ...]:
     try:
         content = (run_root / "03a_seed_papers.md").read_text(encoding="utf-8")
     except (OSError, UnicodeError) as exc:
         raise SurveyStageContractError("Citation seed artifact is unavailable") from exc
-    result: list[tuple[str, str]] = []
-    seen: set[str] = set()
-    for match in _ARXIV_ID.finditer(content):
-        paper_id = re.sub(r"v\d+$", "", match.group(1))
-        stem = arxiv_artifact_stem(paper_id)
-        if stem is not None and paper_id not in seen:
-            seen.add(paper_id)
-            result.append((paper_id, stem))
+    selected = _seed_table_ids(content)
+    if selected is None:
+        selected = tuple(
+            dict.fromkeys(
+                re.sub(r"v\d+$", "", match.group(1)) for match in _ARXIV_ID.finditer(content)
+            )
+        )
+    result = tuple(
+        (paper_id, stem)
+        for paper_id in selected
+        if (stem := arxiv_artifact_stem(paper_id)) is not None
+    )
     if not result or len(result) > 10:
         raise SurveyStageContractError("Citation seed count is outside the 1-10 bound")
-    return tuple(result)
+    return result
 
 
 def _write_json_atomic(path: Path, value: object) -> None:
@@ -1068,7 +1144,10 @@ async def execute_resumable_survey(
             stage_timings=tuple(timings),
             return_code=1,
             termination_reason="artifact_contract_failed",
-            diagnostics={"error_type": type(exc).__name__},
+            diagnostics={
+                "error_type": type(exc).__name__,
+                "contract_class": _contract_failure_class(exc),
+            },
         )
 
 
