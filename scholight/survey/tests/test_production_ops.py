@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import subprocess
+import sys
 import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -7,7 +9,7 @@ from uuid import UUID
 
 import pytest
 
-from scholight.survey import production_ops
+from scholight.survey import production_ops, quality_repair
 from scholight.survey.production_ops import (
     ProductionSurveyAcceptanceError,
     acceptance_payload,
@@ -15,6 +17,25 @@ from scholight.survey.production_ops import (
     rerun_identifiers,
 )
 from scholight.survey.quality_repair import ArchivedEvidenceRepair
+
+
+def test_production_rerun_entrypoint_does_not_import_quality_repair() -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import sys; "
+                "sys.modules['scholight.survey.quality_repair'] = None; "
+                "import scholight.survey.production_ops"
+            ),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 def test_rerun_identifiers_are_deterministic_and_distinct() -> None:
@@ -55,8 +76,8 @@ async def test_archived_evidence_verify_is_read_only_and_hash_guarded(
     apply = AsyncMock()
     monkeypatch.setattr(production_ops, "create_pool", create_pool)
     monkeypatch.setattr(production_ops, "close_pool", close_pool)
-    monkeypatch.setattr(production_ops, "inspect_archived_evidence_repair", inspect)
-    monkeypatch.setattr(production_ops, "apply_archived_evidence_repair", apply)
+    monkeypatch.setattr(quality_repair, "inspect_archived_evidence_repair", inspect)
+    monkeypatch.setattr(quality_repair, "apply_archived_evidence_repair", apply)
 
     payload = await archived_evidence_repair_operation(
         job_id=job_id,
@@ -117,12 +138,12 @@ async def test_archived_evidence_apply_reverifies_clean_released_state(
     monkeypatch.setattr(production_ops, "create_pool", AsyncMock())
     monkeypatch.setattr(production_ops, "close_pool", AsyncMock())
     monkeypatch.setattr(
-        production_ops,
+        quality_repair,
         "apply_archived_evidence_repair",
         AsyncMock(return_value=before),
     )
     inspect = AsyncMock(return_value=after)
-    monkeypatch.setattr(production_ops, "inspect_archived_evidence_repair", inspect)
+    monkeypatch.setattr(quality_repair, "inspect_archived_evidence_repair", inspect)
 
     payload = await archived_evidence_repair_operation(
         job_id=job_id,
