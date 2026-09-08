@@ -104,6 +104,7 @@ Resources:
                       await close_pool()
               asyncio.run(main())
           Environment:
+            - {Name: SCHOLIGHT_MIGRATIONS_DIR, Value: /app/migrations}
             - {Name: SCHOLIGHT_DISABLE_DOTENV, Value: '1'}
             - {Name: SCHOLIGHT_PG_HOST, Value: 10.84.1.10}
             - {Name: SCHOLIGHT_PG_PORT, Value: '5432'}

@@ -43,3 +43,5 @@ the destination ledger during preflight and supplies its version/name/checksum e
 as `ExpectedMigrationLedger`. The canary verifies those checksums against packaged SQL
 and asserts that both database ledgers remain inaccessible to the runtime role. It does
 not widen runtime grants to make a migrator-only schema check pass.
+The task explicitly selects `/app/migrations`, matching the deployed migration task;
+installed Python package paths are not the container's packaged SQL directory.
