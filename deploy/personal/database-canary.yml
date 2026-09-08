@@ -84,7 +84,7 @@ Resources:
                           await conn.execute('SET default_transaction_read_only=on')
                           assert await conn.fetchval('SELECT current_user')=='scholight_app'
                           assert await conn.fetchval('SELECT ssl FROM pg_stat_ssl WHERE pid=pg_backend_pid()') is True
-                          source=await conn.fetchval('SELECT inet_client_addr()::text')
+                          source=await conn.fetchval('SELECT host(inet_client_addr())')
                           assert any(ipaddress.ip_address(source) in ipaddress.ip_network(x) for x in ('172.31.192.0/24','172.31.193.0/24'))
                           assert await conn.fetchval("SELECT has_schema_privilege(current_user,'scholens','USAGE')") is False
                           for ledger in ('auth.schema_migrations','scholight.schema_migrations'):
