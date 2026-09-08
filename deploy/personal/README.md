@@ -26,8 +26,9 @@ Copy only the newly generated destination credential between Secrets Manager sto
 process memory. After reviewing both CloudFormation change sets, run the canary once
 in either approved source private subnet with public IP assignment disabled. It uses
 Scholight's deployed pool adapter with certificate/hostname verification, validates
-Identity compatibility, compares every applied Scholight migration checksum against
-the deployed image, checks table readability and role isolation, and reports only
+Identity compatibility through its deployed user adapter, compares the administrator-read
+restored migration ledger supplied as nonsecret metadata against the deployed image,
+checks business-table readability and role isolation, and reports only
 aggregate counts/timing. Queries run read-only; no schema migration, search request,
 model call, queue consumption, or task replay occurs.
 
@@ -36,3 +37,9 @@ report with the rehearsal evidence. Delete the temporary source canary stack and
 credential after acceptance. Retain destination access for the later reviewed cutover.
 A successful canary proves database compatibility and network reachability, not complete
 Scholight product acceptance or authorization to change production connections.
+
+Application roles intentionally cannot read either migration ledger. The operator reads
+the destination ledger during preflight and supplies its version/name/checksum entries
+as `ExpectedMigrationLedger`. The canary verifies those checksums against packaged SQL
+and asserts that both database ledgers remain inaccessible to the runtime role. It does
+not widen runtime grants to make a migrator-only schema check pass.

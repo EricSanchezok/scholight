@@ -5,6 +5,7 @@ Parameters:
   SourceVpcId: {Type: 'AWS::EC2::VPC::Id'}
   ApiImage: {Type: String, AllowedPattern: '^[0-9]{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com/sanchezcloud-scholight-api@sha256:[0-9a-f]{64}$'}
   DatabaseCaBase64: {Type: String}
+  ExpectedMigrationLedger: {Type: String}
 Rules:
   ExpectedAccount:
     Assertions:
@@ -69,13 +70,16 @@ Resources:
               from scholight.db.client import create_pool,close_pool
               from scholight.db.migrate import _MIGRATIONS_DIR
               from scholight.db.migration_policy import migration_checksum
-              from sanchezcloud_identity.migrate import assert_schema_compatible
+              from sanchezcloud_identity import AsyncpgUserDatabase
               assert settings.pg_host=='10.84.1.10' and settings.pg_user=='scholight_app'
               async def main():
                   started=time.monotonic()
                   pool=await create_pool()
                   try:
-                      await assert_schema_compatible(pool)
+                      await pool.execute('SET default_transaction_read_only=on')
+                      identity_db=AsyncpgUserDatabase(lambda:pool)
+                      user_id=await pool.fetchval('SELECT min(id) FROM auth.users')
+                      assert user_id is not None and await identity_db.get_user_by_id(user_id) is not None
                       async with pool.acquire() as conn:
                           await conn.execute('SET default_transaction_read_only=on')
                           assert await conn.fetchval('SELECT current_user')=='scholight_app'
@@ -83,17 +87,19 @@ Resources:
                           source=await conn.fetchval('SELECT inet_client_addr()::text')
                           assert any(ipaddress.ip_address(source) in ipaddress.ip_network(x) for x in ('172.31.192.0/24','172.31.193.0/24'))
                           assert await conn.fetchval("SELECT has_schema_privilege(current_user,'scholens','USAGE')") is False
-                          migrations=await conn.fetch('SELECT version,name,checksum FROM scholight.schema_migrations ORDER BY version')
+                          for ledger in ('auth.schema_migrations','scholight.schema_migrations'):
+                              assert await conn.fetchval("SELECT has_table_privilege(current_user,$1,'SELECT')",ledger) is False
+                          migrations=json.loads(os.environ['EXPECTED_MIGRATION_LEDGER'])
                           files=list(_MIGRATIONS_DIR.glob('*.sql'))
                           for row in migrations:
                               matches=[p for p in files if int(p.stem.split('_',1)[0])==row['version']]
                               assert len(matches)==1 and migration_checksum(matches[0].read_text())==row['checksum']
-                          tables=await conn.fetch("SELECT tablename FROM pg_tables WHERE schemaname='scholight'")
+                          tables=await conn.fetch("SELECT tablename FROM pg_tables WHERE schemaname='scholight' AND tablename<>'schema_migrations'")
                           for row in tables:
                               table=row['tablename'];assert table.replace('_','').isalnum()
                               await conn.fetch('SELECT * FROM scholight."'+table+'" LIMIT 0')
                           users=await conn.fetchval('SELECT count(*) FROM auth.users')
-                          print(json.dumps({'tls_verified':True,'private_source_subnet_verified':True,'identity_compatible':True,'scholens_schema_denied':True,'scholight_migrations_verified':len(migrations),'scholight_tables_readable':len(tables),'shared_users':users,'seconds':round(time.monotonic()-started,3)}))
+                          print(json.dumps({'tls_verified':True,'private_source_subnet_verified':True,'identity_adapter_compatible':True,'migration_ledgers_denied':True,'scholens_schema_denied':True,'packaged_migrations_match_restored_ledger':len(migrations),'scholight_tables_readable':len(tables),'shared_users':users,'seconds':round(time.monotonic()-started,3)}))
                   finally:
                       await close_pool()
               asyncio.run(main())
@@ -107,6 +113,7 @@ Resources:
             - {Name: SCHOLIGHT_PG_POOL_MIN_SIZE, Value: '1'}
             - {Name: SCHOLIGHT_PG_POOL_MAX_SIZE, Value: '1'}
             - {Name: DATABASE_CA_BASE64, Value: !Ref DatabaseCaBase64}
+            - {Name: EXPECTED_MIGRATION_LEDGER, Value: !Ref ExpectedMigrationLedger}
           Secrets:
             - {Name: SCHOLIGHT_PG_PASSWORD, ValueFrom: !Sub '${DatabaseSecret}:password::'}
           LogConfiguration:
