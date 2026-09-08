@@ -1,0 +1,35 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Destination Scholight database credential and explicit private source ingress.
+Parameters:
+  ExpectedAccountId: {Type: String, AllowedPattern: '[0-9]{12}'}
+  HostSecurityGroupId: {Type: 'AWS::EC2::SecurityGroup::Id'}
+  ConfigurationKeyArn: {Type: String}
+  SourceSubnetACidr: {Type: String, AllowedPattern: '^172\.31\.192\.0/24$'}
+  SourceSubnetBCidr: {Type: String, AllowedPattern: '^172\.31\.193\.0/24$'}
+Rules:
+  ExpectedAccount:
+    Assertions:
+      - Assert: !Equals [!Ref 'AWS::AccountId', !Ref ExpectedAccountId]
+        AssertDescription: Create destination access only in the reviewed account.
+Resources:
+  DatabaseSecret:
+    Type: AWS::SecretsManager::Secret
+    DeletionPolicy: RetainExceptOnCreate
+    UpdateReplacePolicy: Retain
+    Properties:
+      Name: /sanchezcloud/scholight/preview/database
+      KmsKeyId: !Ref ConfigurationKeyArn
+      GenerateSecretString:
+        SecretStringTemplate: '{"host":"10.84.1.10","port":5432,"dbname":"sanchezcloud","username":"scholight_app"}'
+        GenerateStringKey: password
+        PasswordLength: 48
+        ExcludePunctuation: true
+      Tags: [{Key: System, Value: SanchezCloud}, {Key: Product, Value: Scholight}, {Key: Environment, Value: preview}]
+  DatabaseIngressA:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties: {GroupId: !Ref HostSecurityGroupId, IpProtocol: tcp, FromPort: 5432, ToPort: 5432, CidrIp: !Ref SourceSubnetACidr, Description: Scholight private subnet A through the reviewed peer}
+  DatabaseIngressB:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties: {GroupId: !Ref HostSecurityGroupId, IpProtocol: tcp, FromPort: 5432, ToPort: 5432, CidrIp: !Ref SourceSubnetBCidr, Description: Scholight private subnet B through the reviewed peer}
+Outputs:
+  DatabaseSecretArn: {Value: !Ref DatabaseSecret}

@@ -1,0 +1,119 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Isolated read-only database compatibility canary using the deployed Scholight image.
+Parameters:
+  ExpectedAccountId: {Type: String, AllowedPattern: '[0-9]{12}'}
+  SourceVpcId: {Type: 'AWS::EC2::VPC::Id'}
+  ApiImage: {Type: String, AllowedPattern: '^[0-9]{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com/sanchezcloud-scholight-api@sha256:[0-9a-f]{64}$'}
+  DatabaseCaBase64: {Type: String}
+Rules:
+  ExpectedAccount:
+    Assertions:
+      - Assert: !Equals [!Ref 'AWS::AccountId', !Ref ExpectedAccountId]
+        AssertDescription: Run the canary only in the reviewed source account.
+Resources:
+  DatabaseSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: /sanchezcloud/scholight/rehearsal/database
+      Description: Temporary copy of the destination-only Scholight credential; no production credential.
+  Logs:
+    Type: AWS::Logs::LogGroup
+    Properties: {RetentionInDays: 7}
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Isolated canary with private PostgreSQL and HTTPS egress only
+      VpcId: !Ref SourceVpcId
+      SecurityGroupEgress:
+        - {IpProtocol: tcp, FromPort: 5432, ToPort: 5432, CidrIp: 10.84.1.10/32}
+        - {IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0}
+  ExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement: [{Effect: Allow, Principal: {Service: ecs-tasks.amazonaws.com}, Action: 'sts:AssumeRole'}]
+      Policies:
+        - PolicyName: CanaryImageLogsAndDestinationCredential
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - {Effect: Allow, Action: 'ecr:GetAuthorizationToken', Resource: '*'}
+              - Effect: Allow
+                Action: ['ecr:BatchGetImage', 'ecr:GetDownloadUrlForLayer', 'ecr:BatchCheckLayerAvailability']
+                Resource: !Sub 'arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/sanchezcloud-scholight-api'
+              - {Effect: Allow, Action: ['logs:CreateLogStream', 'logs:PutLogEvents'], Resource: !GetAtt Logs.Arn}
+              - {Effect: Allow, Action: secretsmanager:GetSecretValue, Resource: !Ref DatabaseSecret}
+  Task:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: sanchezcloud-scholight-database-canary
+      NetworkMode: awsvpc
+      RequiresCompatibilities: [FARGATE]
+      Cpu: '256'
+      Memory: '512'
+      RuntimePlatform: {CpuArchitecture: X86_64, OperatingSystemFamily: LINUX}
+      ExecutionRoleArn: !GetAtt ExecutionRole.Arn
+      ContainerDefinitions:
+        - Name: canary
+          Image: !Ref ApiImage
+          Essential: true
+          ReadonlyRootFilesystem: false
+          EntryPoint: [python, '-c']
+          Command:
+            - |
+              import asyncio,base64,ipaddress,json,os,time
+              from pathlib import Path
+              Path('/tmp/canary-ca.pem').write_bytes(base64.b64decode(os.environ['DATABASE_CA_BASE64'],validate=True))
+              from scholight.config import settings
+              from scholight.db.client import create_pool,close_pool
+              from scholight.db.migrate import _MIGRATIONS_DIR
+              from scholight.db.migration_policy import migration_checksum
+              from sanchezcloud_identity.migrate import assert_schema_compatible
+              assert settings.pg_host=='10.84.1.10' and settings.pg_user=='scholight_app'
+              async def main():
+                  started=time.monotonic()
+                  pool=await create_pool()
+                  try:
+                      await assert_schema_compatible(pool)
+                      async with pool.acquire() as conn:
+                          await conn.execute('SET default_transaction_read_only=on')
+                          assert await conn.fetchval('SELECT current_user')=='scholight_app'
+                          assert await conn.fetchval('SELECT ssl FROM pg_stat_ssl WHERE pid=pg_backend_pid()') is True
+                          source=await conn.fetchval('SELECT inet_client_addr()::text')
+                          assert any(ipaddress.ip_address(source) in ipaddress.ip_network(x) for x in ('172.31.192.0/24','172.31.193.0/24'))
+                          assert await conn.fetchval("SELECT has_schema_privilege(current_user,'scholens','USAGE')") is False
+                          migrations=await conn.fetch('SELECT version,name,checksum FROM scholight.schema_migrations ORDER BY version')
+                          files=list(_MIGRATIONS_DIR.glob('*.sql'))
+                          for row in migrations:
+                              matches=[p for p in files if int(p.stem.split('_',1)[0])==row['version']]
+                              assert len(matches)==1 and migration_checksum(matches[0].read_text())==row['checksum']
+                          tables=await conn.fetch("SELECT tablename FROM pg_tables WHERE schemaname='scholight'")
+                          for row in tables:
+                              table=row['tablename'];assert table.replace('_','').isalnum()
+                              await conn.fetch('SELECT * FROM scholight."'+table+'" LIMIT 0')
+                          users=await conn.fetchval('SELECT count(*) FROM auth.users')
+                          print(json.dumps({'tls_verified':True,'private_source_subnet_verified':True,'identity_compatible':True,'scholens_schema_denied':True,'scholight_migrations_verified':len(migrations),'scholight_tables_readable':len(tables),'shared_users':users,'seconds':round(time.monotonic()-started,3)}))
+                  finally:
+                      await close_pool()
+              asyncio.run(main())
+          Environment:
+            - {Name: SCHOLIGHT_DISABLE_DOTENV, Value: '1'}
+            - {Name: SCHOLIGHT_PG_HOST, Value: 10.84.1.10}
+            - {Name: SCHOLIGHT_PG_PORT, Value: '5432'}
+            - {Name: SCHOLIGHT_PG_DATABASE, Value: sanchezcloud}
+            - {Name: SCHOLIGHT_PG_USER, Value: scholight_app}
+            - {Name: SCHOLIGHT_PG_SSL_ROOT_CERT, Value: /tmp/canary-ca.pem}
+            - {Name: SCHOLIGHT_PG_POOL_MIN_SIZE, Value: '1'}
+            - {Name: SCHOLIGHT_PG_POOL_MAX_SIZE, Value: '1'}
+            - {Name: DATABASE_CA_BASE64, Value: !Ref DatabaseCaBase64}
+          Secrets:
+            - {Name: SCHOLIGHT_PG_PASSWORD, ValueFrom: !Sub '${DatabaseSecret}:password::'}
+          LogConfiguration:
+            LogDriver: awslogs
+            Options: {awslogs-region: !Ref 'AWS::Region', awslogs-group: !Ref Logs, awslogs-stream-prefix: canary}
+Outputs:
+  TaskDefinitionArn: {Value: !Ref Task}
+  DatabaseSecretArn: {Value: !Ref DatabaseSecret}
+  SecurityGroupId: {Value: !Ref SecurityGroup}
+  LogGroupName: {Value: !Ref Logs}

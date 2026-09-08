@@ -841,3 +841,9 @@ already applied recovery neither consumes quota nor resends mail.
 - Never delete or overwrite a release manifest or ECR digest during incident
   response.
 - Never enable Survey publicly to work around a failed internal doctor.
+
+## Personal-database rehearsal
+
+The [isolated database canary](../personal/README.md) verifies the currently deployed
+Scholight image against the restored personal PostgreSQL through the private peer.
+It provisions separate canary resources and never updates production service settings.
