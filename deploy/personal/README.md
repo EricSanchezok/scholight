@@ -1,5 +1,35 @@
 # Personal PostgreSQL compatibility canary
 
+## Production adoption
+
+The ECS package accepts an optional public `DatabaseCaPem`. It is injected into all
+eight database task definitions and the Survey control Lambda as
+`SCHOLIGHT_PG_SSL_ROOT_CERT_PEM`. The database adapter validates this CA in memory,
+including certificate and hostname verification; invalid PEM fails before connecting.
+An empty value preserves the existing CA-file setting for the RDS deployment. Publish
+and verify compatible images before setting this parameter. The earlier deployed-image
+canary below remains the N-1 database-contract check.
+
+After pausing every producer and writer, restore the final shared snapshot, then update
+both runtime and migrator secrets with the destination database coordinates and their
+independent role credentials. Keep the old values encrypted for rollback. The private
+IP is present in the destination certificate SAN; no public database listener or DNS
+workaround is needed. Resume scheduled ingestion and Survey control only after the new
+connection is verified and its task-definition references have converged.
+
+Supply `AvatarBucketName`, `AvatarRegion`, and `AvatarKeyArn` together to read the migrated
+shared avatars. The API signs requests in that bucket's region and receives only object
+read plus KMS decrypt permission for the avatar prefix. Account Center must authorize
+the exact source API role in both destination bucket and key policies. This keeps future
+avatar changes visible while Scholight compute remains in its original account. Empty
+parameters preserve the original same-account reader. No search or artifact bucket moves.
+
+Opening writes on the destination invalidates a simple connection-only rollback: first
+reconcile new writes. Do not remove the source data or restore an old schema as part of
+an application rollback.
+
+## Isolated rehearsal
+
 Scholight compute, search providers, production secrets, and its public MCP endpoint
 remain in the source account during the Scholens rehearsal. Existing settings already
 support a configurable database host and a verified CA (`SCHOLIGHT_PG_HOST` and

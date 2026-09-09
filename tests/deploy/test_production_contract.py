@@ -14,6 +14,35 @@ ECS = ROOT / "deploy" / "ecs"
 FRONTEND_RUNTIME = ROOT / "frontend" / "runtime"
 
 
+def test_private_database_ca_reaches_every_ecs_writer_and_lambda() -> None:
+    class Loader(yaml.SafeLoader):
+        pass
+
+    def intrinsic(loader, tag, node):
+        if isinstance(node, yaml.ScalarNode):
+            return {tag: loader.construct_scalar(node)}
+        return {tag: loader.construct_sequence(node)}
+
+    Loader.add_multi_constructor("!", intrinsic)
+    template = yaml.load((ECS / "scholight-production.yml").read_text(), Loader=Loader)
+    assert template["Parameters"]["DatabaseCaPem"]["Default"] == ""
+    writers = 0
+    for resource in template["Resources"].values():
+        if resource["Type"] != "AWS::ECS::TaskDefinition":
+            continue
+        for container in resource["Properties"]["ContainerDefinitions"]:
+            if not any(s["Name"] == "SCHOLIGHT_PG_HOST" for s in container.get("Secrets", [])):
+                continue
+            environment = {e["Name"]: e["Value"] for e in container["Environment"]}
+            assert environment["SCHOLIGHT_PG_SSL_ROOT_CERT_PEM"] == {"Ref": "DatabaseCaPem"}
+            writers += 1
+    assert writers == 8
+    control = template["Resources"]["SurveyControlFunction"]["Properties"]
+    assert control["Environment"]["Variables"]["SCHOLIGHT_PG_SSL_ROOT_CERT_PEM"] == {
+        "Ref": "DatabaseCaPem"
+    }
+
+
 def test_local_extract_sidecar_is_isolated_and_resource_bounded() -> None:
     compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
     services = compose["services"]

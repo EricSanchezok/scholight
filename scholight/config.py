@@ -99,6 +99,7 @@ class Settings(BaseSettings):
     pg_user: str = "scholight_app"
     pg_password: str = ""
     pg_ssl_root_cert: str = "disable"
+    pg_ssl_root_cert_pem: str = ""
     pg_pool_min_size: int = 2
     pg_pool_max_size: int = 8
     pg_pool_acquire_timeout: float = 5.0
@@ -108,6 +109,7 @@ class Settings(BaseSettings):
     # ── Shared SanchezCloud avatar (read-only in Scholight) ──
     avatar_s3_bucket: str = ""
     avatar_s3_endpoint_url: str | None = None
+    avatar_s3_region: str | None = None
     avatar_url_ttl_seconds: int = Field(default=900, ge=60, le=3600)
 
     # ── JWT ──

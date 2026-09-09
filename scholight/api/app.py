@@ -216,7 +216,11 @@ def create_app() -> FastAPI:
         avatar_reader = AvatarManager(
             AsyncpgAvatarDatabase(pool_factory=lambda: get_pool()),
             S3AvatarStorage(
-                client=boto3.client("s3", endpoint_url=settings.avatar_s3_endpoint_url),
+                client=boto3.client(
+                    "s3",
+                    endpoint_url=settings.avatar_s3_endpoint_url,
+                    region_name=settings.avatar_s3_region,
+                ),
                 bucket=settings.avatar_s3_bucket,
             ),
             url_ttl_seconds=settings.avatar_url_ttl_seconds,

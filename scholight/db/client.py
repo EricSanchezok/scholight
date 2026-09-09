@@ -115,7 +115,7 @@ async def create_pool() -> asyncpg.Pool:
     """Create a reusable asyncpg pool with every session fixed to UTC.
 
     Safe to call multiple times; subsequent calls return the existing pool.
-    SSL is configured from ``settings.pg_ssl_root_cert``.
+    Inline CA PEM takes precedence over the existing CA file setting.
     """
     global _pool
 
@@ -123,8 +123,11 @@ async def create_pool() -> asyncpg.Pool:
         return _pool
 
     ssl_context: ssl.SSLContext | None = None
-    if settings.pg_ssl_root_cert.lower() not in {"", "disable", "none"}:
+    if settings.pg_ssl_root_cert_pem.strip():
+        ssl_context = ssl.create_default_context(cadata=settings.pg_ssl_root_cert_pem)
+    elif settings.pg_ssl_root_cert.lower() not in {"", "disable", "none"}:
         ssl_context = ssl.create_default_context(cafile=settings.pg_ssl_root_cert)
+    if ssl_context is not None:
         ssl_context.check_hostname = True
         ssl_context.verify_mode = ssl.CERT_REQUIRED
 
