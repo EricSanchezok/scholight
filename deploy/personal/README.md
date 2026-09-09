@@ -18,7 +18,9 @@ workaround is needed. Resume scheduled ingestion and Survey control only after t
 connection is verified and its task-definition references have converged.
 
 Supply `AvatarBucketName`, `AvatarRegion`, and `AvatarKeyArn` together to read the migrated
-shared avatars. The API signs requests in that bucket's region and receives only object
+shared avatars. The API uses that bucket's explicit regional S3 endpoint and signing
+region; this avoids global-endpoint redirects that invalidate presigned downloads for
+opt-in regions. The API receives only object
 read plus KMS decrypt permission for the avatar prefix. Account Center must authorize
 the exact source API role in both destination bucket and key policies. This keeps future
 avatar changes visible while Scholight compute remains in its original account. Empty

@@ -659,6 +659,8 @@ Resources:
             - { Name: SCHOLIGHT_AUTH_REFRESH_COOKIE_SECURE, Value: "true" }
             - { Name: SCHOLIGHT_AVATAR_S3_BUCKET, Value: !If [ExternalAvatars, !Ref AvatarBucketName, !Sub 'sanchezcloud-account-avatars-${AWS::AccountId}-${AWS::Region}'] }
             - { Name: SCHOLIGHT_AVATAR_S3_REGION, Value: !If [ExternalAvatars, !Ref AvatarRegion, !Ref AWS::Region] }
+            - Name: SCHOLIGHT_AVATAR_S3_ENDPOINT_URL
+              Value: !If [ExternalAvatars, !Sub 'https://s3.${AvatarRegion}.${AWS::URLSuffix}', !Sub 'https://s3.${AWS::Region}.${AWS::URLSuffix}']
             - { Name: SCHOLIGHT_EXTRACT_ENABLED, Value: "true" }
             - { Name: SCHOLIGHT_EXTRACT_SERVICE_URL, Value: "http://extract:8001" }
             - { Name: SCHOLIGHT_SURVEY_RUNTIME_ENABLED, Value: !Ref SurveyRuntimeEnabled }
