@@ -2,6 +2,16 @@ AWSTemplateFormatVersion: "2010-09-09"
 Description: Scholight public web, search, extraction, ingestion, and Survey workloads on Fargate
 
 Parameters:
+  DatabaseCaPem:
+    Type: String
+    Default: ""
+    Description: Optional public CA PEM for the reviewed private PostgreSQL destination
+  AvatarBucketName: {Type: String, Default: ""}
+  AvatarRegion: {Type: String, Default: ""}
+  AvatarKeyArn:
+    Type: String
+    Default: ""
+    AllowedPattern: '^$|^arn:aws:kms:[a-z0-9-]+:[0-9]{12}:key/[a-f0-9-]+$'
   DomainName:
     Type: String
     AllowedPattern: "^[A-Za-z0-9.-]+$"
@@ -80,6 +90,18 @@ Parameters:
     Description: Staged Full Survey worker ceiling; two jobs run per task
 
 Rules:
+  ExternalAvatarConfiguration:
+    Assertions:
+      - Assert: !Or
+          - !And
+            - !Equals [!Ref AvatarBucketName, ""]
+            - !Equals [!Ref AvatarRegion, ""]
+            - !Equals [!Ref AvatarKeyArn, ""]
+          - !And
+            - !Not [!Equals [!Ref AvatarBucketName, ""]]
+            - !Not [!Equals [!Ref AvatarRegion, ""]]
+            - !Not [!Equals [!Ref AvatarKeyArn, ""]]
+        AssertDescription: Supply the external avatar bucket, region, and KMS key together
   SurveyRequiresApplication:
     Assertions:
       - Assert: !Or
@@ -103,6 +125,10 @@ Rules:
         AssertDescription: Survey control reserved concurrency requires event dispatch
 
 Conditions:
+  ExternalAvatars: !And
+    - !Not [!Equals [!Ref AvatarBucketName, ""]]
+    - !Not [!Equals [!Ref AvatarRegion, ""]]
+    - !Not [!Equals [!Ref AvatarKeyArn, ""]]
   RunApplication: !Equals [!Ref ApplicationEnabled, "true"]
   RunSurveyRuntime: !And
     - !Equals [!Ref ApplicationEnabled, "true"]
@@ -379,15 +405,21 @@ Resources:
             Statement:
               - Effect: Allow
                 Action: s3:GetObject
-                Resource: !Sub arn:${AWS::Partition}:s3:::sanchezcloud-account-avatars-${AWS::AccountId}-${AWS::Region}/auth/avatars/v1/*
+                Resource: !If
+                  - ExternalAvatars
+                  - !Sub arn:${AWS::Partition}:s3:::${AvatarBucketName}/auth/avatars/v1/*
+                  - !Sub arn:${AWS::Partition}:s3:::sanchezcloud-account-avatars-${AWS::AccountId}-${AWS::Region}/auth/avatars/v1/*
               - Effect: Allow
                 Action: kms:Decrypt
-                Resource: !Sub arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/*
+                Resource: !If [ExternalAvatars, !Ref AvatarKeyArn, !Sub 'arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/*']
                 Condition:
                   StringEquals:
-                    "kms:ViaService": !Sub s3.${AWS::Region}.${AWS::URLSuffix}
+                    "kms:ViaService": !If [ExternalAvatars, !Sub 's3.${AvatarRegion}.${AWS::URLSuffix}', !Sub 's3.${AWS::Region}.${AWS::URLSuffix}']
                   StringLike:
-                    "kms:EncryptionContext:aws:s3:arn": !Sub arn:${AWS::Partition}:s3:::sanchezcloud-account-avatars-${AWS::AccountId}-${AWS::Region}/auth/avatars/v1/*
+                    "kms:EncryptionContext:aws:s3:arn": !If
+                      - ExternalAvatars
+                      - !Sub arn:${AWS::Partition}:s3:::${AvatarBucketName}/auth/avatars/v1/*
+                      - !Sub arn:${AWS::Partition}:s3:::sanchezcloud-account-avatars-${AWS::AccountId}-${AWS::Region}/auth/avatars/v1/*
 
   SurveyTaskRole:
     Type: AWS::IAM::Role
@@ -615,6 +647,7 @@ Resources:
           PortMappings:
             - { Name: api, ContainerPort: 8000, Protocol: tcp, AppProtocol: http }
           Environment:
+            - { Name: SCHOLIGHT_PG_SSL_ROOT_CERT_PEM, Value: !Ref DatabaseCaPem }
             - { Name: SCHOLIGHT_PG_POOL_MIN_SIZE, Value: "2" }
             - { Name: SCHOLIGHT_PG_POOL_MAX_SIZE, Value: "8" }
             - { Name: SCHOLIGHT_SERVER_HOST, Value: 0.0.0.0 }
@@ -624,7 +657,8 @@ Resources:
             - { Name: SCHOLIGHT_PUBLIC_WEB_URL, Value: !Sub "https://${DomainName}" }
             - { Name: SCHOLIGHT_CORS_ALLOW_ORIGINS, Value: !Sub '["https://${DomainName}"]' }
             - { Name: SCHOLIGHT_AUTH_REFRESH_COOKIE_SECURE, Value: "true" }
-            - { Name: SCHOLIGHT_AVATAR_S3_BUCKET, Value: !Sub "sanchezcloud-account-avatars-${AWS::AccountId}-${AWS::Region}" }
+            - { Name: SCHOLIGHT_AVATAR_S3_BUCKET, Value: !If [ExternalAvatars, !Ref AvatarBucketName, !Sub 'sanchezcloud-account-avatars-${AWS::AccountId}-${AWS::Region}'] }
+            - { Name: SCHOLIGHT_AVATAR_S3_REGION, Value: !If [ExternalAvatars, !Ref AvatarRegion, !Ref AWS::Region] }
             - { Name: SCHOLIGHT_EXTRACT_ENABLED, Value: "true" }
             - { Name: SCHOLIGHT_EXTRACT_SERVICE_URL, Value: "http://extract:8001" }
             - { Name: SCHOLIGHT_SURVEY_RUNTIME_ENABLED, Value: !Ref SurveyRuntimeEnabled }
@@ -714,6 +748,7 @@ Resources:
           StopTimeout: 120
           Command: [scholight, scheduler, drain-ingest]
           Environment:
+            - { Name: SCHOLIGHT_PG_SSL_ROOT_CERT_PEM, Value: !Ref DatabaseCaPem }
             - { Name: SCHOLIGHT_PG_POOL_MIN_SIZE, Value: "1" }
             - { Name: SCHOLIGHT_PG_POOL_MAX_SIZE, Value: "4" }
           Secrets:
@@ -751,6 +786,7 @@ Resources:
           Essential: true
           Command: [scholight, scheduler, sync]
           Environment:
+            - { Name: SCHOLIGHT_PG_SSL_ROOT_CERT_PEM, Value: !Ref DatabaseCaPem }
             - { Name: SCHOLIGHT_PG_POOL_MIN_SIZE, Value: "1" }
             - { Name: SCHOLIGHT_PG_POOL_MAX_SIZE, Value: "4" }
           Secrets:
@@ -796,6 +832,7 @@ Resources:
             - { Name: SCHOLIGHT_SURVEY_PROVIDER_MAX_ATTEMPTS, Value: "3" }
             - { Name: SCHOLIGHT_SURVEY_PROVIDER_RETRY_BASE_SECONDS, Value: "2" }
             - { Name: SCHOLIGHT_SURVEY_PROVIDER_RETRY_MAX_SECONDS, Value: "30" }
+            - { Name: SCHOLIGHT_PG_SSL_ROOT_CERT_PEM, Value: !Ref DatabaseCaPem }
             - { Name: SCHOLIGHT_PG_POOL_MIN_SIZE, Value: "1" }
             - { Name: SCHOLIGHT_PG_POOL_MAX_SIZE, Value: "4" }
             - { Name: SCHOLIGHT_SURVEY_S3_BUCKET, Value: !ImportValue sanchezcloud-scholight-artifact-bucket-name }
@@ -844,6 +881,7 @@ Resources:
             - { Name: SCHOLIGHT_SURVEY_PROVIDER_RETRY_MAX_SECONDS, Value: "30" }
             - { Name: IMAGE_GEN_API_URL, Value: !Ref ImageGenApiUrl }
             - { Name: IMAGE_GEN_TRUSTED_HOSTS, Value: !Ref ImageGenTrustedHosts }
+            - { Name: SCHOLIGHT_PG_SSL_ROOT_CERT_PEM, Value: !Ref DatabaseCaPem }
             - { Name: SCHOLIGHT_PG_POOL_MIN_SIZE, Value: "1" }
             - { Name: SCHOLIGHT_PG_POOL_MAX_SIZE, Value: "2" }
             - { Name: SCHOLIGHT_SURVEY_S3_BUCKET, Value: !ImportValue sanchezcloud-scholight-artifact-bucket-name }
@@ -899,6 +937,7 @@ Resources:
             - { Name: SCHOLIGHT_SURVEY_PROVIDER_RETRY_MAX_SECONDS, Value: "30" }
             - { Name: IMAGE_GEN_API_URL, Value: !Ref ImageGenApiUrl }
             - { Name: IMAGE_GEN_TRUSTED_HOSTS, Value: !Ref ImageGenTrustedHosts }
+            - { Name: SCHOLIGHT_PG_SSL_ROOT_CERT_PEM, Value: !Ref DatabaseCaPem }
             - { Name: SCHOLIGHT_PG_POOL_MIN_SIZE, Value: "1" }
             - { Name: SCHOLIGHT_PG_POOL_MAX_SIZE, Value: "2" }
             - { Name: SCHOLIGHT_SURVEY_S3_BUCKET, Value: !ImportValue sanchezcloud-scholight-artifact-bucket-name }
@@ -951,6 +990,7 @@ Resources:
             - { Name: SCHOLIGHT_SURVEY_PROVIDER_RETRY_MAX_SECONDS, Value: "30" }
             - { Name: IMAGE_GEN_API_URL, Value: !Ref ImageGenApiUrl }
             - { Name: IMAGE_GEN_TRUSTED_HOSTS, Value: !Ref ImageGenTrustedHosts }
+            - { Name: SCHOLIGHT_PG_SSL_ROOT_CERT_PEM, Value: !Ref DatabaseCaPem }
             - { Name: SCHOLIGHT_PG_POOL_MIN_SIZE, Value: "1" }
             - { Name: SCHOLIGHT_PG_POOL_MAX_SIZE, Value: "2" }
             - { Name: SCHOLIGHT_SURVEY_S3_BUCKET, Value: !ImportValue sanchezcloud-scholight-artifact-bucket-name }
@@ -999,6 +1039,7 @@ Resources:
       Environment:
         Variables:
           SCHOLIGHT_LOG_JSON: "1"
+          SCHOLIGHT_PG_SSL_ROOT_CERT_PEM: !Ref DatabaseCaPem
           SCHOLIGHT_SURVEY_RUNTIME_ENABLED: "true"
           SCHOLIGHT_SURVEY_DISPATCH_MODE: event
           SCHOLIGHT_SURVEY_CONTROL_FUNCTION_NAME: sanchezcloud-scholight-survey-control
@@ -1133,6 +1174,7 @@ Resources:
           Command: [scholight, store, migrate]
           Environment:
             - { Name: SCHOLIGHT_MIGRATIONS_DIR, Value: "/app/migrations" }
+            - { Name: SCHOLIGHT_PG_SSL_ROOT_CERT_PEM, Value: !Ref DatabaseCaPem }
             - { Name: SCHOLIGHT_PG_POOL_MIN_SIZE, Value: "1" }
             - { Name: SCHOLIGHT_PG_POOL_MAX_SIZE, Value: "2" }
           Secrets:
