@@ -350,3 +350,7 @@ The default runtime now provides one abstract-based search and metadata-only syn
 See [Lean runtime and recovery boundaries](docs/lean-runtime.md) for compatibility,
 Survey shutdown, and deferred full-text recovery. Existing deployment resources
 are not changed by this code migration.
+
+Archive and publishing preparation: [collection recovery](docs/collection-archives.md)
+and [personal images](docs/personal-images.md). These are code-preparation tools;
+no company data or live infrastructure changes are implied.

@@ -1,10 +1,6 @@
-name: Publish immutable release
+name: Publish legacy images manually
 
 on:
-  workflow_run:
-    workflows: [CI]
-    branches: [main]
-    types: [completed]
   workflow_dispatch:
     inputs:
       ref:
@@ -18,12 +14,11 @@ permissions:
   id-token: write
 
 concurrency:
-  group: scholight-image-publish-${{ github.event.workflow_run.head_sha || inputs.ref }}
+  group: scholight-image-publish-${{ inputs.ref }}
   cancel-in-progress: false
 
 jobs:
   prepare:
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     outputs:
       release_sha: ${{ steps.revision.outputs.release_sha }}
@@ -31,7 +26,7 @@ jobs:
       - name: Check out release revision
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha || inputs.ref }}
+          ref: ${{ inputs.ref }}
           persist-credentials: false
           fetch-depth: 0
       - name: Resolve and validate immutable revision

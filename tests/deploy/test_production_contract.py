@@ -169,7 +169,8 @@ def test_active_workflows_are_oidc_manifest_and_digest_driven() -> None:
     release = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
     database = (ROOT / ".github/workflows/database-production.yml").read_text(encoding="utf-8")
 
-    assert "workflow_run:" in publish
+    assert "workflow_run:" not in publish
+    assert "workflow_dispatch:" in publish
     assert "environment: image-publish" in publish
     assert "id-token: write" in publish + release + database
     assert ":latest" not in publish

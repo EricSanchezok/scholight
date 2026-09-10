@@ -27,7 +27,7 @@ jobs:
   backend:
     runs-on: ubuntu-latest
     env:
-      SCHOLIGHT_DATA_ROOT: /tmp/scholight-ci
+      SCHOLIGHT_DATA_ROOT: data/scholight-ci
       SCHOLIGHT_DISABLE_DOTENV: "1"
       SCHOLIGHT_PG_HOST: 127.0.0.1
       SCHOLIGHT_PG_PORT: "5432"
@@ -100,8 +100,23 @@ jobs:
         run: uv run playwright install --with-deps chromium
       - name: Full backend test suite
         run: uv run pytest -m "" -v --tb=short
+      - name: Archive round trip in isolated Milvus and MinIO
+        run: |
+          docker compose -f tests/archive_integration/compose.yaml up -d --wait --wait-timeout 240
+          uv run python tests/archive_integration/smoke.py
+      - name: Clean up archive integration containers
+        if: always()
+        run: docker compose -f tests/archive_integration/compose.yaml down -v
+      - name: Archive verification evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: archive-roundtrip
+          path: data/scholight-ci/archive-integration-result.json
       - name: Bandit
         run: uv run bandit -c pyproject.toml -r scholight/ --severity-level medium
+      - name: Dependency audit
+        run: uv run pip-audit --cache-dir data/pip-audit-cache
       - name: Vulture
         run: uv run vulture scholight/
 
@@ -156,6 +171,14 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Verify frontend
         run: npm run verify
+      - name: Browser verification evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: browser-verification
+          path: |
+            frontend/playwright-report
+            frontend/test-results
 
   deployment-contract:
     runs-on: ubuntu-latest
@@ -247,9 +270,20 @@ jobs:
           '
           test "$(docker run --rm --entrypoint /bin/sh scholight-api:ci -c 'id -u')" = 1000
           docker run --rm --entrypoint /app/.venv/bin/python scholight-api:ci -c 'import importlib.util; assert importlib.util.find_spec("beautifulsoup4") is None; assert importlib.util.find_spec("bs4") is None; assert importlib.util.find_spec("markdownify") is None; assert importlib.util.find_spec("playwright") is None; import scholight.api.app; import scholight.api.extract_execution; import scholight.survey.production_ops'
+      - name: Build retained full API image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: docker/scholight-api/Dockerfile
+          target: api-full
+          push: false
+          load: true
+          tags: scholight-api-full:ci
+          secrets: |
+            github_token=${{ steps.identity-token.outputs.token }}
       - name: Verify API image renders branded Survey report PDFs
         run: |
-          docker run --rm --entrypoint /app/.venv/bin/python scholight-api:ci - <<'PY'
+          docker run --rm --entrypoint /app/.venv/bin/python scholight-api-full:ci -i - <<'PY'
           from datetime import date
           from scholight.survey.report_pdf import render_report_pdf
 
@@ -303,7 +337,7 @@ jobs:
           '
       - name: Verify Survey full-text image boundary
         run: |
-          docker run --rm --user 0 \
+          docker run --rm --user 0 -e SCHOLIGHT_RUNTIME_PROFILE=full \
             -v "$PWD/tests/fixtures:/tmp/scholight-fixtures:ro" \
             --entrypoint /bin/sh scholight-survey:ci -ec '
             test ! -e /opt/scholight-package
@@ -511,3 +545,69 @@ jobs:
             printf 'scholight_app unexpectedly has DDL privileges\n' >&2
             exit 1
           fi
+
+  lean-images:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+      - name: Mint read-only Identity token
+        id: identity-token
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        with:
+          app-id: ${{ vars.IDENTITY_READER_APP_ID }}
+          private-key: ${{ secrets.IDENTITY_READER_PRIVATE_KEY }}
+          owner: EricSanchezok
+          repositories: sanchezcloud-identity
+          permission-contents: read
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Build native api
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: docker/scholight-api/Dockerfile
+          push: false
+          load: true
+          tags: scholight-api:lean-ci
+          target: api
+          secrets: |
+            github_token=${{ steps.identity-token.outputs.token }}
+      - name: Build native metadata
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: docker/scholight-api/Dockerfile
+          push: false
+          load: true
+          tags: scholight-metadata:lean-ci
+          target: metadata
+      - name: Build native extract
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: docker/scholight-extract/Dockerfile
+          push: false
+          load: true
+          tags: scholight-extract:lean-ci
+      - name: Build native web
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: frontend
+          file: frontend/Dockerfile
+          push: false
+          load: true
+          tags: scholight-web:lean-ci
+      - name: Start native processes and check runtime boundaries
+        run: sh tests/images/smoke.sh
+      - name: Record image architecture and size
+        run: docker image inspect scholight-api:lean-ci scholight-web:lean-ci scholight-extract:lean-ci scholight-metadata:lean-ci --format '{{json .}}' > image-verification.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: lean-images-${{ matrix.runner }}
+          path: image-verification.json
