@@ -38,6 +38,12 @@ gate. Metadata has a 768 MiB task ceiling, one embedding request at a time and
 64-paper batches. PostgreSQL pools are limited to three API and two metadata
 connections. All logs expire after seven days.
 
+`MetadataBatchSize` defaults to 64 and accepts 1–512 papers. For a large catch-up,
+increase it through a reviewed change set only after measuring the task's actual
+memory use. The 768 MiB task ceiling and single embedding request remain unchanged;
+stop admission if the host capacity gate fails. This tunes bounded network writes,
+not the daily cursor boundary: interrupted days must still replay completely.
+
 ## Migration and operation
 
 Publish merged revisions manually using `publish-personal.yml`; verify CI and

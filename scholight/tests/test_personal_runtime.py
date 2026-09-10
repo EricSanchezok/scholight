@@ -42,6 +42,17 @@ def test_foundation_preserves_secrets_and_uses_manual_personal_oidc() -> None:
     assert "d432d46d6c77308" not in text
 
 
+def test_metadata_batch_tuning_keeps_memory_and_concurrency_bounded() -> None:
+    template = personal.runtime()
+    parameter = template["Parameters"]["MetadataBatchSize"]
+    task = template["Resources"]["MetadataTask"]["Properties"]
+    env = {e["Name"]: e["Value"] for e in task["ContainerDefinitions"][0]["Environment"]}
+    assert parameter == {"Type": "Number", "Default": 64, "MinValue": 1, "MaxValue": 512}
+    assert env["SCHOLIGHT_METADATA_SYNC_BATCH_SIZE"] == {"Ref": "MetadataBatchSize"}
+    assert env["SCHOLIGHT_EMBEDDING_CONCURRENCY"] == "1"
+    assert task["Memory"] == "768"
+
+
 def test_change_set_guard_rejects_foreign_stack_and_non_task_replacement(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
