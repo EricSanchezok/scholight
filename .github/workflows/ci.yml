@@ -233,10 +233,15 @@ jobs:
       - name: Install pinned auth migration tool
         run: uv sync --frozen --all-extras
       - name: Validate ECS CloudFormation contracts
-        run: >-
-          uvx --from cfn-lint==1.44.0 cfn-lint
-          deploy/ecs/scholight-foundation.yml
-          deploy/ecs/scholight-production.yml
+        run: |
+          mkdir -p data/ci-personal
+          python scripts/personal_runtime.py foundation > data/ci-personal/foundation.json
+          python scripts/personal_runtime.py runtime > data/ci-personal/runtime.json
+          python scripts/personal_control.py > data/ci-personal/control.json
+          uvx --from cfn-lint==1.44.0 cfn-lint \
+            deploy/ecs/scholight-foundation.yml \
+            deploy/ecs/scholight-production.yml \
+            data/ci-personal/foundation.json data/ci-personal/runtime.json data/ci-personal/control.json
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - name: Validate shell scripts

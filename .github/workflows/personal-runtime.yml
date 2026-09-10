@@ -1,0 +1,58 @@
+name: Manage personal runtime manually
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Prepare a change set, execute its reviewed ARN, or migrate Scholight
+        type: choice
+        required: true
+        options: [plan, apply, migrate]
+      change_set:
+        description: Exact personal-runtime change set ARN for apply
+        type: string
+        required: false
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: scholight-personal-runtime
+  cancel-in-progress: false
+
+jobs:
+  operate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: ${{ inputs.operation == 'migrate' && 'personal-database' || 'personal-infrastructure' }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Require main
+        run: test "$GITHUB_REF" = refs/heads/main
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          role-to-assume: ${{ vars.AWS_CONTROL_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          allowed-account-ids: '669409472143'
+      - name: Execute the selected guarded operation
+        env:
+          OPERATION: ${{ inputs.operation }}
+          CHANGE_SET: ${{ inputs.change_set }}
+          PARAMETERS: ${{ vars.PERSONAL_RUNTIME_PARAMETERS_JSON }}
+          EXPECTED_ACCOUNT_ID: '669409472143'
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          CLOUDFORMATION_ROLE_ARN: ${{ vars.CLOUDFORMATION_ROLE_ARN }}
+          ECS_CLUSTER_ARN: ${{ vars.ECS_CLUSTER_ARN }}
+        run: |
+          umask 077
+          args=("$OPERATION")
+          if [ "$OPERATION" = plan ]; then
+            printf '%s' "$PARAMETERS" > "$RUNNER_TEMP/parameters.json"
+            args+=(--parameters "$RUNNER_TEMP/parameters.json")
+          elif [ "$OPERATION" = apply ]; then
+            args+=(--change-set "$CHANGE_SET")
+          fi
+          python scripts/personal_apply.py "${args[@]}"

@@ -6,7 +6,8 @@ COPY . .
 RUN npm run build
 
 FROM nginxinc/nginx-unprivileged:stable-alpine@sha256:44e36330f74d4f3a1d4e222acca9e23b401fb87811a7597024502bb759c4dd49
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+ENV SCHOLIGHT_API_UPSTREAM=api:8000
+COPY nginx.conf /etc/nginx/templates/default.conf.template
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY runtime/docs.md.template runtime/llms.txt.template /opt/scholight-docs/
 COPY --chmod=0755 runtime/render-docs.sh /docker-entrypoint.d/40-render-scholight-docs.sh
