@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import ssl
 from pathlib import Path
 from typing import Any, cast
@@ -12,6 +13,7 @@ import pytest
 
 from scholight.config import settings
 from scholight.db import client as db_client
+from scholight.db.queries_deferred_fulltext import record_deferred_fulltext
 
 
 @pytest.mark.asyncio
@@ -90,3 +92,31 @@ async def test_bind_pool_connection_reuses_one_session_for_pool_queries(
     connection.fetchval.assert_awaited_once_with("SELECT 7", column=0, timeout=None)
     with pytest.raises(db_client.DBError, match="not initialised"):
         db_client.get_pool()
+
+
+@pytest.mark.asyncio
+async def test_deferred_ledger_batch_uses_the_locked_sync_session() -> None:
+    connection = AsyncMock()
+    pool = _Pool(connection)
+    observed = dt.date(2026, 8, 4)
+    async with db_client.bind_pool_connection(cast(Any, pool)):
+        await record_deferred_fulltext([("2608.00001", 1), ("2608.00002", 3)], observed)
+    assert pool.acquire_count == 1
+    connection.executemany.assert_awaited_once()
+    assert connection.executemany.call_args.args[1] == [
+        ("2608.00001", 1, observed),
+        ("2608.00002", 3, observed),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_failed_pinned_batch_propagates_and_releases_operation_lock() -> None:
+    connection = AsyncMock()
+    connection.executemany.side_effect = RuntimeError("batch rejected")
+    pool = _Pool(connection)
+    async with db_client.bind_pool_connection(cast(Any, pool)):
+        with pytest.raises(RuntimeError, match="batch rejected"):
+            await db_client.get_pool().executemany("INSERT batch", [(1,)], timeout=2)
+        await db_client.get_pool().execute("SELECT 1")
+    connection.executemany.assert_awaited_once_with("INSERT batch", [(1,)], timeout=2)
+    connection.execute.assert_awaited_once_with("SELECT 1", timeout=None)

@@ -47,6 +47,12 @@ snapshot or migrates `auth`. Keep metadata schedules disabled until source freez
 current cursor and target paper count are verified. Record the before/after cursor
 and deferred-fulltext counts for the catch-up run.
 
+The metadata advisory lock pins every database operation, including deferred-ledger
+batch writes, to the same PostgreSQL session. A failed batch must propagate out of
+that session without advancing the daily cursor. Re-run the unchanged day after
+repair; the abstract upsert and recovery ledger are idempotent, so a vector write
+that succeeded before a database failure does not require deleting target data.
+
 Configure product background registration for 08:00 UTC after isolated search,
 login, Access Key, MCP and Extract tests. Disable competing old triggers before
 admission, switch the public edge/DNS, then scale only the old Scholight services
