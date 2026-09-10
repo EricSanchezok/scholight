@@ -110,15 +110,16 @@ async def _fetch_day(date: dt.date, reference: dt.date) -> tuple[list[dict[str, 
     return papers, "api"
 
 
-async def _sync_day(date: dt.date, reference: dt.date) -> tuple[int, str]:
-    papers, source = await _fetch_day(date, reference)
+async def _write_batch(papers: list[dict[str, Any]], date: dt.date) -> None:
     await _normalize_and_embed(papers)
     outcomes = await asyncio.to_thread(write_metadata_papers, papers)
+    if len(outcomes) != len(papers):
+        raise RuntimeError("Metadata write outcome count did not match batch")
     if settings.runtime_profile == "lean":
         await record_deferred_fulltext(
             [(outcome.arxiv_id, outcome.target_version) for outcome in outcomes], date
         )
-        return len(papers), source
+        return
     for paper, outcome in zip(papers, outcomes, strict=True):
         kind = outcome.kind
         # Heal the cross-store interruption where Zilliz accepted a revision
@@ -134,6 +135,17 @@ async def _sync_day(date: dt.date, reference: dt.date) -> tuple[int, str]:
             kind,
             max_attempts=settings.ingest_max_attempts,
         )
+
+
+async def _sync_day(date: dt.date, reference: dt.date) -> tuple[int, str]:
+    papers, source = await _fetch_day(date, reference)
+    size = settings.metadata_sync_batch_size
+    for offset in range(0, len(papers), size):
+        # Vectors belong only to this short-lived batch, never to the source
+        # day's records. A failed batch replays the day before its cursor moves.
+        batch = [dict(paper) for paper in papers[offset : offset + size]]
+        await _write_batch(batch, date)
+        del batch
     return len(papers), source
 
 
@@ -228,7 +240,8 @@ async def run_sync_command() -> dict[str, Any]:
     """Cancel on SIGTERM so the current uncommitted day is replayed next run."""
     loop = asyncio.get_running_loop()
     task = asyncio.current_task()
-    assert task is not None
+    if task is None:
+        raise RuntimeError("Metadata synchronization requires an asyncio task")
     loop.add_signal_handler(signal.SIGTERM, task.cancel)
     try:
         return await run_exclusive_sync()

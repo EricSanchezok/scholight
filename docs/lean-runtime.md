@@ -19,6 +19,12 @@ cursor. Replaying a failed day is idempotent. The ledger is not a runnable queue
 existing ingestion jobs and resource flags remain untouched. A stored `has_chunks`
 flag does not prove that a revision seen during lean operation has been processed.
 
+`SCHOLIGHT_METADATA_SYNC_BATCH_SIZE` defaults to 64 (range 1–512). Metadata
+embeddings, Zilliz writes and deferred records complete one batch at a time;
+generated vectors are released before the next batch. Only a fully successful
+day advances the cursor. Failed later batches replay earlier idempotent writes;
+the source day's scalar metadata remains in memory, but its vectors do not.
+
 After restoring the full-text corpus, run `scholight scheduler resume-fulltext
 --limit 500` with the full profile to preview recovery, then explicitly add
 `--apply`. Successful matching jobs retire ledger entries; pending work remains
