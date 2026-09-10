@@ -26,3 +26,7 @@ Migration 015 is additive and owned solely by Scholight. It leaves existing
 migration checksums, `auth`, and existing queue contracts unchanged. Apply it
 before using the new metadata image; rolling back the application does not
 require a down migration.
+
+Standalone Survey maintenance/rerun entrypoints also reject lean mode before
+opening database or artifact connections. Historical usage charts label archived
+full-text activity explicitly; the current search quota remains unchanged.
