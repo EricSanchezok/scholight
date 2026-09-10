@@ -241,6 +241,12 @@ def runtime() -> dict[str, Any]:
         "Default": "false",
         "AllowedValues": ["false", "true"],
     }
+    template["Parameters"]["MetadataBatchSize"] = {
+        "Type": "Number",
+        "Default": 64,
+        "MinValue": 1,
+        "MaxValue": 512,
+    }
     for name in ("Api", "Web", "Extract", "Metadata"):
         template["Parameters"][name + "Image"]["AllowedPattern"] = (
             r"^[0-9]{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com/scholight-personal-[a-z]+@sha256:[0-9a-f]{64}$"
@@ -386,7 +392,7 @@ def runtime() -> dict[str, Any]:
             environment.update(
                 {
                     "SCHOLIGHT_PG_POOL_MAX_SIZE": "2",
-                    "SCHOLIGHT_METADATA_SYNC_BATCH_SIZE": "64",
+                    "SCHOLIGHT_METADATA_SYNC_BATCH_SIZE": ref("MetadataBatchSize"),
                     "SCHOLIGHT_EMBEDDING_CONCURRENCY": "1",
                     "SCHOLIGHT_METADATA_SYNC_TIMEOUT_SECONDS": "6600",
                 }
