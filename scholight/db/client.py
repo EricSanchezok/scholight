@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import ssl
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterable
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from types import TracebackType
@@ -82,6 +82,16 @@ class _PinnedConnectionPool:
                 list[asyncpg.Record],
                 await self.connection.fetch(query, *args, timeout=timeout),
             )
+
+    async def executemany(
+        self,
+        query: str,
+        args: Iterable[Iterable[Any]],
+        *,
+        timeout: float | None = None,
+    ) -> None:
+        async with self.operation_lock:
+            await self.connection.executemany(query, args, timeout=timeout)
 
     async def fetchrow(
         self,
