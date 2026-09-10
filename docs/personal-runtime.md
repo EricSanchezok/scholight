@@ -71,3 +71,9 @@ the reviewed exact change-set ARN, and `migrate` launches only the registered
 migration task on the private EC2 cluster. It neither opens a database port to the
 runner nor registers arbitrary migration images. The guard rejects resource removal
 and replacement other than immutable ECS task definitions.
+
+The CloudFormation role authorizes `ecs:DeregisterTaskDefinition` against `*`,
+restricted to the destination region: ECS does not support task-definition ARN
+authorization for this cleanup action. Keeping it in a family-scoped statement
+leaves successful service updates stuck cleaning up previous revisions. Service
+updates, tagging and role passing remain separately restricted to this product.
