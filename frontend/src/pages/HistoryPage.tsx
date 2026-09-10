@@ -215,17 +215,18 @@ export function HistoryPage() {
                     )}
                   </div>
                   <div className={styles.historyActions}>
-                    <span>{item.strength === "thorough" ? "Thorough" : "Standard"}</span>
+                    <span>
+                      {item.strength === "thorough" ? "Previous full-text search" : "Search"}
+                    </span>
                     <button
                       type="button"
                       onClick={() =>
                         navigate(
                           buildSearchUrl({
                             query: item.query,
-                            strength: item.strength,
                             limit: productConfig.search.resultLimit,
                             filters: item.filters,
-                          }),
+                          }) + (item.strength === "thorough" ? "&replay=legacy" : ""),
                         )
                       }
                     >

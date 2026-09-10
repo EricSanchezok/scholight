@@ -35,3 +35,10 @@ async def test_capabilities_can_publish_survey(
 
     assert response.status_code == 200
     assert response.json() == {"survey": "all"}
+
+
+@pytest.fixture(autouse=True)
+def full_runtime_profile(monkeypatch: pytest.MonkeyPatch) -> None:
+    from scholight.config import settings
+
+    monkeypatch.setattr(settings, "runtime_profile", "full")

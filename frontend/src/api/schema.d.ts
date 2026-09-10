@@ -862,7 +862,7 @@ export interface components {
        * Token Type
        * @default bearer
        */
-      token_type: string;
+      token_type?: string;
     };
     /** AdminAccessKeyMetrics */
     AdminAccessKeyMetrics: {
@@ -890,7 +890,7 @@ export interface components {
        * @default UTC
        * @constant
        */
-      timezone: "UTC";
+      timezone?: "UTC";
       /**
        * To
        * Format: date-time
@@ -1027,7 +1027,7 @@ export interface components {
        * @default UTC
        * @constant
        */
-      timezone: "UTC";
+      timezone?: "UTC";
     };
     /** AdminProfileMetrics */
     AdminProfileMetrics: {
@@ -1252,11 +1252,11 @@ export interface components {
        * Max Chars
        * @default 20000
        */
-      max_chars: number;
+      max_chars?: number;
       /** @default main_markdown */
-      output: components["schemas"]["ExtractResponseFormat"];
+      output?: components["schemas"]["ExtractResponseFormat"];
       /** @default auto */
-      render: components["schemas"]["RenderMode"];
+      render?: components["schemas"]["RenderMode"];
       /** Url */
       url?: string | null;
     };
@@ -1346,7 +1346,7 @@ export interface components {
        * @default day
        * @constant
        */
-      bucket: "day";
+      bucket?: "day";
       /**
        * From
        * Format: date-time
@@ -1383,7 +1383,7 @@ export interface components {
        * Message
        * @default Manual Draft revision
        */
-      message: string;
+      message?: string;
     };
     /** MessageResponse */
     MessageResponse: {
@@ -1515,11 +1515,16 @@ export interface components {
        * Limit
        * @default 10
        */
-      limit: number;
+      limit?: number;
       /** Query */
       query: string;
-      /** @default standard */
-      strength: components["schemas"]["SearchStrength"];
+      /**
+       * Strength
+       * @deprecated
+       * @default standard
+       * @constant
+       */
+      strength?: "standard";
     };
     /**
      * PublicSearchResponse
@@ -1644,7 +1649,7 @@ export interface components {
        * Notify On Completion
        * @default false
        */
-      notify_on_completion: boolean;
+      notify_on_completion?: boolean;
     };
     /** SurveyArtifactItemResponse */
     SurveyArtifactItemResponse: {
@@ -1970,7 +1975,7 @@ export interface components {
        * @default UTC
        * @constant
        */
-      timezone: "UTC";
+      timezone?: "UTC";
       today: components["schemas"]["TodayUsage"];
       /** Typical Response Ms */
       typical_response_ms: number | null;
@@ -2033,7 +2038,7 @@ export interface components {
        * @default day
        * @constant
        */
-      bucket: "day";
+      bucket?: "day";
       /**
        * From
        * Format: date-time

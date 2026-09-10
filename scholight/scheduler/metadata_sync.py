@@ -11,6 +11,7 @@ from typing import Any
 import structlog
 
 from scholight.config import settings
+from scholight.db.queries_deferred_fulltext import record_deferred_fulltext
 from scholight.db.queries_ingestion import (
     enqueue_ingestion_job,
     get_sync_state,
@@ -113,6 +114,11 @@ async def _sync_day(date: dt.date, reference: dt.date) -> tuple[int, str]:
     papers, source = await _fetch_day(date, reference)
     await _normalize_and_embed(papers)
     outcomes = await asyncio.to_thread(write_metadata_papers, papers)
+    if settings.runtime_profile == "lean":
+        await record_deferred_fulltext(
+            [(outcome.arxiv_id, outcome.target_version) for outcome in outcomes], date
+        )
+        return len(papers), source
     for paper, outcome in zip(papers, outcomes, strict=True):
         kind = outcome.kind
         # Heal the cross-store interruption where Zilliz accepted a revision
@@ -193,7 +199,7 @@ async def run_sync(*, today: dt.date | None = None) -> dict[str, Any]:
         sources[source] += 1
         current += dt.timedelta(days=1)
 
-    reconciled = await _reconcile_recent(yesterday)
+    reconciled = await _reconcile_recent(yesterday) if settings.runtime_profile == "full" else 0
     return {
         "papers": total,
         "days": days,
@@ -201,6 +207,33 @@ async def run_sync(*, today: dt.date | None = None) -> dict[str, Any]:
         "reconciled": reconciled,
         "sources": sources,
     }
+
+
+async def run_exclusive_sync() -> dict[str, Any]:
+    """Bound the scheduled task and serialize overlapping runs in PostgreSQL."""
+    from scholight.db.client import bind_pool_connection, get_pool
+
+    async with bind_pool_connection(get_pool()) as connection:
+        acquired = await connection.fetchval("SELECT pg_try_advisory_lock($1)", 7192003902)
+        if not acquired:
+            return {"skipped": "sync_already_running", "failed_date": None}
+        try:
+            async with asyncio.timeout(settings.metadata_sync_timeout_seconds):
+                return await run_sync()
+        finally:
+            await connection.execute("SELECT pg_advisory_unlock($1)", 7192003902)
+
+
+async def run_sync_command() -> dict[str, Any]:
+    """Cancel on SIGTERM so the current uncommitted day is replayed next run."""
+    loop = asyncio.get_running_loop()
+    task = asyncio.current_task()
+    assert task is not None
+    loop.add_signal_handler(signal.SIGTERM, task.cancel)
+    try:
+        return await run_exclusive_sync()
+    finally:
+        loop.remove_signal_handler(signal.SIGTERM)
 
 
 def _seconds_until_sync(now: dt.datetime) -> float:
@@ -221,10 +254,22 @@ async def serve_sync() -> None:
     for name in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(name, stop.set)
     while not stop.is_set():
+        cycle = asyncio.create_task(run_exclusive_sync())
+        stopped = asyncio.create_task(stop.wait())
         try:
-            await run_sync()
+            await asyncio.wait({cycle, stopped}, return_when=asyncio.FIRST_COMPLETED)
+            if stop.is_set():
+                cycle.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await cycle
+                return
+            await cycle
         except Exception:
             logger.exception("metadata sync cycle crashed")
+        finally:
+            stopped.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await stopped
         with contextlib.suppress(TimeoutError):
             await asyncio.wait_for(
                 stop.wait(),

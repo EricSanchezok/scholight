@@ -1067,3 +1067,47 @@ class TestRunHealthCheck:
 
         assert isinstance(report, HealthReport)
         mock.load_collection.assert_called()
+
+
+def test_lean_health_never_touches_chunks(monkeypatch: Any) -> None:
+    from scholight.config import settings
+    from scholight.search import engine
+    from scholight.store.schema import ensure_collections
+
+    monkeypatch.setattr(settings, "runtime_profile", "lean")
+    client = _mock_client()
+    client.list_collections.return_value = ["arxiv_papers"]
+    touched = []
+    for method in (
+        "has_collection",
+        "get_collection_stats",
+        "describe_collection",
+        "get_load_state",
+        "list_indexes",
+        "describe_index",
+        "list_loaded_segments",
+        "list_persistent_segments",
+        "query",
+        "load_collection",
+        "create_collection",
+        "create_index",
+        "flush",
+        "compact",
+    ):
+        mock = getattr(client, method)
+        result = mock.return_value
+
+        def checked(*args: Any, _result: Any = result, **kwargs: Any) -> Any:
+            name = kwargs.get("collection_name") or (args[0] if args else "")
+            if name == "arxiv_chunks":
+                touched.append(name)
+                raise AssertionError("Chunks must not be touched in lean mode")
+            return _result
+
+        mock.side_effect = checked
+    with patch("scholight.store.health.get_client", return_value=client):
+        HealthChecker(deep=True, fix=True).run()
+    with patch.object(engine, "get_client", return_value=client):
+        assert engine._fetch_collection_row_counts() == (500, None)
+    ensure_collections(client)
+    assert touched == []

@@ -30,7 +30,6 @@ export function HomePage() {
             className={styles.homeExample}
             to={withQuery(routes.search.path, {
               q: "vision transformers",
-              strength: "standard",
             })}
           >
             How do vision transformers work?
@@ -39,7 +38,6 @@ export function HomePage() {
             className={styles.homeExample}
             to={withQuery(routes.search.path, {
               q: "retrieval augmented generation",
-              strength: "thorough",
             })}
           >
             Retrieval-augmented generation methods
@@ -60,13 +58,13 @@ export function HomePage() {
           <div className={styles.homeFeatureGrid}>
             <article className={styles.homeFeature}>
               <span>01</span>
-              <h3>Standard</h3>
+              <h3>Search</h3>
               <p>Fast orientation when you are opening a new line of inquiry.</p>
             </article>
             <article className={styles.homeFeature}>
               <span>02</span>
-              <h3>Thorough</h3>
-              <p>Deeper coverage when the question needs a more considered pass.</p>
+              <h3>Focused results</h3>
+              <p>Narrow the results by subject, author, and publication date.</p>
             </article>
             <article className={styles.homeFeature}>
               <span>03</span>

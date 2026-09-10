@@ -1,19 +1,7 @@
-"""Logical backup: export/restore collections via cursor-scan JSONL.
+"""Legacy JSONL reader compatibility; new exports use versioned Parquet archives.
 
-Online (no downtime).  Exports every scalar + vector field as gzipped
-JSONL shards.  Covers ``arxiv_papers`` + ``arxiv_chunks``.
-
-Designed for:
-- Daily incremental backups
-- Cross-environment data migration
-- Audit / compliance requirements
-
-Restore loads JSONL → upserts back into Zilliz Cloud.  Only works when the target
-collection schema matches the exported data.
-
-
-For *file-level* snapshots (disaster recovery), see the archived
-``scripts/backup_milvus_data.py`` script.
+Legacy files have no complete manifest or snapshot proof and cannot pass final
+migration acceptance. All JSON lines are preflighted before any target write.
 """
 
 from __future__ import annotations
@@ -28,7 +16,6 @@ from typing import cast
 import structlog
 from pymilvus import MilvusClient, MilvusException
 
-from scholight.store.client import escape_sql
 from scholight.store.fields import CHUNK_ALL_FIELDS, PAPER_ALL_FIELDS
 
 logger = structlog.get_logger(__name__)
@@ -71,27 +58,18 @@ def _iter_rows(
     collections.  Callers must pass the correct *pk_field* for the
     collection (``"arxiv_id"`` for papers, ``"chunk_id"`` for chunks).
     """
-    last_id = ""
-    while True:
-        flt = f"{pk_field} > '{escape_sql(last_id)}'" if last_id else f"{pk_field} != ''"
-        try:
-            rows = client.query(
-                collection,
-                filter=flt,
-                output_fields=output_fields,
-                limit=_QUERY_LIMIT,
-            )
-        except MilvusException:
-            logger.exception(
-                "cursor query failed",
-                collection=collection,
-                last_id=last_id,
-            )
-            raise
-        if not rows:
-            break
-        yield from rows
-        last_id = rows[-1].get(pk_field, "")
+    iterator = client.query_iterator(
+        collection,
+        batch_size=_QUERY_LIMIT,
+        output_fields=output_fields,
+        filter=f'{pk_field} != ""',
+        timeout=60,
+    )
+    try:
+        while rows := iterator.next():
+            yield from rows
+    finally:
+        iterator.close()
 
 
 def export_collection_to_path(
@@ -158,23 +136,32 @@ def restore_collection_from_path(
     if not shards:
         raise FileNotFoundError(f"No shard_*.jsonl.gz files found in {input_dir}")
 
+    # Preflight the entire legacy set before the first upsert. It still cannot
+    # prove source completeness, snapshot identity, or original vector precision.
+    for shard_path in shards:
+        with gzip.open(shard_path, "rt", encoding="utf-8") as stream:
+            for lineno, line in enumerate(stream, start=1):
+                try:
+                    row = json.loads(line)
+                    if not isinstance(row, dict):
+                        raise ValueError("Legacy row is not an object")
+                except (json.JSONDecodeError, ValueError) as exc:
+                    raise ValueError(
+                        f"Corrupt legacy archive line: {shard_path.name}:{lineno}"
+                    ) from exc
+
     total = 0
     batch: list[dict[str, object]] = []
 
-    errors = 0
     for shard_path in shards:
         with gzip.open(shard_path, "rt", encoding="utf-8") as fh:
             for lineno, line in enumerate(fh, start=1):
                 try:
                     row = json.loads(line)
-                except json.JSONDecodeError:
-                    errors += 1
-                    logger.warning(
-                        "restore: skipping corrupt line",
-                        shard=shard_path.name,
-                        lineno=lineno,
-                    )
-                    continue
+                except json.JSONDecodeError as exc:
+                    raise ValueError(
+                        f"Corrupt legacy archive line: {shard_path.name}:{lineno}"
+                    ) from exc
                 batch.append(_fix_sparse_keys(row))
                 if len(batch) >= batch_size:
                     _upsert_batch(client, collection, batch)
@@ -187,9 +174,7 @@ def restore_collection_from_path(
         _upsert_batch(client, collection, batch)
         total += len(batch)
 
-    logger.info("restore complete", collection=collection, total=total, errors=errors)
-    if errors:
-        logger.warning("restore: %d corrupt lines skipped — data may be incomplete", errors)
+    logger.info("legacy restore complete; integrity unverified", collection=collection, total=total)
     return total
 
 

@@ -12,9 +12,9 @@ Their primary job is to express a research question in ordinary language, compar
 
 ## Product Purpose
 
-Scholight is an academic research product built first for AI research. Its current indexed corpus is arXiv, while its public contracts and product language leave room for additional scholarly sources. It makes paper discovery feel direct and legible across Standard and Thorough search strengths and lets tools retrieve readable source material without exposing implementation details.
+Scholight is an academic research product built first for AI research. Its current indexed corpus is arXiv, while its public contracts and product language leave room for additional scholarly sources. It makes paper discovery feel direct and legible through a single abstract-based search and lets tools retrieve readable source material without exposing implementation details.
 
-Success means a user can start searching immediately, understand each result, choose the appropriate search strength, retrieve cited source content when needed, and manage the account capabilities that support repeated or programmatic work. The interface should reduce uncertainty without turning research into a generic analytics dashboard.
+Success means a user can start searching immediately, understand each result, retrieve cited source content when needed, and manage the account capabilities that support repeated or programmatic work. The interface should reduce uncertainty without turning research into a generic analytics dashboard.
 
 ## Brand Personality
 
@@ -34,7 +34,7 @@ The product should feel calm enough for extended reading, rigorous enough to tru
 ## Design Principles
 
 1. **Research first.** Every surface should shorten the path from a question to useful papers.
-2. **Explain choices, not internals.** Describe Standard and Thorough by user outcome and expected effort.
+2. **Explain choices, not internals.** Keep one search action and explain filters by their effect.
 3. **Continuous reading over containers.** Use hierarchy and dividers before introducing cards or panels.
 4. **One quiet system.** Navigation, forms, states, and motion must use shared primitives instead of page-specific inventions.
 5. **Progressive account capability.** Anonymous search stays direct; history, usage, keys, and settings appear only when identity makes them useful.

@@ -768,7 +768,6 @@ test("desktop home follows the Figma geometry", async ({ page }, testInfo) => {
       header: box("header"),
       title: box("main h1"),
       search: box('form[role="search"]'),
-      strength: box('form[role="search"] [role="combobox"]'),
       submit: box('form[role="search"] button[type="submit"]'),
     };
   });
@@ -776,7 +775,7 @@ test("desktop home follows the Figma geometry", async ({ page }, testInfo) => {
   expect(geometry.header.height).toBe(88);
   expect(geometry.title).toEqual({ x: 160, y: 243, width: 920, height: 156 });
   expect(geometry.search).toEqual({ x: 160, y: 507, width: 1120, height: 72 });
-  expect(geometry.strength.height).toBe(40);
+  await expect(page.getByRole("combobox", { name: "Search strength" })).toHaveCount(0);
   expect(geometry.submit).toMatchObject({ width: 112, height: 56 });
 });
 
@@ -921,23 +920,14 @@ test("quota administration stays exact, auditable, and within the viewport", asy
   ).toEqual([]);
 });
 
-test("custom strength dropdown preserves the Figma interaction", async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== "chromium", "desktop-only visual assertion");
-  await page.setViewportSize({ width: 1440, height: 1024 });
+test("search has one mode and explains historical full-text replay", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("combobox", { name: "Search strength" }).click();
-  const standard = page.getByRole("option", { name: "Standard" });
-  const thorough = page.getByRole("option", { name: "Thorough" });
-  await expect(standard).toBeVisible();
-  await expect(thorough).toBeVisible();
-  await thorough.hover();
-  await expect(thorough).toHaveCSS("color", "rgb(14, 15, 20)");
-  await expect(thorough).toHaveCSS("background-color", "rgb(244, 242, 236)");
-  await expect(standard).toHaveCSS("outline-style", "none");
-  await settleMotion(page);
-  await expect(page).toHaveScreenshot("strength-menu.png");
-  await thorough.click();
-  await expect(page.getByRole("combobox", { name: "Search strength" })).toHaveText("Thorough");
+  await expect(page.getByRole("combobox", { name: "Search strength" })).toHaveCount(0);
+  await page.goto("/search?q=retrieval&strength=thorough");
+  await expect(
+    page.getByText("This query uses the current search. Full-text search is unavailable."),
+  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "A Paper About Retrieval" })).toBeVisible();
 });
 
 test("account menu uses the approved order and protected destinations", async ({

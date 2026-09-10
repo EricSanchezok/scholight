@@ -96,3 +96,10 @@ def test_email_sender_uses_scholight_action_urls(monkeypatch: pytest.MonkeyPatch
         "https://search.example/reset-password"
     )
     assert factory.call_args.kwargs["brand"] == "Scholight"
+
+
+@pytest.fixture(autouse=True)
+def full_runtime_profile(monkeypatch: pytest.MonkeyPatch) -> None:
+    from scholight.config import settings
+
+    monkeypatch.setattr(settings, "runtime_profile", "full")

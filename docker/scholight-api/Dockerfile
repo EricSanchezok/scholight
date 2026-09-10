@@ -38,6 +38,19 @@ COPY migrations/ /app/migrations/
 RUN uv pip install --no-deps /app
 
 
+FROM api-builder AS api-full-builder
+RUN uv sync --frozen --no-dev --extra api --extra survey --no-install-project \
+        --no-install-package sanchezcloud-identity \
+    && uv pip install /app/sanchezcloud-identity/ \
+    && uv pip install --no-deps /app
+
+
+FROM builder-base AS metadata-builder
+RUN uv sync --frozen --no-dev --extra metadata --no-install-project
+COPY scholight/ /app/scholight/
+RUN uv pip install --no-deps /app
+
+
 FROM builder-base AS ingest-builder
 
 RUN uv sync --frozen --no-dev --extra ingest --no-install-project
@@ -96,13 +109,6 @@ STOPSIGNAL SIGTERM
 
 FROM runtime-base AS api
 
-USER root
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        libpango-1.0-0 libpangoft2-1.0-0 \
-        fonts-dejavu-core fonts-noto-cjk \
-    && rm -rf /var/lib/apt/lists/*
-
 COPY --from=api-builder /app/.venv/ /app/.venv/
 COPY --from=api-builder /app/migrations/ /app/migrations/
 COPY global-bundle.pem /etc/ssl/certs/global-bundle.pem
@@ -116,10 +122,23 @@ ENV SCHOLIGHT_SERVER_PORT=8000
 
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/livez', timeout=3)"]
+    CMD ["python", "-c", "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.getenv('SCHOLIGHT_SERVER_PORT', '8000') + '/livez', timeout=3)"]
 
 USER scholight
 CMD ["python", "/app/start.py"]
+
+
+FROM runtime-base AS metadata
+COPY --from=metadata-builder /app/.venv/ /app/.venv/
+COPY global-bundle.pem /etc/ssl/certs/global-bundle.pem
+ENV PATH=/app/.venv/bin:${PATH}
+ENV SCHOLIGHT_DATA_ROOT=/data
+ENV SCHOLIGHT_RUNTIME_PROFILE=lean
+ENV SCHOLIGHT_DISABLE_DOTENV=1
+ENV SCHOLIGHT_PG_SSL_ROOT_CERT=/etc/ssl/certs/global-bundle.pem
+USER scholight
+STOPSIGNAL SIGTERM
+CMD ["scholight", "scheduler", "sync"]
 
 
 FROM runtime-base AS ingest
@@ -140,6 +159,17 @@ ENV SCHOLIGHT_PG_SSL_ROOT_CERT=/etc/ssl/certs/global-bundle.pem
 USER scholight
 STOPSIGNAL SIGTERM
 CMD ["scholight", "scheduler", "drain-ingest"]
+
+
+FROM api AS api-full
+USER root
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libpango-1.0-0 libpangoft2-1.0-0 fonts-dejavu-core fonts-noto-cjk \
+    && rm -rf /var/lib/apt/lists/*
+# Use a builder with both dependency sets so the API identity package stays installed.
+COPY --from=api-full-builder /app/.venv/ /app/.venv/
+ENV SCHOLIGHT_RUNTIME_PROFILE=full
+USER scholight
 
 
 FROM runtime-base AS survey

@@ -10,7 +10,7 @@ from uuid import UUID, uuid4
 
 import structlog
 
-from scholight.config import settings
+from scholight.config import require_full_runtime, settings
 from scholight.db.queries_survey_attempts import heartbeat_compute_attempt
 from scholight.db.queries_survey_capacity import get_survey_capacity_snapshot
 from scholight.db.queries_survey_drafts import (
@@ -309,6 +309,7 @@ async def _heartbeat(
 async def process_survey_draft(
     *, draft: SurveyDraft, worker_id: UUID, attempt_id: UUID | None = None
 ) -> None:
+    require_full_runtime("Background generation")
     stop = asyncio.Event()
     control = ProcessControl()
     heartbeat = asyncio.create_task(
@@ -385,6 +386,7 @@ async def _run_claimed_draft(draft: SurveyDraft, worker_id: UUID) -> None:
 
 async def serve_survey_draft_worker() -> None:
     """Supervise bounded concurrent Drafts without sharing task failure state."""
+    require_full_runtime("Survey")
     active: set[asyncio.Task[None]] = set()
     protection = SurveyTaskProtection(service="survey-draft-worker")
     capacity_reporter = SurveyCapacityReporter(

@@ -21,6 +21,7 @@ import click
 import httpx
 
 from scholight.config import (
+    require_full_runtime,
     settings,
     validate_survey_compute_settings,
     validate_survey_draft_worker_settings,
@@ -499,6 +500,7 @@ async def _verify_survey_runtime_schema() -> None:
 @click.group("survey")
 def survey_group() -> None:
     """Run and inspect durable Scholight Survey jobs."""
+    require_full_runtime("Survey")
 
 
 @survey_group.command("serve-worker")

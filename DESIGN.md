@@ -221,7 +221,7 @@ Results form a 920px continuous reading column with title, authors, arXiv metada
 
 - **Do** use shared semantic tokens for every color, type role, radius, elevation, and motion duration.
 - **Do** keep result pages continuous and optimized for scanning and reading.
-- **Do** describe Standard and Thorough in terms of user outcome, speed, and depth.
+- **Do** keep a single search action without retrieval-strength controls.
 - **Do** keep motion between 90ms and 280ms, under 6px of travel, and limited to feedback or continuity.
 - **Do** preserve keyboard, focus, screen-reader, reduced-motion, zoom, and mobile behavior in every new component.
 

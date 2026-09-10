@@ -343,6 +343,9 @@ async def rerun_and_verify(
     poll_seconds: float,
 ) -> dict[str, object]:
     """Create, start, observe, and verify one owner-preserving Survey rerun."""
+    from scholight.config import require_full_runtime
+
+    require_full_runtime("Survey maintenance")
     deadline = time.monotonic() + timeout_seconds
     await create_pool()
     try:
@@ -371,6 +374,9 @@ async def archived_evidence_repair_operation(
     expected_report_sha256: str,
 ) -> dict[str, object]:
     """Verify or apply one hash-guarded, owner-preserving archived repair."""
+    from scholight.config import require_full_runtime
+
+    require_full_runtime("Survey maintenance")
     from scholight.survey.quality_repair import (
         apply_archived_evidence_repair,
         inspect_archived_evidence_repair,

@@ -2,6 +2,7 @@ name: scholight-survey-e2e
 
 x-runtime-environment: &runtime-environment
   SCHOLIGHT_DISABLE_DOTENV: "1"
+  SCHOLIGHT_RUNTIME_PROFILE: full
   SCHOLIGHT_PG_HOST: postgres
   SCHOLIGHT_PG_PORT: "5432"
   SCHOLIGHT_PG_DATABASE: survey_e2e

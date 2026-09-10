@@ -18,7 +18,7 @@ import grpc
 import structlog
 from pymilvus.exceptions import MilvusException
 
-from scholight.config import settings
+from scholight.config import active_collections, settings
 from scholight.models.search import (
     PhaseTiming,
     SearchHit,
@@ -401,7 +401,7 @@ def _fetch_collection_row_counts() -> tuple[int | None, int | None]:
         return None, None
 
     row_counts: list[int | None] = []
-    for collection_name in ("arxiv_papers", "arxiv_chunks"):
+    for collection_name in active_collections():
         try:
             collection_stats = client.get_collection_stats(
                 collection_name,
@@ -412,7 +412,7 @@ def _fetch_collection_row_counts() -> tuple[int | None, int | None]:
             logger.debug("failed to get collection stats", collection=collection_name)
             row_counts.append(None)
 
-    return row_counts[0], row_counts[1]
+    return row_counts[0], row_counts[1] if len(row_counts) > 1 else None
 
 
 __all__ = ["SearchEngine"]

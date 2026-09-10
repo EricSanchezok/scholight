@@ -12,7 +12,7 @@ from uuid import UUID, uuid4
 
 import structlog
 
-from scholight.config import settings
+from scholight.config import require_full_runtime, settings
 from scholight.db.queries_survey_cleanup import (
     SurveyArtifactCleanup,
     claim_artifact_cleanup,
@@ -76,6 +76,7 @@ async def process_artifact_cleanup(
     *,
     worker_id: UUID,
 ) -> None:
+    require_full_runtime("Background generation")
     stop = asyncio.Event()
     lease_lost = asyncio.Event()
     heartbeat = asyncio.create_task(_heartbeat(cleanup.id, worker_id, stop, lease_lost))
@@ -129,6 +130,7 @@ async def process_artifact_cleanup(
 
 
 async def serve_artifact_cleanup() -> None:
+    require_full_runtime("Survey")
     active: set[asyncio.Task[None]] = set()
     last_recovery = 0.0
     try:

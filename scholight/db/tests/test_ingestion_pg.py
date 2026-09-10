@@ -67,7 +67,25 @@ async def test_migrations_apply_once_and_replay_without_schema_changes(
         (12, "access_keys_all_tools"),
         (13, "allow_free_readable_surveys"),
         (14, "survey_compute_attempts"),
+        (15, "deferred_fulltext"),
     ]
+
+
+@pytest.mark.asyncio
+async def test_deferred_versions_survive_replay_without_runnable_jobs(
+    ingestion_pool: asyncpg.Pool,
+) -> None:
+    from scholight.db.queries_deferred_fulltext import record_deferred_fulltext
+
+    with patch("scholight.db.queries_deferred_fulltext.get_pool", return_value=ingestion_pool):
+        await record_deferred_fulltext([("2401.00001", 2)], dt.date(2026, 9, 10))
+        await record_deferred_fulltext([("2401.00001", 1)], dt.date(2026, 9, 9))
+        await record_deferred_fulltext([("2401.00001", 2)], dt.date(2026, 9, 10))
+    row = await ingestion_pool.fetchrow("SELECT * FROM scholight.deferred_fulltext")
+    assert (
+        row["target_version"],
+        await ingestion_pool.fetchval("SELECT count(*) FROM scholight.ingestion_jobs"),
+    ) == (2, 0)
 
 
 @pytest.mark.asyncio
@@ -323,3 +341,38 @@ async def test_pending_job_survives_application_pool_restart() -> None:
 
     assert recovered is not None
     assert recovered.arxiv_id == "2401.00001"
+
+
+@pytest.mark.asyncio
+async def test_deferred_recovery_dry_run_and_replay_preserve_latest_version(
+    ingestion_pool: asyncpg.Pool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from scholight.config import settings
+    from scholight.db.queries_deferred_fulltext import (
+        record_deferred_fulltext,
+        resume_deferred_fulltext,
+    )
+
+    monkeypatch.setattr(settings, "runtime_profile", "full")
+    with (
+        patch("scholight.db.queries_deferred_fulltext.get_pool", return_value=ingestion_pool),
+        patch("scholight.db.queries_ingestion.get_pool", return_value=ingestion_pool),
+    ):
+        await record_deferred_fulltext([("2401.00001", 3)], dt.date(2026, 9, 10))
+        preview = await resume_deferred_fulltext(limit=1, apply=False)
+        assert preview["matched"] == 1 and preview["enqueued"] == 0
+        assert await ingestion_pool.fetchval("SELECT count(*) FROM scholight.ingestion_jobs") == 0
+        await resume_deferred_fulltext(limit=1, apply=True)
+        await resume_deferred_fulltext(limit=1, apply=True)
+        job = await claim_ingestion_job("recovery", 7200)
+        assert job is not None and job.target_version == 3
+        await record_deferred_fulltext([("2401.00001", 4)], dt.date(2026, 9, 11))
+        await complete_ingestion_job(job.arxiv_id, "recovery")
+        await resume_deferred_fulltext(limit=1, apply=True)
+        latest = await get_ingestion_job(job.arxiv_id)
+        assert latest is not None and latest.target_version == 4 and latest.status == "pending"
+        assert (
+            await ingestion_pool.fetchval("SELECT target_version FROM scholight.deferred_fulltext")
+            == 4
+        )

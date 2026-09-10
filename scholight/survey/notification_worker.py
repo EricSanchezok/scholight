@@ -10,7 +10,7 @@ from uuid import UUID, uuid4
 
 import structlog
 
-from scholight.config import settings
+from scholight.config import require_full_runtime, settings
 from scholight.db.queries_survey_notifications import (
     SurveyEmailNotification,
     claim_email_notification,
@@ -61,6 +61,7 @@ async def process_email_notification(
     sender: SurveyEmailSender,
 ) -> None:
     """Deliver one claimed notification without changing its Survey aggregate."""
+    require_full_runtime("Background generation")
     try:
         if not notification.recipient_verified or not notification.recipient_email.strip():
             raise SurveyEmailDeliveryError("recipient_unavailable", transient=False)
@@ -118,6 +119,7 @@ async def process_email_notification(
 
 async def serve_email_notifications(sender: SurveyEmailSender) -> None:
     """Supervise bounded notification delivery with lease recovery and queue metrics."""
+    require_full_runtime("Survey")
     active: set[asyncio.Task[None]] = set()
     last_recovery = 0.0
     last_metric = 0.0

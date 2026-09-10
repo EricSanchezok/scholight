@@ -174,8 +174,8 @@ export function DocsPage({ origin }: DocsPageProps = {}) {
               <div>
                 <h3>Optional</h3>
                 <p>
-                  Choose <code>strength</code> and <code>limit</code>, then filter by arXiv
-                  categories, authors, or submission dates when useful.
+                  Choose <code>limit</code>, then filter by arXiv categories, authors, or submission
+                  dates when useful.
                 </p>
               </div>
             </div>
@@ -231,25 +231,11 @@ export function DocsPage({ origin }: DocsPageProps = {}) {
 
           <section className={styles.docsSection} id="search-behavior">
             <p className={styles.docsSectionLabel}>05 · Search behavior</p>
-            <h2>Choose depth deliberately</h2>
-            <div className={styles.docsSplit}>
-              <div>
-                <p className={styles.docsChoice}>Standard</p>
-                <h3>Fast discovery</h3>
-                <p>
-                  The default for focused questions, iterative exploration, and agent workflows that
-                  may issue several searches.
-                </p>
-              </div>
-              <div>
-                <p className={styles.docsChoice}>Thorough</p>
-                <h3>Deeper ranking</h3>
-                <p>
-                  Use when nuance and breadth are worth additional latency and quota. It is not a
-                  substitute for a more precise query.
-                </p>
-              </div>
-            </div>
+            <h2>Find papers from their abstracts</h2>
+            <p>
+              Search titles and abstracts with a focused question. Use filters to narrow the results
+              by subject, author, or date.
+            </p>
             <p>
               Scholight currently indexes AI research from arXiv and keeps its corpus boundary open
               to additional scholarly sources. A focused question with a task, method, or comparison

@@ -266,12 +266,12 @@ def _log_survey_search_finished(
     )
 
 
-def _emit_in_flight_metric(body: PublicSearchRequest, invocation: SearchInvocation) -> None:
+def _emit_in_flight_metric(_body: PublicSearchRequest, invocation: SearchInvocation) -> None:
     snapshot = get_search_in_flight_tracker().snapshot()
     try:
         emit_emf(
             service="api",
-            strength=body.strength.value,
+            strength="standard",
             transport=invocation.transport,
             metrics={"InFlight": (snapshot.total, "Count")},
         )
@@ -280,11 +280,11 @@ def _emit_in_flight_metric(body: PublicSearchRequest, invocation: SearchInvocati
             metrics={"InFlight": (snapshot.total, "Count")},
         )
     except Exception:
-        logger.warning("search_in_flight_metric_emit_failed", strength=body.strength.value)
+        logger.warning("search_in_flight_metric_emit_failed", strength="standard")
 
 
 def _emit_search_metrics(
-    body: PublicSearchRequest,
+    _body: PublicSearchRequest,
     invocation: SearchInvocation,
     *,
     outcome: str,
@@ -302,7 +302,7 @@ def _emit_search_metrics(
     try:
         emit_emf(
             service="api",
-            strength=body.strength.value,
+            strength="standard",
             transport=invocation.transport,
             outcome=outcome,
             metrics=metrics,
@@ -317,7 +317,7 @@ def _emit_search_metrics(
         emit_emf(service="api", metrics=aggregate_metrics)
         emit_emf(
             service="api",
-            strength=body.strength.value,
+            strength="standard",
             metrics={
                 ("SuccessLatency" if outcome in {"success", "degraded"} else "ErrorLatency"): (
                     elapsed_ms,
@@ -326,7 +326,7 @@ def _emit_search_metrics(
             },
         )
     except Exception:
-        logger.warning("search_metric_emit_failed", strength=body.strength.value)
+        logger.warning("search_metric_emit_failed", strength="standard")
 
 
 async def _execute_search(
@@ -342,7 +342,7 @@ async def _execute_search(
         reservation = await reserve_search_quota(
             invocation.client_ip,
             current_user,
-            strength=body.strength.value,
+            strength="standard",
         )
     except SearchAccessError as exc:
         raise _execution_error(
@@ -358,7 +358,7 @@ async def _execute_search(
     engine = SearchEngine()
     try:
         result = await engine.search(internal_request)
-        _emit_phase_metrics(result, strength=body.strength.value)
+        _emit_phase_metrics(result, strength="standard")
     except asyncio.CancelledError as exc:
         await compensate_search_quota(reservation)
         elapsed_ms = (time.perf_counter() - t_start) * 1000
@@ -366,7 +366,7 @@ async def _execute_search(
             invocation.actor,
             transport=invocation.transport,
             request_id=invocation.request_id,
-            strength=body.strength.value,
+            strength="standard",
             outcome="failed",
             quota_units=0,
             result_count=None,
@@ -382,19 +382,15 @@ async def _execute_search(
             retryable=False,
         ) from exc
     except TimeoutError as exc:
-        _emit_failure_metric(exc, strength=body.strength.value)
+        _emit_failure_metric(exc, strength="standard")
         await compensate_search_quota(reservation)
         elapsed_ms = (time.perf_counter() - t_start) * 1000
-        error_code = (
-            "thorough_search_unavailable"
-            if body.strength.value == "thorough"
-            else "search_unavailable"
-        )
+        error_code = "search_unavailable"
         _schedule_usage(
             invocation.actor,
             transport=invocation.transport,
             request_id=invocation.request_id,
-            strength=body.strength.value,
+            strength="standard",
             outcome="failed",
             quota_units=0,
             result_count=None,
@@ -406,23 +402,19 @@ async def _execute_search(
         raise _execution_error(
             status_code=503,
             code=error_code,
-            message=(
-                "Thorough search is temporarily unavailable."
-                if body.strength.value == "thorough"
-                else "Search is temporarily unavailable."
-            ),
+            message="Search is temporarily unavailable.",
             retryable=True,
             retry_after=5,
         ) from exc
     except ThoroughSearchUnavailable as exc:
-        _emit_failure_metric(exc.cause, strength=body.strength.value)
+        _emit_failure_metric(exc.cause, strength="standard")
         await compensate_search_quota(reservation)
         elapsed_ms = (time.perf_counter() - t_start) * 1000
         _schedule_usage(
             invocation.actor,
             transport=invocation.transport,
             request_id=invocation.request_id,
-            strength=body.strength.value,
+            strength="standard",
             outcome="failed",
             quota_units=0,
             result_count=None,
@@ -444,14 +436,14 @@ async def _execute_search(
             retry_after=5,
         ) from exc
     except SearchUnavailable as exc:
-        _emit_failure_metric(exc.cause, strength=body.strength.value)
+        _emit_failure_metric(exc.cause, strength="standard")
         await compensate_search_quota(reservation)
         elapsed_ms = (time.perf_counter() - t_start) * 1000
         _schedule_usage(
             invocation.actor,
             transport=invocation.transport,
             request_id=invocation.request_id,
-            strength=body.strength.value,
+            strength="standard",
             outcome="failed",
             quota_units=0,
             result_count=None,
@@ -473,14 +465,14 @@ async def _execute_search(
             retry_after=5,
         ) from exc
     except Exception as exc:
-        _emit_failure_metric(exc, strength=body.strength.value)
+        _emit_failure_metric(exc, strength="standard")
         await compensate_search_quota(reservation)
         elapsed_ms = (time.perf_counter() - t_start) * 1000
         _schedule_usage(
             invocation.actor,
             transport=invocation.transport,
             request_id=invocation.request_id,
-            strength=body.strength.value,
+            strength="standard",
             outcome="failed",
             quota_units=0,
             result_count=None,
@@ -501,7 +493,7 @@ async def _execute_search(
         abstracts, degraded = await _enrich_public_abstracts(result)
         emit_emf(
             service="api",
-            strength=body.strength.value,
+            strength="standard",
             metrics={
                 "StageEnrichmentLatency": (
                     (time.perf_counter() - enrichment_started) * 1000,
@@ -524,7 +516,7 @@ async def _execute_search(
             invocation.actor,
             transport=invocation.transport,
             request_id=invocation.request_id,
-            strength=body.strength.value,
+            strength="standard",
             outcome="failed",
             quota_units=0,
             result_count=None,
@@ -555,7 +547,7 @@ async def _execute_search(
             request_id=invocation.request_id,
             user_id=current_user.id,
             query_text=internal_request.query,
-            strength=body.strength.value,
+            strength="standard",
             filters=filters if filters else None,
             result_count=len(result.hits),
             elapsed_ms=elapsed_ms,
@@ -564,7 +556,7 @@ async def _execute_search(
             invocation.actor,
             transport=invocation.transport,
             request_id=invocation.request_id,
-            strength=body.strength.value,
+            strength="standard",
             outcome="degraded" if degraded else "success",
             quota_units=1,
             result_count=len(result.hits),
@@ -584,7 +576,7 @@ async def execute_public_search(
     started = time.perf_counter()
     tracker = get_search_in_flight_tracker()
     try:
-        async with tracker.track(body.strength.value):
+        async with tracker.track("standard"):
             _emit_in_flight_metric(body, invocation)
             try:
                 response = await _execute_search(body, invocation)
@@ -601,7 +593,7 @@ async def execute_public_search(
                 )
                 _log_survey_search_finished(
                     invocation,
-                    strength=body.strength.value,
+                    strength="standard",
                     outcome="failed",
                     status_code=exc.status_code,
                     duration_ms=elapsed_ms,
@@ -621,7 +613,7 @@ async def execute_public_search(
             )
             _log_survey_search_finished(
                 invocation,
-                strength=body.strength.value,
+                strength="standard",
                 outcome=outcome,
                 status_code=200,
                 duration_ms=elapsed_ms,

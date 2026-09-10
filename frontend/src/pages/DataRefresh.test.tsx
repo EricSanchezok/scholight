@@ -151,13 +151,17 @@ describe("private data refresh controls", () => {
     });
   });
 
-  it("shows today's Survey allowance with the search quotas", async () => {
+  it("shows only the current search allowance", async () => {
     renderPage(<UsagePage />);
-
-    expect(await screen.findByRole("progressbar", { name: "survey quota used" })).toHaveAttribute(
-      "aria-valuemax",
-      "3",
-    );
+    expect(
+      await screen.findByRole("progressbar", { name: "standard quota used" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("progressbar", { name: "survey quota used" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("progressbar", { name: "thorough quota used" }),
+    ).not.toBeInTheDocument();
   });
 
   it("refreshes active sessions independently", async () => {

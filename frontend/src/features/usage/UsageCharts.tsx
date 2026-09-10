@@ -45,15 +45,17 @@ export function VolumeChart({ points }: { points: UsageVolumePoint[] }) {
             aria-labelledby="volume-title volume-desc"
           >
             <title id="volume-title">Daily search volume</title>
-            <desc id="volume-desc">Standard and Thorough searches for the last 30 days.</desc>
+            <desc id="volume-desc">
+              Current and previous full-text searches for the last 30 days.
+            </desc>
             <g className={styles.chartLegend}>
               <circle cx="40" cy="21" r="4" className={styles.chartBrandFill} />
               <text x="50" y="25">
-                Standard
+                Search
               </text>
               <circle cx="126" cy="21" r="4" className={styles.chartMutedFill} />
               <text x="136" y="25">
-                Thorough
+                Previous full-text
               </text>
             </g>
             {[0, 0.5, 1].map((ratio) => {
@@ -124,8 +126,8 @@ export function VolumeChart({ points }: { points: UsageVolumePoint[] }) {
             <thead>
               <tr>
                 <th>Date</th>
-                <th>Standard</th>
-                <th>Thorough</th>
+                <th>Search</th>
+                <th>Previous full-text</th>
               </tr>
             </thead>
             <tbody>
@@ -200,13 +202,13 @@ export function LatencyChart({ points }: { points: UsageLatencyPoint[] }) {
   }> = [
     {
       key: "standard_p50_ms",
-      label: "Standard median",
+      label: "Search median",
       lineClassName: styles.chartStandardLine,
       pointClassName: styles.chartStandardPoint,
     },
     {
       key: "thorough_p50_ms",
-      label: "Thorough median",
+      label: "Previous full-text median",
       lineClassName: styles.chartThoroughLine,
       pointClassName: styles.chartThoroughPoint,
     },
@@ -231,19 +233,19 @@ export function LatencyChart({ points }: { points: UsageLatencyPoint[] }) {
           >
             <title id="latency-title">Daily response time</title>
             <desc id="latency-desc">
-              Median Standard and Thorough response time with overall 95th percentile.
+              Median current and previous full-text response time with overall 95th percentile.
             </desc>
             <g className={styles.chartLegend}>
               <circle cx="40" cy="21" r="4" className={styles.chartBrandFill} />
               <text x="50" y="25">
-                Standard
+                Search
               </text>
               <circle cx="126" cy="21" r="4" className={styles.chartInkFill} />
               <text x="136" y="25">
-                Thorough
+                Previous full-text
               </text>
-              <line x1="215" x2="232" y1="21" y2="21" className={styles.chartP95Line} />
-              <text x="238" y="25">
+              <line x1="250" x2="267" y1="21" y2="21" className={styles.chartP95Line} />
+              <text x="273" y="25">
                 P95
               </text>
             </g>
@@ -319,8 +321,8 @@ export function LatencyChart({ points }: { points: UsageLatencyPoint[] }) {
             <thead>
               <tr>
                 <th>Date</th>
-                <th>Standard median</th>
-                <th>Thorough median</th>
+                <th>Search median</th>
+                <th>Previous full-text median</th>
                 <th>P95</th>
                 <th>Samples</th>
               </tr>

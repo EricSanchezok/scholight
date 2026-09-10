@@ -10,55 +10,23 @@ import pytest
 from pymilvus.exceptions import MilvusException
 
 from scholight.api.search_access import SearchQuotaReservation
-from scholight.search.errors import SearchUnavailable, ThoroughSearchUnavailable
+from scholight.search.errors import SearchUnavailable
 
 
 @pytest.mark.asyncio
-async def test_thorough_operational_failure_returns_503_and_compensates_once(
-    api_client: httpx.AsyncClient,
-) -> None:
-    reservation = SearchQuotaReservation(strength="thorough")
-    failure = ThoroughSearchUnavailable(
-        phase_name="rrf_fusion",
-        cause=MilvusException(message="private endpoint unavailable", code=1),
-    )
-
+async def test_thorough_rejected_before_quota_or_search(api_client: httpx.AsyncClient) -> None:
     with (
         patch(
-            "scholight.api.search_execution.reserve_search_quota",
-            new_callable=AsyncMock,
-            return_value=reservation,
-        ),
-        patch(
-            "scholight.api.search_execution.compensate_search_quota",
-            new_callable=AsyncMock,
-        ) as compensate,
-        patch(
-            "scholight.search.engine.SearchEngine.search",
-            new_callable=AsyncMock,
-            side_effect=failure,
-        ),
-        patch(
-            "scholight.api.search_execution.schedule_search_history_write",
-        ) as schedule_history,
+            "scholight.api.search_execution.reserve_search_quota", new_callable=AsyncMock
+        ) as reserve,
+        patch("scholight.search.engine.SearchEngine.search", new_callable=AsyncMock) as search,
     ):
         response = await api_client.post(
             "/search", json={"query": "retrieval", "strength": "thorough"}
         )
-
-    assert (response.status_code, response.headers["retry-after"], response.json()) == (
-        503,
-        "5",
-        {
-            "detail": {
-                "code": "thorough_search_unavailable",
-                "message": "Thorough search is temporarily unavailable.",
-                "retryable": True,
-            }
-        },
-    )
-    compensate.assert_awaited_once_with(reservation)
-    schedule_history.assert_not_called()
+    assert response.status_code == 422
+    reserve.assert_not_awaited()
+    search.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -108,7 +76,6 @@ async def test_standard_operational_failure_uses_search_unavailable_code(
     ("strength", "code"),
     [
         ("standard", "search_unavailable"),
-        ("thorough", "thorough_search_unavailable"),
     ],
 )
 async def test_dependency_timeout_returns_503_and_compensates_once(
@@ -154,7 +121,7 @@ async def test_dependency_timeout_returns_503_and_compensates_once(
 async def test_pre_commit_program_or_cancel_failure_returns_500_and_compensates_once(
     api_client: httpx.AsyncClient, failure: BaseException
 ) -> None:
-    reservation = SearchQuotaReservation(strength="thorough")
+    reservation = SearchQuotaReservation(strength="standard")
 
     with (
         patch(
@@ -176,7 +143,7 @@ async def test_pre_commit_program_or_cancel_failure_returns_500_and_compensates_
         ) as schedule_history,
     ):
         response = await api_client.post(
-            "/search", json={"query": "retrieval", "strength": "thorough"}
+            "/search", json={"query": "retrieval", "strength": "standard"}
         )
 
     assert (response.status_code, response.json()) == (

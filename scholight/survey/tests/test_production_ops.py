@@ -362,3 +362,21 @@ def test_acceptance_payload_returns_only_bounded_verification_fields() -> None:
         "notification_count": 1,
         "notification_status": "succeeded",
     }
+
+
+@pytest.mark.asyncio
+async def test_lean_rerun_rejects_before_database(monkeypatch: pytest.MonkeyPatch) -> None:
+    from scholight.config import settings
+
+    monkeypatch.setattr(settings, "runtime_profile", "lean")
+    monkeypatch.setattr(
+        production_ops, "create_pool", AsyncMock(side_effect=AssertionError("database touched"))
+    )
+    with pytest.raises(ValueError, match="RUNTIME_PROFILE=full"):
+        await production_ops.rerun_and_verify(
+            source_survey_id=UUID(int=1),
+            operation_id=UUID(int=2),
+            minimum_coverage=0.8,
+            timeout_seconds=60,
+            poll_seconds=1,
+        )

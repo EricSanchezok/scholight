@@ -129,9 +129,7 @@ async def test_initialize_and_list_tools_do_not_execute_search(
         "Use Scholight to find and compare research papers and extract readable web content. "
         "Call search_papers for literature discovery, related-work research, method comparisons, "
         "or author, category, and date-filtered paper searches. Call extract_url when you need the "
-        "content behind an HTTP or HTTPS URL. Prefer standard for most searches; "
-        "use thorough when nuanced queries benefit from deeper ranking despite higher latency and "
-        "consumption of the separate Thorough quota."
+        "content behind an HTTP or HTTPS URL. Paper discovery searches titles and abstracts."
     )
     assert listed.status_code == 200
     tools = listed.json()["result"]["tools"]
@@ -140,9 +138,8 @@ async def test_initialize_and_list_tools_do_not_execute_search(
         "Find ranked AI research papers relevant to a natural-language question or topic. Use this "
         "tool for literature discovery, related-work research, method comparisons, and author, "
         "category, or date-filtered research. Results include titles, authors, abstracts, dates, "
-        "categories, and paper and PDF links. Preserve the returned rank order. Use standard by "
-        "default; use thorough for nuanced queries when deeper ranking justifies higher latency and "
-        "consumption of the separate Thorough quota."
+        "categories, and paper and PDF links. Preserve the returned rank order. "
+        "Search uses paper titles and abstracts."
     )
     properties = tools[0]["inputSchema"]["properties"]
     assert {name: properties[name]["description"] for name in properties} == {
@@ -150,11 +147,7 @@ async def test_initialize_and_list_tools_do_not_execute_search(
             "A focused natural-language research question or topic. Include the task, method, "
             "domain, or comparison that matters; avoid a loose list of unrelated keywords."
         ),
-        "strength": (
-            "Search depth. Use standard by default for fast, iterative discovery. Use thorough "
-            "when the question is nuanced and deeper ranking justifies higher latency and "
-            "consumption of the separate Thorough quota."
-        ),
+        "strength": ("Deprecated compatibility field. Omit it to search papers."),
         "limit": (
             "Maximum number of ranked papers to return. Use 5 for a focused answer and increase "
             "only when the user needs broader coverage."

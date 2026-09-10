@@ -25,10 +25,8 @@ api = [
     "pymilvus>=2.4",
     "fastapi>=0.115",
     "markdown>=3.8",
-    "matplotlib>=3.8",
     "mcp>=1.28,<2",
     "uvicorn[standard]>=0.30",
-    "weasyprint>=62",
     "PyJWT>=2.10",
 ]
 extract = [
@@ -38,6 +36,10 @@ extract = [
     "playwright>=1.52,<2",
     "trafilatura>=2.0,<3",
     "uvicorn[standard]>=0.30",
+]
+metadata = [
+    "grpcio>=1.60,<2",
+    "pymilvus>=2.4",
 ]
 ingest = [
     "grpcio>=1.60,<2",
@@ -58,7 +60,7 @@ survey = [
     "matplotlib>=3.8",
     "pymupdf4llm>=1.27.2.3",
     "PyJWT>=2.10",
-    "weasyprint>=62",
+    "weasyprint>=70",
 ]
 dev = [
     "pytest>=8",
@@ -68,6 +70,11 @@ dev = [
     "bandit[toml]>=1.8",
     "vulture>=2.14",
     "pip-audit>=2.8",
+]
+archive = [
+    "boto3>=1.35,<2",
+    "pyarrow>=21",
+    "pymilvus>=2.4",
 ]
 
 [project.scripts]
@@ -213,6 +220,7 @@ exclude_also = [
 
 [dependency-groups]
 dev = [
+    "pip>=26.2",
     "pytest-asyncio>=1.4.0",
 ]
 
