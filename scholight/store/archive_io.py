@@ -5,6 +5,7 @@ from __future__ import annotations
 import fcntl
 import hashlib
 import json
+import os
 import shutil
 from pathlib import Path
 from typing import Any
@@ -65,7 +66,14 @@ class ArchiveLocation:
             temporary = self.root / f".{uuid4().hex}.partial"
             try:
                 shutil.copyfile(path, temporary)
+                with temporary.open("rb") as stream:
+                    os.fsync(stream.fileno())
                 temporary.replace(self.root / name)
+                directory = os.open(self.root, os.O_RDONLY)
+                try:
+                    os.fsync(directory)
+                finally:
+                    os.close(directory)
             finally:
                 temporary.unlink(missing_ok=True)
         else:

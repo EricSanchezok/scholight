@@ -539,3 +539,18 @@ def full_runtime_profile(monkeypatch: pytest.MonkeyPatch) -> None:
     from scholight.config import settings
 
     monkeypatch.setattr(settings, "runtime_profile", "full")
+
+
+def test_lean_fulltext_search_requires_explicit_full_profile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from click.testing import CliRunner
+
+    from scholight.cli.search import search_cmd
+    from scholight.config import settings
+
+    monkeypatch.setattr(settings, "runtime_profile", "lean")
+    result = CliRunner().invoke(search_cmd, ["--query", "test", "--level", "2"])
+    assert result.exit_code != 0
+    assert isinstance(result.exception, ValueError)
+    assert "RUNTIME_PROFILE=full" in str(result.exception)

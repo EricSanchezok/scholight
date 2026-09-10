@@ -233,7 +233,7 @@ export function LatencyChart({ points }: { points: UsageLatencyPoint[] }) {
           >
             <title id="latency-title">Daily response time</title>
             <desc id="latency-desc">
-              Median Current and previous full-text response time with overall 95th percentile.
+              Median current and previous full-text response time with overall 95th percentile.
             </desc>
             <g className={styles.chartLegend}>
               <circle cx="40" cy="21" r="4" className={styles.chartBrandFill} />
@@ -244,8 +244,8 @@ export function LatencyChart({ points }: { points: UsageLatencyPoint[] }) {
               <text x="136" y="25">
                 Previous full-text
               </text>
-              <line x1="215" x2="232" y1="21" y2="21" className={styles.chartP95Line} />
-              <text x="238" y="25">
+              <line x1="250" x2="267" y1="21" y2="21" className={styles.chartP95Line} />
+              <text x="273" y="25">
                 P95
               </text>
             </g>

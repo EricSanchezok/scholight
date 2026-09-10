@@ -123,6 +123,10 @@ def search_cmd(
 
     Use --fusion to enable multi-signal score fusion re-ranking.
     """
+    if level > 1:
+        from scholight.config import require_full_runtime
+
+        require_full_runtime("Internal full-text search")
     _log_path = storage.log_path("search", "cli.log")
     configure_logging(
         log_level="INFO", use_json=False, file_handler=(str(_log_path), 50_000_000, 3)

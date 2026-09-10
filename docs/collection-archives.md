@@ -72,7 +72,7 @@ rather than silently reducing verification coverage.
 
 S3 objects request AES256 server-side encryption. A compatible test store must
 support it. Manifest writes use conditional ETags; local manifests use locked
-atomic replacement. Stale concurrent metadata writers fail. Uncommitted uploaded
+atomic replacement with fsync before checkpoint advancement. Stale concurrent metadata writers fail. Uncommitted uploaded
 shards are ignored and can be reviewed separately after the archive completes.
 
 ## Restore only the selected collection

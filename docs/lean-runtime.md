@@ -30,3 +30,7 @@ require a down migration.
 Standalone Survey maintenance/rerun entrypoints also reject lean mode before
 opening database or artifact connections. Historical usage charts label archived
 full-text activity explicitly; the current search quota remains unchanged.
+
+The internal search CLI also requires the full profile for levels above 1.
+Local archives fsync shards and directory entries before manifest checkpoints;
+S3 manifests use conditional writes after durable object checksum verification.

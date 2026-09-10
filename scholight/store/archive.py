@@ -320,7 +320,15 @@ def export_archive(
                 "code_sha256": _code_digest(),
                 "versions": {
                     name: importlib.metadata.version(name)
-                    for name in ("scholight", "pymilvus", "pyarrow")
+                    for name in (
+                        "scholight",
+                        "pymilvus",
+                        "pyarrow",
+                        "boto3",
+                        "botocore",
+                        "numpy",
+                        "protobuf",
+                    )
                 },
                 "frozen": frozen,
                 "source_rows": _count(client, collection),
