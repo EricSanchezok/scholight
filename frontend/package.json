@@ -17,7 +17,7 @@
     "test:watch": "vitest",
     "e2e": "playwright test",
     "api:export": "cd .. && uv run python frontend/scripts/export_openapi.py",
-    "api:types": "openapi-typescript src/api/openapi.json -o src/api/schema.d.ts && prettier --write src/api/openapi.json src/api/schema.d.ts",
+    "api:types": "openapi-typescript src/api/openapi.json --default-non-nullable false -o src/api/schema.d.ts && prettier --write src/api/openapi.json src/api/schema.d.ts",
     "api:generate": "npm run api:export && npm run api:types",
     "api:check": "npm run api:generate && git -C .. diff --exit-code -- frontend/src/api/openapi.json frontend/src/api/schema.d.ts",
     "brand:build": "node scripts/brand-assets.mjs build",

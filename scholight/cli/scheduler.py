@@ -10,7 +10,7 @@ from typing import Any
 
 import click
 
-from scholight.config import settings
+from scholight.config import require_full_runtime, settings
 from scholight.db.client import close_pool, create_pool
 
 
@@ -30,9 +30,9 @@ async def _with_pool(function: Callable[[], Awaitable[Any]]) -> Any:
 @scheduler_group.command("sync")
 def sync_cmd() -> None:
     """Run one cursor-driven metadata synchronization."""
-    from scholight.scheduler.metadata_sync import run_sync
+    from scholight.scheduler.metadata_sync import run_sync_command
 
-    result = asyncio.run(_with_pool(run_sync))
+    result = asyncio.run(_with_pool(run_sync_command))
     click.echo(json.dumps(result, default=str, sort_keys=True))
     if result.get("failed_date"):
         raise click.ClickException(f"sync stopped at {result['failed_date']}")
@@ -49,6 +49,7 @@ def serve_sync_cmd() -> None:
 @scheduler_group.command("serve-ingest")
 def serve_ingest_cmd() -> None:
     """Run the single-paper ingestion worker."""
+    require_full_runtime("Full-text ingestion")
     from scholight.scheduler.ingest_worker import serve_ingest
 
     asyncio.run(_with_pool(serve_ingest))
@@ -69,6 +70,7 @@ def serve_ingest_cmd() -> None:
 )
 def drain_ingest_cmd(idle_grace_seconds: int, max_runtime_seconds: int) -> None:
     """Drain the paper queue for one bounded scheduled task."""
+    require_full_runtime("Full-text ingestion")
     from scholight.scheduler.ingest_worker import drain_ingest
 
     async def _run() -> dict[str, str | int | float]:
@@ -110,6 +112,7 @@ def enqueue_backfill_cmd(
     apply: bool,
 ) -> None:
     """Find old papers without chunks and optionally enqueue a bounded batch."""
+    require_full_runtime("Full-text ingestion")
     if from_date.date() > to_date.date():
         raise click.UsageError("--from must be on or before --to")
 
@@ -143,6 +146,7 @@ def enqueue_backfill_cmd(
 @click.option("--arxiv-id", required=True)
 def retry_cmd(arxiv_id: str) -> None:
     """Reactivate or explicitly enqueue one paper by exact arXiv ID."""
+    require_full_runtime("Full-text ingestion")
     from scholight.db.queries_ingestion import (
         enqueue_ingestion_job,
         get_ingestion_job,
@@ -173,3 +177,17 @@ def retry_cmd(arxiv_id: str) -> None:
             "The paper was not found, or its ingestion job is already running."
         )
     click.echo("queued")
+
+
+@scheduler_group.command("resume-fulltext")
+@click.option("--limit", type=click.IntRange(1, 10_000), default=500, show_default=True)
+@click.option("--apply", is_flag=True, help="Enqueue recovery work; otherwise dry-run.")
+def resume_fulltext_cmd(limit: int, apply: bool) -> None:
+    """Resume versions deferred during lean operation, in bounded batches."""
+    require_full_runtime("Deferred full-text recovery")
+    from scholight.db.queries_deferred_fulltext import resume_deferred_fulltext
+
+    async def run() -> dict[str, int | bool]:
+        return await resume_deferred_fulltext(limit=limit, apply=apply)
+
+    click.echo(json.dumps(asyncio.run(_with_pool(run)), sort_keys=True))

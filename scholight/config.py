@@ -21,6 +21,8 @@ class Settings(BaseSettings):
         "case_sensitive": False,
     }
 
+    runtime_profile: Literal["lean", "full"] = "lean"
+
     # ── Storage ──
     data_root: str = "/data"
 
@@ -34,10 +36,11 @@ class Settings(BaseSettings):
     embedding_model: str = "qwen3-embedding-0.6b"
     embedding_dim: int = 1024
     embedding_batch_size: int = 512
-    embedding_concurrency: int = 8
+    embedding_concurrency: int = 1
 
     # ── Native daily ingestion ──
     ingest_recent_days: int = Field(default=90, ge=7, le=365)
+    metadata_sync_timeout_seconds: int = Field(default=6600, ge=60, le=86400)
     metadata_sync_hour_utc: int = Field(default=8, ge=0, le=23)
     ingest_max_attempts: int = Field(default=8, ge=1, le=32)
     ingest_lease_seconds: int = Field(default=7200, ge=300, le=86400)
@@ -276,18 +279,37 @@ class Settings(BaseSettings):
 settings = Settings()
 
 
+def active_collections() -> tuple[str, ...]:
+    """Collections required by the explicitly selected runtime."""
+    return (
+        ("arxiv_papers", "arxiv_chunks")
+        if settings.runtime_profile == "full"
+        else ("arxiv_papers",)
+    )
+
+
+def require_full_runtime(operation: str) -> None:
+    """Fail before accessing full-text or Survey dependencies."""
+    if settings.runtime_profile != "full":
+        raise ValueError(f"{operation} requires SCHOLIGHT_RUNTIME_PROFILE=full")
+
+
 def is_survey_runtime_enabled() -> bool:
     """Return whether Survey workers and their real dependencies may run."""
-    return settings.survey_runtime_enabled
+    return settings.runtime_profile == "full" and settings.survey_runtime_enabled
 
 
 def get_survey_public_mode() -> Literal["off", "all"]:
     """Return the user-visible Survey mode."""
-    return settings.survey_public_mode
+    return settings.survey_public_mode if settings.runtime_profile == "full" else "off"
 
 
 def validate_api_runtime_settings() -> None:
     """Validate secrets and trust boundaries required only by the HTTP API."""
+    if settings.runtime_profile == "lean" and (
+        settings.survey_runtime_enabled or settings.survey_public_mode != "off"
+    ):
+        raise ValueError("Survey requires SCHOLIGHT_RUNTIME_PROFILE=full")
     if len(settings.jwt_secret.strip().encode("utf-8")) < 32:
         raise ValueError("SCHOLIGHT_AUTH_JWT_SECRET must contain at least 32 UTF-8 bytes")
     if len(settings.anonymous_quota_hmac_secret.encode("utf-8")) < 32:
@@ -340,6 +362,7 @@ def validate_extract_runtime_settings() -> None:
 
 def validate_survey_worker_settings() -> None:
     """Validate only the secrets and storage needed by the Survey worker."""
+    require_full_runtime("Survey")
     if not is_survey_runtime_enabled():
         raise ValueError("SCHOLIGHT_SURVEY_RUNTIME_ENABLED must be true to run the Survey worker")
     if not settings.deepseek_api_key.strip():
@@ -358,6 +381,7 @@ def validate_survey_worker_settings() -> None:
 
 def validate_survey_draft_worker_settings() -> None:
     """Validate the smaller secret boundary needed by the Draft worker."""
+    require_full_runtime("Survey")
     if not is_survey_runtime_enabled():
         raise ValueError(
             "SCHOLIGHT_SURVEY_RUNTIME_ENABLED must be true to run the Survey Draft worker"

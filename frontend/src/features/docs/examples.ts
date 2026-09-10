@@ -6,14 +6,13 @@ export function buildDocsExamples(urls: DeploymentUrls) {
   -H 'Content-Type: application/json' \\
   -d '{
     "query": "retrieval augmented generation",
-    "strength": "standard",
     "limit": 5,
     "filters": { "categories": ["cs.AI"] }
   }'`,
     authenticatedCurl: `curl -sS -X POST ${urls.search} \\
   -H 'Authorization: Bearer sk_live_xxx' \\
   -H 'Content-Type: application/json' \\
-  -d '{"query":"vision language models","strength":"thorough","limit":10}'`,
+  -d '{"query":"vision language models","limit":10}'`,
     extractCurl: `curl -sS -X POST ${urls.extract} \\
   -H 'Authorization: Bearer sk_live_xxx' \\
   -H 'Content-Type: application/json' \\

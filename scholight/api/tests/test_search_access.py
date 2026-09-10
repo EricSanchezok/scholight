@@ -253,3 +253,8 @@ def test_survey_worker_requires_directmail_credentials(
 
     with pytest.raises(ValueError, match="SCHOLIGHT_ALIYUN_DM_ACCESS_KEY_ID"):
         validate_survey_worker_settings()
+
+
+@pytest.fixture(autouse=True)
+def full_runtime_profile(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "runtime_profile", "full")

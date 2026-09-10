@@ -532,3 +532,10 @@ def test_smoke_runtime_schema_probe_checks_latest_survey_columns() -> None:
             "notifications.status",
         )
     )
+
+
+@pytest.fixture(autouse=True)
+def full_runtime_profile(monkeypatch: pytest.MonkeyPatch) -> None:
+    from scholight.config import settings
+
+    monkeypatch.setattr(settings, "runtime_profile", "full")

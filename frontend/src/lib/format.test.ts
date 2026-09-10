@@ -62,7 +62,7 @@ describe("search presentation helpers", () => {
   it("round-trips hidden search filters through the URL", () => {
     const url = buildSearchUrl({
       query: "retrieval",
-      strength: "thorough",
+      strength: "standard",
       limit: 30,
       filters: {
         categories: ["cs.IR", "cs.AI"],
@@ -74,7 +74,7 @@ describe("search presentation helpers", () => {
     const parsed = parseSearchParameters(new URLSearchParams(url.split("?")[1]));
     expect(parsed).toEqual({
       query: "retrieval",
-      strength: "thorough",
+      strength: "standard",
       limit: 30,
       filters: {
         categories: ["cs.IR", "cs.AI"],

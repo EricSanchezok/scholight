@@ -67,7 +67,25 @@ async def test_migrations_apply_once_and_replay_without_schema_changes(
         (12, "access_keys_all_tools"),
         (13, "allow_free_readable_surveys"),
         (14, "survey_compute_attempts"),
+        (15, "deferred_fulltext"),
     ]
+
+
+@pytest.mark.asyncio
+async def test_deferred_versions_survive_replay_without_runnable_jobs(
+    ingestion_pool: asyncpg.Pool,
+) -> None:
+    from scholight.db.queries_deferred_fulltext import record_deferred_fulltext
+
+    with patch("scholight.db.queries_deferred_fulltext.get_pool", return_value=ingestion_pool):
+        await record_deferred_fulltext([("2401.00001", 2)], dt.date(2026, 9, 10))
+        await record_deferred_fulltext([("2401.00001", 1)], dt.date(2026, 9, 9))
+        await record_deferred_fulltext([("2401.00001", 2)], dt.date(2026, 9, 10))
+    row = await ingestion_pool.fetchrow("SELECT * FROM scholight.deferred_fulltext")
+    assert (
+        row["target_version"],
+        await ingestion_pool.fetchval("SELECT count(*) FROM scholight.ingestion_jobs"),
+    ) == (2, 0)
 
 
 @pytest.mark.asyncio

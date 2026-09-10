@@ -3,24 +3,17 @@ import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
 import { useNavigate } from "react-router-dom";
 
-import type { SearchFilters, SearchStrength } from "../api/types";
+import type { SearchFilters } from "../api/types";
 import { buttonLabelMotion } from "../app/motion";
 import { productConfig } from "../config/product";
 import { buildSearchUrl } from "../lib/format";
 import { styles } from "../styles/classes";
-import { EditorialSelect } from "./EditorialSelect";
 import { SearchFiltersControl } from "./SearchFiltersControl";
-
-const strengthOptions = [
-  { value: "standard", label: "Standard" },
-  { value: "thorough", label: "Thorough" },
-] as const;
 
 const emptyFilters: SearchFilters = {};
 
 interface Props {
   initialQuery?: string;
-  initialStrength?: SearchStrength;
   initialLimit?: number;
   filters?: SearchFilters;
   compact?: boolean;
@@ -29,7 +22,6 @@ interface Props {
 
 export function SearchForm({
   initialQuery = "",
-  initialStrength = "standard",
   initialLimit = productConfig.search.resultLimit,
   filters = emptyFilters,
   compact = false,
@@ -37,13 +29,11 @@ export function SearchForm({
 }: Props) {
   const navigate = useNavigate();
   const [query, setQuery] = useState(initialQuery);
-  const [strength, setStrength] = useState<SearchStrength>(initialStrength);
   const [searchFilters, setSearchFilters] = useState<SearchFilters>(filters);
   const [limit, setLimit] = useState(initialLimit);
   const [error, setError] = useState("");
 
   useEffect(() => setQuery(initialQuery), [initialQuery]);
-  useEffect(() => setStrength(initialStrength), [initialStrength]);
   useEffect(() => setSearchFilters(filters), [filters]);
   useEffect(() => setLimit(initialLimit), [initialLimit]);
 
@@ -57,7 +47,6 @@ export function SearchForm({
     navigate(
       buildSearchUrl({
         query: normalized,
-        strength,
         limit,
         filters: searchFilters,
       }),
@@ -94,7 +83,6 @@ export function SearchForm({
               navigate(
                 buildSearchUrl({
                   query: normalized,
-                  strength,
                   limit: nextLimit,
                   filters: nextFilters,
                 }),
@@ -102,15 +90,6 @@ export function SearchForm({
             }
           }}
         />
-        <div className={styles.strengthSelect}>
-          <EditorialSelect
-            label="Search strength"
-            value={strength}
-            options={strengthOptions}
-            onValueChange={setStrength}
-            variant="strength"
-          />
-        </div>
         <button className={styles.primaryButton} type="submit" disabled={busy} aria-busy={busy}>
           <AnimatePresence initial={false} mode="popLayout">
             <m.span key={busy ? "searching" : "search"} {...buttonLabelMotion}>

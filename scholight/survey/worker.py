@@ -17,7 +17,7 @@ from uuid import UUID, uuid4
 
 import structlog
 
-from scholight.config import settings
+from scholight.config import require_full_runtime, settings
 from scholight.db.client import DBError
 from scholight.db.queries_survey import (
     SurveyJob,
@@ -1956,6 +1956,7 @@ async def process_survey_job(
     execute_job: SurveyJobExecutor | None = None,
 ) -> None:
     """Execute a pending claim or resume archiving without rerunning RCM."""
+    require_full_runtime("Background generation")
     run_root = _job_root(job.id) / "run"
     result: SurveyExecutionResult | None = None
     stop = asyncio.Event()
@@ -2032,6 +2033,7 @@ async def process_survey_job(
 
 async def serve_survey_worker(*, email_sender: SurveyEmailSender | None = None) -> None:
     """Supervise bounded concurrent Surveys with independent leases and process groups."""
+    require_full_runtime("Survey")
     artifact_store = SurveyArtifactStore(
         bucket=settings.survey_s3_bucket,
         endpoint_url=settings.survey_s3_endpoint_url,

@@ -110,7 +110,6 @@ export function SearchPage() {
   const parsed = useMemo(() => parseSearchParameters(searchParams), [searchParams]);
   const request: SearchRequest = {
     query: parsed.query,
-    strength: parsed.strength,
     limit: parsed.limit,
     filters: parsed.filters,
   };
@@ -149,7 +148,6 @@ export function SearchPage() {
       <div className={styles.resultsSearch}>
         <SearchForm
           initialQuery={parsed.query}
-          initialStrength={parsed.strength}
           initialLimit={parsed.limit}
           filters={parsed.filters}
           compact
@@ -162,6 +160,12 @@ export function SearchPage() {
         )}
       </div>
       <div className={styles.readingColumn}>
+        {(searchParams.get("strength") === "thorough" ||
+          searchParams.get("replay") === "legacy") && (
+          <p className={styles.notice} role="status">
+            This query uses the current search. Full-text search is unavailable.
+          </p>
+        )}
         <FilterChips filters={parsed.filters} onRemove={removeFilter} />
         {!parsed.query && (
           <div className={styles.state}>
@@ -211,10 +215,7 @@ export function SearchPage() {
               <div className={styles.resultsSummary}>
                 <h1>{messages.search.resultsTitle}</h1>
                 <span>
-                  {result.data.result_count} papers ·{" "}
-                  {result.data.strength === "thorough"
-                    ? messages.search.thorough
-                    : messages.search.standard}
+                  {result.data.result_count} papers
                   {filterCount ? ` · ${filterCount} filters` : ""}
                 </span>
               </div>

@@ -50,6 +50,10 @@ class _LazyGroup(click.Group):
         self._loaded: bool = False
 
     def _load(self) -> None:
+        if self.name == "survey":
+            from scholight.config import require_full_runtime
+
+            require_full_runtime("Survey")
         if self._loaded:
             return
         mod = __import__(self._module, fromlist=[self._attr])

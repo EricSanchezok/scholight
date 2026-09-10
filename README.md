@@ -70,21 +70,12 @@ Web Extract 要求 Access Key，但不消耗搜索日额度。带目标请求头
 
 抽取 sidecar 仅记录静态/浏览器路径、稳定错误码、耗时、下载/输出字节数与缓存命中指标；目标 URL、Authorization、Cookie 和响应正文不会进入日志或指标。
 
-### Survey 研究报告
+### Retained full runtime
 
-Survey 生成结构化证据与可视化：报告包含 `$...$` / `$$...$$` 数学公式（前端 KaTeX 渲染）、
-GFM 数据对比表，以及由应用确定性渲染的本地数据图表（折线 / 柱状 / 分组柱状 / 散点 /
-饼图 / 流程图）。图表由模型声明为 fenced `chart` JSON 块、finalizer 用 matplotlib/graphviz
-渲染到 `figures/`，非法声明被丢弃并计数，绝不阻塞发布。
-图表 caption 会在正文中以可见说明呈现；未闭合的 `chart` 围栏会作为非法声明丢弃，避免原始标记泄漏。
-
-全文证据走应用侧抽取阶梯：优先抓取 arXiv HTML（LaTeXML 渲染，`<math alttext>` 保留原始
-LaTeX，失败回退 ar5iv）；仅在 HTML 抽取不可用时才对 agent 下载的 PDF 跑 pymupdf4llm，物化到 `extracts/` 供
-PaperCardWriter 读取；两端失败时回退现状 pdftotext 直读。卡片新增 `key_formulas` 与
-`key_results_table` 可选小节，公式与数字只能逐字来自读到的抽取产物。
-
-成功的 Survey 可通过 owner-scoped `GET /api/surveys/{survey_id}/report.pdf` 下载品牌化 PDF；
-服务端会将公式栅格化为内嵌图片、只读取清单授权的图表资源，并拒绝报告正文中的外部资源。
+Survey is hidden and unavailable in the default lean runtime. Its historical data,
+reports, files, and implementation remain intact. Full-text pipelines and Survey
+regression tooling require explicit `SCHOLIGHT_RUNTIME_PROFILE=full`; this does
+not re-enable public Thorough search. See [the runtime handbook](docs/lean-runtime.md).
 
 ## 配置
 
@@ -105,9 +96,7 @@ PaperCardWriter 读取；两端失败时回退现状 pdftotext 直读。卡片�
 | `SCHOLIGHT_EXTRACT_SERVICE_URL`                             | API ✅ | 内部抽取 sidecar 地址，Compose 默认 `http://extract:8001`                         |
 | `SCHOLIGHT_ANONYMOUS_RATE_LIMIT_PER_MINUTE`                 |        | 匿名共享分钟桶，默认 30 attempts/IP                                                 |
 | `SCHOLIGHT_ANONYMOUS_STANDARD_DAILY_LIMIT`                  |        | 匿名 Standard UTC 日额度，默认 100/IP                                               |
-| `SCHOLIGHT_ANONYMOUS_THOROUGH_DAILY_LIMIT`                  |        | 匿名 Thorough UTC 日额度，默认 30/IP                                                |
 | `SCHOLIGHT_AUTHENTICATED_STANDARD_DAILY_LIMIT`              |        | 登录用户 Standard UTC 日默认额度，默认 1000                                         |
-| `SCHOLIGHT_AUTHENTICATED_THOROUGH_DAILY_LIMIT`              |        | 登录用户 Thorough UTC 日默认额度，默认 1000                                         |
 | `SCHOLIGHT_CORS_ALLOW_ORIGINS`                              | API ✅ | 明确的前端 origin JSON 列表；生产环境禁止 `*`                                       |
 | `SCHOLIGHT_PROXY_HEADERS` / `SCHOLIGHT_FORWARDED_ALLOW_IPS` | API ✅ | 反向代理信任设置；启用时必须列出明确代理 IP/CIDR，禁止 `*`                          |
 | `SCHOLIGHT_DATA_ROOT`                                       |        | 论文 PDF 和日志的本地存储路径（默认 `./data`）                                      |
@@ -118,37 +107,22 @@ API-only 校验只在 `create_app()` 执行；migration、scheduler 和内部 CL
 
 ## 搜索系统
 
-### 两级检索管线
+### Public abstract search
 
-|              | Standard（内部 Level 1）                      | Thorough（内部 Level 2）                                         |
-| ------------ | --------------------------------------------- | ---------------------------------------------------------------- |
-| **范围**     | 论文元数据（标题 + 摘要）                     | 论文元数据 + 段落全文                                            |
-| **集合**     | `arxiv_papers`（303 万）                      | `arxiv_papers` + `arxiv_chunks`（1.72 亿）                       |
-| **算法**     | Dense + BM25 hybrid → WeightedRanker(0.6/0.4) | Standard 全部 + Chunk 粗召回 → Dense 精排 → MaxP 聚合 → RRF 融合 |
-| **延迟**     | ~300ms                                        | ~1s                                                              |
-| **适用场景** | 日常检索                                      | 深度全文检索                                                     |
+Search uses the existing Level 1 dense + BM25 abstract pipeline and requires only
+`arxiv_papers`. Filters, sorting, authentication, and paper result fields remain
+compatible. The internal Level 2 implementation and benchmarks remain available
+for explicit full-runtime testing and future recovery.
 
-Thorough 是严格模式：Level 2 或其核心 metadata backfill 未完整成功时返回 `503`，不会回退并伪装成 Standard 成功。CLI 和 benchmark 仍使用内部 `level/top_k` DTO；只有 HTTP API 使用下述公共契约。
+`POST /api/search` and MCP `search_papers` accept omitted `strength` or the deprecated
+`standard` value. `thorough` fails parameter validation before search or quota
+consumption. Responses retain `strength: standard` for existing clients.
 
-### 调用方式
-
-**CLI：**
-
-```bash
-uv run scholight search -q "your query"              # Level 1，10 条结果
-uv run scholight search -q "your query" --level 2    # Level 2，内部诊断可含段落证据
-uv run scholight search -q "your query" -k 20        # 20 条结果
-uv run scholight search -q "your query" --json       # JSON 输出
-```
-
-**公共 API（`POST /search`）：**
-
-`Authorization` 完全缺失时按匿名搜索处理；有效 active access Bearer token 使用登录用户额度。Header 存在但无效、过期、不是 Bearer 或是 refresh token 时返回 `401`，不会降级为匿名。
+Request:
 
 ```json
 {
   "query": "retrieval augmented generation",
-  "strength": "standard",
   "limit": 10,
   "filters": {
     "categories": ["cs.AI", "cs.IR"],
@@ -191,8 +165,8 @@ uv run scholight search -q "your query" --json       # JSON 输出
 
 ### 匿名额度与错误
 
-- Standard/Thorough 共享 `30 attempts/min/IP`；分钟桶统计尝试，失败或验证错误不回滚。
-- UTC 日额度独立分桶：Standard 默认 100/IP，Thorough 默认 30/IP。
+- Search allows `30 attempts/min/IP`; malformed search parameters are rejected before quota consumption.
+- The existing Standard daily limit remains: 100/IP anonymously and 1,000 per authenticated user by default. Historical Thorough usage is retained.
 - 匿名 IP 仅以 HMAC-SHA256 摘要进入 PostgreSQL；原始 IP、完整摘要和密钥不得进入日志或 metrics。
 - 分钟或日额度耗尽返回结构化 `429` 并带 `Retry-After`；依赖暂不可用返回结构化 `503`，默认 `Retry-After: 5`。
 - 搜索执行或公开响应组装失败会 best-effort 补偿一次日额度；历史和 Usage 的后台持久化失败不会改变已经返回的搜索响应或额度。
@@ -229,7 +203,7 @@ ACCESS_KEY=sk_live_xxx
 curl -sS -X POST "$API/search" \
   -H "Authorization: Bearer $ACCESS_KEY" \
   -H 'Content-Type: application/json' \
-  -d '{"query":"retrieval augmented generation","strength":"standard","limit":10,"filters":{}}'
+  -d '{"query":"retrieval augmented generation","limit":10,"filters":{}}'
 
 # 修改名称/有效期及立即撤销
 curl -sS -X PATCH "$API/user/access-keys/KEY_UUID" \
@@ -369,3 +343,10 @@ uv run pytest scholight/ -v  # 测试
 ## License
 
 Internal use — SanchezCloud
+
+## Lean operation
+
+The default runtime now provides one abstract-based search and metadata-only sync.
+See [Lean runtime and recovery boundaries](docs/lean-runtime.md) for compatibility,
+Survey shutdown, and deferred full-text recovery. Existing deployment resources
+are not changed by this code migration.

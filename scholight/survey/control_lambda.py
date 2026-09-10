@@ -11,7 +11,7 @@ import asyncpg
 import boto3
 import structlog
 
-from scholight.config import settings
+from scholight.config import require_full_runtime, settings
 from scholight.db.client import bind_pool_connection, close_pool, create_pool
 from scholight.db.survey_locking import try_lock_survey_control, unlock_survey_control
 from scholight.logging import configure_logging
@@ -38,6 +38,7 @@ _MAIL_FIELDS = {
 
 def handler(event: dict[str, Any], context: object) -> dict[str, int]:
     """Process one event/tick; PostgreSQL serializes duplicate cycles."""
+    require_full_runtime("Survey")
     del context
     configure_logging(log_level=settings.log_level, use_json=True)
     return asyncio.run(_run(event))

@@ -1304,3 +1304,10 @@ async def test_delete_uses_owner_scoped_transaction_and_returns_no_content(
 
     assert response.status_code == 204
     delete.assert_awaited_once_with(survey_id=survey_id, user_id=active_user.id)
+
+
+@pytest.fixture(autouse=True)
+def full_runtime_profile(monkeypatch: pytest.MonkeyPatch) -> None:
+    from scholight.config import settings
+
+    monkeypatch.setattr(settings, "runtime_profile", "full")

@@ -39,7 +39,7 @@ from pymilvus import (
 )
 from pymilvus.milvus_client import IndexParams
 
-from scholight.config import settings
+from scholight.config import active_collections, settings
 
 logger = structlog.get_logger(__name__)
 
@@ -272,7 +272,7 @@ def create_collections(client: MilvusClient) -> None:
         "arxiv_chunks": "Eventually",
     }
 
-    for name in COLLECTION_NAMES:
+    for name in active_collections():
         if client.has_collection(name):
             indexes = client.list_indexes(name)
             if not indexes:
@@ -305,7 +305,8 @@ def create_indexes(client: MilvusClient) -> None:
         "arxiv_chunks": _build_arxiv_chunks_indexes(),
     }
 
-    for collection_name, index_params in _tasks.items():
+    for collection_name in active_collections():
+        index_params = _tasks[collection_name]
         existing_names: set[str] = set(client.list_indexes(collection_name))
         pending = IndexParams()
         wait_list: list[str] = []
@@ -341,6 +342,6 @@ def ensure_collections(client: MilvusClient) -> None:
     """
     create_collections(client)
     create_indexes(client)
-    for name in COLLECTION_NAMES:
+    for name in active_collections():
         client.load_collection(name, timeout=_COLLECTION_LOAD_TIMEOUT)
         logger.info("collection loaded", collection=name)

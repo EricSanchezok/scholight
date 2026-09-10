@@ -194,7 +194,7 @@ def _format_markdown(response: PublicSearchResponse) -> str:
     lines = [
         f"# Scholight results for: {response.query}",
         "",
-        f"Found {response.result_count} paper(s) with {response.strength.value} search.",
+        f"Found {response.result_count} paper(s).",
     ]
     if response.degraded:
         lines.extend(["", "Some paper metadata could not be enriched."])
@@ -266,13 +266,10 @@ async def search_papers(
         ),
     ],
     strength: Annotated[
-        Literal["standard", "thorough"],
+        Literal["standard"],
         Field(
-            description=(
-                "Search depth. Use standard by default for fast, iterative discovery. Use thorough "
-                "when the question is nuanced and deeper ranking justifies higher latency and "
-                "consumption of the separate Thorough quota."
-            )
+            description=("Deprecated compatibility field. Omit it to search papers."),
+            json_schema_extra={"deprecated": True},
         ),
     ] = "standard",
     limit: Annotated[
@@ -326,9 +323,11 @@ async def search_papers(
     ] = None,
 ) -> CallToolResult:
     """Search Scholight for ranked AI research papers."""
+    if strength != "standard":
+        raise ValueError("Thorough search is unavailable; omit strength.")
     request = PublicSearchRequest(
         query=query,
-        strength=SearchStrength(strength),
+        strength=SearchStrength.STANDARD,
         limit=limit,
         filters=PublicSearchFilters(
             categories=categories or [],
@@ -469,9 +468,7 @@ def create_mcp_app() -> tuple[FastMCP[Any], ASGIApp]:
             "Use Scholight to find and compare research papers and extract readable web content. "
             "Call search_papers for literature discovery, related-work research, method comparisons, "
             "or author, category, and date-filtered paper searches. Call extract_url when you need the "
-            "content behind an HTTP or HTTPS URL. Prefer standard for most searches; "
-            "use thorough when nuanced queries benefit from deeper ranking despite higher latency and "
-            "consumption of the separate Thorough quota."
+            "content behind an HTTP or HTTPS URL. Paper discovery searches titles and abstracts."
         ),
         stateless_http=True,
         json_response=True,
@@ -484,9 +481,8 @@ def create_mcp_app() -> tuple[FastMCP[Any], ASGIApp]:
             "Find ranked AI research papers relevant to a natural-language question or topic. Use this "
             "tool for literature discovery, related-work research, method comparisons, and author, "
             "category, or date-filtered research. Results include titles, authors, abstracts, dates, "
-            "categories, and paper and PDF links. Preserve the returned rank order. Use standard by "
-            "default; use thorough for nuanced queries when deeper ranking justifies higher latency and "
-            "consumption of the separate Thorough quota."
+            "categories, and paper and PDF links. Preserve the returned rank order. "
+            "Search uses paper titles and abstracts."
         ),
         annotations=ToolAnnotations(
             readOnlyHint=True,

@@ -1666,8 +1666,11 @@
             "type": "string"
           },
           "strength": {
-            "$ref": "#/components/schemas/SearchStrength",
-            "default": "standard"
+            "const": "standard",
+            "default": "standard",
+            "deprecated": true,
+            "title": "Strength",
+            "type": "string"
           }
         },
         "required": ["query"],

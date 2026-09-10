@@ -462,7 +462,8 @@ async def test_collection_stats_concurrent_cache_miss_is_single_flight() -> None
     assert calls == 1
 
 
-def test_collection_stats_rpc_is_explicitly_bounded() -> None:
+def test_collection_stats_rpc_is_explicitly_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(engine_module.settings, "runtime_profile", "full")
     client = MagicMock()
     client.get_collection_stats.side_effect = [{"row_count": 10}, {"row_count": 20}]
 

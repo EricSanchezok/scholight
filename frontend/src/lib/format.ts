@@ -57,7 +57,7 @@ export function searchResultMetadataParts(
 
 export interface SearchParameters {
   query: string;
-  strength: SearchStrength;
+  strength?: SearchStrength;
   limit: number;
   filters: SearchFilters;
 }
@@ -101,7 +101,7 @@ export function parseSearchParameters(params: URLSearchParams): SearchParameters
   const limit = [10, 20, 30, 40, 50].includes(requestedLimit) ? requestedLimit : 10;
   return {
     query: (params.get("q") ?? "").trim().slice(0, 500),
-    strength: params.get("strength") === "thorough" ? "thorough" : "standard",
+    strength: "standard",
     limit,
     filters: {
       categories: params.getAll("category").filter(Boolean),
@@ -113,7 +113,7 @@ export function parseSearchParameters(params: URLSearchParams): SearchParameters
 }
 
 export function buildSearchUrl(parameters: SearchParameters): string {
-  const params = new URLSearchParams({ q: parameters.query, strength: parameters.strength });
+  const params = new URLSearchParams({ q: parameters.query });
   if (parameters.limit !== 10) params.set("limit", String(parameters.limit));
   parameters.filters.categories?.forEach((value) => params.append("category", value));
   parameters.filters.authors?.forEach((value) => params.append("author", value));

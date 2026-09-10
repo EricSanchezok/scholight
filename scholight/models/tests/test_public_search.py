@@ -18,9 +18,11 @@ from scholight.api.models.search import (
 )
 
 
-@pytest.mark.parametrize("strength", [SearchStrength.STANDARD, SearchStrength.THOROUGH])
+@pytest.mark.parametrize("strength", [SearchStrength.STANDARD])
 def test_public_search_request_accepts_strength(strength: SearchStrength) -> None:
-    request = PublicSearchRequest(query="  retrieval augmented generation  ", strength=strength)
+    request = PublicSearchRequest.model_validate(
+        {"query": "  retrieval augmented generation  ", "strength": strength}
+    )
 
     assert (request.query, request.strength, request.limit) == (
         "retrieval augmented generation",
@@ -108,7 +110,7 @@ def test_public_request_maps_to_fixed_internal_search_request() -> None:
     public = PublicSearchRequest.model_validate(
         {
             "query": "test",
-            "strength": "thorough",
+            "strength": "standard",
             "limit": 20,
             "filters": {
                 "categories": ["cs.AI"],
@@ -124,7 +126,7 @@ def test_public_request_maps_to_fixed_internal_search_request() -> None:
     assert internal.model_dump() == {
         "query": "test",
         "top_k": 20,
-        "level": 2,
+        "level": 1,
         "enable_fusion": False,
         "strategy": None,
         "date_from": "2020-01-01",

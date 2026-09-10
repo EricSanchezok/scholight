@@ -28,6 +28,7 @@ from typing import Any
 
 import structlog
 
+from scholight.config import active_collections
 from scholight.store.client import escape_sql, get_client
 from scholight.store.fields import PAPER_SEARCH_FIELDS, PAPER_VECTOR_FIELDS
 
@@ -235,7 +236,6 @@ class HealthChecker:
         flush, trigger compaction).
     """
 
-    _COLLECTIONS = ("arxiv_papers", "arxiv_chunks")
     _SAMPLE_SIZE = 10_000  # deep mode sample size for field-level stats
 
     def __init__(
@@ -244,6 +244,7 @@ class HealthChecker:
         dims: list[str] | None = None,
         fix: bool = False,
     ) -> None:
+        self._collections = active_collections()
         self.deep = deep
         self.dims = dims
         self.fix = fix
@@ -302,7 +303,7 @@ class HealthChecker:
         layer = LayerResult(layer="L1 Collections")
         client = get_client()
 
-        for name in self._COLLECTIONS:
+        for name in self._collections:
             if not client.has_collection(name):
                 layer.checks.append(
                     CheckResult(
@@ -381,7 +382,7 @@ class HealthChecker:
         layer = LayerResult(layer="L2 Indexes")
         client = get_client()
 
-        for name in self._COLLECTIONS:
+        for name in self._collections:
             if not client.has_collection(name):
                 continue
 
@@ -471,7 +472,7 @@ class HealthChecker:
             )
             return layer
 
-        for name in self._COLLECTIONS:
+        for name in self._collections:
             if not client.has_collection(name):
                 continue
 
@@ -552,7 +553,7 @@ class HealthChecker:
         layer = LayerResult(layer="L4 DataStats")
         client = get_client()
 
-        for name in self._COLLECTIONS:
+        for name in self._collections:
             if not client.has_collection(name):
                 continue
 
@@ -744,7 +745,7 @@ class HealthChecker:
         layer = LayerResult(layer="L6 Vectors")
         client = get_client()
 
-        for name in self._COLLECTIONS:
+        for name in self._collections:
             if not client.has_collection(name):
                 continue
 
@@ -829,6 +830,8 @@ class HealthChecker:
 
     def check_consistency(self) -> LayerResult:
         layer = LayerResult(layer="L7 Consistency")
+        if "arxiv_chunks" not in self._collections:
+            return layer
         client = get_client()
 
         if not client.has_collection("arxiv_papers") or not client.has_collection("arxiv_chunks"):

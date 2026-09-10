@@ -120,19 +120,17 @@ export function UsagePage() {
           ) : summary.data ? (
             <Reveal name="quota-content">
               <div className={styles.quotaMetrics}>
-                {(["standard", "thorough", "survey"] as const).map((kind) => {
+                {(["standard"] as const).map((kind) => {
                   const quota = summary.data.today[kind];
-                  const label = kind === "survey" ? "SURVEY" : `${kind.toUpperCase()} SEARCH`;
-                  const unit = kind === "survey" ? "surveys" : "searches";
+                  const label = "SEARCH";
+                  const unit = "searches";
                   const percent =
                     quota.daily_limit > 0
                       ? Math.min(100, (quota.used / quota.daily_limit) * 100)
                       : 0;
                   return (
                     <div className={styles.quotaMetric} key={kind}>
-                      <span className={kind === "thorough" ? styles.mutedLabel : styles.brandLabel}>
-                        {label}
-                      </span>
+                      <span className={styles.brandLabel}>{label}</span>
                       <strong>
                         {quota.daily_limit > 0
                           ? `${quota.used} / ${quota.daily_limit}`
@@ -179,10 +177,7 @@ export function UsagePage() {
             <m.div {...metricRevealMotion(0)}>
               <span>SEARCHES TODAY</span>
               <strong>{summary.data.searches_today}</strong>
-              <p>
-                {summary.data.today.standard.used} Standard · {summary.data.today.thorough.used}{" "}
-                Thorough
-              </p>
+              <p>{summary.data.today.standard.used} searches against the current allowance</p>
             </m.div>
             <m.div {...metricRevealMotion(1)}>
               <span>THIS MONTH</span>
@@ -282,7 +277,7 @@ export function UsagePage() {
                 <tr>
                   <th>Time</th>
                   <th>Source</th>
-                  <th>Strength</th>
+                  <th>Search</th>
                   <th>Response</th>
                   <th>Results</th>
                   <th>Status</th>
@@ -301,7 +296,7 @@ export function UsagePage() {
                         ? `Access key · ${item.access_key?.name ?? `••••${item.access_key?.last4 ?? ""}`}`
                         : "Web · signed in"}
                     </td>
-                    <td>{item.strength === "thorough" ? "Thorough" : "Standard"}</td>
+                    <td>{item.strength === "thorough" ? "Previous full-text search" : "Search"}</td>
                     <td>{seconds(item.search_duration_ms)}</td>
                     <td>{item.result_count ?? "—"}</td>
                     <td>

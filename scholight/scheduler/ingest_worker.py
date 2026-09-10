@@ -17,7 +17,7 @@ from typing import Any, Literal
 
 import structlog
 
-from scholight.config import settings
+from scholight.config import require_full_runtime, settings
 from scholight.db.queries_ingestion import (
     IngestionJob,
     claim_ingestion_job,
@@ -176,6 +176,7 @@ async def process_job(
     stop_event: asyncio.Event | None = None,
 ) -> str:
     """Build and safely install one exact revision. Return ``installed`` or ``obsolete``."""
+    require_full_runtime("Background generation")
     canonical = canonicalize_arxiv_id(job.arxiv_id)
     if canonical is None or canonical != job.arxiv_id:
         raise InvalidIngestionJobError("Job contains an invalid canonical arXiv ID")
@@ -319,6 +320,7 @@ async def run_worker_once(
     heartbeat_interval_seconds: float | None = None,
     max_processing_seconds: float | None = None,
 ) -> bool:
+    require_full_runtime("Background generation")
     if stop_event is not None and stop_event.is_set():
         return False
     job = await claim_ingestion_job(worker_id, settings.ingest_lease_seconds)
@@ -436,6 +438,7 @@ async def drain_ingest(
     stop_event: asyncio.Event | None = None,
 ) -> DrainResult:
     """Drain available work, then exit on idle, deadline, or platform signal."""
+    require_full_runtime("Full-text ingestion")
     stop = stop_event or asyncio.Event()
     if stop_event is None:
         _install_signal_handlers(stop)
@@ -507,6 +510,7 @@ async def drain_ingest(
 
 async def serve_ingest() -> None:
     """Claim and process jobs until SIGINT/SIGTERM."""
+    require_full_runtime("Full-text ingestion")
     stop = asyncio.Event()
     _install_signal_handlers(stop)
     worker_id = f"{socket.gethostname()}:{os.getpid()}"
