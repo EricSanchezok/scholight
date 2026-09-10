@@ -1,6 +1,31 @@
 """Regression tests for the deterministic Survey E2E model."""
 
-from tests.survey_e2e.fake_model import _response, _stage, _tool_call
+import json
+
+import httpx
+import pytest
+
+from scholight.api.models.search import PublicSearchRequest, SearchStrength
+from tests.survey_e2e.fake_model import _response, _stage, _tool_call, app
+
+
+@pytest.mark.asyncio
+async def test_reference_expansion_uses_the_current_public_search_contract() -> None:
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.post(
+            "/v1/chat/completions",
+            json={
+                "messages": [
+                    {"role": "system", "content": "generates a list of expanded references"}
+                ],
+                "tools": [{"type": "function", "function": {"name": "scholight__search_papers"}}],
+            },
+        )
+    call = response.json()["choices"][0]["message"]["tool_calls"][0]
+    request = PublicSearchRequest.model_validate(json.loads(call["function"]["arguments"]))
+    assert request.strength is SearchStrength.STANDARD
 
 
 def test_tool_call_response_uses_deepseek_string_content() -> None:

@@ -9,7 +9,9 @@ remain readable; replaying historical full-text queries uses the current search.
 Survey is unavailable in lean mode, including direct API calls, worker startup,
 notifications, cleanup, and event control. Existing data and full implementation
 remain. `full` enables explicit recovery and hermetic regression tests, but does
-not restore public Thorough search. Web Extract remains independent.
+not restore public Thorough search. Retained Survey reference resolution also
+uses Standard through the public MCP contract; internal Level 2 remains available
+only through its explicit full-profile tools. Web Extract remains independent.
 
 Metadata synchronization records each observed paper/version in
 `scholight.deferred_fulltext` after the metadata write, before advancing the daily
