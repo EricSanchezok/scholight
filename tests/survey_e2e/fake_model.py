@@ -343,7 +343,7 @@ async def completion(request: Request, path: str) -> Any:
                 search_name,
                 {
                     "query": "retrieval augmented generation evaluation",
-                    "strength": "thorough" if stage == "reference_expander" else "standard",
+                    "strength": "standard",
                     "limit": 1,
                 },
             ),

@@ -156,7 +156,7 @@ def test_search_strengths_match_survey_retrieval_policy() -> None:
     reference_seed = (prompts / "reference_seed.txt").read_text(encoding="utf-8")
     for reference in (legacy_reference, reference_seed):
         assert "scholight__search_papers" in reference
-        assert 'strength="thorough"' in reference
+        assert 'strength="standard"' in reference
         assert "limit=5" in reference
     assert "run_dir/03a_seed_papers.md" in legacy_reference
     assert "Download each selected arXiv PDF" in legacy_reference
