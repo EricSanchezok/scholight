@@ -301,9 +301,12 @@ def test_file_renderer_writes_target_and_uses_disk_cache(
     class FakeWeasyPrint:
         HTML = FakeHTML
 
-        @staticmethod
-        def default_url_fetcher(url: str, *args: object, **kwargs: object) -> object:
-            return {"url": url}
+        class URLFetcher:
+            def __init__(self, **_kwargs: object) -> None:
+                pass
+
+            def fetch(self, url: str, *_args: object, **_kwargs: object) -> object:
+                return {"url": url}
 
     monkeypatch.setattr("scholight.survey.report_pdf._load_weasyprint", FakeWeasyPrint)
 
@@ -426,3 +429,24 @@ def test_print_css_declares_cjk_font_fallbacks() -> None:
 
     assert "'Noto Sans CJK SC', sans-serif" in html
     assert "'Noto Serif CJK SC', serif" in html
+
+
+def test_weasyprint70_fetcher_keeps_asset_allowlist(tmp_path: Path) -> None:
+    from types import SimpleNamespace
+
+    from scholight.survey.report_pdf import _safe_url_fetcher
+
+    class FakeFetcher:
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def fetch(self, url: str, *_args: object, **_kwargs: object) -> str:
+            return url
+
+    backend = SimpleNamespace(URLFetcher=FakeFetcher)
+    fetch = _safe_url_fetcher(backend, allow_data=False, extra_roots=(tmp_path / "allowed",))
+    local = (tmp_path / "allowed" / "figure.png").as_uri()
+    assert fetch(local) == local
+    for rejected in ("https://example.invalid/a.png", (tmp_path / "secret").as_uri(), "data:,test"):
+        with pytest.raises(ValueError, match="PDF resources"):
+            fetch(rejected)

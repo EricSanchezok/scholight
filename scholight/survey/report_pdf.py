@@ -612,24 +612,32 @@ def _safe_url_fetcher(
     allow_data: bool,
     extra_roots: tuple[Path, ...] = (),
 ) -> Callable[..., Any]:
-    default_url_fetcher = weasyprint.default_url_fetcher
+    backend = weasyprint.URLFetcher(
+        allowed_protocols={"data", "file"} if allow_data else {"file"},
+        allow_redirects=False,
+        fail_on_errors=False,
+    )
     allowed_roots = (
         _FONTS_DIR.resolve(),
         (_KATEX_DIR / "fonts").resolve(),
         *(root.resolve() for root in extra_roots),
     )
 
-    def fetch(url: str, *args: Any, **kwargs: Any) -> Any:
-        parsed = urlsplit(url)
-        if allow_data and parsed.scheme == "data":
-            return default_url_fetcher(url, *args, **kwargs)
-        if parsed.scheme == "file":
-            resource_path = Path(unquote(parsed.path)).resolve()
-            if any(_is_within(resource_path, root) for root in allowed_roots):
-                return default_url_fetcher(url, *args, **kwargs)
-        raise ValueError("PDF resources must be bundled or report-local assets")
+    class AssetFetcher:
+        # WeasyPrint 70 checks this flag when a resource is refused.
+        _fail_on_errors = False
 
-    return fetch
+        def __call__(self, url: str, *args: Any, **kwargs: Any) -> Any:
+            parsed = urlsplit(url)
+            if allow_data and parsed.scheme == "data":
+                return backend.fetch(url, *args, **kwargs)
+            if parsed.scheme == "file" and parsed.netloc in {"", "localhost"}:
+                resource_path = Path(unquote(parsed.path)).resolve()
+                if any(_is_within(resource_path, root) for root in allowed_roots):
+                    return backend.fetch(url, *args, **kwargs)
+            raise ValueError("PDF resources must be bundled or report-local assets")
+
+    return AssetFetcher()
 
 
 __all__ = [

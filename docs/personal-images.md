@@ -27,6 +27,8 @@ Native ARM64 and AMD64 CI starts the four lean images and exercises lifecycle,
 search parameter compatibility, capabilities, metadata writes, and Chromium.
 The retained AMD64 deployment job runs full Survey/report and ingest regressions.
 WeasyPrint is upgraded to the audited version 70 series in the full profile.
+The report renderer uses its URLFetcher response contract while retaining the
+bundled/report-local asset allowlist and refusing external resources.
 CI tooling pins pip 26.2 or newer, Vitest 4.1.11, and js-yaml 4.3.2 to
 resolve audit findings; both Python and frontend dependency audits are CI gates.
 
