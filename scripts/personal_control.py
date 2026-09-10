@@ -58,11 +58,16 @@ def control() -> dict:
             Condition={"StringEquals": {"iam:PassedToService": "ecs-tasks.amazonaws.com"}},
         ),
         statement(
-            ["ecs:RegisterTaskDefinition", "ecs:DescribeTaskDefinition"], "*", Condition=region
+            [
+                "ecs:RegisterTaskDefinition",
+                "ecs:DescribeTaskDefinition",
+                "ecs:DeregisterTaskDefinition",
+            ],
+            "*",
+            Condition=region,
         ),
         statement(
             [
-                "ecs:DeregisterTaskDefinition",
                 "ecs:TagResource",
                 "ecs:UntagResource",
                 "ecs:ListTagsForResource",

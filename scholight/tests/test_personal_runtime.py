@@ -71,3 +71,19 @@ def test_change_set_guard_rejects_foreign_stack_and_non_task_replacement(
     change["StackName"] = "another-product"
     with pytest.raises(ValueError, match="personal runtime"):
         validate_changes(change)
+
+
+def test_control_role_can_clean_up_task_revisions_without_broad_service_access(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2] / "scripts"))
+    from personal_control import control
+
+    policies = control()["Resources"]["CloudFormationRole"]["Properties"]["Policies"]
+    statements = policies[0]["PolicyDocument"]["Statement"]
+    cleanup = next(s for s in statements if "ecs:DeregisterTaskDefinition" in s["Action"])
+    # AWS authorizes deregistration against '*', not a task-definition ARN.
+    assert cleanup["Resource"] == "*"
+    assert cleanup["Condition"]["StringEquals"]["aws:RequestedRegion"] == {"Ref": "AWS::Region"}
+    service = next(s for s in statements if "ecs:UpdateService" in s["Action"])
+    assert service["Resource"] != "*"
