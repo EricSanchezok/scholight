@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-from pathlib import Path
-
 import click
 
+from scholight.cli.archive import (
+    export_cmd,
+    initialize_cmd,
+    restore_cmd,
+    verify_cmd,
+    verify_restored_cmd,
+)
+from scholight.config import active_collections
 from scholight.store.client import connect, is_connected
-from scholight.store.export import export_collection_to_path, restore_collection_from_path
 from scholight.store.schema import create_collections, create_indexes
-
-_COLLECTIONS = ("arxiv_papers", "arxiv_chunks")
 
 
 @click.group("store")
@@ -40,7 +42,7 @@ def migrate() -> None:
 
 @store_group.command()
 def init() -> None:
-    """Create arxiv_papers + arxiv_chunks collections, build indexes, load."""
+    """Initialize collections required by the selected runtime profile."""
     client = connect()
     click.echo("Connected to Milvus ✓")
 
@@ -50,7 +52,7 @@ def init() -> None:
     create_indexes(client)
     click.echo("Indexes built ✓")
 
-    for name in _COLLECTIONS:
+    for name in active_collections():
         try:
             client.load_collection(name, timeout=3600)
             click.echo(f"Collection '{name}' loaded into memory ✓")
@@ -71,7 +73,7 @@ def status() -> None:
     client = connect()
     click.echo("Milvus: connected ✓\n")
 
-    for name in _COLLECTIONS:
+    for name in active_collections():
         if client.has_collection(name):
             stats = client.get_collection_stats(name)
             total = f"{stats.get('row_count', 0):>8,d}"
@@ -79,44 +81,6 @@ def status() -> None:
             click.echo(f"  {name:>17s}: {total} rows, {len(indexes)} indexes")
         else:
             click.echo(f"  {name}: NOT CREATED")
-
-
-@store_group.command()
-@click.option(
-    "--output-dir",
-    "-o",
-    type=click.Path(file_okay=False),
-    help="Target directory (default: data_root/backups/logical/<timestamp>/)",
-)
-def backup(output_dir: str | None) -> None:
-    """Logical export: cursor-scan arxiv_papers + arxiv_chunks → JSONL shards.
-
-    Each collection gets its own subdirectory:
-    ``<output>/arxiv_papers/shard_*.jsonl.gz`` and
-    ``<output>/arxiv_chunks/shard_*.jsonl.gz``.
-
-    Runs online — no Milvus downtime needed.
-    Default target: ``{data_root}/backups/logical/YYYYMMDD_hhmmss/``.
-    """
-    from scholight.storage import storage
-
-    root = (
-        Path(output_dir)
-        if output_dir
-        else Path(storage.backup_dir("logical") / datetime.now().strftime("%Y%m%d_%H%M%S"))
-    )
-
-    client = connect()
-    grand_total = 0
-    for name in _COLLECTIONS:
-        if not client.has_collection(name):
-            click.echo(f"  {name}: skipping — collection not found")
-            continue
-        dest = root / name
-        total = export_collection_to_path(client, name, dest)
-        grand_total += total
-        click.echo(f"  {name}: {total:,} rows → {dest}")
-    click.echo(f"\nExported {grand_total:,} rows → {root}")
 
 
 @store_group.command()
@@ -235,17 +199,5 @@ def health(
         raise SystemExit(1)
 
 
-@store_group.command()
-@click.argument("input_dir", type=click.Path(file_okay=False, exists=True))
-@click.option("--batch-size", type=int, default=1000, help="Rows per upsert batch.")
-def restore(input_dir: str, batch_size: int) -> None:
-    """Restore a collection from a logical backup subdirectory.
-
-    Reads ``shard_*.jsonl.gz`` files from *input_dir* (the collection-specific
-    subdirectory like ``<backup>/arxiv_papers/`` or ``<backup>/arxiv_chunks/``)
-    and upserts into Milvus.
-
-    Example: ``scholight store restore backups/logical/20260530/arxiv_papers``
-    """
-    total = restore_collection_from_path(connect(), "arxiv_papers", Path(input_dir), batch_size)
-    click.echo(f"Restored {total:,} rows.")
+for command in (export_cmd, initialize_cmd, restore_cmd, verify_cmd, verify_restored_cmd):
+    store_group.add_command(command)
