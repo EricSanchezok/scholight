@@ -70,14 +70,11 @@ class AdmissionRelease:
         self.prefix = f"cloudformation/personal/releases/{self.operation}/"
 
     def read(self, name: str) -> dict | None:
-        try:
-            return json.loads(
-                self.s3.get_object(Bucket=BUCKET, Key=self.prefix + name + ".json")["Body"].read()
-            )
-        except ClientError as exc:
-            if exc.response["Error"]["Code"] != "NoSuchKey":
-                raise
+        key = self.prefix + name + ".json"
+        listing = self.s3.list_objects_v2(Bucket=BUCKET, Prefix=key, MaxKeys=1)
+        if not any(value["Key"] == key for value in listing.get("Contents", [])):
             return None
+        return json.loads(self.s3.get_object(Bucket=BUCKET, Key=key)["Body"].read())
 
     def record(self, name: str, value: dict) -> None:
         previous = self.read(name)

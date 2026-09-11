@@ -92,3 +92,20 @@ def test_resume_after_ack_failure_does_not_repeat_runtime_or_pause_again():
     release.run()
     assert changes == [("resume", {"MetadataEnabled": "true"})]
     assert "complete" in records
+
+
+def test_absent_checkpoint_uses_explicit_prefix_listing_instead_of_masking_denial():
+    release = object.__new__(module.AdmissionRelease)
+    release.prefix = "cloudformation/personal/releases/example/"
+
+    class Store:
+        def list_objects_v2(self, **kwargs):
+            assert kwargs["Prefix"] == release.prefix + "plan.json"
+            assert kwargs["MaxKeys"] == 1
+            return {"Contents": []}
+
+        def get_object(self, **kwargs):
+            raise AssertionError("An absent checkpoint must not need a forbidden GetObject")
+
+    release.s3 = Store()
+    assert release.read("plan") is None

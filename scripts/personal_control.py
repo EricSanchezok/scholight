@@ -138,6 +138,13 @@ def control() -> dict:
             ["personal-infrastructure", "personal-preview"],
             [
                 statement(
+                    ["s3:ListBucket"],
+                    sub(
+                        "arn:aws:s3:::scholight-personal-releases-${AWS::AccountId}-${AWS::Region}"
+                    ),
+                    Condition={"StringLike": {"s3:prefix": "cloudformation/personal/releases/*"}},
+                ),
+                statement(
                     ["s3:GetObject"],
                     sub(
                         "arn:aws:s3:::scholight-personal-releases-${AWS::AccountId}-${AWS::Region}/releases/*"
