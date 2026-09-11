@@ -1,0 +1,98 @@
+"""Immutable lean image and source contracts for personal production releases."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import re
+import subprocess
+
+COMPONENTS = ("api", "web", "extract", "metadata")
+ACCOUNT = "669409472143"
+REGION = "ap-south-2"
+
+
+def git(*args: str) -> bytes:
+    return subprocess.check_output(["git", *args], stderr=subprocess.DEVNULL)
+
+
+def require_merged(sha: str) -> None:
+    if not re.fullmatch(r"[0-9a-f]{40}", sha):
+        raise ValueError("An exact merged commit is required")
+    try:
+        git("merge-base", "--is-ancestor", sha, "origin/main")
+    except subprocess.CalledProcessError as exc:
+        raise ValueError("Release source must be merged into main") from exc
+
+
+def source_contract(sha: str) -> dict:
+    require_merged(sha)
+    names = git("ls-tree", "-r", "--name-only", sha, "migrations").decode().splitlines()
+    migrations = {
+        name: hashlib.sha256(git("show", f"{sha}:{name}")).hexdigest()
+        for name in names
+        if name.endswith(".sql")
+    }
+    lock = git("show", f"{sha}:uv.lock").decode()
+    identity = re.search(r"sanchezcloud-identity\.git\?[^\"\s]+#([0-9a-f]{40})", lock)
+    if not migrations or identity is None:
+        raise ValueError("Missing immutable product migration or Identity contract")
+    return {"identity_revision": identity.group(1), "migrations": migrations}
+
+
+def create(source_sha: str, control_revision: str, images: dict) -> dict:
+    require_merged(source_sha)
+    require_merged(control_revision)
+    result = {
+        "version": 1,
+        "source_sha": source_sha,
+        "control_revision": control_revision,
+        "platform": "linux/arm64",
+        "images": images,
+        **source_contract(source_sha),
+    }
+    verify(result)
+    return result
+
+
+def verify(value: dict) -> None:
+    if value.get("version") != 1 or value.get("platform") != "linux/arm64":
+        raise ValueError("Unsupported production manifest version or architecture")
+    require_merged(value["source_sha"])
+    require_merged(value["control_revision"])
+    if set(value.get("images", {})) != set(COMPONENTS):
+        raise ValueError("All four lean image components are required")
+    for name, image in value["images"].items():
+        if not re.fullmatch(
+            rf"{ACCOUNT}\.dkr\.ecr\.{REGION}\.amazonaws\.com/scholight-personal-{name}@sha256:[0-9a-f]{{64}}",
+            image,
+        ):
+            raise ValueError("Foreign or mutable release image")
+    for name, expected in source_contract(value["source_sha"]).items():
+        if value.get(name) != expected:
+            raise ValueError("Release manifest does not match committed source")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("operation", choices=["create", "verify"])
+    parser.add_argument("--file", required=True)
+    args = parser.parse_args()
+    if args.operation == "verify":
+        with open(args.file) as source:
+            verify(json.load(source))
+        return
+    registry = f"{ACCOUNT}.dkr.ecr.{REGION}.amazonaws.com"
+    images = {
+        name: f"{registry}/scholight-personal-{name}@" + os.environ[name.upper() + "_DIGEST"]
+        for name in COMPONENTS
+    }
+    value = create(os.environ["SHA"], os.environ["GITHUB_SHA"], images)
+    with open(args.file, "w") as output:
+        json.dump(value, output, indent=2, sort_keys=True)
+
+
+if __name__ == "__main__":
+    main()

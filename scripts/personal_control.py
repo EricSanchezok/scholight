@@ -15,6 +15,7 @@ def control() -> dict:
             "ClusterArn",
             "ClusterName",
             "HostRoleArn",
+            "ConfigurationKeyArn",
         ]
     )
     resources, outputs = template["Resources"], template["Outputs"]
@@ -136,6 +137,44 @@ def control() -> dict:
             "Deploy",
             ["personal-infrastructure", "personal-preview"],
             [
+                statement(
+                    ["s3:GetObject"],
+                    sub(
+                        "arn:aws:s3:::scholight-personal-releases-${AWS::AccountId}-${AWS::Region}/releases/*"
+                    ),
+                ),
+                statement(
+                    ["s3:GetObject", "s3:PutObject"],
+                    sub(
+                        "arn:aws:s3:::scholight-personal-releases-${AWS::AccountId}-${AWS::Region}/cloudformation/personal/releases/*"
+                    ),
+                ),
+                statement(
+                    ["kms:Decrypt", "kms:GenerateDataKey"],
+                    ref("ConfigurationKeyArn"),
+                    Condition={
+                        "StringEquals": {"kms:ViaService": sub("s3.${AWS::Region}.amazonaws.com")}
+                    },
+                ),
+                statement(
+                    ["ssm:GetParameter", "ssm:GetParameters"],
+                    [
+                        sub(
+                            "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sanchezcloud/personal/background/scholight-metadata"
+                        ),
+                        sub(
+                            "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sanchezcloud/personal/admission-status"
+                        ),
+                    ],
+                ),
+                statement(["ecs:ListTasks"], "*", Condition=region),
+                statement(["ecs:DescribeTasks"], cluster_tasks),
+                statement(
+                    ["ecr:DescribeImages"],
+                    sub(
+                        "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/scholight-personal-api"
+                    ),
+                ),
                 statement(
                     [
                         "cloudformation:CreateChangeSet",

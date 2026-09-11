@@ -1,3 +1,7 @@
+Production publication persists the ARM64 release manifest to the personal S3
+release bucket; the Actions artifact is an additional convenience copy. See
+[the production release procedure](personal-runtime.md) for plan/apply and rollback.
+
 # Personal image preparation
 
 Both existing and personal publishing workflows are **manual only**. Pull-request

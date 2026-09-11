@@ -137,8 +137,9 @@ scholight/
 
 - **检索存储**：Zilliz Cloud（managed Milvus）只保存论文、段落、向量与索引；账户、额度、Usage 和历史保存在 PostgreSQL
 - **当前论文数据源**：arXiv（bulk PDF tar + OAI-PMH API）；新增来源通过独立 connector 接入，不把 Web Extract 当作摄入管线
-- **部署方式**：正式发布使用 `deploy/ecs/` 的共享 SanchezCloud Fargate 平台；
-  `deploy/production/` 仅是冻结的旧 EC2 回退参考。向量数据继续存于 Zilliz Cloud。
+- **部署方式**：Production uses the personal ARM64 ECS-on-EC2 runtime described in
+  `docs/personal-runtime.md`. `deploy/ecs/` and `deploy/production/` are historical
+  reconstruction references. Vector data remains in Zilliz Cloud.
 
 ## Zilliz Cloud 连接
 
