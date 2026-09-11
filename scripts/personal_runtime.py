@@ -97,6 +97,48 @@ def foundation() -> dict[str, Any]:
     resources["ConfigurationKey"]["DeletionPolicy"] = "RetainExceptOnCreate"
     resources["ConfigurationKey"]["UpdateReplacePolicy"] = "Retain"
     outputs["ConfigurationKeyArn"] = {"Value": arn("ConfigurationKey")}
+    resources["ReleaseBucket"] = resource(
+        "AWS::S3::Bucket",
+        BucketName=sub("scholight-personal-releases-${AWS::AccountId}-${AWS::Region}"),
+        VersioningConfiguration={"Status": "Enabled"},
+        PublicAccessBlockConfiguration={
+            "BlockPublicAcls": True,
+            "IgnorePublicAcls": True,
+            "BlockPublicPolicy": True,
+            "RestrictPublicBuckets": True,
+        },
+        BucketEncryption={
+            "ServerSideEncryptionConfiguration": [
+                {
+                    "ServerSideEncryptionByDefault": {
+                        "SSEAlgorithm": "aws:kms",
+                        "KMSMasterKeyID": arn("ConfigurationKey"),
+                    },
+                    "BucketKeyEnabled": True,
+                }
+            ]
+        },
+    )
+    resources["ReleaseBucket"].update(
+        DeletionPolicy="RetainExceptOnCreate", UpdateReplacePolicy="Retain"
+    )
+    resources["ReleaseBucketPolicy"] = resource(
+        "AWS::S3::BucketPolicy",
+        Bucket=ref("ReleaseBucket"),
+        PolicyDocument={
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Deny",
+                    "Principal": "*",
+                    "Action": "s3:*",
+                    "Resource": [arn("ReleaseBucket"), sub("${ReleaseBucket.Arn}/*")],
+                    "Condition": {"Bool": {"aws:SecureTransport": "false"}},
+                }
+            ],
+        },
+    )
+    outputs["ReleaseBucketName"] = {"Value": ref("ReleaseBucket")}
     for name, path in {
         "Core": "core",
         "McpDelegation": "mcp-delegation",
@@ -175,6 +217,18 @@ def foundation() -> dict[str, Any]:
                     "Version": "2012-10-17",
                     "Statement": [
                         statement(["ecr:GetAuthorizationToken"], "*"),
+                        statement(
+                            ["s3:PutObject", "s3:GetObject"], sub("${ReleaseBucket.Arn}/releases/*")
+                        ),
+                        statement(
+                            ["kms:GenerateDataKey", "kms:Decrypt"],
+                            arn("ConfigurationKey"),
+                            Condition={
+                                "StringEquals": {
+                                    "kms:ViaService": sub("s3.${AWS::Region}.amazonaws.com")
+                                }
+                            },
+                        ),
                         statement(
                             [
                                 "ecr:BatchCheckLayerAvailability",

@@ -165,9 +165,11 @@ def test_frontend_joins_service_connect_as_an_api_client() -> None:
 
 
 def test_active_workflows_are_oidc_manifest_and_digest_driven() -> None:
-    publish = (ROOT / ".github/workflows/publish.yml").read_text(encoding="utf-8")
-    release = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
-    database = (ROOT / ".github/workflows/database-production.yml").read_text(encoding="utf-8")
+    publish = (ROOT / "deploy/legacy/workflows/publish.yml").read_text(encoding="utf-8")
+    release = (ROOT / "deploy/legacy/workflows/release.yml").read_text(encoding="utf-8")
+    database = (ROOT / "deploy/legacy/workflows/database-production.yml").read_text(
+        encoding="utf-8"
+    )
 
     assert "workflow_run:" not in publish
     assert "workflow_dispatch:" in publish
@@ -191,7 +193,7 @@ def test_active_workflows_are_oidc_manifest_and_digest_driven() -> None:
 
 
 def test_release_runs_candidate_survey_canaries_before_deployment() -> None:
-    workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+    workflow = (ROOT / "deploy/legacy/workflows/release.yml").read_text(encoding="utf-8")
 
     canary = workflow.split("- name: Register candidate Survey canary task", maxsplit=1)[1]
     canary = canary.split("- name: Deploy digest-qualified ECS release", maxsplit=1)[0]
@@ -211,7 +213,9 @@ def test_release_runs_candidate_survey_canaries_before_deployment() -> None:
 
 
 def test_production_survey_rerun_workflow_is_fixed_and_owner_preserving() -> None:
-    workflow = (ROOT / ".github/workflows/survey-production-rerun.yml").read_text(encoding="utf-8")
+    workflow = (ROOT / "deploy/legacy/workflows/survey-production-rerun.yml").read_text(
+        encoding="utf-8"
+    )
     foundation = (ECS / "scholight-foundation.yml").read_text(encoding="utf-8")
     deploy_role = foundation.split("  ProductionDeployRole:", maxsplit=1)[1].split(
         "  DatabaseDeployRole:", maxsplit=1
@@ -235,7 +239,7 @@ def test_production_survey_rerun_workflow_is_fixed_and_owner_preserving() -> Non
 
 
 def test_production_survey_evidence_repair_is_fixed_guarded_and_serialized() -> None:
-    workflow = (ROOT / ".github/workflows/survey-production-evidence-repair.yml").read_text(
+    workflow = (ROOT / "deploy/legacy/workflows/survey-production-evidence-repair.yml").read_text(
         encoding="utf-8"
     )
 
@@ -262,7 +266,7 @@ def test_production_survey_evidence_repair_is_fixed_guarded_and_serialized() -> 
 
 def test_survey_capacity_contract_is_explicit_and_staged() -> None:
     runtime = (ECS / "scholight-production.yml").read_text(encoding="utf-8")
-    workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+    workflow = (ROOT / "deploy/legacy/workflows/release.yml").read_text(encoding="utf-8")
     example = yaml.safe_load(
         (ECS / "production.parameters.example.json").read_text(encoding="utf-8")
     )
@@ -322,7 +326,7 @@ def test_survey_capacity_contract_is_explicit_and_staged() -> None:
 def test_event_driven_survey_control_is_bounded_and_recoverable() -> None:
     runtime = (ECS / "scholight-production.yml").read_text(encoding="utf-8")
     foundation = (ECS / "scholight-foundation.yml").read_text(encoding="utf-8")
-    release = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+    release = (ROOT / "deploy/legacy/workflows/release.yml").read_text(encoding="utf-8")
     example = yaml.safe_load(
         (ECS / "production.parameters.example.json").read_text(encoding="utf-8")
     )
@@ -493,7 +497,7 @@ def test_survey_capacity_observability_has_no_identifier_dimensions() -> None:
 
 
 def test_release_defers_active_worker_images_and_gates_final_capacity() -> None:
-    workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+    workflow = (ROOT / "deploy/legacy/workflows/release.yml").read_text(encoding="utf-8")
     worker_guard = workflow.split(
         "- name: Defer active Survey worker image replacements", maxsplit=1
     )[1].split("- name: Deploy digest-qualified ECS release", maxsplit=1)[0]
@@ -558,7 +562,7 @@ def test_image_publish_role_can_verify_pushed_manifests_and_attestations() -> No
 
 
 def test_survey_release_image_is_lambda_compatible_before_manifest_publication() -> None:
-    workflow = (ROOT / ".github/workflows/publish.yml").read_text(encoding="utf-8")
+    workflow = (ROOT / "deploy/legacy/workflows/publish.yml").read_text(encoding="utf-8")
     survey_build = workflow.split("      - name: Build and push Survey", maxsplit=1)[1].split(
         "      - name: Verify Survey image is Lambda compatible", maxsplit=1
     )[0]
@@ -698,9 +702,8 @@ def test_active_workflows_do_not_depend_on_frozen_ec2_package() -> None:
         (ROOT / ".github/workflows" / name).read_text(encoding="utf-8")
         for name in (
             "ci.yml",
-            "database-production.yml",
-            "publish.yml",
-            "release.yml",
+            "personal-runtime.yml",
+            "publish-personal.yml",
             "sanchezcloud-identity-compat.yml",
         )
     )
@@ -729,7 +732,7 @@ def test_frozen_ec2_package_cannot_host_the_unreleased_survey() -> None:
 
 def test_first_ecs_deployment_can_bootstrap_without_starting_services() -> None:
     template = (ECS / "scholight-production.yml").read_text(encoding="utf-8")
-    workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+    workflow = (ROOT / "deploy/legacy/workflows/release.yml").read_text(encoding="utf-8")
 
     assert "ApplicationEnabled:" in template
     assert 'RunApplication: !Equals [!Ref ApplicationEnabled, "true"]' in template
@@ -867,7 +870,9 @@ def test_database_workflow_can_pass_only_exact_migration_execution_role() -> Non
 
 def test_migration_task_pins_the_image_migration_directory() -> None:
     production = (ECS / "scholight-production.yml").read_text(encoding="utf-8")
-    workflow = (ROOT / ".github/workflows/database-production.yml").read_text(encoding="utf-8")
+    workflow = (ROOT / "deploy/legacy/workflows/database-production.yml").read_text(
+        encoding="utf-8"
+    )
     migration_task = production.split("  MigrationTaskDefinition:", maxsplit=1)[1].split(
         "  WebService:", maxsplit=1
     )[0]

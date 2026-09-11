@@ -1,4 +1,4 @@
-name: Manage personal runtime manually
+name: Deploy or roll back production Scholight
 
 on:
   workflow_dispatch:
@@ -8,6 +8,10 @@ on:
         type: choice
         required: true
         options: [plan, apply, migrate]
+      release_manifest_key:
+        description: Immutable S3 release manifest key for plan and apply
+        type: string
+        required: false
       change_set:
         description: Exact personal-runtime change set ARN for apply
         type: string
@@ -24,14 +28,16 @@ concurrency:
 jobs:
   operate:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 100
     environment: ${{ inputs.operation == 'migrate' && 'personal-database' || 'personal-infrastructure' }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+          fetch-depth: 0
       - name: Require main
         run: test "$GITHUB_REF" = refs/heads/main
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
       - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
         with:
           role-to-assume: ${{ vars.AWS_CONTROL_ROLE_ARN }}
@@ -41,7 +47,7 @@ jobs:
         env:
           OPERATION: ${{ inputs.operation }}
           CHANGE_SET: ${{ inputs.change_set }}
-          PARAMETERS: ${{ vars.PERSONAL_RUNTIME_PARAMETERS_JSON }}
+          MANIFEST_KEY: ${{ inputs.release_manifest_key }}
           EXPECTED_ACCOUNT_ID: '669409472143'
           AWS_REGION: ${{ vars.AWS_REGION }}
           CLOUDFORMATION_ROLE_ARN: ${{ vars.CLOUDFORMATION_ROLE_ARN }}
@@ -49,10 +55,10 @@ jobs:
         run: |
           umask 077
           args=("$OPERATION")
-          if [ "$OPERATION" = plan ]; then
-            printf '%s' "$PARAMETERS" > "$RUNNER_TEMP/parameters.json"
-            args+=(--parameters "$RUNNER_TEMP/parameters.json")
-          elif [ "$OPERATION" = apply ]; then
+          if [ "$OPERATION" != migrate ]; then
+            args+=(--manifest-key "$MANIFEST_KEY")
+          fi
+          if [ "$OPERATION" = apply ]; then
             args+=(--change-set "$CHANGE_SET")
           fi
-          python scripts/personal_apply.py "${args[@]}"
+          uv run --no-project --with boto3==1.43.61 python scripts/personal_apply.py "${args[@]}"

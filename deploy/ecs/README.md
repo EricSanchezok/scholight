@@ -1,3 +1,7 @@
+> Historical Fargate reconstruction reference. Normal production release procedures
+> are in [the personal runtime handbook](../../docs/personal-runtime.md); archived
+> workflows are outside `.github/workflows` and must not be restored as release entrypoints.
+
 # Scholight ECS production operations
 
 This directory is the authoritative production deployment package for Scholight.

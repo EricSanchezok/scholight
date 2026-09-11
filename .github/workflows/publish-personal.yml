@@ -1,4 +1,4 @@
-name: Publish personal images manually
+name: Publish production lean images manually
 
 on:
   workflow_dispatch:
@@ -39,6 +39,7 @@ jobs:
       - name: Resolve and validate immutable revision
         id: revision
         run: |
+          test "$GITHUB_REF" = refs/heads/main
           release_sha=$(git rev-parse HEAD)
           git merge-base --is-ancestor "$release_sha" origin/main
           echo "release_sha=$release_sha" >> "$GITHUB_OUTPUT"
@@ -61,6 +62,7 @@ jobs:
         with:
           ref: ${{ needs.prepare.outputs.release_sha }}
           persist-credentials: false
+          fetch-depth: 0
       - name: Validate personal target configuration
         env:
           REGION: ${{ vars.AWS_REGION }}
@@ -149,8 +151,14 @@ jobs:
           WEB_DIGEST: ${{ steps.web.outputs.digest }}
           EXTRACT_DIGEST: ${{ steps.extract.outputs.digest }}
           METADATA_DIGEST: ${{ steps.metadata.outputs.digest }}
+          RELEASE_BUCKET_NAME: ${{ vars.RELEASE_BUCKET_NAME }}
         run: |
-          jq -n '{commit: env.SHA, architecture: env.ARCH, api: env.API_DIGEST, web: env.WEB_DIGEST, extract: env.EXTRACT_DIGEST, metadata: env.METADATA_DIGEST}' > personal-images.json
+          if [ "$ARCH" = arm64 ]; then
+            python scripts/personal_manifest.py create --file personal-images.json
+            aws s3api put-object --bucket "$RELEASE_BUCKET_NAME" --key "releases/${SHA}/arm64-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.json" --body personal-images.json --content-type application/json --if-none-match '*'
+          else
+            jq -n '{commit: env.SHA, architecture: env.ARCH, api: env.API_DIGEST, web: env.WEB_DIGEST, extract: env.EXTRACT_DIGEST, metadata: env.METADATA_DIGEST}' > personal-images.json
+          fi
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: personal-images-${{ inputs.architecture }}

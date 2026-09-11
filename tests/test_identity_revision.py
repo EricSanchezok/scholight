@@ -37,7 +37,7 @@ def test_migration_contract_uses_the_locked_consumer_environment() -> None:
 def test_workflows_use_the_scoped_dependency_reader_app() -> None:
     workflows = "\n".join(
         (ROOT / ".github" / "workflows" / name).read_text(encoding="utf-8")
-        for name in ("ci.yml", "publish.yml")
+        for name in ("ci.yml", "publish-personal.yml")
     )
 
     assert "actions/create-github-app-token@" in workflows

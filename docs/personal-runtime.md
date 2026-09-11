@@ -1,3 +1,62 @@
+# Personal production runtime
+
+This is the canonical production deployment contract for Scholight in account
+`669409472143`, Hyderabad (`ap-south-2`), cluster `sanchezcloud-personal`.
+The historical Fargate workflows are archived in `deploy/legacy/workflows` and
+cannot run from the normal Actions workflow directory.
+
+## Manual release and rollback
+
+1. Run `publish-personal.yml` from main with a merged source revision. The prepare
+   job freezes the full commit SHA before quality checks and building. Only ARM64
+   production manifests are uploaded to the retained, encrypted personal release
+   bucket. AMD64 remains a compatibility build.
+2. Run `personal-runtime.yml` with `operation=plan` and the exact
+   `release_manifest_key` printed by publication. Review the account, region,
+   source revision, image changes, resource changes and exact change set ARN.
+3. Run the same workflow with `operation=apply`, the same manifest key and the
+   reviewed change set ARN. Main and PR CI never publish or deploy.
+
+A manifest contains all four immutable image digests, architecture, source and
+controller commits, the pinned Identity revision and checksums of every immutable
+product migration. It is persisted at `releases/<sha>/arm64-<run>-<attempt>.json`;
+existing keys cannot be overwritten by publication. Apply verifies the byte hash
+bound to the plan, account, region and current reviewed controller. Unstarted plans
+expire after 24 hours or any intervening runtime stack update.
+
+The current deployed image's immutable SHA tag proves its source migration
+contract. Ordinary application releases and rollbacks require identical product
+migration checksums and Identity revision. A changed contract fails closed and
+requires an independently reviewed additive migration and compatibility procedure;
+this flow never migrates Identity or assumes a destructive database rollback is safe.
+The `migrate` operation only reapplies the currently registered product migrator.
+
+Apply pauses only `scholight-metadata`, waits for the host's acknowledgement of
+that exact SSM parameter version, and waits for actual ECS task termination, including
+STOPPING tasks. It never kills an active sync. Waiting expires after twenty minutes
+with admission paused and a durable continuation record. The frozen reviewed
+runtime template and parameters are replayed into a new change set because pausing
+this same stack invalidates its earlier change sets. Only `MetadataEnabled=false`
+may differ; the generated ARN is logged and its template/parameters are rechecked.
+After application and task/grant revisions converge, the original admission state
+is restored. The daily 08:00 UTC schedule and database cursor remain unchanged.
+
+Stage records live under `cloudformation/personal/releases/<change-set-id>/` in the
+release bucket. Retry the same apply after a transient failure; completed stages
+are not repeated. Missing acknowledgement or external stack changes fail closed.
+A failed release leaves consumers paused until repair or a compatible rollback.
+For rollback, select the previous verified manifest and repeat plan/apply using the
+current controller. If recovery began while admission was already paused, verify
+and restore the original recorded admission state after compatible recovery.
+
+API, Web, Extract, metadata task definition and admission grant belong to this
+product stack. Account Center, Scholens, PostgreSQL, Valkey, edge and host resources
+are outside it and must retain their task identities during an application release.
+All personal environments are production environments restricted to main, despite
+retained `personal-preview` names used in immutable OIDC subjects.
+
+## Runtime configuration and recovery reference
+
 # Personal lean deployment
 
 `python scripts/personal_runtime.py foundation` renders the isolated ECR, KMS,
@@ -72,7 +131,7 @@ CloudFormation service roles. Use the repository's actual immutable OIDC subject
 prefix and protect `personal-image-publish`, `personal-infrastructure`,
 `personal-preview`, and `personal-database` environments to main. No application
 secrets are readable by the GitHub control roles. `personal-runtime.yml` only runs
-by manual dispatch: `plan` uses the non-secret parameter variable, `apply` requires
+by manual dispatch: `plan` reads current non-secret stack configuration and the selected S3 manifest, `apply` requires
 the reviewed exact change-set ARN, and `migrate` launches only the registered
 migration task on the private EC2 cluster. It neither opens a database port to the
 runner nor registers arbitrary migration images. The guard rejects resource removal
