@@ -41,6 +41,10 @@ may differ; the generated ARN is logged and its template/parameters are rechecke
 After application and task/grant revisions converge, the original admission state
 is restored. The daily 08:00 UTC schedule and database cursor remain unchanged.
 
+Checkpoint lookup lists only the exact stage-key prefix before reading an existing
+object. Missing state is distinct from permission denial; access failures always stop
+the operation.
+
 Stage records live under `cloudformation/personal/releases/<change-set-id>/` in the
 release bucket. Retry the same apply after a transient failure; completed stages
 are not repeated. Missing acknowledgement or external stack changes fail closed.
