@@ -11,6 +11,8 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
 _DEPENDENCY_TIMEOUT_SECONDS = 2.0
+_ZILLIZ_PROBE_TIMEOUT_SECONDS = 20.0
+_zilliz_probe_task: asyncio.Task[bool] | None = None
 _DEPENDENCY_CACHE_TTL_SECONDS = 2.0
 _dependency_probe_cache: dict[str, tuple[float, bool]] = {}
 _dependency_probe_locks: dict[str, asyncio.Lock] = {}
@@ -18,6 +20,8 @@ _dependency_probe_locks: dict[str, asyncio.Lock] = {}
 
 def _reset_dependency_probe_cache() -> None:
     """Clear process-local dependency probe state (used at startup and by tests)."""
+    global _zilliz_probe_task
+    _zilliz_probe_task = None
     _dependency_probe_cache.clear()
     _dependency_probe_locks.clear()
 
@@ -58,17 +62,29 @@ def _inspect_zilliz_search() -> None:
     from scholight.store.client import get_client
     from scholight.store.readiness import inspect_search_collections
 
-    inspect_search_collections(get_client(), timeout=_DEPENDENCY_TIMEOUT_SECONDS)
+    inspect_search_collections(get_client(), timeout=_ZILLIZ_PROBE_TIMEOUT_SECONDS)
 
 
-async def _probe_zilliz() -> bool:
+async def _run_zilliz_inspection() -> bool:
     try:
-        await asyncio.wait_for(
-            asyncio.to_thread(_inspect_zilliz_search), timeout=_DEPENDENCY_TIMEOUT_SECONDS
-        )
+        await asyncio.to_thread(_inspect_zilliz_search)
     except Exception:
         return False
     return True
+
+
+async def _probe_zilliz() -> bool:
+    global _zilliz_probe_task
+    if _zilliz_probe_task is None or _zilliz_probe_task.done():
+        _zilliz_probe_task = asyncio.create_task(_run_zilliz_inspection())
+    try:
+        # Cancelling to_thread cannot stop an SDK call. Retain one shielded task
+        # across request timeouts so an unavailable dependency cannot pile up threads.
+        return await asyncio.wait_for(
+            asyncio.shield(_zilliz_probe_task), timeout=_ZILLIZ_PROBE_TIMEOUT_SECONDS
+        )
+    except TimeoutError:
+        return False
 
 
 async def _is_postgres_ready() -> bool:

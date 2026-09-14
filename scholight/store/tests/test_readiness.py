@@ -83,3 +83,21 @@ def test_thorough_requires_finished_chunk_indexes(monkeypatch: pytest.MonkeyPatc
     with pytest.raises(ValueError, match="index"):
         inspect_search_collections(client, timeout=2)
     client.create_index.assert_not_called()
+
+
+def test_inspection_stops_at_total_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
+    from scholight.store import readiness
+
+    now = [0.0]
+    monkeypatch.setattr(readiness.time, "monotonic", lambda: now[0])
+    client = client_stub()
+    describe = client.describe_collection.side_effect
+
+    def delayed(name: str, **kw: object) -> dict[str, object]:
+        now[0] = 3.0
+        return describe(name, **kw)
+
+    client.describe_collection.side_effect = delayed
+    with pytest.raises(TimeoutError):
+        inspect_search_collections(client, timeout=2)
+    client.list_indexes.assert_not_called()

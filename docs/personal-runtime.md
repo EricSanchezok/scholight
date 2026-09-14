@@ -111,7 +111,11 @@ template entrypoint; personal deployment points it at the host's private address
 
 Each service has its own execution and task roles, log group, health check and
 stop-before-replace deployment. Liveness probes use `/livez`; dependency failures
-belong to readiness and do not restart otherwise healthy API processes. API and
+belong to readiness and do not restart otherwise healthy API processes. PostgreSQL
+probes have a two-second budget. Zilliz schema, index and load-state inspection has
+a twenty-second total budget, with each RPC capped at five seconds, to accommodate
+cross-region round trips for both collections. A timed-out inspection is retained
+until it finishes; subsequent requests cannot create overlapping SDK probes. API and
 Extract memory ceilings are initially 768 MiB each, with web at 128 MiB. Validate
 representative real traffic before adoption and stop admission on a failed capacity
 gate. Metadata has a 768 MiB task ceiling, one embedding request at a time and
