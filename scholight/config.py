@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     embedding_concurrency: int = 1
 
     # ── Native daily ingestion ──
+    ingestion_target_id: str = Field(default="", pattern=r"^(|[a-f0-9]{64})$")
     ingest_recent_days: int = Field(default=90, ge=7, le=365)
     metadata_sync_timeout_seconds: int = Field(default=6600, ge=60, le=86400)
     metadata_sync_hour_utc: int = Field(default=8, ge=0, le=23)

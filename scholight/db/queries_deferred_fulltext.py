@@ -29,6 +29,12 @@ async def resume_deferred_fulltext(*, limit: int, apply: bool) -> dict[str, int 
     require_full_runtime("Deferred full-text recovery")
     if not 1 <= limit <= 10_000:
         raise ValueError("limit must be between 1 and 10000")
+    from scholight.db.ingestion import configured_queue, verified_sync_source
+
+    queue = configured_queue()
+    if queue is not None:
+        await verified_sync_source()
+        return await queue.resume_scope(limit=limit, apply=apply)
     pool = get_pool()
     rows = await pool.fetch(
         """

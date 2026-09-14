@@ -18,7 +18,7 @@ from typing import Any, Literal
 import structlog
 
 from scholight.config import require_full_runtime, settings
-from scholight.db.queries_ingestion import (
+from scholight.db.ingestion import (
     IngestionJob,
     claim_ingestion_job,
     complete_ingestion_job,
@@ -26,6 +26,7 @@ from scholight.db.queries_ingestion import (
     get_ingestion_status,
     release_ingestion_job,
     renew_ingestion_job_lease,
+    verified_sync_source,
 )
 from scholight.logging.emf import emit_emf
 from scholight.pipeline.chunkers.md_chunker import chunk_markdown
@@ -323,9 +324,11 @@ async def run_worker_once(
     require_full_runtime("Background generation")
     if stop_event is not None and stop_event.is_set():
         return False
+    await verified_sync_source()
     job = await claim_ingestion_job(worker_id, settings.ingest_lease_seconds)
     if job is None:
         return False
+    worker_id = job.lease_owner or worker_id
     interval = heartbeat_interval_seconds or min(60.0, settings.ingest_lease_seconds / 3)
     try:
         processing = _process_with_heartbeat(

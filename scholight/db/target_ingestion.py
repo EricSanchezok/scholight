@@ -212,4 +212,52 @@ class TargetQueue:
             "SELECT status,count(*) AS count FROM scholight.target_ingestion_jobs WHERE target_id=$1 GROUP BY status",
             self.target_id,
         )
-        return {"target_id": self.target_id, "jobs": {row["status"]: row["count"] for row in rows}}
+        queue = await get_pool().fetchrow(
+            """SELECT count(*) FILTER (WHERE status IN ('pending','retry')) AS backlog,
+            count(*) FILTER (WHERE status='dead') AS dead,
+            COALESCE(EXTRACT(EPOCH FROM now()-min(created_at) FILTER (WHERE status IN ('pending','retry'))),0)::bigint AS oldest_age_seconds
+            FROM scholight.target_ingestion_jobs WHERE target_id=$1""",
+            self.target_id,
+        )
+        state = await get_pool().fetchrow(
+            "SELECT last_successful_date,last_started_at,last_succeeded_at,last_error_code,last_error_message FROM scholight.ingestion_sync_state WHERE source=$1",
+            "arxiv:" + self.target_id,
+        )
+        return {
+            "target_id": self.target_id,
+            "jobs": {row["status"]: row["count"] for row in rows},
+            "queue": dict(queue) if queue else {},
+            "sync": dict(state) if state else None,
+        }
+
+    async def resume_scope(self, *, limit: int, apply: bool) -> dict[str, int | bool]:
+        """Queue only the reviewed scope; keep its audit rows and terminal failures."""
+        if not 1 <= limit <= 10000:
+            raise ValueError("limit must be between 1 and 10000")
+        rows = await get_pool().fetch(
+            """SELECT s.arxiv_id,s.target_version FROM scholight.fulltext_scope s
+            LEFT JOIN scholight.target_ingestion_jobs j USING (target_id,arxiv_id)
+            WHERE s.target_id=$1 AND (j.arxiv_id IS NULL OR j.target_version<s.target_version
+              OR j.profile_sha256<>$2)
+              AND NOT EXISTS (SELECT 1 FROM scholight.fulltext_receipts r
+                WHERE r.target_id=s.target_id AND r.arxiv_id=s.arxiv_id
+                AND r.paper_version=s.target_version AND r.profile_sha256=$2)
+            ORDER BY s.first_seen_date,s.arxiv_id LIMIT $3""",
+            self.target_id,
+            self.profile,
+            limit,
+        )
+        enqueued = 0
+        if apply:
+            from scholight.config import settings
+
+            for row in rows:
+                enqueued += int(
+                    await self.enqueue(
+                        str(row["arxiv_id"]),
+                        int(row["target_version"]),
+                        "backfill",
+                        max_attempts=settings.ingest_max_attempts,
+                    )
+                )
+        return {"matched": len(rows), "enqueued": enqueued, "dry_run": not apply}

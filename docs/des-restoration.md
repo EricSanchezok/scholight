@@ -58,3 +58,19 @@ malformed XML, unparsable active records and repeated tokens fail the harvest.
 Authoritative OAI `noRecordsMatch` is an empty completed day. Atom submission-date
 fallback can preserve newly fetched metadata but leaves the date retryable because
 it does not cover all revisions. XML parsing uses the declared defusedxml dependency.
+
+## Destination adoption
+
+`SCHOLIGHT_INGESTION_TARGET_ID` selects the destination query adapter. Metadata
+and ingestion commands verify both actual collection IDs, endpoint, embedding
+model and dimension, then require its verified baseline before doing work.
+With this binding set, queue queries never read or update legacy jobs. The old
+SQL path remains an N-1 adapter until all full-ingestion consumers adopt target
+baselines; its retirement requires a reviewed contract-removal change.
+
+Daily registration records the target's fulltext scope before advancing its
+independent cursor. Broad missing-chunks reconciliation is disabled for bound
+targets. `resume-fulltext` selects only their reviewed scope, retains audit rows
+and leaves terminal failures for explicit review. It does not retry dead jobs
+implicitly. Each claim's unique lease owner is propagated through heartbeats,
+release and completion so an expired worker cannot finish a reclaimed job.

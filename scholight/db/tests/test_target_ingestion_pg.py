@@ -143,3 +143,30 @@ async def test_destination_cursor_requires_verified_reconciliation(pool: asyncpg
         await queue.sync_source()
     await queue.establish_baseline(dt.date(2026, 9, 12), "s3://test/verified.json", "a" * 64)
     assert await queue.sync_source() == "arxiv:" + t.key
+
+
+@pytest.mark.asyncio
+async def test_scope_resume_never_skips_due_to_old_success_or_retries_dead_implicitly(
+    pool: asyncpg.Pool,
+) -> None:
+    t = target()
+    await register_target(t)
+    queue = TargetQueue(t.key)
+    await queue.record_scope([("2608.00001", 2)], dt.date(2026, 9, 1), "lean")
+    result = await queue.resume_scope(limit=10, apply=False)
+    assert result["matched"] == 1 and result["enqueued"] == 0
+    assert (await queue.resume_scope(limit=10, apply=True))["enqueued"] == 1
+    assert (await queue.resume_scope(limit=10, apply=True))["matched"] == 0
+    await pool.execute("UPDATE scholight.target_ingestion_jobs SET status='dead'")
+    assert (await queue.resume_scope(limit=10, apply=True))["matched"] == 0
+    assert await pool.fetchval("SELECT count(*) FROM scholight.fulltext_scope") == 1
+
+
+@pytest.mark.asyncio
+async def test_target_status_does_not_report_legacy_queue(pool: asyncpg.Pool) -> None:
+    t = target()
+    await register_target(t)
+    queue = TargetQueue(t.key)
+    await queue.enqueue("2608.00001", 1, "new", max_attempts=8)
+    status = await queue.status()
+    assert status["queue"]["backlog"] == 1 and status["sync"] is None

@@ -88,7 +88,7 @@ def drain_ingest_cmd(idle_grace_seconds: int, max_runtime_seconds: int) -> None:
 @click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON.")
 def status_cmd(as_json: bool) -> None:
     """Show PostgreSQL queue and continuous-sync state."""
-    from scholight.db.queries_ingestion import get_ingestion_status
+    from scholight.db.ingestion import get_ingestion_status
 
     result = asyncio.run(_with_pool(get_ingestion_status))
     if as_json:
@@ -117,7 +117,7 @@ def enqueue_backfill_cmd(
         raise click.UsageError("--from must be on or before --to")
 
     async def _run() -> dict[str, Any]:
-        from scholight.db.queries_ingestion import enqueue_ingestion_job
+        from scholight.db.ingestion import enqueue_ingestion_job
         from scholight.store.ingestion import list_missing_chunks
 
         rows = await asyncio.to_thread(
@@ -147,7 +147,7 @@ def enqueue_backfill_cmd(
 def retry_cmd(arxiv_id: str) -> None:
     """Reactivate or explicitly enqueue one paper by exact arXiv ID."""
     require_full_runtime("Full-text ingestion")
-    from scholight.db.queries_ingestion import (
+    from scholight.db.ingestion import (
         enqueue_ingestion_job,
         get_ingestion_job,
         retry_ingestion_job,
