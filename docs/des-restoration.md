@@ -105,8 +105,11 @@ and MinIO in addition to fault-injection tests.
 ## Scalar inventory and abstract delta planning
 
 `scan_inventory` captures only paper IDs, versions and creation/update dates with
-Query Iterator. Each compressed Parquet batch and the iterator checkpoint is
-committed after durable upload and checksum readback. A restarted scan resumes
+Query Iterator. Reads remain limited to 1,024 scalar records; up to 16,384 records
+are coalesced into each compressed Parquet shard to reduce S3 round trips. A shard
+and its last included iterator checkpoint are committed only after durable upload
+and checksum readback. Interrupted, uncommitted buffers are reread; the final
+partial shard follows the same rule. A restarted scan resumes
 that checkpoint; duplicate IDs, count changes and incomplete scans fail. Both
 writers must remain stopped until the reconciliation baseline is adopted.
 

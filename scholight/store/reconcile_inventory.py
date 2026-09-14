@@ -18,6 +18,7 @@ from scholight.models.ingestion_target import digest_json
 from scholight.store.archive_io import ArchiveLocation, file_digest
 
 _FIELDS = ["arxiv_id", "version", "updated", "created"]
+_SHARD_ROWS = 16_384
 _SCHEMA = pa.schema(
     [
         ("arxiv_id", pa.string()),
@@ -191,13 +192,25 @@ def scan_inventory(
                 consistency_level="Strong",
                 timeout=60,
             )
+
+            def commit(rows: list[dict[str, Any]], cursor: bytes) -> None:
+                shard = persist_rows(location, rows, work, prefix="inventory", schema=_SCHEMA)
+                manifest["shards"].append(shard)
+                manifest["rows"] += len(rows)
+                manifest["checkpoint"] = base64.b64encode(cursor).decode()
+                location.write_json("manifest.json", manifest, work)
+
             try:
+                pending: list[dict[str, Any]] = []
+                cursor = b""
                 while rows := iterator.next():
-                    shard = persist_rows(location, rows, work, prefix="inventory", schema=_SCHEMA)
-                    manifest["shards"].append(shard)
-                    manifest["rows"] += len(rows)
-                    manifest["checkpoint"] = base64.b64encode(checkpoint.read_bytes()).decode()
-                    location.write_json("manifest.json", manifest, work)
+                    pending.extend(rows)
+                    cursor = checkpoint.read_bytes()
+                    if len(pending) >= _SHARD_ROWS:
+                        commit(pending, cursor)
+                        pending = []
+                if pending:
+                    commit(pending, cursor)
             finally:
                 iterator.close()
         if count() != manifest["expected_rows"] or manifest["rows"] != manifest["expected_rows"]:

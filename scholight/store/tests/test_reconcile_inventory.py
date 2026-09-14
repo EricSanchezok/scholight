@@ -70,7 +70,10 @@ def test_delta_finds_real_ids_revisions_and_preserves_newer_destination(tmp_path
     )
 
 
-def test_scan_upload_failure_resumes_only_committed_iterator_state(tmp_path: Path) -> None:
+def test_scan_upload_failure_resumes_only_committed_iterator_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("scholight.store.reconcile_inventory._SHARD_ROWS", 4, raising=False)
     source = InventoryClient([row(str(i), 1) for i in range(5)], 1)
     upload = ArchiveLocation.upload
     calls = 0
@@ -88,6 +91,35 @@ def test_scan_upload_failure_resumes_only_committed_iterator_state(tmp_path: Pat
     result = inventory(source, tmp_path / "source")
     assert result["rows"] == 5
     assert result["complete"]
+
+
+def test_scan_coalesces_small_reads_and_commits_partial_final_shard(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("scholight.store.reconcile_inventory._SHARD_ROWS", 4, raising=False)
+    source = InventoryClient([row(str(i), 1) for i in range(9)], 1)
+    result = inventory(source, tmp_path / "source")
+    assert [part["rows"] for part in result["shards"]] == [4, 4, 1]
+
+
+def test_uncommitted_buffer_is_reread_after_iterator_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("scholight.store.reconcile_inventory._SHARD_ROWS", 4, raising=False)
+    source = InventoryClient([row(str(i), 1) for i in range(9)], 1)
+    original = IteratorStub.next
+
+    def interrupted(iterator: IteratorStub) -> list[dict[str, Any]]:
+        if iterator.position == 6:
+            raise OSError("iterator disconnected after an uncommitted read")
+        return original(iterator)
+
+    with patch.object(IteratorStub, "next", interrupted), pytest.raises(OSError):
+        inventory(source, tmp_path / "source")
+    saved = ArchiveLocation(str(tmp_path / "source")).read_json("manifest.json")
+    assert saved["rows"] == 4
+    resumed = inventory(source, tmp_path / "source")
+    assert resumed["complete"] and resumed["rows"] == 9
 
 
 def test_corrupt_or_duplicate_inventory_is_not_a_plan(tmp_path: Path) -> None:
