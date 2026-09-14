@@ -28,6 +28,23 @@ describe("SearchForm", () => {
     expect(screen.getByTestId("location")).toHaveTextContent("/search?q=graph+neural+networks");
   });
 
+  it("requires an explicit Standard selection when Thorough is unavailable", async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <SearchForm initialQuery="retrieval" initialStrength="thorough" />
+        <Location />
+      </MemoryRouter>,
+    );
+    await user.click(screen.getByRole("button", { name: "Search" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Thorough is unavailable");
+    expect(screen.getByTestId("location")).toHaveTextContent(/^\/$/);
+    await user.click(screen.getByRole("combobox", { name: "Search mode" }));
+    await user.click(screen.getByRole("option", { name: "Standard" }));
+    await user.click(screen.getByRole("button", { name: "Search" }));
+    expect(screen.getByTestId("location")).toHaveTextContent("/search?q=retrieval");
+  });
+
   it("keeps Thorough in the URL when selected", async () => {
     const user = userEvent.setup();
     render(

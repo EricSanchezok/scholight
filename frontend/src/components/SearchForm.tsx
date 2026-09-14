@@ -36,8 +36,7 @@ export function SearchForm({
   const [query, setQuery] = useState(initialQuery);
   const [searchFilters, setSearchFilters] = useState<SearchFilters>(filters);
   const [limit, setLimit] = useState(initialLimit);
-  const [requestedStrength, setStrength] = useState(initialStrength);
-  const strength = availableModes.includes(requestedStrength) ? requestedStrength : "standard";
+  const [strength, setStrength] = useState(initialStrength);
   const [error, setError] = useState("");
 
   useEffect(() => setStrength(initialStrength), [initialStrength]);
@@ -51,6 +50,8 @@ export function SearchForm({
     if (!normalized) return setError("Enter a research question or topic.");
     if (normalized.length > productConfig.search.maxQueryLength)
       return setError("Keep your query to 500 characters or fewer.");
+    if (!availableModes.includes(strength))
+      return setError("Thorough is unavailable. Select Standard to continue.");
     setError("");
     navigate(
       buildSearchUrl({
@@ -81,14 +82,18 @@ export function SearchForm({
         aria-describedby={error ? "search-error" : undefined}
       />
       <div className={styles.searchActions}>
-        {availableModes.includes("thorough") && (
+        {(availableModes.includes("thorough") || strength === "thorough") && (
           <div className={styles.strengthSelect}>
             <EditorialSelect<SearchStrength>
               label="Search mode"
               value={strength}
               options={[
                 { value: "standard", label: "Standard" },
-                { value: "thorough", label: "Thorough" },
+                {
+                  value: "thorough",
+                  label: "Thorough",
+                  disabled: !availableModes.includes("thorough"),
+                },
               ]}
               onValueChange={setStrength}
               variant="strength"
@@ -102,7 +107,7 @@ export function SearchForm({
             setSearchFilters(nextFilters);
             setLimit(nextLimit);
             const normalized = query.trim();
-            if (compact && normalized) {
+            if (compact && normalized && availableModes.includes(strength)) {
               navigate(
                 buildSearchUrl({
                   query: normalized,
@@ -114,7 +119,13 @@ export function SearchForm({
             }
           }}
         />
-        <button className={styles.primaryButton} type="submit" disabled={busy} aria-busy={busy}>
+        <button
+          className={styles.primaryButton}
+          type="submit"
+          disabled={busy}
+          aria-busy={busy}
+          aria-label={busy ? "Searching…" : "Search"}
+        >
           <AnimatePresence initial={false} mode="popLayout">
             <m.span key={busy ? "searching" : "search"} {...buttonLabelMotion}>
               {busy ? "Searching…" : "Search"}

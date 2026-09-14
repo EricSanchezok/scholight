@@ -10,6 +10,7 @@ import { ChevronDownIcon } from "./icons";
 export interface EditorialSelectOption<T extends string> {
   value: T;
   label: string;
+  disabled?: boolean;
 }
 
 export function EditorialSelect<T extends string>({
@@ -55,6 +56,7 @@ export function EditorialSelect<T extends string>({
                       className={styles.selectItem}
                       value={option.value}
                       key={option.value}
+                      disabled={option.disabled}
                     >
                       <Select.ItemIndicator className={styles.selectIndicator}>
                         ✓

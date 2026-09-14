@@ -35,3 +35,7 @@ actors, unchanged Standard defaults, failure compensation without fallback,
 read-only load handling, and mode-preserving UI submission and history URLs.
 Production activation additionally requires target data reconciliation and the
 reviewed personal release process; merging this change alone does not enable it.
+
+If Thorough becomes unavailable, an existing Thorough query stays selected.
+Submitting it shows a short availability message; users explicitly select
+Standard before issuing an abstract search. Filters cannot silently change modes.

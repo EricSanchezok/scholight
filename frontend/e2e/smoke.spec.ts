@@ -930,6 +930,10 @@ test("an older backend offers Standard and never silently replays Thorough", asy
     ),
   ).toBeVisible();
   await expect(page.getByRole("heading", { name: "A Paper About Retrieval" })).toHaveCount(0);
+  await page.getByRole("combobox", { name: "Search mode" }).click();
+  await page.getByRole("option", { name: "Standard", exact: true }).click();
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await expect(page).not.toHaveURL(/strength=thorough/);
 });
 
 test("account menu uses the approved order and protected destinations", async ({
