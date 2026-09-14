@@ -22,6 +22,16 @@ from scholight.models.ingestion_target import digest_json
 @click.option("--target-collection-id", required=True)
 @click.option("--source-frozen", is_flag=True)
 @click.option("--target-frozen", is_flag=True)
+@click.option(
+    "--source-count-duplicate-id",
+    multiple=True,
+    help="Audited physical-count ID; never copied by the delta.",
+)
+@click.option(
+    "--target-count-duplicate-id",
+    multiple=True,
+    help="Audited physical-count ID; never copied by the delta.",
+)
 @click.option("--model", required=True)
 @click.option("--dimension", required=True, type=click.IntRange(1, 32768))
 def reconcile_cmd(
@@ -35,10 +45,16 @@ def reconcile_cmd(
     target_frozen: bool,
     model: str,
     dimension: int,
+    source_count_duplicate_id: tuple[str, ...],
+    target_count_duplicate_id: tuple[str, ...],
 ) -> None:
     """Copy only papers after both writers stop; preserves destination fulltext state."""
     if os.environ.get("SCHOLIGHT_DISABLE_DOTENV") != "1":
         raise click.UsageError("Disable dotenv and explicitly inject reconciliation credentials")
+    if operation != "plan" and (source_count_duplicate_id or target_count_duplicate_id):
+        raise click.UsageError(
+            "Duplicate count IDs belong to plan; apply and verify use its evidence"
+        )
     if not destination.startswith("s3://") or not source_frozen or not target_frozen:
         raise click.UsageError(
             "A dedicated S3 prefix and both frozen-writer declarations are required"
@@ -85,6 +101,11 @@ def reconcile_cmd(
                     expected_id=identity,
                     frozen=True,
                     workspace=workspace,
+                    count_duplicate_ids=(
+                        source_count_duplicate_id
+                        if label == "source"
+                        else target_count_duplicate_id
+                    ),
                 )
             result = build_delta(
                 prefix + "/source", prefix + "/target", prefix + "/plan", workspace=workspace

@@ -306,6 +306,7 @@ class AbstractReconciliation:
             ):
                 raise ValueError("Full abstract verification count mismatch")
             target_uri = self.uri.rstrip("/") + "/verified-target"
+            original = ArchiveLocation(self.plan["target_inventory"]).read_json("manifest.json")
             final = scan_inventory(
                 self.target,
                 target_uri,
@@ -313,6 +314,9 @@ class AbstractReconciliation:
                 expected_id=self.plan["binding"]["target"]["collection_id"],
                 frozen=True,
                 workspace=work,
+                count_duplicate_ids=tuple(
+                    p["arxiv_id"] for p in original.get("count_duplicates", [])
+                ),
             )
             checks = {}
             for label, initial in [
@@ -329,7 +333,6 @@ class AbstractReconciliation:
                 if delta["candidates"]:
                     raise ValueError("Final abstract inventory has missing or downgraded papers")
                 checks[label] = digest_json(delta)
-            original = ArchiveLocation(self.plan["target_inventory"]).read_json("manifest.json")
             if final["rows"] != original["rows"] + self.plan["counts"]["insert"]:
                 raise ValueError("Target total changed outside the reconciliation")
             result = {

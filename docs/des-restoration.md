@@ -110,8 +110,23 @@ are coalesced into each compressed Parquet shard to reduce S3 round trips. A sha
 and its last included iterator checkpoint are committed only after durable upload
 and checksum readback. Interrupted, uncommitted buffers are reread; the final
 partial shard follows the same rule. A restarted scan resumes
-that checkpoint; duplicate IDs, count changes and incomplete scans fail. Both
+that checkpoint; duplicate iterator IDs, count changes and incomplete scans fail. Both
 writers must remain stopped until the reconciliation baseline is adopted.
+
+Some collections retain repeated physical primary keys: `count(*)` can exceed
+the unique records returned by queries. Reconciliation refuses this by default.
+After independently locating the exact affected IDs, `plan` accepts repeatable
+`--source-count-duplicate-id` and `--target-count-duplicate-id` options (at most
+128 per side). Each declared ID must have a Strong per-key count of at least two
+and exactly one visible scalar record matching the scanned record. The manifest
+binds that scalar checksum and physical count; the sum of proven excess counts
+must explain the entire difference. Unknown gaps and duplicate iterator results
+still fail. These IDs are excluded from automatic delta writes, and a candidate
+involving one stops planning for review. Resume requires the same declarations;
+apply and final verification use the saved evidence without accepting new IDs.
+Verification reports logical unique rows separately from physical counts in its
+referenced inventory. This reconciliation evidence neither deduplicates the
+collections nor relaxes the separate full archive/restore integrity requirements.
 
 `build_delta` validates both complete inventories, compares them using a bounded
 SQLite cache, and persists an immutable candidate manifest. Newer source versions
