@@ -101,3 +101,18 @@ The isolated integration suite pins Milvus 2.6.23 because merge-mode upsert
 requires [Milvus 2.6.2 or newer](https://milvus.io/docs/v2.6.x/upsert-entities.md).
 It verifies interruption and exact replacement against real Milvus, PostgreSQL
 and MinIO in addition to fault-injection tests.
+
+## Scalar inventory and abstract delta planning
+
+`scan_inventory` captures only paper IDs, versions and creation/update dates with
+Query Iterator. Each compressed Parquet batch and the iterator checkpoint is
+committed after durable upload and checksum readback. A restarted scan resumes
+that checkpoint; duplicate IDs, count changes and incomplete scans fail. Both
+writers must remain stopped until the reconciliation baseline is adopted.
+
+`build_delta` validates both complete inventories, compares them using a bounded
+SQLite cache, and persists an immutable candidate manifest. Newer source versions
+and later updates of the same version become candidates; newer destination
+versions stay intact. Source and destination counts alone never prove equality.
+Completed plans retain stable checksums across repeat invocations. Only candidate
+records require complete metadata and vector reads in the subsequent apply stage.
