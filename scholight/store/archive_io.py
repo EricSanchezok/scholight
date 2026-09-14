@@ -7,12 +7,18 @@ import hashlib
 import json
 import os
 import shutil
+import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 from uuid import uuid4
 
-from botocore.exceptions import ClientError
+from botocore.exceptions import (
+    ClientError,
+    IncompleteReadError,
+    ReadTimeoutError,
+    ResponseStreamingError,
+)
 
 
 def file_digest(path: Path) -> str:
@@ -94,16 +100,38 @@ class ArchiveLocation:
                 raise ValueError("Archive shard exceeds the 300 MiB download limit")
             shutil.copyfile(self.root / name, path)
         else:
-            from boto3.s3.transfer import TransferConfig
+            for attempt in range(5):
+                try:
+                    self._download_s3(key, path)
+                    return
+                except (IncompleteReadError, ReadTimeoutError, ResponseStreamingError):
+                    if attempt == 4:
+                        raise
+                    time.sleep(0.5 * 2**attempt)
 
-            if self.s3.head_object(Bucket=self.bucket, Key=key)["ContentLength"] > 300 * 1024**2:
+    def _download_s3(self, key: str, path: Path) -> None:
+        response = self.s3.get_object(Bucket=self.bucket, Key=key)
+        body = response["Body"]
+        try:
+            expected = response["ContentLength"]
+            if expected > 300 * 1024**2:
                 raise ValueError("Archive shard exceeds the 300 MiB download limit")
-            self.s3.download_file(
-                self.bucket,
-                key,
-                str(path),
-                Config=TransferConfig(max_concurrency=1, use_threads=False),
-            )
+            if expected < 0:
+                raise ValueError("Invalid archive shard length")
+            received = 0
+            with path.open("wb") as output:
+                while block := body.read(min(1024**2, expected - received + 1)):
+                    received += len(block)
+                    if received > expected:
+                        raise ValueError("Archive shard length exceeds response metadata")
+                    output.write(block)
+            if received != expected:
+                raise ValueError("Archive shard length differs from response metadata")
+        except BaseException:
+            path.unlink(missing_ok=True)
+            raise
+        finally:
+            body.close()
 
     def read_json(self, name: str) -> dict[str, Any]:
         key = self._key(name)

@@ -143,6 +143,13 @@ a dedicated S3 prefix. Inject `SCHOLIGHT_RECONCILE_SOURCE_TOKEN` and
 `SCHOLIGHT_RECONCILE_TARGET_TOKEN` through a controlled process environment with
 `SCHOLIGHT_DISABLE_DOTENV=1`; neither token is a command argument.
 
+S3 shard downloads use one streaming GET with its response length, bounded to
+300 MiB and one MiB per read. Truncated, oversized or interrupted downloads remove
+the partial local file. Transient streaming failures retry from the beginning
+up to five attempts with bounded backoff; archive consumers still verify every
+SHA-256. Invalid lengths and local disk failures stop immediately.
+This avoids repeated metadata requests without caching unverified recovery data.
+
 Apply reads full metadata and existing vectors only for planned candidates in
 batches of 64. It saves both the destination before-image and the desired image
 as float32 Parquet before writing. Existing destination resource flags remain
