@@ -65,7 +65,7 @@ def serve_ingest_cmd() -> None:
 @click.option(
     "--max-runtime-seconds",
     type=click.IntRange(60, 7200),
-    default=110 * 60,
+    default=30 * 60,
     show_default=True,
 )
 def drain_ingest_cmd(idle_grace_seconds: int, max_runtime_seconds: int) -> None:
@@ -117,7 +117,10 @@ def enqueue_backfill_cmd(
         raise click.UsageError("--from must be on or before --to")
 
     async def _run() -> dict[str, Any]:
-        from scholight.db.ingestion import enqueue_ingestion_job
+        from scholight.db.ingestion import configured_queue, enqueue_ingestion_job
+
+        if configured_queue() is not None:
+            raise click.UsageError("Bound targets use resume-fulltext with a reviewed scope")
         from scholight.store.ingestion import list_missing_chunks
 
         rows = await asyncio.to_thread(

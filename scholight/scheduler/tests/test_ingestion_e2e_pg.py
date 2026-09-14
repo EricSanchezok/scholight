@@ -90,7 +90,7 @@ def local_upstreams() -> Iterator[tuple[str, list[tuple[str, str]]]]:
     pdf = _pdf_bytes()
     requests: list[tuple[str, str]] = []
     oai_record = f"""
-    <OAI-PMH><ListRecords><record>
+    <OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/"><ListRecords><record>
       <header>
         <identifier>oai:arXiv.org:{_ARXIV_ID}</identifier>
         <datestamp>{_SYNC_DAY.isoformat()}</datestamp>
@@ -251,6 +251,10 @@ async def test_full_local_workflow_reaches_succeeded_and_cleans_scratch(
         patch("scholight.store.ingest.get_client", return_value=fake),
         patch("scholight.scheduler.metadata_sync.OAI_PRIMARY", f"{origin}/oai"),
         patch("scholight.scheduler.metadata_sync.OAI_FALLBACK", f"{origin}/oai"),
+        patch(
+            "scholight.scheduler.metadata_sync.fetch_papers_api",
+            AsyncMock(side_effect=AssertionError("Unexpected external fallback")),
+        ),
         parser_context,
     ):
         await mark_sync_started("arxiv")

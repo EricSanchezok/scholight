@@ -26,6 +26,10 @@ async def register_target(target: IngestionTarget) -> None:
         raise DBError("Destination identity conflicts with its registered binding")
 
 
+class TargetLeaseLostError(DBError):
+    """A superseded worker must stop without changing its replacement job."""
+
+
 class TargetQueue:
     def __init__(self, target_id: str, *, profile_sha256: str | None = None) -> None:
         self.target_id = target_id

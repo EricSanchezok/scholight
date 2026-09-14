@@ -283,3 +283,25 @@ async def test_drain_stops_at_its_runtime_deadline() -> None:
 
     assert result.reason == "max_runtime"
     assert result.jobs_processed >= 1
+
+
+@pytest.mark.asyncio
+async def test_deadline_cancels_and_joins_processing_before_return(tmp_path: Path) -> None:
+    finished = asyncio.Event()
+
+    async def slow(*_args: object, **_kwargs: object) -> str:
+        try:
+            await asyncio.Event().wait()
+        finally:
+            finished.set()
+        return "installed"
+
+    with (
+        patch(
+            "scholight.scheduler.ingest_worker.claim_ingestion_job", AsyncMock(return_value=_job())
+        ),
+        patch("scholight.scheduler.ingest_worker.process_job", slow),
+        patch("scholight.scheduler.ingest_worker.fail_ingestion_job", AsyncMock()),
+    ):
+        await run_worker_once("worker", scratch_root=tmp_path, max_processing_seconds=0.01)
+    assert finished.is_set()

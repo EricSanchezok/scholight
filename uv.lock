@@ -3836,7 +3836,9 @@ extract = [
     { name = "uvicorn", extra = ["standard"] },
 ]
 ingest = [
+    { name = "boto3" },
     { name = "grpcio" },
+    { name = "pyarrow" },
     { name = "pylatexenc" },
     { name = "pymilvus" },
     { name = "pymupdf4llm" },
@@ -3878,6 +3880,7 @@ requires-dist = [
     { name = "beautifulsoup4", marker = "extra == 'survey'", specifier = ">=4.12" },
     { name = "boto3", marker = "extra == 'api'", specifier = ">=1.35,<2" },
     { name = "boto3", marker = "extra == 'archive'", specifier = ">=1.35,<2" },
+    { name = "boto3", marker = "extra == 'ingest'", specifier = ">=1.35,<2" },
     { name = "boto3", marker = "extra == 'survey'", specifier = ">=1.35,<2" },
     { name = "click", specifier = ">=8" },
     { name = "cryptography", marker = "extra == 'api'", specifier = ">=50.0.0" },
@@ -3901,6 +3904,7 @@ requires-dist = [
     { name = "playwright", marker = "extra == 'extract'", specifier = ">=1.52,<2" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4" },
     { name = "pyarrow", marker = "extra == 'archive'", specifier = ">=21" },
+    { name = "pyarrow", marker = "extra == 'ingest'", specifier = ">=21" },
     { name = "pydantic", extras = ["email"], specifier = ">=2" },
     { name = "pydantic-settings", specifier = ">=2" },
     { name = "pyjwt", marker = "extra == 'api'", specifier = ">=2.10" },

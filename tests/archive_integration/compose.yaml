@@ -1,7 +1,7 @@
 name: scholight-archive-test
 
 x-milvus: &milvus
-  image: milvusdb/milvus:v2.6.0@sha256:13bb2bff4b20598e860ee95ad1f42a167d20f50d9acc9718b09bf34792bb8f10
+  image: milvusdb/milvus:v2.6.23@sha256:60e96d5abe7ea9199dd8a4d0d0506f9b57a7056cf57683327b8c7ae7f489ed17
   command: milvus run standalone
   environment:
     DEPLOY_MODE: STANDALONE

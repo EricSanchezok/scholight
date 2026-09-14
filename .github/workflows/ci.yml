@@ -104,6 +104,7 @@ jobs:
         run: |
           docker compose -f tests/archive_integration/compose.yaml up -d --wait --wait-timeout 240
           uv run python tests/archive_integration/smoke.py
+          uv run python tests/archive_integration/fulltext_smoke.py
       - name: Clean up archive integration containers
         if: always()
         run: docker compose -f tests/archive_integration/compose.yaml down -v
@@ -112,7 +113,9 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: archive-roundtrip
-          path: data/scholight-ci/archive-integration-result.json
+          path: |
+            data/scholight-ci/archive-integration-result.json
+            data/scholight-ci/fulltext-smoke/result.json
       - name: Bandit
         run: uv run bandit -c pyproject.toml -r scholight/ --severity-level medium
       - name: Dependency audit

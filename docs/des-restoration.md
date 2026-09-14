@@ -74,3 +74,30 @@ targets. `resume-fulltext` selects only their reviewed scope, retains audit rows
 and leaves terminal failures for explicit review. It does not retry dead jobs
 implicitly. Each claim's unique lease owner is propagated through heartbeats,
 release and completion so an expired worker cannot finish a reclaimed job.
+
+## Fulltext installation and interruption recovery
+
+Bound workers retain exact-version LaTeX/PDF behavior and split embedding calls
+into sequential batches of at most 64 chunks. Prepared float32 vectors and old
+chunks are stored in checksummed Parquet/Zstandard shards under the dedicated
+`SCHOLIGHT_INGEST_RECOVERY_URI`. A manifest commits only after shard upload and
+readback verification. New version/configuration primary keys cannot overwrite
+old chunks while preparation is incomplete. No corpus-wide vector scan occurs.
+
+Every installation holds a per-paper PostgreSQL advisory lock and checks the
+current unique lease and paper version between stages. It writes all new chunks,
+verifies every scalar/vector value, then deletes only the old keys listed in the
+recovery manifest. Completion receipts bind target, version, chunking settings,
+embedding model/dimension, chunk count and checksum. A retry resumes the saved
+manifest without generating embeddings again. A changed manifest is rejected
+against its database checksum. SIGTERM, deadline cancellation and lost leases
+stop at bounded operation boundaries; cancellation joins the active write before
+releasing the paper lock or deleting temporary files.
+
+The drain command defaults to a 30-minute window. Broad `enqueue-backfill` is
+unavailable with an adopted destination; use the reviewed scope instead. Recovery
+prefixes require 30-day retention configured by the infrastructure rollout.
+The isolated integration suite pins Milvus 2.6.23 because merge-mode upsert
+requires [Milvus 2.6.2 or newer](https://milvus.io/docs/v2.6.x/upsert-entities.md).
+It verifies interruption and exact replacement against real Milvus, PostgreSQL
+and MinIO in addition to fault-injection tests.

@@ -45,7 +45,18 @@ class IngestionTarget:
 
 def fulltext_configuration() -> dict[str, object]:
     """Version the retained parser/chunker contract separately from collection identity."""
+    from scholight.pipeline.chunkers.md_chunker import (
+        MERGE_MIN,
+        OVERLAP_CHARS,
+        TAIL_MIN,
+        TARGET_CHARS,
+    )
+
     return {
+        "target_chars": TARGET_CHARS,
+        "overlap_chars": OVERLAP_CHARS,
+        "merge_min": MERGE_MIN,
+        "tail_min": TAIL_MIN,
         "pipeline": "exact-version-markdown-v1",
         "embedding_model": settings.embedding_model,
         "embedding_dim": settings.embedding_dim,
