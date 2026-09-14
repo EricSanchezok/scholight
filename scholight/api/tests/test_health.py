@@ -70,9 +70,7 @@ async def test_readyz_reports_dependencies_ready(
         response = await client.get("/readyz")
 
     assert response.status_code == 200
-    zilliz_client.describe_collection.assert_called_once_with(
-        "arxiv_papers", timeout=app_module._DEPENDENCY_TIMEOUT_SECONDS
-    )
+    zilliz_client.describe_collection.assert_called_once_with("arxiv_papers", timeout=5.0)
 
 
 @pytest.mark.asyncio
@@ -128,3 +126,44 @@ async def test_health_remains_backward_compatible(
         response = await client.get("/health")
 
     assert response.json() == {"status": "degraded", "pg": "PostgreSQL unreachable"}
+
+
+@pytest.mark.asyncio
+async def test_zilliz_inspection_has_independent_cross_region_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import time
+
+    def inspect() -> None:
+        time.sleep(0.04)
+
+    monkeypatch.setattr(app_module, "_DEPENDENCY_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr(app_module, "_inspect_zilliz_search", inspect)
+    assert await app_module._probe_zilliz()
+
+
+@pytest.mark.asyncio
+async def test_timed_out_zilliz_inspection_is_not_duplicated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import threading
+
+    release = threading.Event()
+    calls = 0
+
+    def inspect() -> None:
+        nonlocal calls
+        calls += 1
+        release.wait(timeout=1)
+
+    monkeypatch.setattr(app_module, "_ZILLIZ_PROBE_TIMEOUT_SECONDS", 0.01, raising=False)
+    monkeypatch.setattr(app_module, "_DEPENDENCY_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr(app_module, "_inspect_zilliz_search", inspect)
+    try:
+        assert not await app_module._probe_zilliz()
+        assert not await app_module._probe_zilliz()
+        assert calls == 1
+    finally:
+        release.set()
+        await asyncio.sleep(0.02)
+    assert await app_module._probe_zilliz()
