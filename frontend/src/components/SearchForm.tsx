@@ -3,17 +3,20 @@ import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
 import { useNavigate } from "react-router-dom";
 
-import type { SearchFilters } from "../api/types";
+import type { SearchFilters, SearchStrength } from "../api/types";
 import { buttonLabelMotion } from "../app/motion";
 import { productConfig } from "../config/product";
 import { buildSearchUrl } from "../lib/format";
 import { styles } from "../styles/classes";
+import { EditorialSelect } from "./EditorialSelect";
 import { SearchFiltersControl } from "./SearchFiltersControl";
 
 const emptyFilters: SearchFilters = {};
 
 interface Props {
   initialQuery?: string;
+  initialStrength?: SearchStrength;
+  availableModes?: readonly SearchStrength[];
   initialLimit?: number;
   filters?: SearchFilters;
   compact?: boolean;
@@ -22,6 +25,8 @@ interface Props {
 
 export function SearchForm({
   initialQuery = "",
+  initialStrength = "standard",
+  availableModes = ["standard"],
   initialLimit = productConfig.search.resultLimit,
   filters = emptyFilters,
   compact = false,
@@ -31,8 +36,10 @@ export function SearchForm({
   const [query, setQuery] = useState(initialQuery);
   const [searchFilters, setSearchFilters] = useState<SearchFilters>(filters);
   const [limit, setLimit] = useState(initialLimit);
+  const [strength, setStrength] = useState(initialStrength);
   const [error, setError] = useState("");
 
+  useEffect(() => setStrength(initialStrength), [initialStrength]);
   useEffect(() => setQuery(initialQuery), [initialQuery]);
   useEffect(() => setSearchFilters(filters), [filters]);
   useEffect(() => setLimit(initialLimit), [initialLimit]);
@@ -43,10 +50,13 @@ export function SearchForm({
     if (!normalized) return setError("Enter a research question or topic.");
     if (normalized.length > productConfig.search.maxQueryLength)
       return setError("Keep your query to 500 characters or fewer.");
+    if (!availableModes.includes(strength))
+      return setError("Thorough is unavailable. Select Standard to continue.");
     setError("");
     navigate(
       buildSearchUrl({
         query: normalized,
+        strength,
         limit,
         filters: searchFilters,
       }),
@@ -72,6 +82,24 @@ export function SearchForm({
         aria-describedby={error ? "search-error" : undefined}
       />
       <div className={styles.searchActions}>
+        {(availableModes.includes("thorough") || strength === "thorough") && (
+          <div className={styles.strengthSelect}>
+            <EditorialSelect<SearchStrength>
+              label="Search mode"
+              value={strength}
+              options={[
+                { value: "standard", label: "Standard" },
+                {
+                  value: "thorough",
+                  label: "Thorough",
+                  disabled: !availableModes.includes("thorough"),
+                },
+              ]}
+              onValueChange={setStrength}
+              variant="strength"
+            />
+          </div>
+        )}
         <SearchFiltersControl
           filters={searchFilters}
           limit={limit}
@@ -79,10 +107,11 @@ export function SearchForm({
             setSearchFilters(nextFilters);
             setLimit(nextLimit);
             const normalized = query.trim();
-            if (compact && normalized) {
+            if (compact && normalized && availableModes.includes(strength)) {
               navigate(
                 buildSearchUrl({
                   query: normalized,
+                  strength,
                   limit: nextLimit,
                   filters: nextFilters,
                 }),
@@ -90,7 +119,13 @@ export function SearchForm({
             }
           }}
         />
-        <button className={styles.primaryButton} type="submit" disabled={busy} aria-busy={busy}>
+        <button
+          className={styles.primaryButton}
+          type="submit"
+          disabled={busy}
+          aria-busy={busy}
+          aria-label={busy ? "Searching…" : "Search"}
+        >
           <AnimatePresence initial={false} mode="popLayout">
             <m.span key={busy ? "searching" : "search"} {...buttonLabelMotion}>
               {busy ? "Searching…" : "Search"}

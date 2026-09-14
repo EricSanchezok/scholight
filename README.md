@@ -107,16 +107,18 @@ API-only 校验只在 `create_app()` 执行；migration、scheduler 和内部 CL
 
 ## 搜索系统
 
-### Public abstract search
+### Standard and Thorough search
 
-Search uses the existing Level 1 dense + BM25 abstract pipeline and requires only
-`arxiv_papers`. Filters, sorting, authentication, and paper result fields remain
-compatible. The internal Level 2 implementation and benchmarks remain available
-for explicit full-runtime testing and future recovery.
+Standard uses the retained dense + BM25 abstract pipeline and requires only
+`arxiv_papers`. Thorough also uses the retained full-text recall and fusion pipeline.
+Filters, authentication, paper result fields, and ranking parameters are unchanged.
 
-`POST /api/search` and MCP `search_papers` accept omitted `strength` or the deprecated
-`standard` value. `thorough` fails parameter validation before search or quota
-consumption. Responses retain `strength: standard` for existing clients.
+`POST /api/search` and MCP `search_papers` accept `strength: standard|thorough`;
+omitting it selects Standard. `/capabilities` advertises `search_modes`. Thorough
+requires `SCHOLIGHT_RUNTIME_PROFILE=full` and `SCHOLIGHT_PUBLIC_THOROUGH_ENABLED=true`.
+Otherwise it is rejected before quota reservation. Failed Thorough requests never
+fall back to Standard and refund their Thorough reservation. Survey remains
+independently disabled. See [search modes](docs/search-modes.md).
 
 Request:
 

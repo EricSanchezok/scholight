@@ -7,11 +7,13 @@ import hashlib
 import json
 import os
 import re
-import subprocess
+import subprocess  # nosec B404
 import tempfile
 import time
 from pathlib import Path
 
+from personal_binding import read_adoption, read_binding, release_parameters, verify_versions
+from personal_compatibility import expansion_required, receipt_key, verify_receipt
 from personal_manifest import git, source_contract, verify
 from personal_runtime import runtime
 from release_admission import ACCOUNT, BUCKET, REGION, AdmissionRelease
@@ -20,23 +22,20 @@ STACK = "sanchezcloud-scholight-personal-runtime"
 
 
 def aws(service: str, operation: str, *args: str) -> dict:
-    result = subprocess.run(
-        [
-            "aws",
-            service,
-            operation,
-            "--region",
-            os.environ["AWS_REGION"],
-            "--output",
-            "json",
-            "--no-cli-pager",
-            *args,
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=60,
-    )
+    # Fixed executable and argument array; operations originate in this controller.
+    command = [
+        "aws",
+        service,
+        operation,
+        "--region",
+        os.environ["AWS_REGION"],
+        "--output",
+        "json",
+        "--no-cli-pager",
+        *args,
+    ]
+    options = {"capture_output": True, "text": True, "check": False, "timeout": 60}
+    result = subprocess.run(command, **options)  # nosec
     if result.returncode:
         raise RuntimeError(f"AWS {service} {operation} failed")
     return json.loads(result.stdout or "{}")
@@ -85,7 +84,7 @@ def read_manifest(s3, key: str) -> tuple[dict, str]:
     return value, hashlib.sha256(body).hexdigest()
 
 
-def compatible_with_running(parameters: dict, manifest: dict) -> None:
+def compatible_with_running(parameters: dict, manifest: dict) -> bool:
     image = parameters["ApiImage"]
     digest = image.split("@", 1)[1]
     details = aws(
@@ -104,11 +103,19 @@ def compatible_with_running(parameters: dict, manifest: dict) -> None:
     }
     if len(revisions) != 1:
         raise ValueError("Cannot prove the currently deployed migration contract")
-    for name, value in source_contract(revisions.pop()).items():
-        if manifest[name] != value:
-            raise ValueError(
-                "Migration or Identity contract changed; a separately reviewed compatibility migration is required"
-            )
+    return expansion_required(source_contract(revisions.pop()), manifest)
+
+
+def require_migration_receipt(s3, parameters: dict, manifest: dict) -> None:
+    from botocore.exceptions import ClientError
+
+    try:
+        body = s3.get_object(Bucket=BUCKET, Key=receipt_key(manifest))["Body"].read()
+    except ClientError as exc:
+        raise ValueError(
+            "Run the separately reviewed compatibility migration before apply"
+        ) from exc
+    verify_receipt(json.loads(body), parameters, manifest)
 
 
 def main() -> None:
@@ -116,6 +123,9 @@ def main() -> None:
     parser.add_argument("operation", choices=["plan", "apply", "migrate"])
     parser.add_argument("--manifest-key")
     parser.add_argument("--change-set")
+    parser.add_argument("--binding-key")
+    parser.add_argument("--resume-ingestion", action="store_true")
+    parser.add_argument("--adoption-key")
     args = parser.parse_args()
     account, region = os.environ["EXPECTED_ACCOUNT_ID"], os.environ["AWS_REGION"]
     if account != ACCOUNT or region != REGION:
@@ -125,22 +135,38 @@ def main() -> None:
     control = git("rev-parse", "HEAD").decode().strip()
     if control != git("rev-parse", "origin/main").decode().strip():
         raise ValueError("Use the current reviewed main controller")
-    if args.operation == "migrate":
-        migrate(account, region)
-        return
     import boto3
 
     s3 = boto3.client("s3", region_name=REGION)
     manifest, digest = read_manifest(s3, args.manifest_key or "")
+    if args.operation == "migrate":
+        from personal_migration import execute
+
+        execute(manifest, digest)
+        return
+    binding, binding_digest = (
+        read_binding(s3, args.binding_key) if args.binding_key else (None, None)
+    )
     if args.operation == "plan":
         stack = aws("cloudformation", "describe-stacks", "--stack-name", STACK)["Stacks"][0]
         if stack["StackStatus"] not in {"CREATE_COMPLETE", "UPDATE_COMPLETE"}:
             raise ValueError("Runtime must be stable before planning")
         parameters = {p["ParameterKey"]: p["ParameterValue"] for p in stack["Parameters"]}
-        compatible_with_running(parameters, manifest)
-        parameters.update(
-            {name.title() + "Image": image for name, image in manifest["images"].items()}
-        )
+        migration_required = compatible_with_running(parameters, manifest)
+        parameters = release_parameters(parameters, manifest, binding)
+        template = runtime()
+        for name, specification in template["Parameters"].items():
+            if name not in parameters and "Default" in specification:
+                parameters[name] = str(specification["Default"])
+        adoption_digest = None
+        if args.resume_ingestion:
+            if manifest["version"] != 2:
+                raise ValueError("Legacy consumers cannot resume ingestion")
+            parameters.update(MetadataEnabled="true", IngestEnabled="true")
+            adoption_digest = read_adoption(
+                s3, args.adoption_key or "", parameters["IngestionTargetId"]
+            )
+        verify_versions(boto3.client("secretsmanager", region_name=REGION), parameters)
         with tempfile.TemporaryDirectory() as directory:
             body = Path(directory) / "runtime.json"
             body.write_text(json.dumps(runtime()))
@@ -184,6 +210,14 @@ def main() -> None:
                 "manifest_sha256": digest,
                 "created_at": time.time(),
                 "stack_updated_at": updated,
+                "binding_key": args.binding_key,
+                "binding_sha256": binding_digest,
+                "migration_required": migration_required,
+                "adoption_key": args.adoption_key if args.resume_ingestion else None,
+                "adoption_sha256": adoption_digest,
+                "parameters_sha256": hashlib.sha256(
+                    json.dumps(parameters, sort_keys=True).encode()
+                ).hexdigest(),
             },
         )
         for _ in range(60):
@@ -200,6 +234,22 @@ def main() -> None:
                     "source_sha": manifest["source_sha"],
                     "change_set": result["Id"],
                     "changes": change["Changes"],
+                    "migration_required_before_apply": migration_required,
+                    "target": {
+                        name: parameters[name]
+                        for name in (
+                            "TargetEndpoint",
+                            "IngestionTargetId",
+                            "RuntimeProfile",
+                            "MetadataEnabled",
+                            "IngestEnabled",
+                        )
+                    },
+                    "credential_versions": {
+                        name: value
+                        for name, value in parameters.items()
+                        if name.endswith("SecretVersion")
+                    },
                 },
                 default=str,
             )
@@ -213,6 +263,11 @@ def main() -> None:
         plan = release.read("plan")
         if plan is None or plan["manifest_key"] != args.manifest_key:
             raise ValueError("No matching durable release plan")
+        if (
+            plan.get("binding_key") != args.binding_key
+            or plan.get("binding_sha256") != binding_digest
+        ):
+            raise ValueError("Destination binding changed after plan")
         if release.read("start") is None:
             stack = release.stack(STACK)
             updated = stack.get("LastUpdatedTime", stack["CreationTime"]).timestamp()
@@ -225,6 +280,20 @@ def main() -> None:
             ):
                 raise ValueError("Plan no longer executable or bound to this manifest")
             parameters = {p["ParameterKey"]: p["ParameterValue"] for p in change["Parameters"]}
+            if (
+                hashlib.sha256(json.dumps(parameters, sort_keys=True).encode()).hexdigest()
+                != plan["parameters_sha256"]
+            ):
+                raise ValueError("Planned runtime configuration changed")
+            verify_versions(boto3.client("secretsmanager", region_name=REGION), parameters)
+            if (
+                plan.get("adoption_key")
+                and read_adoption(s3, plan["adoption_key"], parameters["IngestionTargetId"])
+                != plan["adoption_sha256"]
+            ):
+                raise ValueError("Baseline adoption proof changed after review")
+            if plan.get("migration_required"):
+                require_migration_receipt(s3, parameters, manifest)
             if any(
                 parameters[name.title() + "Image"] != value
                 for name, value in manifest["images"].items()
@@ -233,58 +302,6 @@ def main() -> None:
         elif plan["control"] != control or plan["manifest_sha256"] != digest:
             raise ValueError("Resume requires the original reviewed controller and manifest")
         release.run()
-
-
-def migrate(account: str, region: str) -> None:
-    stack = aws("cloudformation", "describe-stacks", "--stack-name", STACK)["Stacks"][0]
-    outputs = {v["OutputKey"]: v["OutputValue"] for v in stack["Outputs"]}
-    task = outputs["MigrationTaskDefinitionArn"]
-    if not task.startswith(
-        f"arn:aws:ecs:{region}:{account}:task-definition/scholight-personal-migration:"
-    ):
-        raise ValueError("Unexpected migration task")
-    cluster = os.environ["ECS_CLUSTER_ARN"]
-    response = aws(
-        "ecs",
-        "run-task",
-        "--cluster",
-        cluster,
-        "--launch-type",
-        "EC2",
-        "--task-definition",
-        task,
-        "--count",
-        "1",
-        "--started-by",
-        "github-product-migration",
-    )
-    if response.get("failures") or len(response.get("tasks", [])) != 1:
-        raise RuntimeError("Migration did not start")
-    task_arn = response["tasks"][0]["taskArn"]
-    print(json.dumps({"migration_task": task_arn}), flush=True)
-    for _ in range(120):
-        description = aws("ecs", "describe-tasks", "--cluster", cluster, "--tasks", task_arn)[
-            "tasks"
-        ][0]
-        if description["lastStatus"] == "STOPPED":
-            if not description.get("containers") or any(
-                c.get("exitCode") != 0 for c in description["containers"]
-            ):
-                raise RuntimeError("Product migration failed; inspect its protected log group")
-            print("Product migration completed")
-            return
-        time.sleep(10)
-    aws(
-        "ecs",
-        "stop-task",
-        "--cluster",
-        cluster,
-        "--task",
-        task_arn,
-        "--reason",
-        "Manual migration exceeded twenty minute limit",
-    )
-    raise RuntimeError("Product migration timed out")
 
 
 if __name__ == "__main__":

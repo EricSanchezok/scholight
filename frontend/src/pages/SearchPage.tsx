@@ -23,6 +23,10 @@ import {
   searchResultMetadataParts,
 } from "../lib/format";
 import { useI18n } from "../i18n/I18nProvider";
+import {
+  availableSearchModes,
+  usePublicCapabilities,
+} from "../features/capabilities/usePublicCapabilities";
 import { styles } from "../styles/classes";
 
 function ResultItem({ hit, index }: { hit: SearchHit; index: number }) {
@@ -108,7 +112,12 @@ export function SearchPage() {
   const { status: authStatus } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const parsed = useMemo(() => parseSearchParameters(searchParams), [searchParams]);
+  const capabilities = usePublicCapabilities();
+  const modes = availableSearchModes(capabilities.data);
+  const modeUnavailable =
+    parsed.strength === "thorough" && !capabilities.isPending && !modes.includes("thorough");
   const request: SearchRequest = {
+    strength: parsed.strength,
     query: parsed.query,
     limit: parsed.limit,
     filters: parsed.filters,
@@ -116,7 +125,8 @@ export function SearchPage() {
   const result = useQuery({
     queryKey: queryKeys.search(request),
     queryFn: () => searchApi.search(request),
-    enabled: Boolean(parsed.query),
+    enabled:
+      Boolean(parsed.query) && (parsed.strength !== "thorough" || modes.includes("thorough")),
     staleTime: productConfig.search.cacheTimeMs,
     retry: false,
   });
@@ -148,10 +158,12 @@ export function SearchPage() {
       <div className={styles.resultsSearch}>
         <SearchForm
           initialQuery={parsed.query}
+          initialStrength={parsed.strength}
+          availableModes={modes}
           initialLimit={parsed.limit}
           filters={parsed.filters}
           compact
-          busy={result.isPending && Boolean(parsed.query)}
+          busy={result.isPending && Boolean(parsed.query) && !modeUnavailable}
         />
         {error?.status === 422 && (
           <p className={styles.resultsQueryError} role="alert">
@@ -160,10 +172,9 @@ export function SearchPage() {
         )}
       </div>
       <div className={styles.readingColumn}>
-        {(searchParams.get("strength") === "thorough" ||
-          searchParams.get("replay") === "legacy") && (
-          <p className={styles.notice} role="status">
-            This query uses the current search. Full-text search is unavailable.
+        {modeUnavailable && (
+          <p className={styles.notice} role="alert">
+            Thorough search is currently unavailable. Select Standard to search abstracts.
           </p>
         )}
         <FilterChips filters={parsed.filters} onRemove={removeFilter} />
@@ -175,7 +186,7 @@ export function SearchPage() {
           </div>
         )}
         <AnimatePresence initial={false} mode="popLayout">
-          {result.isPending && parsed.query ? (
+          {result.isPending && parsed.query && !modeUnavailable ? (
             <m.div key={`loading-${parsed.query}-${parsed.strength}`} exit={{ opacity: 0 }}>
               <SearchResultsSkeleton />
             </m.div>

@@ -9,6 +9,9 @@ from typing import Any
 from urllib.parse import urlencode
 
 import httpx
+from defusedxml import ElementTree
+from defusedxml.common import DefusedXmlException
+from defusedxml.ElementTree import ParseError
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 OAI_PRIMARY = "https://oaipmh.arxiv.org/oai"
@@ -124,11 +127,18 @@ async def _fetch_oai_page(url: str, logger: Any | None = None) -> str:
             raise OAIHarvestError(f"HTTP 503 — retry after {wait_sec}s")
         resp.raise_for_status()
         body = resp.text
-        if "<error" in body:
-            code = re.search(r"""<error[^>]*code=['"]([^'"]*)['"]""", body)
-            msg = re.search(r"<error[^>]*>([^<]*)</error>", body)
-            error_code = code.group(1) if code else "?"
-            error_msg = msg.group(1) if msg else "?"
+        if not body.strip():
+            raise OAIHarvestError("Empty HTTP body is not an OAI coverage response")
+        try:
+            root = ElementTree.fromstring(body)
+        except (ParseError, DefusedXmlException) as exc:
+            raise OAIHarvestError("Invalid OAI XML response") from exc
+        if root.tag != "{http://www.openarchives.org/OAI/2.0/}OAI-PMH":
+            raise OAIHarvestError("Unexpected OAI response root")
+        error = root.find("{http://www.openarchives.org/OAI/2.0/}error")
+        if error is not None:
+            error_code = error.get("code", "?")
+            error_msg = error.text or "?"
             # "noRecordsMatch" is not a real error — arXiv had no papers that day
             # (e.g. weekends, holidays).  Treat as empty result.
             if error_code == "noRecordsMatch":
@@ -154,6 +164,7 @@ async def iter_papers_oai(
     """
     all_papers: list[dict[str, Any]] = []
     token = resume_token
+    seen_tokens = {token} if token else set()
 
     while True:
         if token:
@@ -168,19 +179,39 @@ async def iter_papers_oai(
         body = await _fetch_oai_page(url, logger=logger)
 
         if not body:
+            if token:
+                raise OAIHarvestError("Empty OAI continuation does not prove complete coverage")
             break
 
+        try:
+            root = ElementTree.fromstring(body)
+        except (ParseError, DefusedXmlException) as exc:
+            raise OAIHarvestError("Invalid OAI XML response") from exc
+        if root.tag != "{http://www.openarchives.org/OAI/2.0/}OAI-PMH":
+            raise OAIHarvestError("Unexpected OAI response root")
+        if root.find("{http://www.openarchives.org/OAI/2.0/}ListRecords") is None:
+            raise OAIHarvestError("OAI response omitted ListRecords")
         records = _RECORD_RE.findall(body)
+        if len(records) != len(root.findall(".//{http://www.openarchives.org/OAI/2.0/}record")):
+            raise OAIHarvestError("Unsupported OAI record representation")
         for rec in records:
             paper = _parse_record(rec)
-            if paper:
+            if (
+                paper
+                and str(paper.get("arxiv_id") or "").strip()
+                and str(paper.get("title") or "").strip()
+            ):
                 all_papers.append(paper)
+            elif not re.search(r"<header\b[^>]*status=['\"]deleted['\"]", rec):
+                raise OAIHarvestError("Unable to parse an active OAI record")
 
         rt_match = _RESUMPTION_RE.search(body)
         next_token = rt_match.group(1).strip() if rt_match else ""
-        if not next_token or next_token == token:
+        if not next_token:
             break
-
+        if next_token in seen_tokens:
+            raise OAIHarvestError("Repeated OAI resumption token prevents complete coverage")
+        seen_tokens.add(next_token)
         token = next_token
         # OAI-PMH polite delay: 10-15s between resumptionToken pages
         await asyncio.sleep(10)

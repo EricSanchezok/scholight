@@ -68,6 +68,7 @@ async def test_migrations_apply_once_and_replay_without_schema_changes(
         (13, "allow_free_readable_surveys"),
         (14, "survey_compute_attempts"),
         (15, "deferred_fulltext"),
+        (16, "target_ingestion"),
     ]
 
 

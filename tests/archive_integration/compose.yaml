@@ -1,7 +1,7 @@
 name: scholight-archive-test
 
 x-milvus: &milvus
-  image: milvusdb/milvus:v2.6.0@sha256:13bb2bff4b20598e860ee95ad1f42a167d20f50d9acc9718b09bf34792bb8f10
+  image: milvusdb/milvus:v2.6.23@sha256:60e96d5abe7ea9199dd8a4d0d0506f9b57a7056cf57683327b8c7ae7f489ed17
   command: milvus run standalone
   environment:
     DEPLOY_MODE: STANDALONE
@@ -26,7 +26,7 @@ services:
     <<: *milvus
     ports: ["127.0.0.1:7254:19530"]
   minio:
-    image: minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
     command: server /data
     environment:
       MINIO_ROOT_USER: archive-test

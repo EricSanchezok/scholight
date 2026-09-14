@@ -1395,6 +1395,8 @@ export interface components {
      * @description Features that the public client may expose to this deployment.
      */
     PublicCapabilitiesResponse: {
+      /** Search Modes */
+      search_modes?: ("standard" | "thorough")[];
       /**
        * Survey
        * @enum {string}
@@ -1518,13 +1520,8 @@ export interface components {
       limit?: number;
       /** Query */
       query: string;
-      /**
-       * Strength
-       * @deprecated
-       * @default standard
-       * @constant
-       */
-      strength?: "standard";
+      /** @default standard */
+      strength?: components["schemas"]["SearchStrength"];
     };
     /**
      * PublicSearchResponse

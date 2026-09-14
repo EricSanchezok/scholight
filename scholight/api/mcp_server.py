@@ -266,10 +266,9 @@ async def search_papers(
         ),
     ],
     strength: Annotated[
-        Literal["standard"],
+        Literal["standard", "thorough"],
         Field(
-            description=("Deprecated compatibility field. Omit it to search papers."),
-            json_schema_extra={"deprecated": True},
+            description="Standard searches abstracts; Thorough also searches full text when available."
         ),
     ] = "standard",
     limit: Annotated[
@@ -323,11 +322,9 @@ async def search_papers(
     ] = None,
 ) -> CallToolResult:
     """Search Scholight for ranked AI research papers."""
-    if strength != "standard":
-        raise ValueError("Thorough search is unavailable; omit strength.")
     request = PublicSearchRequest(
         query=query,
-        strength=SearchStrength.STANDARD,
+        strength=SearchStrength(strength),
         limit=limit,
         filters=PublicSearchFilters(
             categories=categories or [],

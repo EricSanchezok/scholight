@@ -65,7 +65,7 @@ def serve_ingest_cmd() -> None:
 @click.option(
     "--max-runtime-seconds",
     type=click.IntRange(60, 7200),
-    default=110 * 60,
+    default=30 * 60,
     show_default=True,
 )
 def drain_ingest_cmd(idle_grace_seconds: int, max_runtime_seconds: int) -> None:
@@ -88,7 +88,7 @@ def drain_ingest_cmd(idle_grace_seconds: int, max_runtime_seconds: int) -> None:
 @click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON.")
 def status_cmd(as_json: bool) -> None:
     """Show PostgreSQL queue and continuous-sync state."""
-    from scholight.db.queries_ingestion import get_ingestion_status
+    from scholight.db.ingestion import get_ingestion_status
 
     result = asyncio.run(_with_pool(get_ingestion_status))
     if as_json:
@@ -117,7 +117,10 @@ def enqueue_backfill_cmd(
         raise click.UsageError("--from must be on or before --to")
 
     async def _run() -> dict[str, Any]:
-        from scholight.db.queries_ingestion import enqueue_ingestion_job
+        from scholight.db.ingestion import configured_queue, enqueue_ingestion_job
+
+        if configured_queue() is not None:
+            raise click.UsageError("Bound targets use resume-fulltext with a reviewed scope")
         from scholight.store.ingestion import list_missing_chunks
 
         rows = await asyncio.to_thread(
@@ -147,7 +150,7 @@ def enqueue_backfill_cmd(
 def retry_cmd(arxiv_id: str) -> None:
     """Reactivate or explicitly enqueue one paper by exact arXiv ID."""
     require_full_runtime("Full-text ingestion")
-    from scholight.db.queries_ingestion import (
+    from scholight.db.ingestion import (
         enqueue_ingestion_job,
         get_ingestion_job,
         retry_ingestion_job,
@@ -191,3 +194,32 @@ def resume_fulltext_cmd(limit: int, apply: bool) -> None:
         return await resume_deferred_fulltext(limit=limit, apply=apply)
 
     click.echo(json.dumps(asyncio.run(_with_pool(run)), sort_keys=True))
+
+
+@scheduler_group.command("adopt-baseline")
+@click.option("--plan", required=True, help="Verified S3 abstract reconciliation plan prefix.")
+@click.option("--proof-sha256", required=True)
+@click.option("--date", required=True, type=click.DateTime(formats=["%Y-%m-%d"]))
+@click.option("--scope-start", required=True, type=click.DateTime(formats=["%Y-%m-%d"]))
+@click.option("--scope-end", type=click.DateTime(formats=["%Y-%m-%d"]))
+def adopt_baseline_cmd(
+    plan: str,
+    proof_sha256: str,
+    date: dt.datetime,
+    scope_start: dt.datetime,
+    scope_end: dt.datetime | None,
+) -> None:
+    """Bind the reviewed destination baseline and seed only its interruption scope."""
+    require_full_runtime("Destination adoption")
+    from scholight.db.target_adoption import adopt_baseline
+
+    async def run() -> dict[str, Any]:
+        return await adopt_baseline(
+            plan,
+            proof_sha256,
+            date=date.date(),
+            scope_start=scope_start.date(),
+            scope_end=scope_end.date() if scope_end else None,
+        )
+
+    click.echo(json.dumps(asyncio.run(_with_pool(run)), default=str, sort_keys=True))

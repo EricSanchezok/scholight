@@ -1383,6 +1383,14 @@
       "PublicCapabilitiesResponse": {
         "description": "Features that the public client may expose to this deployment.",
         "properties": {
+          "search_modes": {
+            "items": {
+              "enum": ["standard", "thorough"],
+              "type": "string"
+            },
+            "title": "Search Modes",
+            "type": "array"
+          },
           "survey": {
             "enum": ["off", "all"],
             "title": "Survey",
@@ -1666,11 +1674,8 @@
             "type": "string"
           },
           "strength": {
-            "const": "standard",
-            "default": "standard",
-            "deprecated": true,
-            "title": "Strength",
-            "type": "string"
+            "$ref": "#/components/schemas/SearchStrength",
+            "default": "standard"
           }
         },
         "required": ["query"],

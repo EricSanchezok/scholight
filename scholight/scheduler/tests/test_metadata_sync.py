@@ -100,3 +100,40 @@ async def test_api_metadata_marks_generated_abstract_embedding_as_available() ->
         await _normalize_and_embed([paper])
 
     assert paper["_metadata_fields"] == {"abstract", "abstract_embedding"}
+
+
+@pytest.mark.asyncio
+async def test_new_v1_replay_heals_postgres_registration_failure() -> None:
+    paper = {"arxiv_id": "2609.00001", "version": 1, "_version_available": True}
+    with (
+        patch(
+            "scholight.scheduler.metadata_sync._fetch_day", AsyncMock(return_value=([paper], "oai"))
+        ),
+        patch("scholight.scheduler.metadata_sync._normalize_and_embed", AsyncMock()),
+        patch(
+            "scholight.scheduler.metadata_sync.write_metadata_papers",
+            return_value=[MetadataOutcome("2609.00001", 1, None)],
+        ),
+        patch("scholight.scheduler.metadata_sync.enqueue_ingestion_job", AsyncMock()) as enqueue,
+    ):
+        await _sync_day(dt.date(2026, 9, 13), dt.date(2026, 9, 13))
+    enqueue.assert_awaited_once_with("2609.00001", 1, "new", max_attempts=8)
+
+
+@pytest.mark.asyncio
+async def test_atom_fallback_never_advances_revision_coverage_cursor() -> None:
+    with (
+        patch("scholight.scheduler.metadata_sync.mark_sync_started", AsyncMock()),
+        patch(
+            "scholight.scheduler.metadata_sync.get_sync_state",
+            AsyncMock(return_value=SyncState("arxiv", dt.date(2026, 9, 12), None, None)),
+        ),
+        patch("scholight.scheduler.metadata_sync._sync_day", AsyncMock(return_value=(10, "api"))),
+        patch("scholight.scheduler.metadata_sync.mark_sync_succeeded", AsyncMock()) as succeeded,
+        patch("scholight.scheduler.metadata_sync.mark_sync_failed", AsyncMock()) as failed,
+        patch("scholight.scheduler.metadata_sync._reconcile_recent", AsyncMock()),
+    ):
+        result = await run_sync(today=dt.date(2026, 9, 14))
+    assert result["failed_date"] == "2026-09-13"
+    succeeded.assert_not_awaited()
+    assert failed.call_args.args[1] == "IncompleteMetadataCoverageError"

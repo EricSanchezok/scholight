@@ -11,15 +11,17 @@ from typing import Any
 import structlog
 
 from scholight.config import settings
-from scholight.db.queries_deferred_fulltext import record_deferred_fulltext
-from scholight.db.queries_ingestion import (
+from scholight.db.ingestion import (
+    configured_queue,
     enqueue_ingestion_job,
     get_sync_state,
     initialize_sync_cursor,
     mark_sync_failed,
     mark_sync_started,
     mark_sync_succeeded,
+    verified_sync_source,
 )
+from scholight.db.queries_deferred_fulltext import record_deferred_fulltext
 from scholight.pipeline.embedder import Embedder
 from scholight.sources.arxiv import (
     OAI_FALLBACK,
@@ -36,8 +38,10 @@ from scholight.store.ingestion import (
 from scholight.utils.text import truncate_utf8
 
 logger = structlog.get_logger(__name__)
-_SOURCE = "arxiv"
-_ZERO_GUARD_DAYS = 5
+
+
+class IncompleteMetadataCoverageError(RuntimeError):
+    """Observed new submissions do not prove complete daily revision coverage."""
 
 
 async def _normalize_and_embed(papers: list[dict[str, Any]]) -> None:
@@ -95,15 +99,14 @@ async def _normalize_and_embed(papers: list[dict[str, Any]]) -> None:
         ]
 
 
-async def _fetch_day(date: dt.date, reference: dt.date) -> tuple[list[dict[str, Any]], str]:
+async def _fetch_day(date: dt.date, _reference: dt.date) -> tuple[list[dict[str, Any]], str]:
     date_string = date.isoformat()
     for base, label in ((OAI_PRIMARY, "oai"), (OAI_FALLBACK, "oai_fallback")):
         if not await oai_health_check(base):
             continue
         try:
             papers = await iter_papers_oai(date_string, date_string, base=base)
-            if papers or (reference - date).days > _ZERO_GUARD_DAYS:
-                return papers, label
+            return papers, label
         except Exception as exc:
             logger.warning("metadata source failed", source=label, error=type(exc).__name__)
     papers = await fetch_papers_api(date)
@@ -120,13 +123,19 @@ async def _write_batch(papers: list[dict[str, Any]], date: dt.date) -> None:
             [(outcome.arxiv_id, outcome.target_version) for outcome in outcomes], date
         )
         return
+    queue = configured_queue()
+    if queue is not None:
+        await queue.record_scope(
+            [(outcome.arxiv_id, outcome.target_version) for outcome in outcomes], date, "daily"
+        )
     for paper, outcome in zip(papers, outcomes, strict=True):
+        if paper.get("_version_available") is False:
+            raise IncompleteMetadataCoverageError("Source did not provide an exact paper version")
         kind = outcome.kind
-        # Heal the cross-store interruption where Zilliz accepted a revision
-        # but PostgreSQL was unavailable before its durable job was created.
-        # Re-enqueueing is idempotent for an existing succeeded job.
-        if kind is None and bool(paper.get("_version_available")) and outcome.target_version > 1:
-            kind = "revision"
+        # Replay must also heal the first v1 write when PostgreSQL registration
+        # failed after the vector store accepted that new paper.
+        if kind is None and (queue is not None or bool(paper.get("_version_available"))):
+            kind = "new" if outcome.target_version == 1 else "revision"
         if kind is None:
             continue
         await enqueue_ingestion_job(
@@ -181,11 +190,12 @@ async def run_sync(*, today: dt.date | None = None) -> dict[str, Any]:
     """Synchronize consecutive days through UTC yesterday; stop at first failure."""
     utc_today = today or dt.datetime.now(dt.UTC).date()
     yesterday = utc_today - dt.timedelta(days=1)
-    await mark_sync_started(_SOURCE)
-    state = await get_sync_state(_SOURCE)
+    sync_source = await verified_sync_source()
+    await mark_sync_started(sync_source)
+    state = await get_sync_state(sync_source)
     if state is None or state.last_successful_date is None:
         cursor = await _initial_cursor(yesterday)
-        await initialize_sync_cursor(_SOURCE, cursor)
+        await initialize_sync_cursor(sync_source, cursor)
     else:
         cursor = state.last_successful_date
 
@@ -196,9 +206,13 @@ async def run_sync(*, today: dt.date | None = None) -> dict[str, Any]:
     while current <= yesterday:
         try:
             count, source = await _sync_day(current, yesterday)
-            await mark_sync_succeeded(_SOURCE, current)
+            if source == "api":
+                raise IncompleteMetadataCoverageError(
+                    "Atom submission-date fallback does not cover all revisions; retry OAI"
+                )
+            await mark_sync_succeeded(sync_source, current)
         except Exception as exc:
-            await mark_sync_failed(_SOURCE, type(exc).__name__, str(exc)[:1000])
+            await mark_sync_failed(sync_source, type(exc).__name__, str(exc)[:1000])
             logger.exception("metadata day failed; cursor not advanced", date=current.isoformat())
             return {
                 "papers": total,
@@ -211,7 +225,11 @@ async def run_sync(*, today: dt.date | None = None) -> dict[str, Any]:
         sources[source] += 1
         current += dt.timedelta(days=1)
 
-    reconciled = await _reconcile_recent(yesterday) if settings.runtime_profile == "full" else 0
+    reconciled = (
+        await _reconcile_recent(yesterday)
+        if settings.runtime_profile == "full" and configured_queue() is None
+        else 0
+    )
     return {
         "papers": total,
         "days": days,

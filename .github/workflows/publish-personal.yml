@@ -1,4 +1,4 @@
-name: Publish production lean images manually
+name: Publish production images manually
 
 on:
   workflow_dispatch:
@@ -71,10 +71,11 @@ jobs:
           WEB_REPO: ${{ vars.ECR_WEB_REPOSITORY }}
           EXTRACT_REPO: ${{ vars.ECR_EXTRACT_REPOSITORY }}
           METADATA_REPO: ${{ vars.ECR_METADATA_REPOSITORY }}
+          INGEST_REPO: ${{ vars.ECR_INGEST_REPOSITORY }}
         run: |
           test "$REGION" = ap-south-2
           [[ "$ROLE" == arn:aws:iam::669409472143:role/* ]]
-          for repository in "$API_REPO" "$WEB_REPO" "$EXTRACT_REPO" "$METADATA_REPO"; do
+          for repository in "$API_REPO" "$WEB_REPO" "$EXTRACT_REPO" "$METADATA_REPO" "$INGEST_REPO"; do
             [[ "$repository" =~ ^[a-z0-9][a-z0-9_./-]+$ ]]
           done
       - name: Mint read-only Identity token
@@ -121,6 +122,18 @@ jobs:
           provenance: mode=max
           sbom: true
           target: metadata
+      - name: Publish ingest
+        id: ingest
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: docker/scholight-api/Dockerfile
+          push: true
+          platforms: linux/${{ inputs.architecture }}
+          tags: ${{ steps.ecr.outputs.registry }}/${{ vars.ECR_INGEST_REPOSITORY }}:git-${{ needs.prepare.outputs.release_sha }}-${{ inputs.architecture }}
+          provenance: mode=max
+          sbom: true
+          target: ingest
       - name: Publish extract
         id: extract
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
@@ -143,6 +156,12 @@ jobs:
           tags: ${{ steps.ecr.outputs.registry }}/${{ vars.ECR_WEB_REPOSITORY }}:git-${{ needs.prepare.outputs.release_sha }}-${{ inputs.architecture }}
           provenance: mode=max
           sbom: true
+      - name: Check out the reviewed publication controller
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          path: data/release-control
+          persist-credentials: false
       - name: Record immutable outputs
         env:
           SHA: ${{ needs.prepare.outputs.release_sha }}
@@ -151,13 +170,14 @@ jobs:
           WEB_DIGEST: ${{ steps.web.outputs.digest }}
           EXTRACT_DIGEST: ${{ steps.extract.outputs.digest }}
           METADATA_DIGEST: ${{ steps.metadata.outputs.digest }}
+          INGEST_DIGEST: ${{ steps.ingest.outputs.digest }}
           RELEASE_BUCKET_NAME: ${{ vars.RELEASE_BUCKET_NAME }}
         run: |
           if [ "$ARCH" = arm64 ]; then
-            python scripts/personal_manifest.py create --file personal-images.json
+            python data/release-control/scripts/personal_manifest.py create --file personal-images.json
             aws s3api put-object --bucket "$RELEASE_BUCKET_NAME" --key "releases/${SHA}/arm64-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.json" --body personal-images.json --content-type application/json --if-none-match '*'
           else
-            jq -n '{commit: env.SHA, architecture: env.ARCH, api: env.API_DIGEST, web: env.WEB_DIGEST, extract: env.EXTRACT_DIGEST, metadata: env.METADATA_DIGEST}' > personal-images.json
+            jq -n '{commit: env.SHA, architecture: env.ARCH, api: env.API_DIGEST, web: env.WEB_DIGEST, extract: env.EXTRACT_DIGEST, metadata: env.METADATA_DIGEST, ingest: env.INGEST_DIGEST}' > personal-images.json
           fi
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

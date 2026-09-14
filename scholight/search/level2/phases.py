@@ -20,7 +20,7 @@ from collections import defaultdict
 from typing import Any
 
 import structlog
-from pymilvus.exceptions import MilvusException
+from pymilvus.client.types import LoadState
 
 from scholight.config import settings
 from scholight.search.base import Phase, PipelineContext
@@ -50,20 +50,11 @@ def _ensure_chunks_loaded() -> None:
             return
 
         client = get_client()
-        try:
-            if (
-                client.get_load_state(
-                    "arxiv_chunks", timeout=settings.search_level2_rpc_timeout_seconds
-                ).get("state")
-                == "LoadStateLoaded"
-            ):
-                _CHUNK_LOADED = True
-                return
-        except (MilvusException, OSError, TimeoutError):
-            pass
-
-        logger.info("loading arxiv_chunks collection")
-        client.load_collection("arxiv_chunks", timeout=settings.search_level2_rpc_timeout_seconds)
+        state = client.get_load_state(
+            "arxiv_chunks", timeout=settings.search_level2_rpc_timeout_seconds
+        ).get("state")
+        if state != LoadState.Loaded and state != "LoadStateLoaded":
+            raise RuntimeError("arxiv_chunks is not loaded; an operator must prepare it")
         _CHUNK_LOADED = True
 
 

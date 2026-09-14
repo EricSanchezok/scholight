@@ -151,7 +151,7 @@ describe("private data refresh controls", () => {
     });
   });
 
-  it("shows only the current search allowance", async () => {
+  it("shows both search allowances while hiding Survey", async () => {
     renderPage(<UsagePage />);
     expect(
       await screen.findByRole("progressbar", { name: "standard quota used" }),
@@ -159,9 +159,7 @@ describe("private data refresh controls", () => {
     expect(
       screen.queryByRole("progressbar", { name: "survey quota used" }),
     ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("progressbar", { name: "thorough quota used" }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("progressbar", { name: "thorough quota used" })).toBeInTheDocument();
   });
 
   it("refreshes active sessions independently", async () => {

@@ -104,6 +104,8 @@ jobs:
         run: |
           docker compose -f tests/archive_integration/compose.yaml up -d --wait --wait-timeout 240
           uv run python tests/archive_integration/smoke.py
+          uv run python tests/archive_integration/abstract_smoke.py
+          uv run python tests/archive_integration/fulltext_smoke.py
       - name: Clean up archive integration containers
         if: always()
         run: docker compose -f tests/archive_integration/compose.yaml down -v
@@ -112,7 +114,10 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: archive-roundtrip
-          path: data/scholight-ci/archive-integration-result.json
+          path: |
+            data/scholight-ci/archive-integration-result.json
+            data/scholight-ci/fulltext-smoke/result.json
+            data/scholight-ci/abstract-smoke/result.json
       - name: Bandit
         run: uv run bandit -c pyproject.toml -r scholight/ --severity-level medium
       - name: Dependency audit
@@ -594,6 +599,15 @@ jobs:
           load: true
           tags: scholight-metadata:lean-ci
           target: metadata
+      - name: Build native ingest
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: docker/scholight-api/Dockerfile
+          push: false
+          load: true
+          tags: scholight-ingest:lean-ci
+          target: ingest
       - name: Build native extract
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
@@ -613,7 +627,7 @@ jobs:
       - name: Start native processes and check runtime boundaries
         run: sh tests/images/smoke.sh
       - name: Record image architecture and size
-        run: docker image inspect scholight-api:lean-ci scholight-web:lean-ci scholight-extract:lean-ci scholight-metadata:lean-ci --format '{{json .}}' > image-verification.json
+        run: docker image inspect scholight-api:lean-ci scholight-web:lean-ci scholight-extract:lean-ci scholight-metadata:lean-ci scholight-ingest:lean-ci --format '{{json .}}' > image-verification.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: lean-images-${{ matrix.runner }}

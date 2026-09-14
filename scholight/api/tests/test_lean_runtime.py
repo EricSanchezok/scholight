@@ -1,10 +1,15 @@
 """Public lean defaults and rejection before any paid work."""
 
 import pytest
-from pydantic import ValidationError
 
 from scholight.api.models.search import PublicSearchRequest
-from scholight.config import Settings, active_collections, require_full_runtime, settings
+from scholight.config import (
+    Settings,
+    active_collections,
+    public_search_modes,
+    require_full_runtime,
+    settings,
+)
 
 
 def test_default_runtime_is_lean() -> None:
@@ -29,8 +34,7 @@ def test_lean_rejects_fulltext_entrypoint(monkeypatch: pytest.MonkeyPatch) -> No
 
 def test_public_thorough_rejected_in_full_mode(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "runtime_profile", "full")
-    with pytest.raises(ValidationError):
-        PublicSearchRequest.model_validate({"query": "retrieval", "strength": "thorough"})
+    assert public_search_modes() == ["standard"]
 
 
 def test_legacy_standard_still_maps_to_abstract_search() -> None:

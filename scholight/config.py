@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     }
 
     runtime_profile: Literal["lean", "full"] = "lean"
+    public_thorough_enabled: bool = False
 
     # ── Storage ──
     data_root: str = "/data"
@@ -39,6 +40,8 @@ class Settings(BaseSettings):
     embedding_concurrency: int = 1
 
     # ── Native daily ingestion ──
+    ingest_recovery_uri: str = ""
+    ingestion_target_id: str = Field(default="", pattern=r"^(|[a-f0-9]{64})$")
     ingest_recent_days: int = Field(default=90, ge=7, le=365)
     metadata_sync_timeout_seconds: int = Field(default=6600, ge=60, le=86400)
     metadata_sync_hour_utc: int = Field(default=8, ge=0, le=23)
@@ -289,6 +292,13 @@ def active_collections() -> tuple[str, ...]:
     )
 
 
+def public_search_modes() -> list[Literal["standard", "thorough"]]:
+    """Advertise only explicitly enabled, fully configured public search modes."""
+    if settings.runtime_profile == "full" and settings.public_thorough_enabled:
+        return ["standard", "thorough"]
+    return ["standard"]
+
+
 def require_full_runtime(operation: str) -> None:
     """Fail before accessing full-text or Survey dependencies."""
     if settings.runtime_profile != "full":
@@ -307,6 +317,8 @@ def get_survey_public_mode() -> Literal["off", "all"]:
 
 def validate_api_runtime_settings() -> None:
     """Validate secrets and trust boundaries required only by the HTTP API."""
+    if settings.public_thorough_enabled and settings.runtime_profile != "full":
+        raise ValueError("Public Thorough search requires SCHOLIGHT_RUNTIME_PROFILE=full")
     if settings.runtime_profile == "lean" and (
         settings.survey_runtime_enabled or settings.survey_public_mode != "off"
     ):

@@ -54,16 +54,17 @@ async def _probe_postgres() -> bool:
     return True
 
 
-def _list_zilliz_collections() -> None:
+def _inspect_zilliz_search() -> None:
     from scholight.store.client import get_client
+    from scholight.store.readiness import inspect_search_collections
 
-    get_client().list_collections(timeout=_DEPENDENCY_TIMEOUT_SECONDS)
+    inspect_search_collections(get_client(), timeout=_DEPENDENCY_TIMEOUT_SECONDS)
 
 
 async def _probe_zilliz() -> bool:
     try:
         await asyncio.wait_for(
-            asyncio.to_thread(_list_zilliz_collections), timeout=_DEPENDENCY_TIMEOUT_SECONDS
+            asyncio.to_thread(_inspect_zilliz_search), timeout=_DEPENDENCY_TIMEOUT_SECONDS
         )
     except Exception:
         return False

@@ -14,3 +14,9 @@ export function usePublicCapabilities() {
     refetchOnWindowFocus: true,
   });
 }
+
+export function availableSearchModes(capabilities?: {
+  search_modes?: readonly string[];
+}): ("standard" | "thorough")[] {
+  return capabilities?.search_modes?.includes("thorough") ? ["standard", "thorough"] : ["standard"];
+}

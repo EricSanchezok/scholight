@@ -85,6 +85,16 @@ describe("search presentation helpers", () => {
     });
   });
 
+  it("round-trips Thorough without treating it as a legacy query", () => {
+    const url = buildSearchUrl({
+      query: "retrieval",
+      strength: "thorough",
+      limit: 10,
+      filters: {},
+    });
+    expect(parseSearchParameters(new URLSearchParams(url.split("?")[1])).strength).toBe("thorough");
+  });
+
   it("maps relative date presets to an inclusive UTC lower bound", () => {
     expect(dateFromPreset("6months", new Date("2026-07-27T18:00:00Z"))).toBe("2026-01-27");
   });

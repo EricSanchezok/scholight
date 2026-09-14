@@ -68,12 +68,13 @@ repos:
   # ═══════════════════════════════════════════════════════════
   # Security — code
   # ═══════════════════════════════════════════════════════════
-  - repo: https://github.com/PyCQA/bandit
-    rev: 1.8.2
+  - repo: local
     hooks:
       - id: bandit
-        args: [-c, pyproject.toml]
-        additional_dependencies: ["bandit[toml]"]
+        name: bandit
+        entry: uv run --locked bandit -c pyproject.toml
+        language: system
+        types: [python]
 
   # ═══════════════════════════════════════════════════════════
   # Dead code detection

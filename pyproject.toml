@@ -15,6 +15,7 @@ dependencies = [
     "asyncpg>=0.29",
     "structlog>=24",
     "tenacity>=8",
+    "defusedxml>=0.7.1,<1",
 ]
 [project.optional-dependencies]
 api = [
@@ -46,6 +47,8 @@ ingest = [
     "pymilvus>=2.4",
     "pylatexenc>=2",
     "pymupdf4llm>=1.27.2.3",
+    "boto3>=1.35,<2",
+    "pyarrow>=21",
 ]
 survey = [
     "alibabacloud-credentials>=0.3.7",

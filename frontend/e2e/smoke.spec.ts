@@ -920,14 +920,20 @@ test("quota administration stays exact, auditable, and within the viewport", asy
   ).toEqual([]);
 });
 
-test("search has one mode and explains historical full-text replay", async ({ page }) => {
+test("an older backend offers Standard and never silently replays Thorough", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("combobox", { name: "Search strength" })).toHaveCount(0);
   await page.goto("/search?q=retrieval&strength=thorough");
   await expect(
-    page.getByText("This query uses the current search. Full-text search is unavailable."),
+    page.getByText(
+      "Thorough search is currently unavailable. Select Standard to search abstracts.",
+    ),
   ).toBeVisible();
-  await expect(page.getByRole("heading", { name: "A Paper About Retrieval" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "A Paper About Retrieval" })).toHaveCount(0);
+  await page.getByRole("combobox", { name: "Search mode" }).click();
+  await page.getByRole("option", { name: "Standard", exact: true }).click();
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await expect(page).not.toHaveURL(/strength=thorough/);
 });
 
 test("account menu uses the approved order and protected destinations", async ({
@@ -1022,4 +1028,40 @@ test("an access key secret is shown exactly once after creation", async ({ page 
   await expect(page).toHaveScreenshot("access-key-secret.png");
   await page.getByRole("button", { name: "Done" }).click();
   await expect(page.getByRole("heading", { name: "Copy your key now" })).toBeHidden();
+});
+
+test("both search modes work on desktop and mobile without changing filters", async ({ page }) => {
+  await page.route("**/api/capabilities", (route) =>
+    route.fulfill({ json: { survey: "off", search_modes: ["standard", "thorough"] } }),
+  );
+  const requests: Array<{ strength: string; filters?: object }> = [];
+  await page.route("**/api/search", (route) => {
+    const body = route.request().postDataJSON() as { strength: string; filters?: object };
+    requests.push(body);
+    return route.fulfill({ json: { ...result, strength: body.strength } });
+  });
+  await page.goto("/");
+  await page.getByRole("textbox", { name: "Search research papers" }).fill("retrieval");
+  await page.getByRole("combobox", { name: "Search mode" }).click();
+  await page.getByRole("option", { name: "Thorough" }).click();
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await expect(page).toHaveURL(/strength=thorough/);
+  await expect(page.getByRole("heading", { name: "A Paper About Retrieval" })).toBeVisible();
+  await expect.poll(() => requests.at(-1)?.strength).toBe("thorough");
+  await page.getByRole("combobox", { name: "Search mode" }).click();
+  await page.getByRole("option", { name: "Standard" }).click();
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await expect(page).not.toHaveURL(/strength=thorough/);
+  await expect.poll(() => requests.at(-1)?.strength).toBe("standard");
+  await settleMotion(page);
+  const widths = await page.evaluate(() => ({
+    client: document.documentElement.clientWidth,
+    scroll: document.documentElement.scrollWidth,
+  }));
+  expect(widths.scroll).toBe(widths.client);
+  expect(
+    (await new AxeBuilder({ page }).analyze()).violations.filter((item) =>
+      ["serious", "critical"].includes(item.impact ?? ""),
+    ),
+  ).toEqual([]);
 });

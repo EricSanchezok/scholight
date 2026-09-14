@@ -20,7 +20,7 @@ async def test_capabilities_fail_closed_without_authentication(
     response = await api_client.get("/capabilities")
 
     assert response.status_code == 200
-    assert response.json() == {"survey": "off"}
+    assert response.json() == {"survey": "off", "search_modes": ["standard"]}
 
 
 async def test_capabilities_can_publish_survey(
@@ -34,7 +34,7 @@ async def test_capabilities_can_publish_survey(
     response = await api_client.get("/capabilities")
 
     assert response.status_code == 200
-    assert response.json() == {"survey": "all"}
+    assert response.json() == {"survey": "all", "search_modes": ["standard"]}
 
 
 @pytest.fixture(autouse=True)
@@ -42,3 +42,11 @@ def full_runtime_profile(monkeypatch: pytest.MonkeyPatch) -> None:
     from scholight.config import settings
 
     monkeypatch.setattr(settings, "runtime_profile", "full")
+
+
+async def test_capabilities_enable_thorough_without_enabling_survey(
+    api_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "public_thorough_enabled", True)
+    response = await api_client.get("/capabilities")
+    assert response.json() == {"survey": "off", "search_modes": ["standard", "thorough"]}
