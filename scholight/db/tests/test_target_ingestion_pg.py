@@ -53,6 +53,34 @@ async def test_old_success_does_not_skip_new_destination(pool: asyncpg.Pool) -> 
 
 
 @pytest.mark.asyncio
+async def test_daily_promotion_stops_using_the_aged_backfill_slot(pool: asyncpg.Pool) -> None:
+    t = target()
+    await register_target(t)
+    queue = TargetQueue(t.key)
+    await queue.enqueue("2609.00001", 1, "backfill", max_attempts=8)
+    await queue.enqueue("2609.00001", 1, "new", max_attempts=8)
+    job = await queue.claim("worker", 300)
+    assert job is not None and job.source == "new"
+
+
+@pytest.mark.asyncio
+async def test_exhausted_expired_attempt_is_preserved_as_an_explicit_failure(
+    pool: asyncpg.Pool,
+) -> None:
+    t = target()
+    await register_target(t)
+    queue = TargetQueue(t.key)
+    await queue.enqueue("2609.00001", 1, "new", max_attempts=1)
+    assert await queue.claim("killed-worker", 300) is not None
+    await pool.execute(
+        "UPDATE scholight.target_ingestion_jobs SET lease_expires_at=now()-interval '1 minute'"
+    )
+    assert await queue.claim("replacement", 300) is None
+    row = await pool.fetchrow("SELECT status,last_error_code FROM scholight.target_ingestion_jobs")
+    assert row and row["status"] == "dead" and row["last_error_code"] == "lease_expired"
+
+
+@pytest.mark.asyncio
 async def test_same_names_different_collection_identity_have_separate_jobs(
     pool: asyncpg.Pool,
 ) -> None:

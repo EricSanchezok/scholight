@@ -75,7 +75,7 @@ class TargetQueue:
             VALUES ($1,$2,$3,$4,$5,$6,$7)
             ON CONFLICT(target_id,arxiv_id) DO UPDATE SET
                 target_version=EXCLUDED.target_version, profile_sha256=EXCLUDED.profile_sha256,
-                source=CASE WHEN EXCLUDED.target_version>j.target_version THEN EXCLUDED.source ELSE j.source END,
+                source=CASE WHEN EXCLUDED.target_version>j.target_version OR EXCLUDED.priority<j.priority THEN EXCLUDED.source ELSE j.source END,
                 priority=LEAST(j.priority,EXCLUDED.priority), max_attempts=GREATEST(j.max_attempts,EXCLUDED.max_attempts),
                 status=CASE WHEN EXCLUDED.target_version>j.target_version OR EXCLUDED.profile_sha256<>j.profile_sha256 THEN 'pending' ELSE j.status END,
                 attempt_count=CASE WHEN EXCLUDED.target_version>j.target_version OR EXCLUDED.profile_sha256<>j.profile_sha256 THEN 0 ELSE j.attempt_count END,
@@ -104,6 +104,17 @@ class TargetQueue:
             )
             if counter is None:
                 raise DBError("Unregistered destination")
+            # A killed process cannot record its own failure. Expired final
+            # attempts remain visible for investigation rather than looping forever.
+            await conn.execute(
+                """UPDATE scholight.target_ingestion_jobs SET status='dead',lease_owner=NULL,
+                lease_expires_at=NULL,updated_at=now(),last_error_code='lease_expired',
+                last_error_message='Unfinished attempts exhausted the retry budget; investigate task termination before retry'
+                WHERE target_id=$1 AND profile_sha256=$2 AND status='running'
+                  AND lease_expires_at<=now() AND attempt_count>=max_attempts""",
+                self.target_id,
+                self.profile,
+            )
             row = await conn.fetchrow(
                 """WITH candidate AS (
                     SELECT arxiv_id FROM scholight.target_ingestion_jobs

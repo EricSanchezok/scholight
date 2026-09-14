@@ -190,3 +190,9 @@ A completed fulltext receipt and the install journal's completion stage commit i
 one PostgreSQL transaction. A conflicting vector checksum, chunk count, profile
 configuration or recovery manifest rejects completion and leaves the job retryable;
 existence of an unrelated receipt is never treated as successful verification.
+
+Expired final attempts are retained as `dead` with `lease_expired`, because a killed
+process cannot record its own failure. Inspect ECS termination and resource data
+before explicitly retrying them. Cooperative cancellation releases the lease and
+refunds that attempt. A same-version daily promotion updates the job's source as
+well as priority, so it cannot consume the reserved aged-backfill claim slot.
