@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as m from "motion/react-m";
 import { useEffect, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
 import { historyApi } from "../api/domain";
 import { ApiError } from "../api/errors";
@@ -24,6 +24,7 @@ const PAGE_SIZE = productConfig.history.pageSize;
 
 export function HistoryPage() {
   const { locale } = useI18n();
+  const { pathname } = useLocation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [params, setParams] = useSearchParams();
@@ -36,13 +37,14 @@ export function HistoryPage() {
   const checkbox = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (debouncedFilter === urlFilter) return;
+    // Exit animations keep this page mounted after the destination URL changes.
+    if (pathname !== routes.history.path || debouncedFilter === urlFilter) return;
     const next = new URLSearchParams(params);
     if (debouncedFilter) next.set("q", debouncedFilter);
     else next.delete("q");
     next.delete("page");
     setParams(next, { replace: true });
-  }, [debouncedFilter, params, setParams, urlFilter]);
+  }, [debouncedFilter, params, pathname, setParams, urlFilter]);
   useEffect(() => setSelected(new Set()), [page, urlFilter]);
 
   const history = useQuery({

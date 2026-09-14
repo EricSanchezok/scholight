@@ -863,6 +863,55 @@ test("signed-in history follows the compact editorial layout", async ({ page }, 
   expect(geometry.row.height).toBe(98);
 });
 
+for (const strength of ["standard", "thorough"] as const) {
+  test(`history rerun preserves the query, filters and ${strength} after route exit`, async ({
+    page,
+  }) => {
+    await mockAuthenticated(page);
+    await page.route("**/api/capabilities", (route) =>
+      route.fulfill({ json: { survey: "off", search_modes: ["standard", "thorough"] } }),
+    );
+    const query = "reasoning in multimodal agents";
+    await page.route("**/api/search/history**", (route) =>
+      route.fulfill({
+        json: {
+          items: [
+            {
+              id: 7,
+              query,
+              strength,
+              filters: { categories: ["cs.AI"], authors: ["Ada Lovelace"] },
+              result_count: 10,
+              elapsed_ms: 1840,
+              created_at: "2026-07-19T14:35:00Z",
+            },
+          ],
+          limit: 20,
+          offset: 0,
+          total: 1,
+        },
+      }),
+    );
+    await page.route("**/api/search", (route) => {
+      const request = route.request().postDataJSON() as { query: string; strength: string };
+      return route.fulfill({
+        json: { ...result, query: request.query, strength: request.strength },
+      });
+    });
+    await page.goto("/history?q=multimodal");
+    await page.getByRole("button", { name: "Search again", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Search results", exact: true })).toBeVisible();
+    await settleMotion(page);
+    const url = new URL(page.url());
+    expect(url.pathname).toBe("/search");
+    expect(url.searchParams.get("q")).toBe(query);
+    expect(url.searchParams.get("strength") ?? "standard").toBe(strength);
+    expect(url.searchParams.getAll("category")).toEqual(["cs.AI"]);
+    expect(url.searchParams.getAll("author")).toEqual(["Ada Lovelace"]);
+    await expect(page.getByRole("textbox", { name: "Search research papers" })).toHaveValue(query);
+  });
+}
+
 test("mobile home has no horizontal overflow", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "mobile", "mobile-only assertion");
   await page.goto("/");
