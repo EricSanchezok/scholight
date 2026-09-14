@@ -80,7 +80,14 @@ def test_first_target_binding_never_inherits_source_write_admission():
     assert values["MetadataEnabled"] == values["IngestEnabled"] == "false"
 
 
-def test_ingestion_enable_requires_the_matching_adopted_target():
+@pytest.mark.parametrize(
+    "key",
+    [
+        "recovery/des/run1/plan/adoption.json",
+        "bindings/des/run1/adoption.json",
+    ],
+)
+def test_ingestion_enable_requires_the_matching_adopted_target(key):
     m = module()
 
     class Store:
@@ -97,7 +104,24 @@ def test_ingestion_enable_requires_the_matching_adopted_target():
                 )
             }
 
-    key = "recovery/des/run1/plan/adoption.json"
     assert len(m.read_adoption(Store(), key, "target")) == 64
     with pytest.raises(ValueError):
         m.read_adoption(Store(), key, "other-target")
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "bindings/des/adoption.json",
+        "bindings/des/run1/../adoption.json",
+        "bindings/unrelated/run1/adoption.json",
+        "releases/run1/adoption.json",
+    ],
+)
+def test_adoption_rejects_unreviewed_object_paths_before_read(key):
+    class NoRead:
+        def get_object(self, **kwargs):
+            raise AssertionError("Invalid paths must be rejected before S3 access")
+
+    with pytest.raises(ValueError, match="adoption key"):
+        module().read_adoption(NoRead(), key, "target")

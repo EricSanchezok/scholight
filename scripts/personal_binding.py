@@ -131,7 +131,7 @@ def verify_versions(secrets, values: dict) -> None:
 
 
 def read_adoption(s3, key: str, target_id: str) -> str:
-    if not re.fullmatch(r"recovery/des/[a-zA-Z0-9/_-]+/adoption\.json", key):
+    if not re.fullmatch(r"(?:recovery|bindings)/des/[a-zA-Z0-9/_-]+/adoption\.json", key):
         raise ValueError("Enabling ingestion requires a reviewed destination adoption key")
     body = s3.get_object(Bucket=BUCKET, Key=key)["Body"].read()
     value = json.loads(body)
