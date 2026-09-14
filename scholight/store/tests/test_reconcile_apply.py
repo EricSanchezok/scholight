@@ -167,3 +167,90 @@ def test_final_verification_preserves_untouched_duplicate_count_evidence(tmp_pat
     proof = migration.verify(frozen=True)
     assert proof["complete"] and proof["target_rows"] == 2
     assert target.rows[0] == before and target.writes == 1
+
+
+def test_resume_does_not_query_vectors_of_committed_batches(tmp_path: Path) -> None:
+    source = Client([paper(f"p{i:03}", 1) for i in range(65)], 1)
+    target = Client([], 2)
+    inventory(source, tmp_path / "source")
+    inventory(target, tmp_path / "target")
+    build_delta(
+        str(tmp_path / "source"),
+        str(tmp_path / "target"),
+        str(tmp_path / "plan"),
+        workspace=tmp_path / "scratch",
+    )
+    migration = AbstractReconciliation(
+        source,
+        target,
+        str(tmp_path / "plan"),
+        workspace=tmp_path / "work",
+        dimension=2,
+        model="Qwen/test",
+    )
+    original_upsert = target.upsert
+
+    def interrupt(name: str, data: list[dict[str, Any]], **kwargs: Any) -> None:
+        if target.writes == 1:
+            raise OSError("interrupted before second batch write")
+        original_upsert(name, data, **kwargs)
+
+    target.upsert = interrupt  # type: ignore[method-assign]
+    with pytest.raises(OSError):
+        migration.apply()
+    assert len(target.rows) == 64
+    target.upsert = original_upsert  # type: ignore[method-assign]
+    original_get = target.get
+
+    def only_uncommitted(name: str, ids: list[str], **kwargs: Any) -> list[dict[str, Any]]:
+        assert set(ids) <= {"p064"}, "Already committed vectors must wait for final verification"
+        return original_get(name, ids, **kwargs)
+
+    target.get = only_uncommitted  # type: ignore[method-assign]
+    assert migration.apply()["verified_candidates"] == 65
+    target.get = original_get  # type: ignore[method-assign]
+    target.corrupt = True
+    with pytest.raises(ValueError, match="verification"):
+        migration.verify(frozen=True)
+
+
+def test_resume_rejects_inconsistent_checkpoint_before_new_writes(tmp_path: Path) -> None:
+    import json
+
+    migration, _, target = setup(tmp_path)
+    migration.apply()
+    path = tmp_path / "plan" / "apply.json"
+    checkpoint = json.loads(path.read_text())
+    checkpoint["verified_candidates"] = 1
+    path.write_text(json.dumps(checkpoint))
+    writes = target.writes
+
+    def no_remote_read(*_args: Any, **_kwargs: Any) -> list[dict[str, Any]]:
+        raise AssertionError("Reject invalid progress before reading candidate vectors")
+
+    target.get = no_remote_read  # type: ignore[method-assign]
+    with pytest.raises(ValueError, match="checkpoint"):
+        migration.apply()
+    assert target.writes == writes
+
+
+@pytest.mark.parametrize("damage", ["missing_manifest", "changed_manifest", "corrupt_image"])
+def test_resume_still_rejects_damaged_committed_recovery_files(tmp_path: Path, damage: str) -> None:
+    import json
+
+    migration, _, target = setup(tmp_path)
+    migration.apply()
+    path = tmp_path / "plan" / "batch-000000.json"
+    batch = json.loads(path.read_text())
+    if damage == "missing_manifest":
+        path.unlink()
+    elif damage == "changed_manifest":
+        batch["model"] = "unreviewed/model"
+        path.write_text(json.dumps(batch))
+    else:
+        image = path.parent / batch["after"]["name"]
+        image.write_bytes(image.read_bytes() + b"damaged")
+    writes = target.writes
+    with pytest.raises((ValueError, FileNotFoundError)):
+        migration.apply()
+    assert target.writes == writes
