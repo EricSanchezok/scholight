@@ -129,11 +129,16 @@ async def _fetch_oai_page(url: str, logger: Any | None = None) -> str:
         body = resp.text
         if not body.strip():
             raise OAIHarvestError("Empty HTTP body is not an OAI coverage response")
-        if "<error" in body:
-            code = re.search(r"""<error[^>]*code=['"]([^'"]*)['"]""", body)
-            msg = re.search(r"<error[^>]*>([^<]*)</error>", body)
-            error_code = code.group(1) if code else "?"
-            error_msg = msg.group(1) if msg else "?"
+        try:
+            root = ElementTree.fromstring(body)
+        except (ParseError, DefusedXmlException) as exc:
+            raise OAIHarvestError("Invalid OAI XML response") from exc
+        if root.tag != "{http://www.openarchives.org/OAI/2.0/}OAI-PMH":
+            raise OAIHarvestError("Unexpected OAI response root")
+        error = root.find("{http://www.openarchives.org/OAI/2.0/}error")
+        if error is not None:
+            error_code = error.get("code", "?")
+            error_msg = error.text or "?"
             # "noRecordsMatch" is not a real error — arXiv had no papers that day
             # (e.g. weekends, holidays).  Treat as empty result.
             if error_code == "noRecordsMatch":

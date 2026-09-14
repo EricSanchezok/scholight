@@ -181,3 +181,7 @@ baseline and resumable queue are persisted. Supply its key when explicitly enabl
 production ingestion. The release controller rejects a proof for another target
 or one changed after planning. Initial destination binding always pauses inherited
 source schedules, even if the old metadata registration was enabled.
+
+Even an OAI `noRecordsMatch` response must parse as a complete, correctly namespaced
+OAI document before it proves an empty date. A truncated error or maintenance HTML
+cannot advance the daily cursor.
