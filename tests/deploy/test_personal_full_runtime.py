@@ -40,6 +40,7 @@ def test_ingest_registration_is_disabled_until_verified_cutover():
     value = template["Resources"]["IngestAdmissionRegistration"]["Properties"]["Value"]["Fn::Sub"]
     assert '"interval_seconds":3600' in value
     assert '"memory_mib":2048' in value
+    assert '"priority":1' in value  # Platform's public admission protocol accepts only 0 or 1.
     assert "${IngestEnabled}" in value
 
 

@@ -176,3 +176,7 @@ that source's `deploy/personal/image-contract.json`; revisions predating the
 complete destination-aware contract must use their retained version 1 rollback
 manifests instead. This prevents a newly built legacy sync image from being
 mislabelled as a destination-aware consumer.
+
+The hourly fulltext registration uses Platform admission priority 1 (the protocol
+accepts only 0 and 1). Fresh/revision versus aged historical ordering is enforced
+inside Scholight's target queue, independently of the host admission priority.

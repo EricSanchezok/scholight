@@ -738,7 +738,7 @@ def runtime() -> dict[str, Any]:
         Name="/sanchezcloud/personal/background/scholight-ingest",
         Type="String",
         Value=sub(
-            '{"version":1,"name":"scholight-ingest","enabled":${IngestEnabled},"task_definition":"${IngestTask}","memory_mib":2048,"priority":2,"interval_seconds":3600}'
+            '{"version":1,"name":"scholight-ingest","enabled":${IngestEnabled},"task_definition":"${IngestTask}","memory_mib":2048,"priority":1,"interval_seconds":3600}'
         ),
     )
     resources["IngestAdmissionRegistration"].update(
