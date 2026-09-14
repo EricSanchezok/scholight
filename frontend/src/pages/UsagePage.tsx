@@ -177,7 +177,10 @@ export function UsagePage() {
             <m.div {...metricRevealMotion(0)}>
               <span>SEARCHES TODAY</span>
               <strong>{summary.data.searches_today}</strong>
-              <p>{summary.data.today.standard.used} searches against the current allowance</p>
+              <p>
+                {summary.data.today.standard.used + summary.data.today.thorough.used} searches
+                against the current allowance
+              </p>
             </m.div>
             <m.div {...metricRevealMotion(1)}>
               <span>THIS MONTH</span>

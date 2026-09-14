@@ -5,6 +5,8 @@ Standard remains the default for omitted `strength`. HTTP and MCP accept
 unchanged. Reservations, refunds, history, usage, and metrics use the requested
 mode. A Thorough dependency failure returns `thorough_search_unavailable` and
 never executes a second Standard request.
+The current allowance summary adds Standard and Thorough consumption, excluding
+Survey and failed searches whose quota was refunded.
 
 ## Configuration and discovery
 
