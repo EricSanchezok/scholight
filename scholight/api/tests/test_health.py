@@ -57,7 +57,9 @@ async def test_readyz_reports_dependencies_ready(
     acquire.__aenter__.return_value = connection
     pool = MagicMock()
     pool.acquire.return_value = acquire
-    zilliz_client = MagicMock()
+    from scholight.store.tests.test_readiness import client_stub
+
+    zilliz_client = client_stub()
     zilliz_client.list_collections.return_value = ["arxiv_papers", "arxiv_chunks"]
 
     monkeypatch.setattr("scholight.db.client.get_pool", lambda: pool)
@@ -68,8 +70,8 @@ async def test_readyz_reports_dependencies_ready(
         response = await client.get("/readyz")
 
     assert response.status_code == 200
-    zilliz_client.list_collections.assert_called_once_with(
-        timeout=app_module._DEPENDENCY_TIMEOUT_SECONDS
+    zilliz_client.describe_collection.assert_called_once_with(
+        "arxiv_papers", timeout=app_module._DEPENDENCY_TIMEOUT_SECONDS
     )
 
 

@@ -28,6 +28,40 @@ describe("SearchForm", () => {
     expect(screen.getByTestId("location")).toHaveTextContent("/search?q=graph+neural+networks");
   });
 
+  it("keeps Thorough in the URL when selected", async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <SearchForm availableModes={["standard", "thorough"]} />
+        <Location />
+      </MemoryRouter>,
+    );
+    await user.type(screen.getByRole("textbox", { name: "Search research papers" }), "retrieval");
+    await user.click(screen.getByRole("combobox", { name: "Search mode" }));
+    await user.click(screen.getByRole("option", { name: "Thorough" }));
+    await user.click(screen.getByRole("button", { name: "Search" }));
+    expect(screen.getByTestId("location")).toHaveTextContent("strength=thorough");
+  });
+
+  it("preserves Thorough when applying filters on an existing search", async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <SearchForm
+          initialQuery="retrieval"
+          initialStrength="thorough"
+          availableModes={["standard", "thorough"]}
+          compact
+        />
+        <Location />
+      </MemoryRouter>,
+    );
+    await user.click(screen.getByRole("button", { name: "Filters" }));
+    await user.click(screen.getByRole("button", { name: "30 results" }));
+    await user.click(screen.getByRole("button", { name: "Apply filters" }));
+    expect(screen.getByTestId("location")).toHaveTextContent("strength=thorough&limit=30");
+  });
+
   it("replays existing filters and summarizes the active filter groups", async () => {
     const user = userEvent.setup();
     render(

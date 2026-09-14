@@ -12,7 +12,7 @@ Their primary job is to express a research question in ordinary language, compar
 
 ## Product Purpose
 
-Scholight is an academic research product built first for AI research. Its current indexed corpus is arXiv, while its public contracts and product language leave room for additional scholarly sources. It makes paper discovery feel direct and legible through a single abstract-based search and lets tools retrieve readable source material without exposing implementation details.
+Scholight is an academic research product built first for AI research. Its current indexed corpus is arXiv, while its public contracts and product language leave room for additional scholarly sources. It makes paper discovery feel direct and legible through Standard abstract search and optional Thorough full-text search and lets tools retrieve readable source material without exposing implementation details.
 
 Success means a user can start searching immediately, understand each result, retrieve cited source content when needed, and manage the account capabilities that support repeated or programmatic work. The interface should reduce uncertainty without turning research into a generic analytics dashboard.
 

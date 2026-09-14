@@ -2,10 +2,15 @@ import { Link } from "react-router-dom";
 
 import { ProductMark } from "../brand/ProductMark";
 import { routes, withQuery } from "../app/routes";
+import {
+  availableSearchModes,
+  usePublicCapabilities,
+} from "../features/capabilities/usePublicCapabilities";
 import { SearchForm } from "../components/SearchForm";
 import { styles } from "../styles/classes";
 
 export function HomePage() {
+  const capabilities = usePublicCapabilities();
   return (
     <main className={styles.home}>
       <section className={styles.hero}>
@@ -23,7 +28,7 @@ export function HomePage() {
           <ProductMark size="clamp(220px, 34vw, 420px)" priority />
           <p className={styles.homeHeroNote}>A quiet lens on the literature.</p>
         </div>
-        <SearchForm />
+        <SearchForm availableModes={availableSearchModes(capabilities.data)} />
         <div className={styles.homeExamples} aria-label="Search examples">
           <span>Try a question</span>
           <Link

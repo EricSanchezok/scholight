@@ -192,7 +192,7 @@ class TestChunkSearchPhase:
 
         client.load_collection.assert_not_called()
 
-    def test_load_state_operational_error_loads_collection(self):
+    def test_load_state_operational_error_never_loads_collection(self):
         client = MagicMock()
         client.get_load_state.side_effect = MilvusException(message="unavailable", code=1)
 
@@ -200,19 +200,17 @@ class TestChunkSearchPhase:
             patch.object(phases_module, "_CHUNK_LOADED", False),
             patch("scholight.search.level2.phases.get_client", return_value=client),
         ):
-            phases_module._ensure_chunks_loaded()
+            with pytest.raises(MilvusException):
+                phases_module._ensure_chunks_loaded()
 
-        client.load_collection.assert_called_once_with(
-            "arxiv_chunks",
-            timeout=phases_module.settings.search_level2_rpc_timeout_seconds,
-        )
+        client.load_collection.assert_not_called()
 
     def test_concurrent_chunk_load_is_serialized(self):
         client = MagicMock()
 
         def get_load_state(*_args, **_kwargs):
             time.sleep(0.03)
-            return {"state": "LoadStateNotLoad"}
+            return {"state": "LoadStateLoaded"}
 
         client.get_load_state.side_effect = get_load_state
 
@@ -223,7 +221,7 @@ class TestChunkSearchPhase:
         ):
             list(executor.map(lambda _index: phases_module._ensure_chunks_loaded(), range(4)))
 
-        assert (client.get_load_state.call_count, client.load_collection.call_count) == (1, 1)
+        assert (client.get_load_state.call_count, client.load_collection.call_count) == (1, 0)
 
 
 # ── MaxPAggregationPhase — C1 MaxP+SumP + C3 position weighting ──

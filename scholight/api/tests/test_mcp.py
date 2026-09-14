@@ -147,7 +147,9 @@ async def test_initialize_and_list_tools_do_not_execute_search(
             "A focused natural-language research question or topic. Include the task, method, "
             "domain, or comparison that matters; avoid a loose list of unrelated keywords."
         ),
-        "strength": ("Deprecated compatibility field. Omit it to search papers."),
+        "strength": (
+            "Standard searches abstracts; Thorough also searches full text when available."
+        ),
         "limit": (
             "Maximum number of ranked papers to return. Use 5 for a focused answer and increase "
             "only when the user needs broader coverage."

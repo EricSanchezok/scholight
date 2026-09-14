@@ -120,9 +120,9 @@ export function UsagePage() {
           ) : summary.data ? (
             <Reveal name="quota-content">
               <div className={styles.quotaMetrics}>
-                {(["standard"] as const).map((kind) => {
+                {(["standard", "thorough"] as const).map((kind) => {
                   const quota = summary.data.today[kind];
-                  const label = "SEARCH";
+                  const label = kind.toUpperCase();
                   const unit = "searches";
                   const percent =
                     quota.daily_limit > 0
@@ -296,7 +296,7 @@ export function UsagePage() {
                         ? `Access key · ${item.access_key?.name ?? `••••${item.access_key?.last4 ?? ""}`}`
                         : "Web · signed in"}
                     </td>
-                    <td>{item.strength === "thorough" ? "Previous full-text search" : "Search"}</td>
+                    <td>{item.strength === "thorough" ? "Thorough" : "Standard"}</td>
                     <td>{seconds(item.search_duration_ms)}</td>
                     <td>{item.result_count ?? "—"}</td>
                     <td>

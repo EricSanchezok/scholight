@@ -6,7 +6,7 @@ import re
 import unicodedata
 from datetime import date, datetime
 from enum import StrEnum
-from typing import Annotated, Literal, Self
+from typing import Annotated, Self
 
 from pydantic import (
     AnyHttpUrl,
@@ -106,18 +106,9 @@ class PublicSearchRequest(BaseModel):
     )
 
     query: StrictString
-    strength: Literal[SearchStrength.STANDARD] = Field(
-        default=SearchStrength.STANDARD, json_schema_extra={"deprecated": True}
-    )
+    strength: SearchStrength = SearchStrength.STANDARD
     limit: StrictInt = Field(default=10, ge=1, le=50)
     filters: PublicSearchFilters = Field(default_factory=PublicSearchFilters)
-
-    @field_validator("strength")
-    @staticmethod
-    def _only_standard(value: SearchStrength) -> SearchStrength:
-        if value is not SearchStrength.STANDARD:
-            raise ValueError("Thorough search is unavailable; omit strength to use Search.")
-        return value
 
     @field_validator("query")
     @staticmethod
@@ -139,7 +130,7 @@ class PublicSearchRequest(BaseModel):
         filters = self.filters
         return SearchRequest(
             query=self.query,
-            level=1,
+            level=2 if self.strength is SearchStrength.THOROUGH else 1,
             top_k=self.limit,
             strategy=None,
             enable_fusion=False,

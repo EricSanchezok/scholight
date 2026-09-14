@@ -120,9 +120,11 @@ The server exposes `search_papers` and `extract_url`. Anonymous clients may call
 
 ## Search behavior
 
-Search uses paper titles and abstracts. Narrow results with categories, authors,
-or dates. Full-text search is unavailable. Requests for `thorough` are rejected
-before quota is reserved.
+Standard searches titles and abstracts. Thorough also searches full text.
+Narrow either mode with categories, authors, or dates. Omit `strength` for Standard,
+or pass `"strength": "thorough"`. Check `/api/capabilities` for `search_modes` supported
+by this deployment. An unavailable mode is rejected before quota is reserved;
+a failed Thorough search does not silently switch to Standard.
 
 
 ## Errors and limits

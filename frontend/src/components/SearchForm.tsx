@@ -3,17 +3,20 @@ import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
 import { useNavigate } from "react-router-dom";
 
-import type { SearchFilters } from "../api/types";
+import type { SearchFilters, SearchStrength } from "../api/types";
 import { buttonLabelMotion } from "../app/motion";
 import { productConfig } from "../config/product";
 import { buildSearchUrl } from "../lib/format";
 import { styles } from "../styles/classes";
+import { EditorialSelect } from "./EditorialSelect";
 import { SearchFiltersControl } from "./SearchFiltersControl";
 
 const emptyFilters: SearchFilters = {};
 
 interface Props {
   initialQuery?: string;
+  initialStrength?: SearchStrength;
+  availableModes?: readonly SearchStrength[];
   initialLimit?: number;
   filters?: SearchFilters;
   compact?: boolean;
@@ -22,6 +25,8 @@ interface Props {
 
 export function SearchForm({
   initialQuery = "",
+  initialStrength = "standard",
+  availableModes = ["standard"],
   initialLimit = productConfig.search.resultLimit,
   filters = emptyFilters,
   compact = false,
@@ -31,8 +36,11 @@ export function SearchForm({
   const [query, setQuery] = useState(initialQuery);
   const [searchFilters, setSearchFilters] = useState<SearchFilters>(filters);
   const [limit, setLimit] = useState(initialLimit);
+  const [requestedStrength, setStrength] = useState(initialStrength);
+  const strength = availableModes.includes(requestedStrength) ? requestedStrength : "standard";
   const [error, setError] = useState("");
 
+  useEffect(() => setStrength(initialStrength), [initialStrength]);
   useEffect(() => setQuery(initialQuery), [initialQuery]);
   useEffect(() => setSearchFilters(filters), [filters]);
   useEffect(() => setLimit(initialLimit), [initialLimit]);
@@ -47,6 +55,7 @@ export function SearchForm({
     navigate(
       buildSearchUrl({
         query: normalized,
+        strength,
         limit,
         filters: searchFilters,
       }),
@@ -72,6 +81,20 @@ export function SearchForm({
         aria-describedby={error ? "search-error" : undefined}
       />
       <div className={styles.searchActions}>
+        {availableModes.includes("thorough") && (
+          <div className={styles.strengthSelect}>
+            <EditorialSelect<SearchStrength>
+              label="Search mode"
+              value={strength}
+              options={[
+                { value: "standard", label: "Standard" },
+                { value: "thorough", label: "Thorough" },
+              ]}
+              onValueChange={setStrength}
+              variant="strength"
+            />
+          </div>
+        )}
         <SearchFiltersControl
           filters={searchFilters}
           limit={limit}
@@ -83,6 +106,7 @@ export function SearchForm({
               navigate(
                 buildSearchUrl({
                   query: normalized,
+                  strength,
                   limit: nextLimit,
                   filters: nextFilters,
                 }),

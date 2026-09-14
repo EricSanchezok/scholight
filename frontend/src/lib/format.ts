@@ -101,7 +101,7 @@ export function parseSearchParameters(params: URLSearchParams): SearchParameters
   const limit = [10, 20, 30, 40, 50].includes(requestedLimit) ? requestedLimit : 10;
   return {
     query: (params.get("q") ?? "").trim().slice(0, 500),
-    strength: "standard",
+    strength: params.get("strength") === "thorough" ? "thorough" : "standard",
     limit,
     filters: {
       categories: params.getAll("category").filter(Boolean),
@@ -114,6 +114,7 @@ export function parseSearchParameters(params: URLSearchParams): SearchParameters
 
 export function buildSearchUrl(parameters: SearchParameters): string {
   const params = new URLSearchParams({ q: parameters.query });
+  if (parameters.strength === "thorough") params.set("strength", "thorough");
   if (parameters.limit !== 10) params.set("limit", String(parameters.limit));
   parameters.filters.categories?.forEach((value) => params.append("category", value));
   parameters.filters.authors?.forEach((value) => params.append("author", value));
