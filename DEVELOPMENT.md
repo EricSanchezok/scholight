@@ -88,3 +88,10 @@ Stop the foreground `./scripts/dev.sh` process with Ctrl-C; it terminates both c
 Use `lsof -nP -iTCP:7200 -sTCP:LISTEN` and the equivalent check for `7201` when a port is occupied.
 Use `uv run scholight store health` only with the read-only Zilliz credential and without repair
 flags.
+
+## Security hook runtime
+
+The Bandit pre-commit hook uses `uv run --locked bandit`, sharing the repository's
+locked development dependency and virtual environment with the manual security
+check. It does not install packages into system Python. This avoids a second,
+older scanner environment silently skipping files on newer Python AST versions.
