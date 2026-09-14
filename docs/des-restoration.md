@@ -45,3 +45,16 @@ Production online and selected historical recovery complete are distinct results
 An empty runnable queue does not prove success: report dead, inaccessible and
 withdrawn papers separately. Do not delete the old personal collection or alter
 unrelated des collections. Survey stays disabled.
+
+## Daily coverage and replay
+
+Full ingestion re-registers every trusted observed version, including an unchanged
+v1 after a vector-write/PostgreSQL-registration interruption. A missing exact
+source version fails the full-mode day. Metadata and task registration must finish
+before the date cursor advances; full-text completion may remain queued.
+
+Only completed OAI pagination proves new-and-revised coverage. Empty HTTP bodies,
+malformed XML, unparsable active records and repeated tokens fail the harvest.
+Authoritative OAI `noRecordsMatch` is an empty completed day. Atom submission-date
+fallback can preserve newly fetched metadata but leaves the date retryable because
+it does not cover all revisions. XML parsing uses the declared defusedxml dependency.

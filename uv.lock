@@ -3792,6 +3792,7 @@ source = { editable = "." }
 dependencies = [
     { name = "asyncpg" },
     { name = "click" },
+    { name = "defusedxml" },
     { name = "httpx" },
     { name = "pydantic", extra = ["email"] },
     { name = "pydantic-settings" },
@@ -3881,6 +3882,7 @@ requires-dist = [
     { name = "click", specifier = ">=8" },
     { name = "cryptography", marker = "extra == 'api'", specifier = ">=50.0.0" },
     { name = "cryptography", marker = "extra == 'survey'", specifier = ">=50.0.0" },
+    { name = "defusedxml", specifier = ">=0.7.1,<1" },
     { name = "fastapi", marker = "extra == 'api'", specifier = ">=0.115" },
     { name = "fastapi", marker = "extra == 'extract'", specifier = ">=0.115" },
     { name = "graphviz", marker = "extra == 'survey'", specifier = ">=0.20" },

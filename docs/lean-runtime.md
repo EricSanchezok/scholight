@@ -21,8 +21,10 @@ flag does not prove that a revision seen during lean operation has been processe
 
 `SCHOLIGHT_METADATA_SYNC_BATCH_SIZE` defaults to 64 (range 1–512). Metadata
 embeddings, Zilliz writes and deferred records complete one batch at a time;
-generated vectors are released before the next batch. Only a fully successful
-day advances the cursor. Failed later batches replay earlier idempotent writes;
+generated vectors are released before the next batch. Only a fully successful OAI day advances the cursor. Atom submission-date
+fallback may preserve newly observed metadata but cannot prove revision coverage,
+so its date remains retryable. Empty authoritative OAI results are accepted;
+malformed pages, unparsable active records and repeated pagination tokens fail. Failed later batches replay earlier idempotent writes;
 the source day's scalar metadata remains in memory, but its vectors do not.
 
 After restoring the full-text corpus, run `scholight scheduler resume-fulltext
