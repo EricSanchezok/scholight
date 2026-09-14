@@ -208,8 +208,13 @@ an ordinary application release.
 
 The adoption command writes `adoption.json` only after the full selected scope,
 baseline and resumable queue are persisted. Supply its key when explicitly enabling
-production ingestion. The release controller rejects a proof for another target
-or one changed after planning. Initial destination binding always pauses inherited
+production ingestion. An operator must preserve the receipt and non-secret
+verification summary byte-for-byte under `bindings/des/<operation>/` before
+recovery files expire. Use `If-None-Match: *`, read back and compare SHA-256, then
+supply that retained `adoption.json` key to release plans. Application task roles
+cannot write the retained binding prefix. The release controller accepts both
+retained and original receipt paths, rejects a proof for another target or one
+changed after planning, and does not retain the large recovery shards indefinitely. Initial destination binding always pauses inherited
 source schedules, even if the old metadata registration was enabled.
 
 Even an OAI `noRecordsMatch` response must parse as a complete, correctly namespaced

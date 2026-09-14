@@ -21,8 +21,13 @@ cannot run from the normal Actions workflow directory.
    or deploy. The plan pins every runtime parameter, credential version and binding
    checksum. Apply rechecks secret-version availability without reading values.
 4. After abstract reconciliation and `scheduler adopt-baseline`, use a new plan
-   with `resume_ingestion=true` and the emitted `recovery/des/.../adoption.json`
-   key. The proof must match the exact target ID. Apply pins and rechecks its hash.
+   with `resume_ingestion=true` and the reviewed adoption receipt key. Before the
+   first enable, preserve the emitted receipt byte-for-byte at
+   `bindings/des/<operation>/adoption.json` using an immutable S3 put and verify
+   its checksum against the original. This retained prefix survives the recovery
+   files' thirty-day lifecycle and supports later rollback/resume operations. The
+   original `recovery/des/.../adoption.json` key remains readable for compatibility.
+   The proof must match the exact target ID. Apply pins and rechecks its hash.
    A version 1 application rollback preserves des while selecting lean mode and
    pausing both consumers; it never enables legacy writes against a new cursor.
 
