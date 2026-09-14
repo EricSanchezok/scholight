@@ -1,4 +1,4 @@
-"""Immutable lean image and source contracts for personal production releases."""
+"""Immutable image and source contracts for personal production releases."""
 
 from __future__ import annotations
 
@@ -7,15 +7,19 @@ import hashlib
 import json
 import os
 import re
-import subprocess
 
-COMPONENTS = ("api", "web", "extract", "metadata")
+# Fixed Git executable with argument arrays; no shell is used.
+import subprocess  # nosec B404
+
+LEGACY_COMPONENTS = ("api", "web", "extract", "metadata")
+COMPONENTS = (*LEGACY_COMPONENTS, "ingest")
 ACCOUNT = "669409472143"
 REGION = "ap-south-2"
 
 
 def git(*args: str) -> bytes:
-    return subprocess.check_output(["git", *args], stderr=subprocess.DEVNULL)
+    # Only the controller supplies Git operations and validated revisions.
+    return subprocess.check_output(["git", *args], stderr=subprocess.DEVNULL)  # nosec
 
 
 def require_merged(sha: str) -> None:
@@ -46,7 +50,7 @@ def create(source_sha: str, control_revision: str, images: dict) -> dict:
     require_merged(source_sha)
     require_merged(control_revision)
     result = {
-        "version": 1,
+        "version": 2,
         "source_sha": source_sha,
         "control_revision": control_revision,
         "platform": "linux/arm64",
@@ -58,12 +62,13 @@ def create(source_sha: str, control_revision: str, images: dict) -> dict:
 
 
 def verify(value: dict) -> None:
-    if value.get("version") != 1 or value.get("platform") != "linux/arm64":
+    if value.get("version") not in (1, 2) or value.get("platform") != "linux/arm64":
         raise ValueError("Unsupported production manifest version or architecture")
     require_merged(value["source_sha"])
     require_merged(value["control_revision"])
-    if set(value.get("images", {})) != set(COMPONENTS):
-        raise ValueError("All four lean image components are required")
+    components = LEGACY_COMPONENTS if value["version"] == 1 else COMPONENTS
+    if set(value.get("images", {})) != set(components):
+        raise ValueError("Every image component required by the manifest version must be present")
     for name, image in value["images"].items():
         if not re.fullmatch(
             rf"{ACCOUNT}\.dkr\.ecr\.{REGION}\.amazonaws\.com/scholight-personal-{name}@sha256:[0-9a-f]{{64}}",

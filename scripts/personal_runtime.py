@@ -159,7 +159,7 @@ def foundation() -> dict[str, Any]:
             DeletionPolicy="RetainExceptOnCreate", UpdateReplacePolicy="Retain"
         )
         outputs[logical + "Arn"] = {"Value": ref(logical)}
-    for name in ("Api", "Web", "Extract", "Metadata"):
+    for name in ("Api", "Web", "Extract", "Metadata", "Ingest"):
         logical = name + "Repository"
         resources[logical] = resource(
             "AWS::ECR::Repository",
@@ -212,7 +212,7 @@ def foundation() -> dict[str, Any]:
         },
         Policies=[
             {
-                "PolicyName": "PublishFourImmutableImages",
+                "PolicyName": "PublishImmutableImages",
                 "PolicyDocument": {
                     "Version": "2012-10-17",
                     "Statement": [
@@ -243,7 +243,7 @@ def foundation() -> dict[str, Any]:
                             ],
                             [
                                 arn(name + "Repository")
-                                for name in ("Api", "Web", "Extract", "Metadata")
+                                for name in ("Api", "Web", "Extract", "Metadata", "Ingest")
                             ],
                         ),
                     ],
@@ -323,7 +323,7 @@ def runtime() -> dict[str, Any]:
     common = {
         "SCHOLIGHT_RUNTIME_PROFILE": "lean",
         "SCHOLIGHT_DISABLE_DOTENV": "1",
-        "SCHOLIGHT_DATA_ROOT": "/tmp/scholight",
+        "SCHOLIGHT_DATA_ROOT": "/tmp/scholight",  # nosec B108
         "AWS_REGION": ref("AWS::Region"),
         "SCHOLIGHT_PG_SSL_ROOT_CERT_PEM": ref("DatabaseCaPem"),
         "SCHOLIGHT_PG_POOL_MIN_SIZE": "1",
@@ -369,7 +369,7 @@ def runtime() -> dict[str, Any]:
         if name == "Api":
             environment.update(
                 {
-                    "SCHOLIGHT_SERVER_HOST": "0.0.0.0",
+                    "SCHOLIGHT_SERVER_HOST": "0.0.0.0",  # nosec B104
                     "SCHOLIGHT_SERVER_PORT": "8000",
                     "SCHOLIGHT_PROXY_HEADERS": "true",
                     "SCHOLIGHT_FORWARDED_ALLOW_IPS": ref("HostPrivateAddress"),
@@ -430,7 +430,7 @@ def runtime() -> dict[str, Any]:
         elif name == "Extract":
             environment.update(
                 {
-                    "SCHOLIGHT_EXTRACT_SERVER_HOST": "0.0.0.0",
+                    "SCHOLIGHT_EXTRACT_SERVER_HOST": "0.0.0.0",  # nosec B104
                     "SCHOLIGHT_EXTRACT_SERVER_PORT": "8001",
                     "SCHOLIGHT_EXTRACT_BROWSER_CONCURRENCY": "1",
                     "SCHOLIGHT_EXTRACT_STATIC_CONCURRENCY": "2",

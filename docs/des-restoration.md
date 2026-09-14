@@ -156,3 +156,22 @@ records and deduplicates by paper/version under the destination ID. It excludes
 unrelated older failures and does not consult legacy success as proof of des
 fulltext. All scope rows persist before adopting the cursor; idempotent queue
 registration then completes before the release controller resumes consumers.
+
+## Versioned publication and destination bindings
+
+New manual publications use manifest version 2 with API, Web, Extract, metadata
+and ingest ARM64 digests. Version 1 remains readable for application rollback;
+it cannot start destination-aware ingestion. Both native CI architectures build
+and start the ingest command without launching production work. The personal
+foundation owns its additional immutable ECR repository.
+
+`personal_binding.py` validates a separate, non-secret binding object at
+`bindings/des/<operation>.json` in the personal release bucket. Upload it with
+`If-None-Match: *`. It contains the exact endpoint, actual papers/chunks collection
+IDs, retained Qwen model and dimension, three independent Secrets Manager ARNs and
+version IDs, and the dedicated `recovery/des/<operation>` S3 prefix. Its canonical
+collection identity matches the database's target key. A release plan pins the
+binding byte hash; secret values never enter release artifacts. A legacy rollback
+preserves the adopted connection while selecting lean mode and disabling both
+metadata and fulltext consumers. An already adopted target cannot be changed by
+an ordinary application release.

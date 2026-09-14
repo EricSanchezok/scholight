@@ -45,3 +45,20 @@ def test_unmerged_revision_is_rejected_before_manifest_is_created(monkeypatch):
     monkeypatch.setattr(m, "require_merged", reject)
     with pytest.raises(ValueError, match="not merged"):
         m.create("a" * 40, "b" * 40, {})
+
+
+def test_v2_requires_ingest_and_legacy_v1_remains_readable(monkeypatch):
+    m = module()
+    monkeypatch.setattr(m, "require_merged", lambda sha: None)
+    monkeypatch.setattr(m, "source_contract", lambda sha: {"migrations": {}})
+    images = {
+        name: f"669409472143.dkr.ecr.ap-south-2.amazonaws.com/scholight-personal-{name}@sha256:"
+        + "d" * 64
+        for name in ("api", "web", "extract", "metadata", "ingest")
+    }
+    value = m.create("a" * 40, "b" * 40, images)
+    assert value["version"] == 2
+    old_images = {k: v for k, v in images.items() if k != "ingest"}
+    m.verify(value | {"version": 1, "images": old_images})
+    with pytest.raises(ValueError):
+        m.verify(value | {"images": old_images})
