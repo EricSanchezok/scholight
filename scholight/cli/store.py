@@ -11,6 +11,7 @@ from scholight.cli.archive import (
     verify_cmd,
     verify_restored_cmd,
 )
+from scholight.cli.reconcile import reconcile_cmd
 from scholight.config import active_collections
 from scholight.store.client import connect, is_connected
 from scholight.store.schema import create_collections, create_indexes
@@ -201,3 +202,6 @@ def health(
 
 for command in (export_cmd, initialize_cmd, restore_cmd, verify_cmd, verify_restored_cmd):
     store_group.add_command(command)
+
+
+store_group.add_command(reconcile_cmd)

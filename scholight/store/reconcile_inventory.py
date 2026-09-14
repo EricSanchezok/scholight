@@ -211,12 +211,17 @@ def scan_inventory(
 
 
 def build_delta(
-    source_uri: str, target_uri: str, destination: str, *, workspace: Path
+    source_uri: str,
+    target_uri: str,
+    destination: str,
+    *,
+    workspace: Path,
+    allow_same_identity: bool = False,
 ) -> dict[str, Any]:
     """Compare complete scalar scans; read full vectors only in the later apply stage."""
     source, target = ArchiveLocation(source_uri), ArchiveLocation(target_uri)
     left, right = _load_inventory(source), _load_inventory(target)
-    if left["identity"] == right["identity"]:
+    if left["identity"] == right["identity"] and not allow_same_identity:
         raise ValueError("Source and destination must differ")
     output = ArchiveLocation(destination)
     binding = {

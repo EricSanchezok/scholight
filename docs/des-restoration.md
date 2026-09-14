@@ -116,3 +116,25 @@ and later updates of the same version become candidates; newer destination
 versions stay intact. Source and destination counts alone never prove equality.
 Completed plans retain stable checksums across repeat invocations. Only candidate
 records require complete metadata and vector reads in the subsequent apply stage.
+
+## Apply and final verification
+
+`scholight store reconcile plan|apply|verify` requires explicit source/target
+endpoints and collection IDs, model/dimension, stopped-writer declarations and
+a dedicated S3 prefix. Inject `SCHOLIGHT_RECONCILE_SOURCE_TOKEN` and
+`SCHOLIGHT_RECONCILE_TARGET_TOKEN` through a controlled process environment with
+`SCHOLIGHT_DISABLE_DOTENV=1`; neither token is a command argument.
+
+Apply reads full metadata and existing vectors only for planned candidates in
+batches of 64. It saves both the destination before-image and the desired image
+as float32 Parquet before writing. Existing destination resource flags remain
+unchanged; new records start without unproven fulltext flags. Source or target
+changes since planning cause a refusal. An interrupted batch accepts only its
+saved before/after images, verifies every resulting field and vector, then commits
+its checkpoint. Repeat invocations recheck committed batches.
+
+Final verification compares a complete destination inventory against both the
+source inventory and the original destination inventory, rejects missing or
+lowered versions, checks the expected total and rechecks every copied vector.
+Only `verification.json` with `complete: true` can support destination baseline
+adoption. An `apply.json` checkpoint alone is not migration acceptance.
