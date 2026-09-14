@@ -146,13 +146,26 @@ def control() -> dict:
                     sub(
                         "arn:aws:s3:::scholight-personal-releases-${AWS::AccountId}-${AWS::Region}"
                     ),
-                    Condition={"StringLike": {"s3:prefix": "cloudformation/personal/releases/*"}},
+                    Condition={
+                        "StringLike": {
+                            "s3:prefix": ["cloudformation/personal/releases/*", "compatibility/*"]
+                        }
+                    },
                 ),
                 statement(
                     ["s3:GetObject"],
-                    sub(
-                        "arn:aws:s3:::scholight-personal-releases-${AWS::AccountId}-${AWS::Region}/releases/*"
-                    ),
+                    [
+                        sub(
+                            "arn:aws:s3:::scholight-personal-releases-${AWS::AccountId}-${AWS::Region}/"
+                            + prefix
+                        )
+                        for prefix in (
+                            "releases/*",
+                            "bindings/des/*",
+                            "compatibility/*",
+                            "recovery/des/*/adoption.json",
+                        )
+                    ],
                 ),
                 statement(
                     ["s3:GetObject", "s3:PutObject"],
@@ -273,6 +286,75 @@ def control() -> dict:
             ],
         )
         outputs[name + "RoleArn"] = {"Value": arn(name + "Role")}
+    deploy_statements = resources["DeployRole"]["Properties"]["Policies"][0]["PolicyDocument"][
+        "Statement"
+    ]
+    deploy_statements.append(
+        statement(
+            ["secretsmanager:DescribeSecret"],
+            sub(
+                "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:/sanchezcloud/scholight/personal/des-*"
+            ),
+        )
+    )
+    # A compatibility migration participates in the same product pause journal.
+    # It can publish an execution receipt but never read application secret values.
+    database_statements = resources["DatabaseRole"]["Properties"]["Policies"][0]["PolicyDocument"][
+        "Statement"
+    ]
+    shared_actions = {
+        "s3:ListBucket",
+        "s3:GetObject",
+        "s3:PutObject",
+        "kms:Decrypt",
+        "kms:GenerateDataKey",
+        "ssm:GetParameter",
+        "ssm:GetParameters",
+        "ecs:ListTasks",
+        "ecr:DescribeImages",
+        "cloudformation:CreateChangeSet",
+        "cloudformation:DescribeChangeSet",
+        "cloudformation:ExecuteChangeSet",
+        "cloudformation:DeleteChangeSet",
+        "cloudformation:DescribeStacks",
+        "cloudformation:DescribeStackEvents",
+        "cloudformation:GetTemplate",
+    }
+    for item in deploy_statements:
+        if set(item["Action"]) <= shared_actions:
+            database_statements.append(item)
+    database_statements.extend(
+        [
+            statement(
+                ["iam:PassRole"],
+                arn("CloudFormationRole"),
+                Condition={"StringEquals": {"iam:PassedToService": "cloudformation.amazonaws.com"}},
+            ),
+            statement(
+                ["ecs:RegisterTaskDefinition"],
+                "*",
+                Condition={
+                    "StringEquals": {
+                        "aws:RequestedRegion": ref("AWS::Region"),
+                        "aws:RequestTag/scholight-operation": "compatibility-migration",
+                    }
+                },
+            ),
+            statement(
+                ["ecs:TagResource"],
+                sub(
+                    "arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/scholight-personal-migration:*"
+                ),
+            ),
+            statement(["ecs:DeregisterTaskDefinition"], "*", Condition=region),
+            statement(
+                ["s3:PutObject"],
+                sub(
+                    "arn:aws:s3:::scholight-personal-releases-${AWS::AccountId}-${AWS::Region}/compatibility/*"
+                ),
+            ),
+        ]
+    )
     outputs["CloudFormationRoleArn"] = {"Value": arn("CloudFormationRole")}
     return template
 

@@ -175,3 +175,9 @@ binding byte hash; secret values never enter release artifacts. A legacy rollbac
 preserves the adopted connection while selecting lean mode and disabling both
 metadata and fulltext consumers. An already adopted target cannot be changed by
 an ordinary application release.
+
+The adoption command writes `adoption.json` only after the full selected scope,
+baseline and resumable queue are persisted. Supply its key when explicitly enabling
+production ingestion. The release controller rejects a proof for another target
+or one changed after planning. Initial destination binding always pauses inherited
+source schedules, even if the old metadata registration was enabled.

@@ -40,3 +40,26 @@ def test_candidate_rejects_unrelated_changes_after_pause():
     admission.guard_candidate_state(desired, original, desired)
     with pytest.raises(ValueError):
         admission.guard_candidate_state(desired | {"DatabaseHost": "other"}, original, desired)
+
+
+def test_plan_rechecks_every_pinned_credential_without_reading_values():
+    from personal_binding import verify_versions
+
+    class Secrets:
+        def describe_secret(self, **kwargs):
+            assert kwargs["SecretId"].startswith("arn:expected:")
+            return {"VersionIdsToStages": {"v1": ["AWSCURRENT"]}}
+
+        def get_secret_value(self, **kwargs):
+            raise AssertionError("Deployment controller must never read secret values")
+
+    values = {
+        prefix + "SecretArn": "arn:expected:" + prefix
+        for prefix in ("SearchApi", "SearchSync", "SearchIngest")
+    }
+    values.update(
+        {prefix + "SecretVersion": "v1" for prefix in ("SearchApi", "SearchSync", "SearchIngest")}
+    )
+    verify_versions(Secrets(), values)
+    with pytest.raises(ValueError):
+        verify_versions(Secrets(), values | {"SearchIngestSecretVersion": "missing"})

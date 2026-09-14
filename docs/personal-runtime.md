@@ -11,11 +11,20 @@ cannot run from the normal Actions workflow directory.
    job freezes the full commit SHA before quality checks and building. Only ARM64
    production manifests are uploaded to the retained, encrypted personal release
    bucket. AMD64 remains a compatibility build.
-2. Run `personal-runtime.yml` with `operation=plan` and the exact
+2. For the initial des adoption, supply the immutable `binding_key` described in
+   `des-restoration.md`. The first binding always disables both write consumers.
+   Run `personal-runtime.yml` with `operation=plan` and the exact
    `release_manifest_key` printed by publication. Review the account, region,
    source revision, image changes, resource changes and exact change set ARN.
 3. Run the same workflow with `operation=apply`, the same manifest key and the
-   reviewed change set ARN. Main and PR CI never publish or deploy.
+   reviewed change set ARN and the same binding key. Main and PR CI never publish
+   or deploy. The plan pins every runtime parameter, credential version and binding
+   checksum. Apply rechecks secret-version availability without reading values.
+4. After abstract reconciliation and `scheduler adopt-baseline`, use a new plan
+   with `resume_ingestion=true` and the emitted `recovery/des/.../adoption.json`
+   key. The proof must match the exact target ID. Apply pins and rechecks its hash.
+   A version 1 application rollback preserves des while selecting lean mode and
+   pausing both consumers; it never enables legacy writes against a new cursor.
 
 A version 2 manifest contains all five immutable image digests, architecture, source and
 controller commits, the pinned Identity revision and checksums of every immutable
@@ -25,11 +34,20 @@ bound to the plan, account, region and current reviewed controller. Unstarted pl
 expire after 24 hours or any intervening runtime stack update.
 
 The current deployed image's immutable SHA tag proves its source migration
-contract. Ordinary application releases and rollbacks require identical product
-migration checksums and Identity revision. A changed contract fails closed and
-requires an independently reviewed additive migration and compatibility procedure;
-this flow never migrates Identity or assumes a destructive database rollback is safe.
-The `migrate` operation only reapplies the currently registered product migrator.
+contract. Ordinary releases require identical contracts. The only reviewed N-1 exception is
+migration 016, whose exact checksum is registered in `personal_compatibility.py`.
+Changed applied checksums, other additions/removals and Identity revisions fail
+closed. Run `operation=migrate` with the candidate manifest to execute this
+append before application adoption; it uses the candidate API digest with the
+existing private migration network, credentials and dedicated roles. It pauses
+both consumers and records a pinned ECS launch before execution. A successful
+exit writes `compatibility/<contract-hash>/migration.json`; failed or uncertain
+execution never produces that proof. Repeated execution resumes the same launch
+within its bounded idempotency window. Investigate an older unconfirmed launch
+instead of starting a second migration. Consumers stay paused after migration.
+The N-1 test runs the unchanged legacy queue/cursor facade against schema 016;
+retire this exception after all retained rollback images adopt 016. Never migrate
+Identity or apply a destructive down migration here.
 
 Apply pauses `scholight-metadata` and `scholight-ingest`, waits for the host's acknowledgement of
 that exact SSM parameter version, and waits for actual ECS task termination, including
@@ -140,9 +158,10 @@ prefix and protect `personal-image-publish`, `personal-infrastructure`,
 `personal-preview`, and `personal-database` environments to main. No application
 secrets are readable by the GitHub control roles. `personal-runtime.yml` only runs
 by manual dispatch: `plan` reads current non-secret stack configuration and the selected S3 manifest, `apply` requires
-the reviewed exact change-set ARN, and `migrate` launches only the registered
+the reviewed exact change-set ARN, and `migrate` launches the reviewed candidate
 migration task on the private EC2 cluster. It neither opens a database port to the
-runner nor registers arbitrary migration images. The guard rejects resource removal
+runner. Candidate migration images must come from a verified merged production
+manifest, and the cloned task retains only the existing private migrator roles. The guard rejects resource removal
 and replacement other than immutable ECS task definitions.
 
 The CloudFormation role authorizes `ecs:DeregisterTaskDefinition` against `*`,

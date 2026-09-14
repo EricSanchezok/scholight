@@ -93,6 +93,8 @@ def release_parameters(current: dict, manifest: dict, binding: dict | None = Non
         ):
             raise ValueError("Changing an adopted target requires a separate reconciled cutover")
         result.update(incoming)
+        if not current.get("IngestionTargetId"):
+            result.update(MetadataEnabled="false", IngestEnabled="false")
     if manifest["version"] == 2:
         if not result.get("IngestionTargetId"):
             raise ValueError("A full release requires a verified destination binding")
@@ -117,3 +119,26 @@ def read_binding(s3, key: str) -> tuple[dict, str]:
     value = json.loads(body)
     parameters(value)
     return value, hashlib.sha256(body).hexdigest()
+
+
+def verify_versions(secrets, values: dict) -> None:
+    for prefix in PROVIDERS.values():
+        description = secrets.describe_secret(SecretId=values[prefix + "SecretArn"])
+        if description.get("DeletedDate") or values[
+            prefix + "SecretVersion"
+        ] not in description.get("VersionIdsToStages", {}):
+            raise ValueError("A planned application credential version is no longer available")
+
+
+def read_adoption(s3, key: str, target_id: str) -> str:
+    if not re.fullmatch(r"recovery/des/[a-zA-Z0-9/_-]+/adoption\.json", key):
+        raise ValueError("Enabling ingestion requires a reviewed destination adoption key")
+    body = s3.get_object(Bucket=BUCKET, Key=key)["Body"].read()
+    value = json.loads(body)
+    if (
+        value.get("format") != "scholight.destination-adoption.v1"
+        or value.get("target_id") != target_id
+        or value.get("complete") is not True
+    ):
+        raise ValueError("Destination baseline and recovery scope have not been adopted")
+    return hashlib.sha256(body).hexdigest()

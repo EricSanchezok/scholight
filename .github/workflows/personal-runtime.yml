@@ -9,9 +9,21 @@ on:
         required: true
         options: [plan, apply, migrate]
       release_manifest_key:
-        description: Immutable S3 release manifest key for plan and apply
+        description: Immutable S3 release manifest key for all operations
         type: string
         required: false
+      binding_key:
+        description: Immutable non-secret S3 des binding key, identical for plan and apply
+        type: string
+        required: false
+      adoption_key:
+        description: Verified S3 adoption receipt key when enabling both schedules
+        type: string
+        required: false
+      resume_ingestion:
+        description: Enable both schedules after separately verifying the destination baseline
+        type: boolean
+        default: false
       change_set:
         description: Exact personal-runtime change set ARN for apply
         type: string
@@ -48,15 +60,21 @@ jobs:
           OPERATION: ${{ inputs.operation }}
           CHANGE_SET: ${{ inputs.change_set }}
           MANIFEST_KEY: ${{ inputs.release_manifest_key }}
+          BINDING_KEY: ${{ inputs.binding_key }}
+          ADOPTION_KEY: ${{ inputs.adoption_key }}
+          RESUME_INGESTION: ${{ inputs.resume_ingestion }}
           EXPECTED_ACCOUNT_ID: '669409472143'
           AWS_REGION: ${{ vars.AWS_REGION }}
           CLOUDFORMATION_ROLE_ARN: ${{ vars.CLOUDFORMATION_ROLE_ARN }}
           ECS_CLUSTER_ARN: ${{ vars.ECS_CLUSTER_ARN }}
         run: |
           umask 077
-          args=("$OPERATION")
-          if [ "$OPERATION" != migrate ]; then
-            args+=(--manifest-key "$MANIFEST_KEY")
+          args=("$OPERATION" --manifest-key "$MANIFEST_KEY")
+          if [ -n "$BINDING_KEY" ]; then
+            args+=(--binding-key "$BINDING_KEY")
+          fi
+          if [ "$RESUME_INGESTION" = true ] && [ "$OPERATION" = plan ]; then
+            args+=(--resume-ingestion --adoption-key "$ADOPTION_KEY")
           fi
           if [ "$OPERATION" = apply ]; then
             args+=(--change-set "$CHANGE_SET")

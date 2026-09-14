@@ -118,4 +118,19 @@ async def adopt_baseline(
             result = await queue.resume_scope(limit=10000, apply=True)
             if not result["matched"]:
                 break
+        # Only a fully persisted scope and baseline can enable production schedules.
+        receipt = {
+            "format": "scholight.destination-adoption.v1",
+            "complete": True,
+            "target_id": target.key,
+            "baseline_date": date.isoformat(),
+            "verification_sha256": proof_sha256,
+            "scope_start": scope_start.isoformat(),
+            "scope_end": end.isoformat(),
+        }
+        if await asyncio.to_thread(location.exists, "adoption.json"):
+            if await asyncio.to_thread(location.read_json, "adoption.json") != receipt:
+                raise ValueError("Existing adoption receipt differs from this reviewed scope")
+        else:
+            await asyncio.to_thread(location.write_json, "adoption.json", receipt, work)
     return await queue.status()

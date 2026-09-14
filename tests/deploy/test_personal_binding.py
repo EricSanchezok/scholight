@@ -1,6 +1,8 @@
 """A reviewed target binds credentials by version without reading their values."""
 
 import importlib.util
+import io
+import json
 from pathlib import Path
 
 import pytest
@@ -68,3 +70,34 @@ def test_full_release_cannot_change_an_adopted_target_without_separate_reconcili
     next_binding = binding() | {"papers_id": "789"}
     with pytest.raises(ValueError, match="target"):
         m.release_parameters(current, {"version": 2, "images": {}}, next_binding)
+
+
+def test_first_target_binding_never_inherits_source_write_admission():
+    m = module()
+    values = m.release_parameters(
+        {"MetadataEnabled": "true"}, {"version": 2, "images": {}}, binding()
+    )
+    assert values["MetadataEnabled"] == values["IngestEnabled"] == "false"
+
+
+def test_ingestion_enable_requires_the_matching_adopted_target():
+    m = module()
+
+    class Store:
+        def get_object(self, **kwargs):
+            return {
+                "Body": io.BytesIO(
+                    json.dumps(
+                        {
+                            "format": "scholight.destination-adoption.v1",
+                            "complete": True,
+                            "target_id": "target",
+                        }
+                    ).encode()
+                )
+            }
+
+    key = "recovery/des/run1/plan/adoption.json"
+    assert len(m.read_adoption(Store(), key, "target")) == 64
+    with pytest.raises(ValueError):
+        m.read_adoption(Store(), key, "other-target")
