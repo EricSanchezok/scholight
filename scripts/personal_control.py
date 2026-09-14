@@ -21,7 +21,7 @@ def control() -> dict:
     resources, outputs = template["Resources"], template["Outputs"]
     app_roles = [
         sub("arn:aws:iam::${AWS::AccountId}:role/ScholightPersonal" + name + "*")
-        for name in ("Api", "Web", "Extract", "Metadata", "Migration")
+        for name in ("Api", "Web", "Extract", "Metadata", "Ingest", "Migration")
     ]
     region = {"StringEquals": {"aws:RequestedRegion": ref("AWS::Region")}}
     runtime_stack = sub(
@@ -107,9 +107,13 @@ def control() -> dict:
                 "ssm:RemoveTagsFromResource",
                 "ssm:ListTagsForResource",
             ],
-            sub(
-                "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sanchezcloud/personal/background/scholight-metadata"
-            ),
+            [
+                sub(
+                    "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sanchezcloud/personal/background/"
+                    + name
+                )
+                for name in ("scholight-metadata", "scholight-ingest")
+            ],
         ),
     ]
     resources["CloudFormationRole"] = resource(
@@ -168,6 +172,9 @@ def control() -> dict:
                     [
                         sub(
                             "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sanchezcloud/personal/background/scholight-metadata"
+                        ),
+                        sub(
+                            "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sanchezcloud/personal/background/scholight-ingest"
                         ),
                         sub(
                             "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sanchezcloud/personal/admission-status"

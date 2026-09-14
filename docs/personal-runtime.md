@@ -17,7 +17,7 @@ cannot run from the normal Actions workflow directory.
 3. Run the same workflow with `operation=apply`, the same manifest key and the
    reviewed change set ARN. Main and PR CI never publish or deploy.
 
-A manifest contains all four immutable image digests, architecture, source and
+A version 2 manifest contains all five immutable image digests, architecture, source and
 controller commits, the pinned Identity revision and checksums of every immutable
 product migration. It is persisted at `releases/<sha>/arm64-<run>-<attempt>.json`;
 existing keys cannot be overwritten by publication. Apply verifies the byte hash
@@ -31,14 +31,14 @@ requires an independently reviewed additive migration and compatibility procedur
 this flow never migrates Identity or assumes a destructive database rollback is safe.
 The `migrate` operation only reapplies the currently registered product migrator.
 
-Apply pauses only `scholight-metadata`, waits for the host's acknowledgement of
+Apply pauses `scholight-metadata` and `scholight-ingest`, waits for the host's acknowledgement of
 that exact SSM parameter version, and waits for actual ECS task termination, including
 STOPPING tasks. It never kills an active sync. Waiting expires after twenty minutes
 with admission paused and a durable continuation record. The frozen reviewed
 runtime template and parameters are replayed into a new change set because pausing
-this same stack invalidates its earlier change sets. Only `MetadataEnabled=false`
+this same stack invalidates its earlier change sets. Only the two reviewed admission flags set to `false`
 may differ; the generated ARN is logged and its template/parameters are rechecked.
-After application and task/grant revisions converge, the original admission state
+After application and task/grant revisions converge, the reviewed admission state
 is restored. The daily 08:00 UTC schedule and database cursor remain unchanged.
 
 Checkpoint lookup lists only the exact stage-key prefix before reading an existing
@@ -53,7 +53,7 @@ For rollback, select the previous verified manifest and repeat plan/apply using 
 current controller. If recovery began while admission was already paused, verify
 and restore the original recorded admission state after compatible recovery.
 
-API, Web, Extract, metadata task definition and admission grant belong to this
+API, Web, Extract, metadata/ingest task definitions and admission grants belong to this
 product stack. Account Center, Scholens, PostgreSQL, Valkey, edge and host resources
 are outside it and must retain their task identities during an application release.
 All personal environments are production environments restricted to main, despite
@@ -65,7 +65,7 @@ retained `personal-preview` names used in immutable OIDC subjects.
 
 `python scripts/personal_runtime.py foundation` renders the isolated ECR, KMS,
 Secrets Manager and GitHub publisher contract. `runtime` renders three independent
-EC2 services (API, web and Web Extract), a bounded metadata task and a separate
+EC2 services (API, web and Web Extract), bounded metadata and fulltext tasks and a separate
 product migration task. Templates make no AWS calls and require an explicit
 expected account. Image parameters require immutable digests. Keep actual account
 resources and populated parameters in operator configuration, never source files.
@@ -73,9 +73,8 @@ resources and populated parameters in operator configuration, never source files
 ## Ownership and authentication
 
 Platform owns the host, private network and ingress. This repository owns all
-Scholight task definitions, roles, secrets and its background registration. The API
-and metadata task use separate Zilliz credentials: query-only and data read/write,
-respectively. Both retain the deployed Qwen embedding model and dimensions. Never
+Scholight task definitions, roles, secrets and its background registration. The API, metadata and fulltext tasks use independent Zilliz credentials, with
+read access for the API and the required data mutations for each worker. All retain the deployed Qwen embedding model and dimensions. Never
 substitute a personal administrator key or silently fall back to the company URI.
 
 Preserve production JWT, Access Key HMAC, anonymous quota HMAC and MCP delegation
@@ -99,7 +98,12 @@ Extract memory ceilings are initially 768 MiB each, with web at 128 MiB. Validat
 representative real traffic before adoption and stop admission on a failed capacity
 gate. Metadata has a 768 MiB task ceiling, one embedding request at a time and
 64-paper batches. PostgreSQL pools are limited to three API and two metadata
-connections. All logs expire after seven days.
+connections. All logs expire after seven days. Fulltext is an hourly admitted task, not an ECS
+service: it exits within thirty minutes, uses at most 2,048 MiB and 512 CPU units,
+and opens at most two database connections. Embedding runs in one lane with
+64 chunks per request. Its role can only read/write the dedicated encrypted
+`recovery/des/` prefix; restoration objects and noncurrent versions expire after
+30 days. Ingest admission defaults to disabled until baseline and canary verification.
 
 `MetadataBatchSize` defaults to 64 and accepts 1–512 papers. For a large catch-up,
 increase it through a reviewed change set only after measuring the task's actual

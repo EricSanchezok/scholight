@@ -101,6 +101,18 @@ def foundation() -> dict[str, Any]:
         "AWS::S3::Bucket",
         BucketName=sub("scholight-personal-releases-${AWS::AccountId}-${AWS::Region}"),
         VersioningConfiguration={"Status": "Enabled"},
+        LifecycleConfiguration={
+            "Rules": [
+                {
+                    "Id": "DestinationRecoveryThirtyDays",
+                    "Status": "Enabled",
+                    "Prefix": "recovery/des/",
+                    "ExpirationInDays": 30,
+                    "NoncurrentVersionExpiration": {"NoncurrentDays": 30},
+                    "AbortIncompleteMultipartUpload": {"DaysAfterInitiation": 1},
+                }
+            ]
+        },
         PublicAccessBlockConfiguration={
             "BlockPublicAcls": True,
             "IgnorePublicAcls": True,
@@ -147,6 +159,9 @@ def foundation() -> dict[str, Any]:
         "SearchApi": "search-api",
         "SearchSync": "search-sync",
         "Mail": "mail",
+        "DesApi": "des-api",
+        "DesMetadata": "des-metadata",
+        "DesIngest": "des-ingest",
     }.items():
         logical = name + "Secret"
         resources[logical] = resource(
@@ -255,8 +270,9 @@ def foundation() -> dict[str, Any]:
     return template
 
 
-def secret(environment: str, parameter: str, field: str) -> dict[str, Any]:
-    return {"Name": environment, "ValueFrom": sub("${" + parameter + "}:" + field + "::")}
+def secret(environment: str, parameter: str, field: str, version: str = "") -> dict[str, Any]:
+    suffix = "${" + version + "}" if version else ""
+    return {"Name": environment, "ValueFrom": sub("${" + parameter + "}:" + field + "::" + suffix)}
 
 
 def runtime() -> dict[str, Any]:
@@ -277,11 +293,21 @@ def runtime() -> dict[str, Any]:
             "DatabaseMigratorSecretArn",
             "SearchApiSecretArn",
             "SearchSyncSecretArn",
+            "SearchIngestSecretArn",
+            "SearchApiSecretVersion",
+            "SearchSyncSecretVersion",
+            "SearchIngestSecretVersion",
+            "TargetEndpoint",
+            "IngestionTargetId",
+            "RecoveryUri",
+            "EmbeddingModel",
+            "EmbeddingDimension",
             "MailSecretArn",
             "ApiImage",
             "WebImage",
             "ExtractImage",
             "MetadataImage",
+            "IngestImage",
         ]
     )
     template["Parameters"]["ApplicationEnabled"] = {
@@ -289,6 +315,20 @@ def runtime() -> dict[str, Any]:
         "Default": "false",
         "AllowedValues": ["false", "true"],
     }
+    template["Parameters"]["RuntimeProfile"] = {
+        "Type": "String",
+        "Default": "lean",
+        "AllowedValues": ["lean", "full"],
+    }
+    for flag in ("PublicThoroughEnabled", "IngestEnabled"):
+        template["Parameters"][flag] = {
+            "Type": "String",
+            "Default": "false",
+            "AllowedValues": ["false", "true"],
+        }
+    template["Parameters"]["IngestionTargetId"]["AllowedPattern"] = "[a-f0-9]{64}"
+    for provider in ("SearchApi", "SearchSync", "SearchIngest"):
+        template["Parameters"][provider + "SecretVersion"]["AllowedPattern"] = "[A-Za-z0-9-]{32,64}"
     template["Parameters"]["HostRoleName"] = {"Type": "String", "Default": ""}
     template["Parameters"]["MetadataEnabled"] = {
         "Type": "String",
@@ -301,7 +341,7 @@ def runtime() -> dict[str, Any]:
         "MinValue": 1,
         "MaxValue": 512,
     }
-    for name in ("Api", "Web", "Extract", "Metadata"):
+    for name in ("Api", "Web", "Extract", "Metadata", "Ingest"):
         template["Parameters"][name + "Image"]["AllowedPattern"] = (
             r"^[0-9]{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com/scholight-personal-[a-z]+@sha256:[0-9a-f]{64}$"
         )
@@ -321,7 +361,9 @@ def runtime() -> dict[str, Any]:
         )
     ]
     common = {
-        "SCHOLIGHT_RUNTIME_PROFILE": "lean",
+        "SCHOLIGHT_RUNTIME_PROFILE": ref("RuntimeProfile"),
+        "SCHOLIGHT_SURVEY_RUNTIME_ENABLED": "false",
+        "SCHOLIGHT_SURVEY_PUBLIC_MODE": "off",
         "SCHOLIGHT_DISABLE_DOTENV": "1",
         "SCHOLIGHT_DATA_ROOT": "/tmp/scholight",  # nosec B108
         "AWS_REGION": ref("AWS::Region"),
@@ -334,6 +376,7 @@ def runtime() -> dict[str, Any]:
         ("Web", 128, 64, 32, 13200),
         ("Extract", 768, 256, 128, 18201),
         ("Metadata", 768, 768, 256, None),
+        ("Ingest", 2048, 2048, 512, None),
         ("Migration", 512, 256, 128, None),
     ):
         environment = dict(common)
@@ -353,17 +396,30 @@ def runtime() -> dict[str, Any]:
                 for item in database
             )
             environment["SCHOLIGHT_MIGRATIONS_DIR"] = "/app/migrations"
-        if name in ("Api", "Metadata"):
+        if name in ("Api", "Metadata", "Ingest"):
             secrets.extend(database)
-            provider = "SearchApiSecretArn" if name == "Api" else "SearchSyncSecretArn"
+            provider = {"Api": "SearchApi", "Metadata": "SearchSync", "Ingest": "SearchIngest"}[
+                name
+            ]
+            environment.update(
+                {
+                    "SCHOLIGHT_ZILLIZ_URI": ref("TargetEndpoint"),
+                    "SCHOLIGHT_INGESTION_TARGET_ID": ref("IngestionTargetId"),
+                    "SCHOLIGHT_EMBEDDING_MODEL": ref("EmbeddingModel"),
+                    "SCHOLIGHT_EMBEDDING_DIM": ref("EmbeddingDimension"),
+                }
+            )
             secrets.extend(
-                secret("SCHOLIGHT_" + field.upper(), provider, field)
+                secret(
+                    "SCHOLIGHT_" + field.upper(),
+                    provider + "SecretArn",
+                    field,
+                    provider + "SecretVersion",
+                )
                 for field in (
-                    "zilliz_uri",
                     "zilliz_token",
                     "embedding_base_url",
                     "embedding_api_key",
-                    "embedding_model",
                 )
             )
         if name == "Api":
@@ -371,6 +427,7 @@ def runtime() -> dict[str, Any]:
                 {
                     "SCHOLIGHT_SERVER_HOST": "0.0.0.0",  # nosec B104
                     "SCHOLIGHT_SERVER_PORT": "8000",
+                    "SCHOLIGHT_PUBLIC_THOROUGH_ENABLED": ref("PublicThoroughEnabled"),
                     "SCHOLIGHT_PROXY_HEADERS": "true",
                     "SCHOLIGHT_FORWARDED_ALLOW_IPS": ref("HostPrivateAddress"),
                     "SCHOLIGHT_PUBLIC_WEB_URL": sub("https://${DomainName}"),
@@ -450,6 +507,37 @@ def runtime() -> dict[str, Any]:
                     "SCHOLIGHT_EMBEDDING_CONCURRENCY": "1",
                     "SCHOLIGHT_METADATA_SYNC_TIMEOUT_SECONDS": "6600",
                 }
+            )
+        elif name == "Ingest":
+            environment.update(
+                {
+                    "SCHOLIGHT_PG_POOL_MAX_SIZE": "2",
+                    "SCHOLIGHT_EMBEDDING_CONCURRENCY": "1",
+                    "SCHOLIGHT_EMBEDDING_BATCH_SIZE": "64",
+                    "SCHOLIGHT_INGEST_RECOVERY_URI": ref("RecoveryUri"),
+                }
+            )
+            bucket_arn = "arn:aws:s3:::scholight-personal-releases-${AWS::AccountId}-${AWS::Region}"
+            role_statements.extend(
+                [
+                    statement(
+                        ["s3:GetObject", "s3:PutObject"], sub(bucket_arn + "/recovery/des/*")
+                    ),
+                    statement(
+                        ["s3:ListBucket"],
+                        sub(bucket_arn),
+                        Condition={"StringLike": {"s3:prefix": "recovery/des/*"}},
+                    ),
+                    statement(
+                        ["kms:GenerateDataKey", "kms:Decrypt"],
+                        ref("ConfigurationKeyArn"),
+                        Condition={
+                            "StringEquals": {
+                                "kms:ViaService": sub("s3.${AWS::Region}.amazonaws.com")
+                            }
+                        },
+                    ),
+                ]
             )
         elif name == "Web":
             environment = {
@@ -555,6 +643,14 @@ def runtime() -> dict[str, Any]:
                 if name == "Migration"
                 else ["scholight", "scheduler", "sync"]
             )
+        if name == "Ingest":
+            container["Command"] = [
+                "scholight",
+                "scheduler",
+                "drain-ingest",
+                "--max-runtime-seconds",
+                "1800",
+            ]
         properties: dict[str, Any] = {
             "Family": "scholight-personal-" + name.lower(),
             "RequiresCompatibilities": ["EC2"],
@@ -564,8 +660,8 @@ def runtime() -> dict[str, Any]:
             "TaskRoleArn": arn(name + "Role"),
             "ContainerDefinitions": [container],
         }
-        if name in ("Metadata", "Migration"):
-            properties.update(Cpu="512" if name == "Metadata" else "256", Memory=str(memory))
+        if name in ("Metadata", "Migration", "Ingest"):
+            properties.update(Cpu="256" if name == "Migration" else "512", Memory=str(memory))
         resources[name + "Task"] = resource("AWS::ECS::TaskDefinition", **properties)
         outputs[name + "TaskDefinitionArn"] = {"Value": ref(name + "Task")}
         outputs[name + "ExecutionRoleArn"] = {"Value": arn(name + "ExecutionRole")}
@@ -615,6 +711,38 @@ def runtime() -> dict[str, Any]:
     )
     resources["AdmissionRegistration"].update(
         Condition="RegisterBackground", DependsOn="AdmissionGrant"
+    )
+    resources["IngestAdmissionGrant"] = resource(
+        "AWS::IAM::Policy",
+        PolicyName="ScholightIngestAdmission",
+        Roles=[ref("HostRoleName")],
+        PolicyDocument={
+            "Version": "2012-10-17",
+            "Statement": [
+                statement(
+                    ["ecs:RunTask"],
+                    ref("IngestTask"),
+                    Condition={"ArnEquals": {"ecs:cluster": ref("ClusterArn")}},
+                ),
+                statement(
+                    ["iam:PassRole"],
+                    [arn("IngestExecutionRole"), arn("IngestRole")],
+                    Condition={"StringEquals": {"iam:PassedToService": "ecs-tasks.amazonaws.com"}},
+                ),
+            ],
+        },
+    )
+    resources["IngestAdmissionGrant"]["Condition"] = "RegisterBackground"
+    resources["IngestAdmissionRegistration"] = resource(
+        "AWS::SSM::Parameter",
+        Name="/sanchezcloud/personal/background/scholight-ingest",
+        Type="String",
+        Value=sub(
+            '{"version":1,"name":"scholight-ingest","enabled":${IngestEnabled},"task_definition":"${IngestTask}","memory_mib":2048,"priority":2,"interval_seconds":3600}'
+        ),
+    )
+    resources["IngestAdmissionRegistration"].update(
+        Condition="RegisterBackground", DependsOn="IngestAdmissionGrant"
     )
     return template
 

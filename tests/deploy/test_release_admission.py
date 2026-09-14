@@ -109,3 +109,58 @@ def test_absent_checkpoint_uses_explicit_prefix_listing_instead_of_masking_denia
 
     release.s3 = Store()
     assert release.read("plan") is None
+
+
+def test_candidate_allows_only_both_paused_or_reviewed_parameters():
+    previous = {"MetadataEnabled": "true", "IngestEnabled": "true", "ApiImage": "old"}
+    candidate = previous | {"MetadataEnabled": "false", "IngestEnabled": "false", "ApiImage": "new"}
+    module.guard_candidate_state(
+        previous | {"MetadataEnabled": "false", "IngestEnabled": "false"}, previous, candidate
+    )
+    with pytest.raises(ValueError):
+        module.guard_candidate_state(previous | {"MetadataEnabled": "false"}, previous, candidate)
+
+
+def test_legacy_stack_pause_does_not_invent_an_unknown_parameter():
+    assert module.pause_values({"MetadataEnabled": "true"}) == {"MetadataEnabled": "false"}
+    assert module.pause_values({"MetadataEnabled": "true", "IngestEnabled": "true"}) == {
+        "MetadataEnabled": "false",
+        "IngestEnabled": "false",
+    }
+
+
+def test_resume_uses_reviewed_state_including_explicitly_disabled_rollback():
+    release = object.__new__(module.AdmissionRelease)
+    release.arn, release.operation = "change", "operation"
+    enabled = {"MetadataEnabled": "false", "IngestEnabled": "false"}
+    records = {
+        "start": {"change_set": "change", "restore_enabled": enabled},
+        "runtime": {"change_set": "change"},
+        "revisions": {},
+    }
+    release.read = records.get
+    release.record = lambda name, value: records.update({name: value})
+    changes = []
+    release.change_background = lambda stage, values: changes.append((stage, values))
+    release.wait_ack = lambda: None
+    release.run()
+    release.run()
+    assert changes == [("resume", enabled)]
+
+
+def test_ingest_registration_cannot_be_removed_by_pause():
+    change = {
+        "Changes": [
+            {
+                "ResourceChange": {
+                    "Action": "Modify",
+                    "LogicalResourceId": "IngestAdmissionRegistration",
+                    "Replacement": "False",
+                }
+            }
+        ]
+    }
+    module.guard_registration_change(change)
+    change["Changes"][0]["ResourceChange"]["Action"] = "Remove"
+    with pytest.raises(ValueError):
+        module.guard_registration_change(change)

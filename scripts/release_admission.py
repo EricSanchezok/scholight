@@ -16,7 +16,8 @@ RUNTIME = "sanchezcloud-scholight-personal-runtime"
 BACKGROUND = RUNTIME
 BUCKET = f"scholight-personal-releases-{ACCOUNT}-{REGION}"
 ROLE = f"arn:aws:iam::{ACCOUNT}:role/ScholightPersonalCloudFormation"
-NAMES = {"scholight-metadata"}
+NAMES = {"scholight-metadata", "scholight-ingest"}
+FLAGS = {"MetadataEnabled": "scholight-metadata", "IngestEnabled": "scholight-ingest"}
 PREFIX = "/sanchezcloud/personal/background/"
 
 
@@ -39,7 +40,7 @@ def unsettled(tasks: list[dict], names: set[str]) -> bool:
 
 
 def guard_registration_change(change: dict) -> None:
-    allowed = {"AdmissionRegistration"}
+    allowed = {"AdmissionRegistration", "IngestAdmissionRegistration"}
     for item in change.get("Changes", []):
         r = item["ResourceChange"]
         if (
@@ -50,8 +51,12 @@ def guard_registration_change(change: dict) -> None:
             raise ValueError("Only existing product registrations and their grant may change")
 
 
+def pause_values(parameters: dict) -> dict:
+    return {key: "false" for key in FLAGS if key in parameters}
+
+
 def guard_candidate_state(actual: dict, previous: dict, candidate: dict) -> None:
-    if actual not in (previous | {"MetadataEnabled": "false"}, candidate):
+    if actual not in (previous | pause_values(previous), candidate):
         raise ValueError("Runtime changed outside this release; admission stays paused")
 
 
@@ -162,8 +167,10 @@ class AdmissionRelease:
         self.wait_stack(BACKGROUND)
 
     def wait_ack(self) -> None:
-        parameters = self.ssm.get_parameters(Names=[PREFIX + n for n in sorted(NAMES)])
-        if parameters.get("InvalidParameters") or len(parameters["Parameters"]) != len(NAMES):
+        live = {p["ParameterKey"] for p in self.stack(BACKGROUND)["Parameters"]}
+        names = {name for flag, name in FLAGS.items() if flag in live}
+        parameters = self.ssm.get_parameters(Names=[PREFIX + n for n in sorted(names)])
+        if parameters.get("InvalidParameters") or len(parameters["Parameters"]) != len(names):
             raise ValueError("Product registration missing")
         expected = {}
         for p in parameters["Parameters"]:
@@ -211,7 +218,7 @@ class AdmissionRelease:
         from personal_apply import validate_changes
 
         planned = {p["ParameterKey"]: p["ParameterValue"] for p in context["parameters"]}
-        planned["MetadataEnabled"] = "false"
+        planned.update(pause_values(planned))
         current = self.stack(RUNTIME)
         if current["StackStatus"].endswith("IN_PROGRESS"):
             self.wait_stack(RUNTIME)
@@ -288,12 +295,12 @@ class AdmissionRelease:
             state = self.stack(BACKGROUND)
             if state["StackStatus"] not in {"CREATE_COMPLETE", "UPDATE_COMPLETE"}:
                 raise ValueError("Background stack must be stable before a release")
-            enabled = next(
-                p["ParameterValue"]
-                for p in state["Parameters"]
-                if p["ParameterKey"] == "MetadataEnabled"
-            )
             original = self.cf.describe_change_set(ChangeSetName=self.arn)
+            enabled = {
+                p["ParameterKey"]: p["ParameterValue"]
+                for p in original["Parameters"]
+                if p["ParameterKey"] in FLAGS
+            }
             context = {
                 "change_set": self.arn,
                 "restore_enabled": enabled,
@@ -307,7 +314,7 @@ class AdmissionRelease:
         if context["change_set"] != self.arn:
             raise ValueError("Wrong release checkpoint")
         if self.read("runtime") is None:
-            self.change_background("pause", {"MetadataEnabled": "false"})
+            self.change_background("pause", pause_values(context["previous"]))
             self.wait_ack()
             self.wait_drained()
             self.record("drained", {"change_set": self.arn})
@@ -315,9 +322,18 @@ class AdmissionRelease:
             self.record("runtime", {"change_set": self.arn})
         if self.read("revisions") is None:
             revisions = self.revisions()
-            self.change_background("revisions", revisions | {"MetadataEnabled": "false"})
+            self.change_background(
+                "revisions",
+                revisions
+                | pause_values(
+                    {p["ParameterKey"]: p["ParameterValue"] for p in context["parameters"]}
+                ),
+            )
             self.record("revisions", revisions)
-        self.change_background("resume", {"MetadataEnabled": context["restore_enabled"]})
+        enabled = context["restore_enabled"]
+        if isinstance(enabled, str):
+            enabled = {"MetadataEnabled": enabled}  # Resume an existing v1 controller journal.
+        self.change_background("resume", enabled)
         self.wait_ack()
         self.record("complete", {"change_set": self.arn, "enabled": context["restore_enabled"]})
         print(json.dumps({"operation": self.operation, "status": "complete"}))
