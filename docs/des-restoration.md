@@ -138,3 +138,21 @@ source inventory and the original destination inventory, rejects missing or
 lowered versions, checks the expected total and rechecks every copied vector.
 Only `verification.json` with `complete: true` can support destination baseline
 adoption. An `apply.json` checkpoint alone is not migration acceptance.
+
+## Baseline and recovery-scope adoption
+
+After `reconcile verify` succeeds, use `scheduler adopt-baseline --plan ...
+--proof-sha256 ... --date ... --scope-start ... [--scope-end ...]` from the
+private ingestion task while both consumer registrations are paused. The verify
+command prints the canonical verification checksum. Adoption checks that proof
+against the current collection IDs and model, and checks `--date` against the
+still-paused legacy PostgreSQL cursor. Scope end defaults to the cursor date;
+explicitly select the pause date to include later failed attempts without
+expanding the reviewed start boundary.
+
+The recovery set is the union of abstract delta candidates, deferred observations
+and incomplete/failed legacy jobs within the reviewed interval. It retains audit
+records and deduplicates by paper/version under the destination ID. It excludes
+unrelated older failures and does not consult legacy success as proof of des
+fulltext. All scope rows persist before adopting the cursor; idempotent queue
+registration then completes before the release controller resumes consumers.

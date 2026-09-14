@@ -10,6 +10,7 @@ import click
 from pymilvus import MilvusClient
 
 from scholight.config import settings
+from scholight.models.ingestion_target import digest_json
 
 
 @click.command("reconcile")
@@ -122,6 +123,11 @@ def reconcile_cmd(
                         "operation": operation,
                         "complete": result["complete"],
                         "verified_candidates": result["verified_candidates"],
+                        **(
+                            {"verification_sha256": digest_json(result)}
+                            if operation == "verify"
+                            else {}
+                        ),
                     },
                     sort_keys=True,
                 )

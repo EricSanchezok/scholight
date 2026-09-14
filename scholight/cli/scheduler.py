@@ -194,3 +194,32 @@ def resume_fulltext_cmd(limit: int, apply: bool) -> None:
         return await resume_deferred_fulltext(limit=limit, apply=apply)
 
     click.echo(json.dumps(asyncio.run(_with_pool(run)), sort_keys=True))
+
+
+@scheduler_group.command("adopt-baseline")
+@click.option("--plan", required=True, help="Verified S3 abstract reconciliation plan prefix.")
+@click.option("--proof-sha256", required=True)
+@click.option("--date", required=True, type=click.DateTime(formats=["%Y-%m-%d"]))
+@click.option("--scope-start", required=True, type=click.DateTime(formats=["%Y-%m-%d"]))
+@click.option("--scope-end", type=click.DateTime(formats=["%Y-%m-%d"]))
+def adopt_baseline_cmd(
+    plan: str,
+    proof_sha256: str,
+    date: dt.datetime,
+    scope_start: dt.datetime,
+    scope_end: dt.datetime | None,
+) -> None:
+    """Bind the reviewed destination baseline and seed only its interruption scope."""
+    require_full_runtime("Destination adoption")
+    from scholight.db.target_adoption import adopt_baseline
+
+    async def run() -> dict[str, Any]:
+        return await adopt_baseline(
+            plan,
+            proof_sha256,
+            date=date.date(),
+            scope_start=scope_start.date(),
+            scope_end=scope_end.date() if scope_end else None,
+        )
+
+    click.echo(json.dumps(asyncio.run(_with_pool(run)), default=str, sort_keys=True))

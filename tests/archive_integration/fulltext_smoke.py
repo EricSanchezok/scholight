@@ -16,9 +16,10 @@ from pymilvus import MilvusClient
 
 from scholight.config import settings
 from scholight.db.fulltext_install import target_install
-from scholight.db.target_ingestion import TargetQueue, register_target
+from scholight.db.target_adoption import adopt_baseline
+from scholight.db.target_ingestion import TargetQueue
 from scholight.db.tests.pg_ingestion_support import isolated_database_url, reset_ingestion_database
-from scholight.models.ingestion_target import IngestionTarget
+from scholight.models.ingestion_target import IngestionTarget, digest_json
 
 
 async def main() -> None:
@@ -32,6 +33,7 @@ async def main() -> None:
         settings.embedding_dim,
     )
     settings.ingestion_target_id = identity.key
+    settings.zilliz_uri = endpoint
     prefix = "s3://scholight-archive-test/install-" + uuid4().hex
     settings.ingest_recovery_uri = prefix
     s3 = boto3.client(
@@ -49,12 +51,26 @@ async def main() -> None:
         with (
             patch("scholight.db.target_ingestion.get_pool", return_value=pool),
             patch("scholight.db.fulltext_install.get_pool", return_value=pool),
+            patch("scholight.db.target_adoption.get_pool", return_value=pool),
+            patch("scholight.db.ingestion.get_client", return_value=client),
             patch("scholight.db.fulltext_install.get_client", return_value=client),
             patch("boto3.client", return_value=s3),
         ):
-            await register_target(identity)
+            await pool.execute(
+                "INSERT INTO scholight.ingestion_sync_state(source,last_successful_date) VALUES('arxiv','2024-01-01')"
+            )
+            proof = json.loads(
+                (Path(settings.data_root) / "abstract-smoke" / "result.json").read_text()
+            )
+            plan_uri = proof["target_inventory"].rsplit("/", 1)[0]
+            adopted = await adopt_baseline(
+                plan_uri,
+                digest_json(proof),
+                date=dt.date(2024, 1, 1),
+                scope_start=dt.date(2024, 1, 1),
+            )
+            assert adopted["target_id"] == identity.key and adopted["queue"]["backlog"] == 2
             queue = TargetQueue(identity.key)
-            await queue.establish_baseline(dt.date(2024, 1, 1), prefix + "/verified.json", "a" * 64)
             paper = "2401.00000"
             client.upsert(
                 "arxiv_papers", data=[{"arxiv_id": paper, "version": 2}], partial_update=True
