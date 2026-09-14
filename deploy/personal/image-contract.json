@@ -1,0 +1,6 @@
+{
+  "version": 2,
+  "target_bound_ingestion": true,
+  "public_search_modes": ["standard", "thorough"],
+  "components": ["api", "web", "extract", "metadata", "ingest"]
+}

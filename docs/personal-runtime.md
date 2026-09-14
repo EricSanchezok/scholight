@@ -169,3 +169,10 @@ restricted to the destination region: ECS does not support task-definition ARN
 authorization for this cleanup action. Keeping it in a family-scoped statement
 leaves successful service updates stuck cleaning up previous revisions. Service
 updates, tagging and role passing remain separately restricted to this product.
+
+Publication always runs the controller from the reviewed workflow commit, even
+when building another merged application SHA. New version 2 manifests require
+that source's `deploy/personal/image-contract.json`; revisions predating the
+complete destination-aware contract must use their retained version 1 rollback
+manifests instead. This prevents a newly built legacy sync image from being
+mislabelled as a destination-aware consumer.

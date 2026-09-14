@@ -19,6 +19,7 @@ def test_manifest_rejects_foreign_images_wrong_architecture_and_changed_source(m
     m = module()
     contract = {"identity_revision": "b" * 40, "migrations": {"001.sql": "c" * 64}}
     monkeypatch.setattr(m, "source_contract", lambda sha: contract)
+    monkeypatch.setattr(m, "image_contract", lambda sha: m.IMAGE_CONTRACT)
     monkeypatch.setattr(m, "require_merged", lambda sha: None)
     images = {
         name: f"669409472143.dkr.ecr.ap-south-2.amazonaws.com/scholight-personal-{name}@sha256:"
@@ -51,6 +52,7 @@ def test_v2_requires_ingest_and_legacy_v1_remains_readable(monkeypatch):
     m = module()
     monkeypatch.setattr(m, "require_merged", lambda sha: None)
     monkeypatch.setattr(m, "source_contract", lambda sha: {"migrations": {}})
+    monkeypatch.setattr(m, "image_contract", lambda sha: m.IMAGE_CONTRACT)
     images = {
         name: f"669409472143.dkr.ecr.ap-south-2.amazonaws.com/scholight-personal-{name}@sha256:"
         + "d" * 64
@@ -62,3 +64,10 @@ def test_v2_requires_ingest_and_legacy_v1_remains_readable(monkeypatch):
     m.verify(value | {"version": 1, "images": old_images})
     with pytest.raises(ValueError):
         m.verify(value | {"images": old_images})
+
+
+def test_destination_publication_rejects_a_source_without_its_runtime_contract(monkeypatch):
+    m = module()
+    monkeypatch.setattr(m, "git", lambda *args: b"{}")
+    with pytest.raises(ValueError, match="unsupported"):
+        m.image_contract("a" * 40)

@@ -15,6 +15,12 @@ LEGACY_COMPONENTS = ("api", "web", "extract", "metadata")
 COMPONENTS = (*LEGACY_COMPONENTS, "ingest")
 ACCOUNT = "669409472143"
 REGION = "ap-south-2"
+IMAGE_CONTRACT = {
+    "version": 2,
+    "target_bound_ingestion": True,
+    "public_search_modes": ["standard", "thorough"],
+    "components": list(COMPONENTS),
+}
 
 
 def git(*args: str) -> bytes:
@@ -46,6 +52,18 @@ def source_contract(sha: str) -> dict:
     return {"identity_revision": identity.group(1), "migrations": migrations}
 
 
+def image_contract(sha: str) -> dict:
+    try:
+        value = json.loads(git("show", f"{sha}:deploy/personal/image-contract.json"))
+    except (subprocess.CalledProcessError, ValueError) as exc:
+        raise ValueError(
+            "Source predates destination-aware publication; use its retained rollback manifest"
+        ) from exc
+    if value != IMAGE_CONTRACT:
+        raise ValueError("Source image contract is unsupported by this controller")
+    return value
+
+
 def create(source_sha: str, control_revision: str, images: dict) -> dict:
     require_merged(source_sha)
     require_merged(control_revision)
@@ -55,6 +73,7 @@ def create(source_sha: str, control_revision: str, images: dict) -> dict:
         "control_revision": control_revision,
         "platform": "linux/arm64",
         "images": images,
+        "image_contract": image_contract(source_sha),
         **source_contract(source_sha),
     }
     verify(result)
@@ -78,6 +97,8 @@ def verify(value: dict) -> None:
     for name, expected in source_contract(value["source_sha"]).items():
         if value.get(name) != expected:
             raise ValueError("Release manifest does not match committed source")
+    if value["version"] == 2 and value.get("image_contract") != image_contract(value["source_sha"]):
+        raise ValueError("Application images lack the destination-aware runtime contract")
 
 
 def main() -> None:
