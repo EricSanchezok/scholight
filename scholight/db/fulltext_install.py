@@ -62,39 +62,47 @@ async def target_install(
             async def record(stage: str, manifest: dict[str, object]) -> None:
                 await guard()
                 manifest_sha = digest_json(manifest)
-                row = await conn.fetchrow(
-                    """INSERT INTO scholight.fulltext_installs AS i
-                    (target_id,arxiv_id,paper_version,profile_sha256,recovery_manifest,manifest_sha256,stage)
-                    VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(target_id,arxiv_id,paper_version,profile_sha256)
-                    DO UPDATE SET stage=EXCLUDED.stage,updated_at=now()
-                    WHERE i.manifest_sha256=EXCLUDED.manifest_sha256 AND i.recovery_manifest=EXCLUDED.recovery_manifest
-                    RETURNING target_id""",
-                    target,
-                    job.arxiv_id,
-                    job.target_version,
-                    profile,
-                    location + "/manifest.json",
-                    manifest_sha,
-                    stage,
-                )
-                if row is None:
-                    raise DBError("Fulltext recovery manifest differs from its recorded checksum")
-                if stage == "complete":
-                    await conn.execute(
-                        """INSERT INTO scholight.fulltext_receipts AS r
-                        (target_id,arxiv_id,paper_version,profile_sha256,configuration,chunk_count,chunks_sha256,recovery_manifest)
-                        VALUES($1,$2,$3,$4,$5::jsonb,$6,$7,$8)
-                        ON CONFLICT(target_id,arxiv_id,paper_version,profile_sha256) DO UPDATE
-                        SET verified_at=now() WHERE r.chunks_sha256=EXCLUDED.chunks_sha256""",
+                async with conn.transaction():
+                    row = await conn.fetchrow(
+                        """INSERT INTO scholight.fulltext_installs AS i
+                        (target_id,arxiv_id,paper_version,profile_sha256,recovery_manifest,manifest_sha256,stage)
+                        VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(target_id,arxiv_id,paper_version,profile_sha256)
+                        DO UPDATE SET stage=EXCLUDED.stage,updated_at=now()
+                        WHERE i.manifest_sha256=EXCLUDED.manifest_sha256 AND i.recovery_manifest=EXCLUDED.recovery_manifest
+                        RETURNING target_id""",
                         target,
                         job.arxiv_id,
                         job.target_version,
                         profile,
-                        json.dumps(fulltext_configuration()),
-                        manifest["chunk_count"],
-                        manifest["chunks_sha256"],
                         location + "/manifest.json",
+                        manifest_sha,
+                        stage,
                     )
+                    if row is None:
+                        raise DBError(
+                            "Fulltext recovery manifest differs from its recorded checksum"
+                        )
+                    if stage == "complete":
+                        receipt = await conn.fetchval(
+                            """INSERT INTO scholight.fulltext_receipts AS r
+                            (target_id,arxiv_id,paper_version,profile_sha256,configuration,chunk_count,chunks_sha256,recovery_manifest)
+                            VALUES($1,$2,$3,$4,$5::jsonb,$6,$7,$8)
+                            ON CONFLICT(target_id,arxiv_id,paper_version,profile_sha256) DO UPDATE
+                            SET verified_at=now() WHERE r.chunks_sha256=EXCLUDED.chunks_sha256
+                            AND r.chunk_count=EXCLUDED.chunk_count AND r.configuration=EXCLUDED.configuration
+                            AND r.recovery_manifest=EXCLUDED.recovery_manifest RETURNING 1""",
+                            target,
+                            job.arxiv_id,
+                            job.target_version,
+                            profile,
+                            json.dumps(fulltext_configuration()),
+                            manifest["chunk_count"],
+                            manifest["chunks_sha256"],
+                            location + "/manifest.json",
+                        )
+
+                        if receipt is None:
+                            raise DBError("Conflicting fulltext completion receipt")
 
             await guard()
             yield FulltextInstall(

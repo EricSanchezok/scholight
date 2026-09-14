@@ -185,3 +185,8 @@ source schedules, even if the old metadata registration was enabled.
 Even an OAI `noRecordsMatch` response must parse as a complete, correctly namespaced
 OAI document before it proves an empty date. A truncated error or maintenance HTML
 cannot advance the daily cursor.
+
+A completed fulltext receipt and the install journal's completion stage commit in
+one PostgreSQL transaction. A conflicting vector checksum, chunk count, profile
+configuration or recovery manifest rejects completion and leaves the job retryable;
+existence of an unrelated receipt is never treated as successful verification.
