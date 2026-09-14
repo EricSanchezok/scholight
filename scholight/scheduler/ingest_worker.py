@@ -60,7 +60,10 @@ from scholight.utils.text import truncate_utf8
 logger = structlog.get_logger(__name__)
 _SCRATCH_ROOT = Path("/data/ingestion")
 _POLL_SECONDS = 10
-_ERROR_SECRET = re.compile(r"(?i)(token|key|password|authorization)[=:]\\s*\\S+")
+_ERROR_SECRET = re.compile(
+    r"(?i)((?:token|key|password|authorization)[\"']?\s*[=:]\s*)"
+    r"(?:Bearer\s+)?(?:\"[^\"\r\n]*\"|'[^'\r\n]*'|[^\s,;&]+)"
+)
 
 
 P = ParamSpec("P")
@@ -131,7 +134,7 @@ def _raise_if_stopping(stop: asyncio.Event | None) -> None:
 
 
 def _safe_error(exc: Exception) -> str:
-    message = _ERROR_SECRET.sub(r"\1=[redacted]", str(exc))
+    message = _ERROR_SECRET.sub(r"\1[redacted]", str(exc))
     message = message.replace(str(_SCRATCH_ROOT), "/data/ingestion")
     return message[:1000] or type(exc).__name__
 
@@ -407,8 +410,16 @@ async def run_worker_once(
         if max_processing_seconds is None:
             outcome = await processing
         else:
-            async with asyncio.timeout(max_processing_seconds):
-                outcome = await processing
+            deadline = asyncio.timeout(max_processing_seconds)
+            try:
+                async with deadline:
+                    outcome = await processing
+            except TimeoutError as exc:
+                if deadline.expired():
+                    # The task's scheduled slot ended; joined processing can
+                    # return its lease without spending a paper's retry budget.
+                    raise IngestionShutdownRequestedError from exc
+                raise
         if outcome == "obsolete" and configured_queue() is not None:
             return True
         await complete_ingestion_job(job.arxiv_id, worker_id)

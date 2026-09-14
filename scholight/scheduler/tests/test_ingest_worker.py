@@ -14,6 +14,7 @@ from scholight.pipeline.latex_md import LatexMdError, LatexResourceLimitError
 from scholight.scheduler.ingest_worker import (
     IngestionShutdownRequestedError,
     InvalidIngestionJobError,
+    _safe_error,
     drain_ingest,
     process_job,
     run_worker_once,
@@ -301,7 +302,46 @@ async def test_deadline_cancels_and_joins_processing_before_return(tmp_path: Pat
             "scholight.scheduler.ingest_worker.claim_ingestion_job", AsyncMock(return_value=_job())
         ),
         patch("scholight.scheduler.ingest_worker.process_job", slow),
-        patch("scholight.scheduler.ingest_worker.fail_ingestion_job", AsyncMock()),
+        patch("scholight.scheduler.ingest_worker.fail_ingestion_job", AsyncMock()) as fail,
+        patch(
+            "scholight.scheduler.ingest_worker.release_ingestion_job", AsyncMock(return_value=True)
+        ) as release,
     ):
         await run_worker_once("worker", scratch_root=tmp_path, max_processing_seconds=0.01)
     assert finished.is_set()
+    release.assert_awaited_once_with("2401.00001", "worker")
+    fail.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_source_timeout_still_consumes_a_retry_attempt(tmp_path: Path) -> None:
+    with (
+        patch(
+            "scholight.scheduler.ingest_worker.claim_ingestion_job", AsyncMock(return_value=_job())
+        ),
+        patch("scholight.scheduler.ingest_worker.process_job", side_effect=TimeoutError("source")),
+        patch("scholight.scheduler.ingest_worker.fail_ingestion_job", AsyncMock()) as fail,
+        patch("scholight.scheduler.ingest_worker.release_ingestion_job", AsyncMock()) as release,
+    ):
+        await run_worker_once("worker", scratch_root=tmp_path, max_processing_seconds=60)
+    assert fail.await_args is not None
+    assert fail.await_args.kwargs["code"] == "temporary_failure"
+    release.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("token=example-secret", "token=[redacted]"),
+        ("password: example-secret", "password: [redacted]"),
+        ("Authorization: Bearer example-secret", "Authorization: [redacted]"),
+        ('api_key="example secret"', "api_key=[redacted]"),
+        (
+            "https://example.test/?token=example-secret&limit=1",
+            "https://example.test/?token=[redacted]&limit=1",
+        ),
+        ('{"token": "example-secret"}', '{"token": [redacted]}'),
+    ],
+)
+def test_worker_failure_details_redact_credentials(message: str, expected: str) -> None:
+    assert _safe_error(RuntimeError(message)) == expected
