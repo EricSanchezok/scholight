@@ -95,3 +95,7 @@ The Bandit pre-commit hook uses `uv run --locked bandit`, sharing the repository
 locked development dependency and virtual environment with the manual security
 check. It does not install packages into system Python. This avoids a second,
 older scanner environment silently skipping files on newer Python AST versions.
+
+The archive integration stack pulls its digest-pinned MinIO image from the
+official `quay.io/minio/minio` registry. The equivalent Docker Hub image is no
+longer available; changing registries does not change the tested image digest.
