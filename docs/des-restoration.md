@@ -94,7 +94,12 @@ against its database checksum. SIGTERM, deadline cancellation and lost leases
 stop at bounded operation boundaries; cancellation joins the active write before
 releasing the paper lock or deleting temporary files.
 
-The drain command defaults to a 30-minute window. Broad `enqueue-backfill` is
+The drain command defaults to a 30-minute window. When that window expires,
+the worker cancels and joins the current processing operation before releasing
+its lease without consuming a retry attempt. Source or provider timeouts still
+count as failures and use the normal bounded retry policy. Persisted failure
+details redact credential assignments and Authorization bearer values.
+Broad `enqueue-backfill` is
 unavailable with an adopted destination; use the reviewed scope instead. Recovery
 prefixes require 30-day retention configured by the infrastructure rollout.
 The isolated integration suite pins Milvus 2.6.23 because merge-mode upsert
