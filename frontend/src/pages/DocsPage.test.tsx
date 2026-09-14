@@ -21,6 +21,25 @@ describe("buildDeploymentUrls", () => {
 });
 
 describe("DocsPage", () => {
+  it("explains both search modes and their shared REST and MCP parameter", () => {
+    render(<DocsPage origin="https://papers.internal.example" />);
+
+    expect(screen.getByRole("heading", { name: "Choose a search mode" })).toBeInTheDocument();
+    expect(screen.getByText(/Standard searches titles and abstracts/)).toHaveTextContent(
+      "Thorough also searches full text",
+    );
+    expect(screen.getByRole("heading", { name: "Optional" }).parentElement).toHaveTextContent(
+      "strength",
+    );
+    expect(screen.getByRole("heading", { name: "Paper search" }).parentElement).toHaveTextContent(
+      '"strength": "thorough"',
+    );
+    expect(screen.getByText(/An unavailable mode returns an error/)).toHaveTextContent(
+      "does not silently switch to Standard",
+    );
+    expect(screen.queryByRole("heading", { name: "Find papers from their abstracts" })).toBeNull();
+  });
+
   it("renders integration guides with URLs for the current deployment", () => {
     const origin = "https://papers.internal.example";
 

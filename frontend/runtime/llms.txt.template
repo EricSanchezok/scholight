@@ -9,5 +9,5 @@
 
 ## Integration
 
-- [MCP endpoint](@@SCHOLIGHT_PUBLIC_WEB_URL@@/api/mcp): Stateless Streamable HTTP endpoint exposing `search_papers` and authenticated `extract_url`.
+- [MCP endpoint](@@SCHOLIGHT_PUBLIC_WEB_URL@@/api/mcp): Stateless Streamable HTTP endpoint exposing `search_papers` with Standard and optional Thorough search, plus authenticated `extract_url`. Check `tools/list` for supported modes.
 - [Web Extract endpoint](@@SCHOLIGHT_PUBLIC_WEB_URL@@/api/extract): Access-Key-authenticated URL extraction for HTML, rendered pages, JSON, XML, and PDF.

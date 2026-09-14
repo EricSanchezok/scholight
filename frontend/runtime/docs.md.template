@@ -70,7 +70,7 @@ Send `POST @@SCHOLIGHT_PUBLIC_WEB_URL@@/api/search` with a JSON body.
 The main request fields are:
 
 - `query`: required natural-language research question.
-- `strength`: deprecated compatibility parameter; omit it. Only the legacy value `standard` is accepted.
+- `strength`: `standard` (the default) or `thorough` when available. Check `@@SCHOLIGHT_PUBLIC_WEB_URL@@/api/capabilities` for supported `search_modes`; use Standard if the field is absent.
 - `limit`: maximum number of ranked papers to return.
 - `filters.categories`: optional category names.
 - `filters.authors`: optional author names.
@@ -118,6 +118,12 @@ The Authorization header may be omitted for anonymous searches.
 
 The server exposes `search_papers` and `extract_url`. Anonymous clients may call `search_papers`; `extract_url` requires an Access Key. Obtain current tool descriptions through MCP `tools/list`. Tool initialization and listing do not consume search quota.
 
+`search_papers` accepts the same `strength` values as REST search. Omit it for Standard, or pass `"strength": "thorough"` for full-text search when listed by the server. For example, call `search_papers` with:
+
+```json
+{"query": "vision language models", "strength": "thorough", "limit": 5}
+```
+
 ## Search behavior
 
 Standard searches titles and abstracts. Thorough also searches full text.
@@ -135,4 +141,5 @@ a failed Thorough search does not silently switch to Standard.
 - `503`: temporary service issue; retry with bounded exponential backoff.
 
 Anonymous and authenticated limits may differ. Web and Access Key searches associated with the same user consume that user's Scholight quota.
+Standard and Thorough have separate search quotas; the response and usage history record the mode actually requested.
 Web Extract has no daily quota. It is bounded by response-size, deadline, cache, and concurrency limits; retry only errors whose structured `retryable` field is true.
