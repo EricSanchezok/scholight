@@ -5,6 +5,8 @@ Standard remains the default for omitted `strength`. HTTP and MCP accept
 unchanged. Reservations, refunds, history, usage, and metrics use the requested
 mode. A Thorough dependency failure returns `thorough_search_unavailable` and
 never executes a second Standard request.
+The current allowance summary adds Standard and Thorough consumption, excluding
+Survey and failed searches whose quota was refunded.
 
 ## Configuration and discovery
 
@@ -18,6 +20,9 @@ off settings and is not enabled by either search option.
 absent or discovery fails. Explicit Thorough URLs and history remain Thorough;
 if unavailable they show a message without submitting a substitute search.
 URLs, result cache keys, loading states, and filter changes preserve the mode.
+History reruns preserve the original question and search filters as well. The
+history filter only updates `/history` parameters; during its exit animation it
+must not overwrite the destination search URL with the history-list filter.
 
 ## Read-only query behavior
 

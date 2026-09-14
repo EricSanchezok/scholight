@@ -136,6 +136,23 @@ describe("private data refresh controls", () => {
     await waitFor(() => expect(accessKeyApi.list).toHaveBeenCalledTimes(2));
   });
 
+  it("counts both search modes against the current allowance", async () => {
+    const summary = await usageApi.summary();
+    vi.mocked(usageApi.summary).mockResolvedValue({
+      ...summary,
+      today: {
+        ...summary.today,
+        standard: { used: 9, daily_limit: 100, remaining: 91 },
+        thorough: { used: 7, daily_limit: 30, remaining: 23 },
+      },
+      searches_today: 18,
+    });
+    renderPage(<UsagePage />);
+    expect(
+      await screen.findByText("16 searches against the current allowance"),
+    ).toBeInTheDocument();
+  });
+
   it("refreshes quota, analytics, and recent usage together", async () => {
     const user = userEvent.setup();
     renderPage(<UsagePage />);
