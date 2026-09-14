@@ -465,7 +465,8 @@ def create_mcp_app() -> tuple[FastMCP[Any], ASGIApp]:
             "Use Scholight to find and compare research papers and extract readable web content. "
             "Call search_papers for literature discovery, related-work research, method comparisons, "
             "or author, category, and date-filtered paper searches. Call extract_url when you need the "
-            "content behind an HTTP or HTTPS URL. Paper discovery searches titles and abstracts."
+            "content behind an HTTP or HTTPS URL. Standard searches titles and abstracts; "
+            "Thorough also recalls full-text passages when enabled."
         ),
         stateless_http=True,
         json_response=True,
@@ -479,7 +480,8 @@ def create_mcp_app() -> tuple[FastMCP[Any], ASGIApp]:
             "tool for literature discovery, related-work research, method comparisons, and author, "
             "category, or date-filtered research. Results include titles, authors, abstracts, dates, "
             "categories, and paper and PDF links. Preserve the returned rank order. "
-            "Search uses paper titles and abstracts."
+            "Standard searches paper titles and abstracts. Thorough also recalls full-text "
+            "passages when enabled; preserve the requested search mode."
         ),
         annotations=ToolAnnotations(
             readOnlyHint=True,
