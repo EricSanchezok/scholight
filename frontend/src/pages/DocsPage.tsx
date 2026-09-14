@@ -174,8 +174,9 @@ export function DocsPage({ origin }: DocsPageProps = {}) {
               <div>
                 <h3>Optional</h3>
                 <p>
-                  Choose <code>limit</code>, then filter by arXiv categories, authors, or submission
-                  dates when useful.
+                  Set <code>strength</code> to <code>standard</code> (the default) or{" "}
+                  <code>thorough</code> when available. Choose <code>limit</code> and filter by
+                  arXiv categories, authors, or submission dates.
                 </p>
               </div>
             </div>
@@ -212,7 +213,9 @@ export function DocsPage({ origin }: DocsPageProps = {}) {
                 <h3>Paper search</h3>
                 <p>
                   <code>search_papers</code> returns concise Markdown and structured content that
-                  matches the REST response.
+                  matches the REST response. Omit <code>strength</code> for Standard, or send{" "}
+                  <code>{'"strength": "thorough"'}</code> for Thorough. Check{" "}
+                  <code>tools/list</code> for the modes supported by your server.
                 </p>
               </div>
               <div>
@@ -231,10 +234,16 @@ export function DocsPage({ origin }: DocsPageProps = {}) {
 
           <section className={styles.docsSection} id="search-behavior">
             <p className={styles.docsSectionLabel}>05 · Search behavior</p>
-            <h2>Find papers from their abstracts</h2>
+            <h2>Choose a search mode</h2>
             <p>
-              Search titles and abstracts with a focused question. Use filters to narrow the results
-              by subject, author, or date.
+              Standard searches titles and abstracts. Thorough also searches full text. Use a
+              focused question and narrow either mode by subject, author, or date.
+            </p>
+            <p>
+              Check <code>/api/capabilities</code> for the available <code>search_modes</code>. If
+              the field is absent, use Standard. An unavailable mode returns an error; a failed
+              Thorough search does not silently switch to Standard. Each mode uses its own search
+              quota.
             </p>
             <p>
               Scholight currently indexes AI research from arXiv and keeps its corpus boundary open
