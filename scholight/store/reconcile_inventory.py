@@ -16,6 +16,12 @@ import pyarrow.parquet as pq
 
 from scholight.models.ingestion_target import digest_json
 from scholight.store.archive_io import ArchiveLocation, file_digest
+from scholight.store.reconcile_counts import (
+    check_inventory_proofs,
+    check_total,
+    checked_proofs,
+    prove_counts,
+)
 
 _FIELDS = ["arxiv_id", "version", "updated", "created"]
 _SHARD_ROWS = 16_384
@@ -83,6 +89,7 @@ def _load_inventory(location: ArchiveLocation) -> dict[str, Any]:
         or not manifest.get("frozen")
     ):
         raise ValueError("Incomplete or non-final paper inventory")
+    check_total(manifest)
     return manifest
 
 
@@ -123,6 +130,7 @@ def _table(
         raise ValueError("Duplicate paper primary key in inventory") from exc
     if count != manifest["rows"]:
         raise ValueError("Inventory total differs from its manifest")
+    check_inventory_proofs(conn, name, manifest)
 
 
 def scan_inventory(
@@ -133,6 +141,7 @@ def scan_inventory(
     expected_id: str,
     frozen: bool,
     workspace: Path,
+    count_duplicate_ids: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     """Writers must remain stopped until reconciliation verifies and the baseline adopts."""
     if not frozen:
@@ -167,6 +176,10 @@ def scan_inventory(
                 or manifest.get("frozen") != frozen
             ):
                 raise ValueError("Inventory identity changed during resume")
+            if manifest.get("count_duplicates") and sorted(count_duplicate_ids) != sorted(
+                p["arxiv_id"] for p in checked_proofs(manifest)
+            ):
+                raise ValueError("Declared duplicate count IDs changed during resume")
         else:
             manifest = {
                 "format": "scholight.paper-inventory.v1",
@@ -213,11 +226,19 @@ def scan_inventory(
                     commit(pending, cursor)
             finally:
                 iterator.close()
-        if count() != manifest["expected_rows"] or manifest["rows"] != manifest["expected_rows"]:
+        if count() != manifest["expected_rows"]:
             raise ValueError("Frozen inventory row count changed or scan was incomplete")
         with closing(sqlite3.connect(work / "inventory.sqlite")) as conn:
             conn.execute("PRAGMA cache_size=-8192")
             _table(conn, "source", location, manifest, work)
+            proofs = prove_counts(client, conn, count_duplicate_ids)
+            if manifest.get("count_duplicates") and manifest["count_duplicates"] != proofs:
+                raise ValueError("Duplicate count evidence changed during resume")
+            candidate = dict(manifest)
+            if proofs:
+                candidate["count_duplicates"] = proofs
+            check_total(candidate)
+            manifest = candidate
         manifest["complete"] = True
         location.write_json("manifest.json", manifest, work)
     return manifest
@@ -234,6 +255,7 @@ def build_delta(
     """Compare complete scalar scans; read full vectors only in the later apply stage."""
     source, target = ArchiveLocation(source_uri), ArchiveLocation(target_uri)
     left, right = _load_inventory(source), _load_inventory(target)
+    protected = {p["arxiv_id"] for value in (left, right) for p in checked_proofs(value)}
     if left["identity"] == right["identity"] and not allow_same_identity:
         raise ValueError("Source and destination must differ")
     output = ArchiveLocation(destination)
@@ -274,6 +296,10 @@ def build_delta(
             for row in conn.execute(query):
                 counts[row["action"]] += 1
                 if row["action"] in {"insert", "update"}:
+                    if row["arxiv_id"] in protected:
+                        raise ValueError(
+                            "Ambiguous duplicate IDs cannot receive automatic delta writes"
+                        )
                     batch.append(dict(row))
                     if len(batch) == 1024:
                         shards.append(persist_rows(output, batch, work, prefix="delta"))
@@ -290,6 +316,8 @@ def build_delta(
                 "shards": shards,
                 "complete": True,
             }
+            if protected:
+                manifest["protected_duplicate_ids"] = sorted(protected)
             output.write_json("manifest.json", manifest, work)
     return manifest
 
@@ -303,6 +331,8 @@ def validate_delta(location: ArchiveLocation, manifest: dict[str, Any], workspac
         pk = row["arxiv_id"]
         if pk in seen or row["action"] not in {"insert", "update"}:
             raise ValueError("Duplicate or invalid delta candidate")
+        if pk in manifest.get("protected_duplicate_ids", []):
+            raise ValueError("A protected duplicate ID cannot be a delta candidate")
         seen.add(pk)
         if row["source_version"] < 1:
             raise ValueError("Unknown delta paper version")

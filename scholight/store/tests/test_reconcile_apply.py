@@ -8,7 +8,12 @@ import pytest
 
 from scholight.store.reconcile import AbstractReconciliation, merge_paper
 from scholight.store.reconcile_inventory import build_delta
-from scholight.store.tests.test_reconcile_inventory import InventoryClient, inventory, row
+from scholight.store.tests.test_reconcile_inventory import (
+    InventoryClient,
+    RepeatedCountClient,
+    inventory,
+    row,
+)
 
 
 def paper(pk: str, version: int, *, chunks: bool = False) -> dict[str, Any]:
@@ -126,3 +131,39 @@ def test_final_inventory_detects_deletion_outside_candidate_batch(tmp_path: Path
     target.rows = [r for r in target.rows if r["arxiv_id"] != "b"]
     with pytest.raises(ValueError, match="missing or downgraded"):
         migration.verify(frozen=True)
+
+
+class RepeatedClient(Client):
+    query = RepeatedCountClient.query
+
+    def get(self, name: str, ids: list[str], **kwargs: Any) -> list[dict[str, Any]]:
+        rows = super().get(name, ids, **kwargs)
+        fields = kwargs.get("output_fields", [])
+        return [{k: v for k, v in record.items() if k in fields} for record in rows]
+
+
+def test_final_verification_preserves_untouched_duplicate_count_evidence(tmp_path: Path) -> None:
+    source = RepeatedClient([paper("a", 1), paper("c", 1)], 1)
+    target = RepeatedClient([paper("a", 1, chunks=True)], 2)
+    for label, client in [("source", source), ("target", target)]:
+        inventory(client, tmp_path / label, count_duplicate_ids=("a",))
+    plan = build_delta(
+        str(tmp_path / "source"),
+        str(tmp_path / "target"),
+        str(tmp_path / "plan"),
+        workspace=tmp_path / "scratch",
+    )
+    assert plan["protected_duplicate_ids"] == ["a"] and plan["candidates"] == 1
+    migration = AbstractReconciliation(
+        source,
+        target,
+        str(tmp_path / "plan"),
+        workspace=tmp_path / "work",
+        dimension=2,
+        model="Qwen/test",
+    )
+    before = deepcopy(target.rows[0])
+    migration.apply()
+    proof = migration.verify(frozen=True)
+    assert proof["complete"] and proof["target_rows"] == 2
+    assert target.rows[0] == before and target.writes == 1
