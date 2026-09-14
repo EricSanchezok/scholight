@@ -156,15 +156,31 @@ class AbstractReconciliation:
         if batch:
             yield batch
 
+    def _read_batch(self, index: int, candidates: list[dict[str, Any]]) -> dict[str, Any]:
+        batch = self.location.read_json(f"batch-{index:06}.json")
+        if batch.get("plan_sha256") != self.plan_sha or batch.get(
+            "candidates_sha256"
+        ) != digest_json(candidates):
+            raise ValueError("Prepared reconciliation batch differs from plan")
+        return batch
+
+    def _check_checkpoint(self, state: dict[str, Any]) -> None:
+        batches = state.get("batches")
+        total = self.plan["candidates"]
+        if (
+            not isinstance(batches, list)
+            or len(batches) > (total + 63) // 64
+            or type(state.get("verified_candidates")) is not int
+            or state["verified_candidates"] != min(64 * len(batches), total)
+            or type(state.get("complete")) is not bool
+            or (state["complete"] and state["verified_candidates"] != total)
+        ):
+            raise ValueError("Invalid reconciliation checkpoint progress")
+
     def _prepare(self, index: int, candidates: list[dict[str, Any]], work: Path) -> dict[str, Any]:
         name = f"batch-{index:06}.json"
         if self.location.exists(name):
-            batch = self.location.read_json(name)
-            if batch.get("plan_sha256") != self.plan_sha or batch.get(
-                "candidates_sha256"
-            ) != digest_json(candidates):
-                raise ValueError("Prepared reconciliation batch differs from plan")
-            return batch
+            return self._read_batch(index, candidates)
         ids = [row["arxiv_id"] for row in candidates]
         sources = self._get(self.source, ids)
         targets = self._get(self.target, ids)
@@ -231,17 +247,23 @@ class AbstractReconciliation:
                     "complete": False,
                 }
                 self.location.write_json("apply.json", state, work)
+            self._check_checkpoint(state)
             for index, candidates in enumerate(self._candidates(work)):
-                self._guard()
-                batch = self._prepare(index, candidates, work)
+                committed = index < len(state["batches"])
+                if committed:
+                    # Keep durable manifest/file validation on resume. Remote
+                    # vector readback for committed writes belongs to final verify.
+                    batch = self._read_batch(index, candidates)
+                else:
+                    self._guard()
+                    batch = self._prepare(index, candidates, work)
                 if batch["dimension"] != self.dimension or batch["model"] != self.model:
                     raise ValueError("Prepared abstract model or dimension changed")
                 before = self._load(batch["before"], work)
                 desired = self._load(batch["after"], work)
-                if index < len(state["batches"]):
+                if committed:
                     if state["batches"][index] != digest_json(batch):
                         raise ValueError("Committed batch checksum changed")
-                    self._verify_batch(batch, work)
                     continue
                 current = self._get(self.target, list(desired))
                 # A replay may see either the saved before-image or the already written after-image.
@@ -291,6 +313,7 @@ class AbstractReconciliation:
             state = self.location.read_json("apply.json")
             if not state.get("complete") or state.get("plan_sha256") != self.plan_sha:
                 raise ValueError("Abstract apply is incomplete or belongs to a different plan")
+            self._check_checkpoint(state)
             validate_delta(self.location, self.plan, work)
             verified = 0
             for index, candidates in enumerate(self._candidates(work)):

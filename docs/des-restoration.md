@@ -149,7 +149,12 @@ as float32 Parquet before writing. Existing destination resource flags remain
 unchanged; new records start without unproven fulltext flags. Source or target
 changes since planning cause a refusal. An interrupted batch accepts only its
 saved before/after images, verifies every resulting field and vector, then commits
-its checkpoint. Repeat invocations recheck committed batches.
+its checkpoint. Resume first validates the checkpoint count and configuration,
+then checks committed batch manifests and saved recovery files against their
+checksums without rereading those remote vectors. Remaining batches still receive
+write-time identity guards and complete write/readback validation. Final verification
+always rereads every committed vector; resume cannot produce a baseline acceptance
+proof or hide subsequent target changes.
 
 Final verification compares a complete destination inventory against both the
 source inventory and the original destination inventory, rejects missing or
