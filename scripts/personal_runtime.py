@@ -428,6 +428,7 @@ def runtime() -> dict[str, Any]:
                     "SCHOLIGHT_SERVER_HOST": "0.0.0.0",  # nosec B104
                     "SCHOLIGHT_SERVER_PORT": "8000",
                     "SCHOLIGHT_PUBLIC_THOROUGH_ENABLED": ref("PublicThoroughEnabled"),
+                    "SCHOLIGHT_SEARCH_ENRICHMENT_RPC_TIMEOUT_SECONDS": "3",
                     "SCHOLIGHT_PROXY_HEADERS": "true",
                     "SCHOLIGHT_FORWARDED_ALLOW_IPS": ref("HostPrivateAddress"),
                     "SCHOLIGHT_PUBLIC_WEB_URL": sub("https://${DomainName}"),

@@ -121,8 +121,13 @@ probes have a two-second budget. Zilliz schema, index and load-state inspection 
 a twenty-second total budget, with each RPC capped at five seconds, to accommodate
 cross-region round trips for both collections. A timed-out inspection is retained
 until it finishes; subsequent requests cannot create overlapping SDK probes. API and
-Extract memory ceilings are initially 768 MiB each, with web at 128 MiB. Validate
-representative real traffic before adoption and stop admission on a failed capacity
+Extract memory ceilings are initially 768 MiB each, with web at 128 MiB.
+The final abstract lookup has a three-second RPC budget for the cross-region
+Zilliz connection. It still fetches only the ranked result IDs, and a failed lookup
+retains the existing degraded-response behavior; ranking and candidate payloads
+remain unchanged.
+
+Validate representative real traffic before adoption and stop admission on a failed capacity
 gate. Metadata has a 768 MiB task ceiling, one embedding request at a time and
 64-paper batches. PostgreSQL pools are limited to three API and two metadata
 connections. All logs expire after seven days. Fulltext is admitted every thirty minutes, not an ECS
