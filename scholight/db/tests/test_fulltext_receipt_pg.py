@@ -1,5 +1,7 @@
 """A conflicting completion proof cannot mark an installation complete."""
 
+import asyncio
+from contextlib import AsyncExitStack
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -14,6 +16,50 @@ from scholight.db.tests.pg_ingestion_support import isolated_database_url, reset
 from scholight.db.tests.test_target_ingestion_pg import target
 
 pytestmark = pytest.mark.pg_integration
+
+
+@pytest.mark.asyncio
+async def test_four_installs_keep_heartbeat_connection_available(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    pool = await asyncpg.create_pool(isolated_database_url(), min_size=1, max_size=5)
+    try:
+        await reset_ingestion_database(pool)
+        monkeypatch.setattr("scholight.db.target_ingestion.get_pool", lambda: pool)
+        monkeypatch.setattr("scholight.db.fulltext_install.get_pool", lambda: pool)
+        monkeypatch.setattr("scholight.db.fulltext_install.get_client", object)
+        monkeypatch.setattr(
+            "scholight.db.fulltext_install.FulltextInstall",
+            lambda *args, **kwargs: SimpleNamespace(**kwargs),
+        )
+        identity = target()
+        monkeypatch.setattr(settings, "ingestion_target_id", identity.key)
+        monkeypatch.setattr(settings, "ingest_recovery_uri", "s3://isolated-receipts/recovery")
+        await register_target(identity)
+        queue = TargetQueue(identity.key)
+        for i in range(4):
+            await queue.enqueue(f"2609.{i + 1:05d}", 1, "new", max_attempts=8)
+        jobs = [await queue.claim(f"worker-{i}", 300) for i in range(4)]
+        async with AsyncExitStack() as stack:
+            for job in jobs:
+                assert job is not None and job.lease_owner is not None
+                await stack.enter_async_context(target_install(job, tmp_path / job.arxiv_id))
+            async with asyncio.timeout(2):
+                for job in jobs:
+                    assert job is not None and job.lease_owner is not None
+                    assert await queue.renew(job.arxiv_id, job.lease_owner, 300)
+        for job in jobs:
+            assert job is not None and job.lease_owner is not None
+            assert await queue.release(job.arxiv_id, job.lease_owner)
+        assert (
+            await pool.fetchval(
+                "SELECT count(*) FROM scholight.target_ingestion_jobs WHERE status='running'"
+            )
+            == 0
+        )
+    finally:
+        await pool.close()
 
 
 @pytest.mark.asyncio

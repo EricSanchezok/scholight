@@ -1,4 +1,4 @@
-"""Single-paper worker for the durable ingestion queue."""
+"""Bounded paper workers for the durable ingestion queue."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import shutil
 import signal
 import socket
 import time
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Iterator
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
@@ -70,6 +70,42 @@ P = ParamSpec("P")
 T = TypeVar("T")
 
 
+@dataclass
+class IngestLimits:
+    """One shared download and parser slot across all in-process paper lanes."""
+
+    download: asyncio.Semaphore
+    parser: asyncio.Semaphore
+
+
+@contextlib.contextmanager
+def _stage(job: IngestionJob, stage: str) -> Iterator[None]:
+    started = time.monotonic()
+    try:
+        yield
+    finally:
+        logger.info(
+            "ingestion stage finished",
+            arxiv_id=job.arxiv_id,
+            target_version=job.target_version,
+            stage=stage,
+            elapsed_seconds=round(time.monotonic() - started, 3),
+        )
+
+
+async def _fetch_resource(
+    job: IngestionJob, scratch: Path, limits: IngestLimits | None, *, pdf: bool = False
+) -> DownloadedResource:
+    async with limits.download if limits else contextlib.nullcontext():
+        with _stage(job, "download_pdf" if pdf else "download"):
+            return await _work_io(
+                fetch_pdf_resource if pdf else fetch_paper_resource,
+                job.arxiv_id,
+                job.target_version,
+                scratch,
+            )
+
+
 async def _work_io(operation: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> T:
     return await settled_io(partial(operation, *args, **kwargs))
 
@@ -87,13 +123,14 @@ async def _target_obsolete(job: IngestionJob, version: int) -> str:
 
 
 async def _embedded_chunks(
-    chunks: list[dict[str, Any]], stop: asyncio.Event | None
+    chunks: list[dict[str, Any]], stop: asyncio.Event | None, *, job: IngestionJob | None = None
 ) -> AsyncIterator[dict[str, Any]]:
     async with Embedder() as embedder:
         for offset in range(0, len(chunks), 64):
             _raise_if_stopping(stop)
             batch = chunks[offset : offset + 64]
-            vectors = await embedder.embed_many([str(chunk["content_text"]) for chunk in batch])
+            with _stage(job, "embedding") if job else contextlib.nullcontext():
+                vectors = await embedder.embed_many([str(chunk["content_text"]) for chunk in batch])
             if len(vectors) != len(batch):
                 raise ResourceTemporaryError("Embedding response count did not match chunks")
             for chunk, vector in zip(batch, vectors, strict=True):
@@ -149,6 +186,7 @@ async def _parse_resource(
     resource: DownloadedResource,
     scratch: Path,
     stop_event: asyncio.Event | None = None,
+    limits: IngestLimits | None = None,
 ) -> tuple[str, str, dict[str, bool]]:
     if resource.kind == "pdf":
         markdown = await _work_io(pdf_to_markdown, resource.path, fast=True)
@@ -185,12 +223,7 @@ async def _parse_resource(
             target_version=job.target_version,
             error_type=type(exc).__name__,
         )
-        pdf = await _work_io(
-            fetch_pdf_resource,
-            job.arxiv_id,
-            job.target_version,
-            scratch,
-        )
+        pdf = await _fetch_resource(job, scratch, limits, pdf=True)
         _raise_if_stopping(stop_event)
         markdown = await _work_io(pdf_to_markdown, pdf.path, fast=True)
         _raise_if_stopping(stop_event)
@@ -221,6 +254,7 @@ async def process_job(
     *,
     scratch_root: Path = _SCRATCH_ROOT,
     stop_event: asyncio.Event | None = None,
+    limits: IngestLimits | None = None,
 ) -> str:
     """Build and safely install one exact revision. Return ``installed`` or ``obsolete``."""
     require_full_runtime("Background generation")
@@ -251,23 +285,17 @@ async def process_job(
                 job, scratch / "recovery", checkpoint=lambda: _raise_if_stopping(stop_event)
             ) as install:
                 if await install.exists():
-                    await install.apply()
+                    with _stage(job, "install_resume"):
+                        await install.apply()
                     return "installed"
-        resource = await _work_io(
-            fetch_paper_resource,
-            job.arxiv_id,
-            job.target_version,
-            scratch,
-        )
+        resource = await _fetch_resource(job, scratch, limits)
         _raise_if_stopping(stop_event)
-        markdown, source, resource_flags = await _parse_resource(
-            job,
-            resource,
-            scratch,
-            stop_event,
-        )
-
-        parsed = chunk_markdown(markdown, source=source)
+        async with limits.parser if limits else contextlib.nullcontext():
+            with _stage(job, "parse"):
+                markdown, source, resource_flags = await _parse_resource(
+                    job, resource, scratch, stop_event, limits
+                )
+                parsed = chunk_markdown(markdown, source=source)
         _raise_if_stopping(stop_event)
         chunks: list[dict[str, Any]] = []
         for item in parsed:
@@ -291,9 +319,13 @@ async def process_job(
             async with target_install(
                 job, scratch / "recovery", checkpoint=lambda: _raise_if_stopping(stop_event)
             ) as install:
-                await install.prepare(_embedded_chunks(chunks, stop_event), resource_flags)
+                with _stage(job, "prepare_including_embedding"):
+                    await install.prepare(
+                        _embedded_chunks(chunks, stop_event, job=job), resource_flags
+                    )
                 _raise_if_stopping(stop_event)
-                await install.apply()
+                with _stage(job, "install"):
+                    await install.apply()
             return "installed"
         async with Embedder() as embedder:
             vectors = await embedder.embed_many([str(chunk["content_text"]) for chunk in chunks])
@@ -352,10 +384,11 @@ async def _process_with_heartbeat(
     scratch_root: Path,
     stop_event: asyncio.Event | None,
     heartbeat_interval_seconds: float,
+    limits: IngestLimits | None = None,
 ) -> str:
     finished = asyncio.Event()
     process_task = asyncio.create_task(
-        process_job(job, scratch_root=scratch_root, stop_event=stop_event)
+        process_job(job, scratch_root=scratch_root, stop_event=stop_event, limits=limits)
     )
     heartbeat_task = asyncio.create_task(
         _maintain_lease(job, worker_id, finished, heartbeat_interval_seconds)
@@ -389,6 +422,7 @@ async def run_worker_once(
     stop_event: asyncio.Event | None = None,
     heartbeat_interval_seconds: float | None = None,
     max_processing_seconds: float | None = None,
+    limits: IngestLimits | None = None,
 ) -> bool:
     require_full_runtime("Background generation")
     if stop_event is not None and stop_event.is_set():
@@ -406,6 +440,7 @@ async def run_worker_once(
             scratch_root=scratch_root,
             stop_event=stop_event,
             heartbeat_interval_seconds=interval,
+            limits=limits,
         )
         if max_processing_seconds is None:
             outcome = await processing
@@ -434,6 +469,11 @@ async def run_worker_once(
             outcome="succeeded",
             metrics={"IngestionSucceeded": (1, "Count")},
         )
+    except asyncio.CancelledError:
+        # TaskGroup or caller cancellation has already joined the processing
+        # task, including its shielded writes. Do not strand this lane's lease.
+        await release_ingestion_job(job.arxiv_id, worker_id)
+        raise
     except IngestionShutdownRequestedError:
         released = await release_ingestion_job(job.arxiv_id, worker_id)
         logger.info(
@@ -512,20 +552,16 @@ def _install_signal_handlers(stop: asyncio.Event) -> None:
             loop.add_signal_handler(name, stop.set)
 
 
-async def drain_ingest(
+async def _drain_lane(
     *,
-    idle_grace_seconds: float = 60,
-    max_runtime_seconds: float = 30 * 60,
-    poll_seconds: float = _POLL_SECONDS,
-    stop_event: asyncio.Event | None = None,
+    worker_id: str,
+    limits: IngestLimits,
+    stop: asyncio.Event,
+    started: float,
+    idle_grace_seconds: float,
+    max_runtime_seconds: float,
+    poll_seconds: float,
 ) -> DrainResult:
-    """Drain available work, then exit on idle, deadline, or platform signal."""
-    require_full_runtime("Full-text ingestion")
-    stop = stop_event or asyncio.Event()
-    if stop_event is None:
-        _install_signal_handlers(stop)
-    worker_id = f"{socket.gethostname()}:{os.getpid()}"
-    started = time.monotonic()
     last_work = started
     jobs_processed = 0
 
@@ -543,6 +579,7 @@ async def drain_ingest(
             worker_id,
             stop_event=stop,
             max_processing_seconds=max(max_runtime_seconds - elapsed, 0.001),
+            limits=limits,
         )
         now = time.monotonic()
         if worked:
@@ -564,12 +601,61 @@ async def drain_ingest(
                 timeout=min(poll_seconds, idle_remaining, runtime_remaining),
             )
 
-    result = DrainResult(
+    return DrainResult(
         reason=reason,
         jobs_processed=jobs_processed,
         elapsed_seconds=round(time.monotonic() - started, 3),
     )
-    logger.info("ingestion drain finished", **result.as_dict())
+
+
+async def drain_ingest(
+    *,
+    idle_grace_seconds: float = 60,
+    max_runtime_seconds: float = 30 * 60,
+    poll_seconds: float = _POLL_SECONDS,
+    stop_event: asyncio.Event | None = None,
+    concurrency: int | None = None,
+) -> DrainResult:
+    """Overlap bounded paper I/O inside one admitted task, with one shared deadline."""
+    require_full_runtime("Full-text ingestion")
+    lanes = settings.ingest_concurrency if concurrency is None else concurrency
+    if type(lanes) is not int or not 1 <= lanes <= 4:
+        raise ValueError("Ingest concurrency must be an integer between 1 and 4")
+    if lanes > 1:
+        if configured_queue() is None:
+            raise ValueError("Parallel ingestion requires destination-bound lease fencing")
+        if settings.pg_pool_max_size < lanes + 1:
+            raise ValueError(
+                "Parallel ingestion needs one connection per lane plus a heartbeat slot"
+            )
+    stop = stop_event or asyncio.Event()
+    if stop_event is None:
+        _install_signal_handlers(stop)
+    started = time.monotonic()
+    limits = IngestLimits(download=asyncio.Semaphore(1), parser=asyncio.Semaphore(1))
+    worker_id = f"{socket.gethostname()}:{os.getpid()}"
+    async with asyncio.TaskGroup() as group:
+        tasks = [
+            group.create_task(
+                _drain_lane(
+                    worker_id=f"{worker_id}:{index}",
+                    limits=limits,
+                    stop=stop,
+                    started=started,
+                    idle_grace_seconds=idle_grace_seconds,
+                    max_runtime_seconds=max_runtime_seconds,
+                    poll_seconds=poll_seconds,
+                )
+            )
+            for index in range(lanes)
+        ]
+    reasons = {task.result().reason for task in tasks}
+    reason: Literal["idle", "max_runtime", "signal"] = (
+        "signal" if "signal" in reasons else "max_runtime" if "max_runtime" in reasons else "idle"
+    )
+    jobs_processed = sum(task.result().jobs_processed for task in tasks)
+    result = DrainResult(reason, jobs_processed, round(time.monotonic() - started, 3))
+    logger.info("ingestion drain finished", concurrency=lanes, **result.as_dict())
     emit_emf(
         service="paper-ingest",
         outcome=reason,

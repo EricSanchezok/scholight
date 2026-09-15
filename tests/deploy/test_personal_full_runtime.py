@@ -28,7 +28,8 @@ def test_ingest_has_bounded_resources_and_no_service():
         "1800",
     ]
     env = {v["Name"]: v["Value"] for v in container["Environment"]}
-    assert env["SCHOLIGHT_PG_POOL_MAX_SIZE"] == "2"
+    assert env["SCHOLIGHT_PG_POOL_MAX_SIZE"] == "5"
+    assert env["SCHOLIGHT_INGEST_CONCURRENCY"] == "4"
     assert env["SCHOLIGHT_EMBEDDING_BATCH_SIZE"] == "64"
     assert env["SCHOLIGHT_SURVEY_RUNTIME_ENABLED"] == "false"
     assert env["SCHOLIGHT_INGESTION_TARGET_ID"] == {"Ref": "IngestionTargetId"}
@@ -38,7 +39,7 @@ def test_ingest_registration_is_disabled_until_verified_cutover():
     template = runtime()
     assert template["Parameters"]["IngestEnabled"]["Default"] == "false"
     value = template["Resources"]["IngestAdmissionRegistration"]["Properties"]["Value"]["Fn::Sub"]
-    assert '"interval_seconds":3600' in value
+    assert '"interval_seconds":1800' in value
     assert '"memory_mib":2048' in value
     assert '"priority":1' in value  # Platform's public admission protocol accepts only 0 or 1.
     assert "${IngestEnabled}" in value

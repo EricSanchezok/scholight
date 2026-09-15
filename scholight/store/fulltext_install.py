@@ -18,7 +18,7 @@ import pyarrow.parquet as pq
 
 from scholight.models.ingestion_target import digest_json
 from scholight.store.archive_io import ArchiveLocation, file_digest
-from scholight.store.client import escape_sql
+from scholight.store.client import _WRITE_LOCK, escape_sql
 from scholight.store.ingestion import MAX_PAPER_CHUNKS
 
 T = TypeVar("T")
@@ -37,6 +37,16 @@ async def settled_io(operation: Callable[[], T]) -> T:
             await task
         finally:
             raise
+
+
+async def _settled_write(operation: Callable[[], T]) -> T:
+    # The SDK singleton allows concurrent reads, but its writes must share the
+    # same lock used by other store entry points. Never block the asyncio loop.
+    def locked() -> T:
+        with _WRITE_LOCK:
+            return operation()
+
+    return await settled_io(locked)
 
 
 def chunk_digest(row: dict[str, Any], dimension: int) -> str:
@@ -286,7 +296,7 @@ class FulltextInstall:
         for shard in manifest["new"]:
             rows = await settled_io(partial(self._load, shard))
             await self._paper()
-            await settled_io(
+            await _settled_write(
                 partial(
                     self.client.upsert,
                     "arxiv_chunks",
@@ -318,7 +328,7 @@ class FulltextInstall:
         for shard in manifest["old"]:
             await self._paper()
             ids = list(shard["digests"])
-            await settled_io(
+            await _settled_write(
                 partial(
                     self.client.delete,
                     "arxiv_chunks",
@@ -341,7 +351,7 @@ class FulltextInstall:
                 raise ValueError("Old fulltext cleanup verification failed")
         await self.record("cleaned", manifest)
         await self._paper()
-        await settled_io(
+        await _settled_write(
             lambda: self.client.upsert(
                 "arxiv_papers",
                 data=[
