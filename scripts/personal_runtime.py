@@ -646,6 +646,9 @@ def runtime() -> dict[str, Any]:
                 else ["scholight", "scheduler", "sync"]
             )
         if name == "Ingest":
+            container["SystemControls"] = [
+                {"Namespace": "net.ipv4.tcp_congestion_control", "Value": "bbr"}
+            ]
             container["Command"] = [
                 "scholight",
                 "scheduler",

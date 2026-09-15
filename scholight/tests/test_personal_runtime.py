@@ -56,6 +56,24 @@ def test_metadata_batch_tuning_keeps_memory_and_concurrency_bounded() -> None:
     assert task["Memory"] == "768"
 
 
+def test_bbr_is_scoped_to_the_ingest_bridge_namespace() -> None:
+    resources = personal.runtime()["Resources"]
+    for name, resource in resources.items():
+        if resource["Type"] != "AWS::ECS::TaskDefinition":
+            continue
+        task = resource["Properties"]
+        container = task["ContainerDefinitions"][0]
+        if name == "IngestTask":
+            assert task["NetworkMode"] == "bridge"
+            assert container["SystemControls"] == [
+                {"Namespace": "net.ipv4.tcp_congestion_control", "Value": "bbr"}
+            ]
+            assert container["Memory"] == 2048
+            assert container["Cpu"] == 512
+        else:
+            assert "SystemControls" not in container
+
+
 def test_change_set_guard_rejects_foreign_stack_and_non_task_replacement(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

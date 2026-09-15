@@ -141,6 +141,22 @@ This changes neither the host's single-heavy-task gate nor online service pools.
 `recovery/des/` prefix; restoration objects and noncurrent versions expire after
 30 days. Ingest admission defaults to disabled until baseline and canary verification.
 
+Only the ingest task sets `net.ipv4.tcp_congestion_control=bbr` through ECS
+`SystemControls`. Its bridge network namespace isolates the setting from the host,
+online services, metadata sync, and other products; do not move this setting to
+host networking or a global sysctl. BBR is intended to improve transfer on the
+lossy destination connection, but production throughput and retransmissions must
+still be measured. It does not change task concurrency or resource limits.
+
+Before enabling ingest on a replacement host, verify its signed kernel provides
+`tcp_bbr`, and test the sysctl in a disposable network namespace and a no-network
+container using the exact cached ingest image. The checks must leave the host's
+TCP default unchanged and must not run an application command or receive secrets.
+An unsupported host must be corrected before admission. To revert transport
+behavior, remove the ingest-only control through the reviewed runtime plan/apply
+flow; application rollback alone retains the current control-plane configuration.
+See [ECS namespaced system controls](https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_SystemControl.html).
+
 `MetadataBatchSize` defaults to 64 and accepts 1–512 papers. For a large catch-up,
 increase it through a reviewed change set only after measuring the task's actual
 memory use. The 768 MiB task ceiling and single embedding request remain unchanged;
