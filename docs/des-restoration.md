@@ -91,6 +91,15 @@ chunks are stored in checksummed Parquet/Zstandard shards under the dedicated
 readback verification. New version/configuration primary keys cannot overwrite
 old chunks while preparation is incomplete. No corpus-wide vector scan occurs.
 
+Vector writes and full-vector readback use at most eight rows per RPC, independently
+of the 64-row recovery shards and embedding batches. Smaller requests reduce
+deadline failures on slow connections and release the shared write lock between
+requests. The 45-second RPC deadline is unchanged. Every batch checks the lease;
+all new vectors must pass exact readback validation before any old key is removed.
+Existing manifests resume with this transport batching without changing their
+checksums, processing configuration, or completion receipts. Actual throughput
+still depends on the network; smaller requests do not remove packet loss.
+
 Every installation holds a per-paper PostgreSQL advisory lock and checks the
 current unique lease and paper version between stages. It writes all new chunks,
 verifies every scalar/vector value, then deletes only the old keys listed in the

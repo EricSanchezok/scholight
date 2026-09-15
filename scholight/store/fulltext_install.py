@@ -18,13 +18,16 @@ import pyarrow.parquet as pq
 
 from scholight.models.ingestion_target import digest_json
 from scholight.store.archive_io import ArchiveLocation, file_digest
-from scholight.store.client import _WRITE_LOCK, escape_sql
+from scholight.store.client import _WRITE_LOCK, batched, escape_sql
 from scholight.store.ingestion import MAX_PAPER_CHUNKS
 
 T = TypeVar("T")
 _FIELDS = ["chunk_id", "arxiv_id", "chunk_idx", "content_text", "content_embedding"]
 _FLAGS = {"has_latex", "has_pdf", "has_markdown", "has_chunks"}
 _BATCH = 64
+# Keep vector RPCs shorter than the deadline on a slow or lossy connection.
+# Archive shards and embedding batches retain their existing size and format.
+_RPC_BATCH = 8
 
 
 async def settled_io(operation: Callable[[], T]) -> T:
@@ -296,34 +299,35 @@ class FulltextInstall:
         for shard in manifest["new"]:
             rows = await settled_io(partial(self._load, shard))
             await self._paper()
-            await _settled_write(
-                partial(
-                    self.client.upsert,
-                    "arxiv_chunks",
-                    data=rows,
-                    consistency_level="Strong",
-                    timeout=45,
+            for batch in batched(rows, _RPC_BATCH):
+                await self.guard()
+                await _settled_write(
+                    partial(
+                        self.client.upsert,
+                        "arxiv_chunks",
+                        data=batch,
+                        consistency_level="Strong",
+                        timeout=45,
+                    )
                 )
-            )
         await self.record("written", manifest)
         for shard in manifest["new"]:
-            await self.guard()
-            rows = await settled_io(
-                partial(
-                    self.client.get,
-                    "arxiv_chunks",
-                    ids=list(shard["digests"]),
-                    output_fields=_FIELDS,
-                    consistency_level="Strong",
-                    timeout=45,
+            for ids in batched(list(shard["digests"]), _RPC_BATCH):
+                await self.guard()
+                rows = await settled_io(
+                    partial(
+                        self.client.get,
+                        "arxiv_chunks",
+                        ids=ids,
+                        output_fields=_FIELDS,
+                        consistency_level="Strong",
+                        timeout=45,
+                    )
                 )
-            )
-            if (
-                len(rows) != shard["rows"]
-                or {r["chunk_id"]: chunk_digest(r, self.identity["dimension"]) for r in rows}
-                != shard["digests"]
-            ):
-                raise ValueError("Fulltext target verification failed before cleanup")
+                if len(rows) != len(ids) or {
+                    r["chunk_id"]: chunk_digest(r, self.identity["dimension"]) for r in rows
+                } != {pk: shard["digests"][pk] for pk in ids}:
+                    raise ValueError("Fulltext target verification failed before cleanup")
         await self.record("verified", manifest)
         for shard in manifest["old"]:
             await self._paper()

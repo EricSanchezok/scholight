@@ -122,7 +122,51 @@ async def test_shared_client_writes_hold_lock_during_parallel_install(tmp_path, 
     task = install(client, tmp_path)
     await task.prepare(chunks(), {"has_markdown": True})
     await task.apply()
-    assert writes == ["upsert", "upsert", "delete", "upsert"]
+    assert writes[-2:] == ["delete", "upsert"]
+    assert writes[:-2] and all(event == "upsert" for event in writes[:-2])
+
+
+@pytest.mark.asyncio
+async def test_large_saved_shards_use_bounded_vector_rpcs(tmp_path: Path, monkeypatch) -> None:
+    client = Client()
+    task = install(client, tmp_path)
+    manifest = await task.prepare(chunks(), {})
+    assert manifest["new"][0]["rows"] == 64  # Existing recovery format remains readable.
+    upsert, get = client.upsert, client.get
+
+    def bounded_upsert(name, data, **kwargs):
+        assert len(data) <= 8, "vector write exceeds bounded transport payload"
+        return upsert(name, data, **kwargs)
+
+    def bounded_get(name, ids, **kwargs):
+        assert len(ids) <= 8, "vector readback exceeds bounded transport payload"
+        return get(name, ids, **kwargs)
+
+    monkeypatch.setattr(client, "upsert", bounded_upsert)
+    monkeypatch.setattr(client, "get", bounded_get)
+    await task.apply()
+    assert set(client.rows) == {row["chunk_id"] for row in chunks()}
+
+
+@pytest.mark.asyncio
+async def test_late_vector_batch_corruption_never_cleans_old_revision(
+    tmp_path: Path, monkeypatch
+) -> None:
+    client = Client()
+    task = install(client, tmp_path)
+    await task.prepare(chunks(), {})
+    get = client.get
+
+    def corrupt_late_batch(name, ids, **kwargs):
+        rows = get(name, ids, **kwargs)
+        if name == "arxiv_chunks" and "new-64" in ids:
+            rows[-1]["content_embedding"][0] = 99.0
+        return rows
+
+    monkeypatch.setattr(client, "get", corrupt_late_batch)
+    with pytest.raises(ValueError, match="verification"):
+        await task.apply()
+    assert "old" in client.rows and not client.deleted
 
 
 @pytest.mark.asyncio
