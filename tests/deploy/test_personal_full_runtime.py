@@ -62,6 +62,13 @@ def test_search_and_workers_use_independent_versioned_secrets():
         assert env["SCHOLIGHT_ZILLIZ_URI"] == {"Ref": "TargetEndpoint"}
 
 
+def test_cross_region_abstract_enrichment_has_a_bounded_three_second_budget():
+    resources = runtime()["Resources"]
+    container = resources["ApiTask"]["Properties"]["ContainerDefinitions"][0]
+    env = {value["Name"]: value["Value"] for value in container["Environment"]}
+    assert env["SCHOLIGHT_SEARCH_ENRICHMENT_RPC_TIMEOUT_SECONDS"] == "3"
+
+
 def test_ingest_permissions_only_cover_recovery_prefix_and_exact_task_revision():
     resources = runtime()["Resources"]
     statements = resources["IngestRole"]["Properties"]["Policies"][0]["PolicyDocument"]["Statement"]
