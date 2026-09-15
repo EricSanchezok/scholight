@@ -296,6 +296,19 @@ async def process_job(
                     job, resource, scratch, stop_event, limits
                 )
                 parsed = chunk_markdown(markdown, source=source)
+                if source == "latex" and not parsed:
+                    _raise_if_stopping(stop_event)
+                    logger.info(
+                        "latex chunks empty; falling back to exact PDF",
+                        arxiv_id=job.arxiv_id,
+                        target_version=job.target_version,
+                    )
+                    pdf = await _fetch_resource(job, scratch, limits, pdf=True)
+                    _raise_if_stopping(stop_event)
+                    markdown, source, resource_flags = await _parse_resource(
+                        job, pdf, scratch, stop_event, limits
+                    )
+                    parsed = chunk_markdown(markdown, source=source)
         _raise_if_stopping(stop_event)
         chunks: list[dict[str, Any]] = []
         for item in parsed:

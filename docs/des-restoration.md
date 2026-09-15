@@ -77,6 +77,13 @@ release and completion so an expired worker cannot finish a reclaimed job.
 
 ## Fulltext installation and interruption recovery
 
+LaTeX conversion must produce usable chunks after Markdown cleanup. Empty raw
+output, conversion errors, and output containing only discarded markup fall back
+to the same paper version's PDF once, before embedding or installation. The PDF
+fallback uses the existing download/parser gates and cooperative stop checks. If
+it also produces no usable content, the job remains a source/parse failure under
+the normal retry policy; no empty installation or success receipt is recorded.
+
 Bound workers retain exact-version LaTeX/PDF behavior and split embedding calls
 into sequential batches of at most 64 chunks. Prepared float32 vectors and old
 chunks are stored in checksummed Parquet/Zstandard shards under the dedicated
