@@ -19,7 +19,7 @@ from scholight.scheduler.ingest_worker import (
     process_job,
     run_worker_once,
 )
-from scholight.scheduler.resources import DownloadedResource
+from scholight.scheduler.resources import DownloadedResource, ResourceCorruptError
 
 
 def _job(arxiv_id: str = "2401.00001", version: int = 1) -> IngestionJob:
@@ -181,6 +181,50 @@ async def test_empty_latex_markdown_falls_back_to_exact_pdf(tmp_path: Path) -> N
             await process_job(_job(), scratch_root=tmp_path)
 
     fetch_pdf.assert_called_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("pdf_markdown", ["Recovered exact-version paper content", "1\n2\n"])
+async def test_unusable_latex_chunks_fall_back_once_before_embedding(
+    tmp_path: Path, pdf_markdown: str
+) -> None:
+    embedder = AsyncMock()
+    embedder.__aenter__.return_value = embedder
+    embedder.embed_many.return_value = [[0.1, 0.2]]
+    with (
+        patch(
+            "scholight.scheduler.ingest_worker.get_paper",
+            return_value={"arxiv_id": "2401.00001", "version": 2},
+        ),
+        patch(
+            "scholight.scheduler.ingest_worker.fetch_paper_resource",
+            return_value=DownloadedResource("latex", tmp_path / "latex"),
+        ),
+        patch("scholight.scheduler.ingest_worker.latex_to_markdown", return_value="---\n---\n"),
+        patch(
+            "scholight.scheduler.ingest_worker.fetch_pdf_resource",
+            return_value=DownloadedResource("pdf", tmp_path / "paper.pdf"),
+        ) as fetch_pdf,
+        patch("scholight.scheduler.ingest_worker.pdf_to_markdown", return_value=pdf_markdown),
+        patch("scholight.scheduler.ingest_worker.Embedder", return_value=embedder),
+        patch("scholight.scheduler.ingest_worker.install_paper_chunks") as install,
+    ):
+        if pdf_markdown.startswith("Recovered"):
+            assert await process_job(_job(version=2), scratch_root=tmp_path) == "installed"
+            embedder.embed_many.assert_awaited_once_with([pdf_markdown])
+            assert install.call_args.kwargs["target_version"] == 2
+            assert install.call_args.kwargs["resource_flags"] == {
+                "has_pdf": True,
+                "has_latex": False,
+                "has_markdown": True,
+            }
+        else:
+            with pytest.raises(ResourceCorruptError, match="no usable chunks"):
+                await process_job(_job(version=2), scratch_root=tmp_path)
+            embedder.embed_many.assert_not_awaited()
+            install.assert_not_called()
+    fetch_pdf.assert_called_once_with("2401.00001", 2, tmp_path / "2401.00001" / "v2")
+    assert not (tmp_path / "2401.00001").exists()
 
 
 @pytest.mark.asyncio
