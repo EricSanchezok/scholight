@@ -68,7 +68,15 @@ def serve_ingest_cmd() -> None:
     default=30 * 60,
     show_default=True,
 )
-def drain_ingest_cmd(idle_grace_seconds: int, max_runtime_seconds: int) -> None:
+@click.option(
+    "--concurrency",
+    type=click.IntRange(1, 4),
+    default=None,
+    help="Paper lanes (defaults to SCHOLIGHT_INGEST_CONCURRENCY).",
+)
+def drain_ingest_cmd(
+    idle_grace_seconds: int, max_runtime_seconds: int, concurrency: int | None
+) -> None:
     """Drain the paper queue for one bounded scheduled task."""
     require_full_runtime("Full-text ingestion")
     from scholight.scheduler.ingest_worker import drain_ingest
@@ -77,6 +85,7 @@ def drain_ingest_cmd(idle_grace_seconds: int, max_runtime_seconds: int) -> None:
         result = await drain_ingest(
             idle_grace_seconds=idle_grace_seconds,
             max_runtime_seconds=max_runtime_seconds,
+            concurrency=concurrency,
         )
         return result.as_dict()
 

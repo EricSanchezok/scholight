@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 
+from scholight.store.client import _WRITE_LOCK
 from scholight.store.fulltext_install import FulltextInstall
 
 
@@ -98,6 +99,30 @@ def chunks() -> list[dict[str, Any]]:
         }
         for i in range(65)
     ]
+
+
+@pytest.mark.asyncio
+async def test_shared_client_writes_hold_lock_during_parallel_install(tmp_path, monkeypatch):
+    client = Client()
+    original_upsert, original_delete = client.upsert, client.delete
+    writes = []
+
+    def upsert(*args, **kwargs):
+        assert _WRITE_LOCK.locked()
+        writes.append("upsert")
+        return original_upsert(*args, **kwargs)
+
+    def delete(*args, **kwargs):
+        assert _WRITE_LOCK.locked()
+        writes.append("delete")
+        return original_delete(*args, **kwargs)
+
+    monkeypatch.setattr(client, "upsert", upsert)
+    monkeypatch.setattr(client, "delete", delete)
+    task = install(client, tmp_path)
+    await task.prepare(chunks(), {"has_markdown": True})
+    await task.apply()
+    assert writes == ["upsert", "upsert", "delete", "upsert"]
 
 
 @pytest.mark.asyncio

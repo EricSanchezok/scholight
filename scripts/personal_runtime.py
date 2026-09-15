@@ -511,7 +511,8 @@ def runtime() -> dict[str, Any]:
         elif name == "Ingest":
             environment.update(
                 {
-                    "SCHOLIGHT_PG_POOL_MAX_SIZE": "2",
+                    "SCHOLIGHT_PG_POOL_MAX_SIZE": "5",
+                    "SCHOLIGHT_INGEST_CONCURRENCY": "4",
                     "SCHOLIGHT_EMBEDDING_CONCURRENCY": "1",
                     "SCHOLIGHT_EMBEDDING_BATCH_SIZE": "64",
                     "SCHOLIGHT_INGEST_RECOVERY_URI": ref("RecoveryUri"),
@@ -738,7 +739,7 @@ def runtime() -> dict[str, Any]:
         Name="/sanchezcloud/personal/background/scholight-ingest",
         Type="String",
         Value=sub(
-            '{"version":1,"name":"scholight-ingest","enabled":${IngestEnabled},"task_definition":"${IngestTask}","memory_mib":2048,"priority":1,"interval_seconds":3600}'
+            '{"version":1,"name":"scholight-ingest","enabled":${IngestEnabled},"task_definition":"${IngestTask}","memory_mib":2048,"priority":1,"interval_seconds":1800}'
         ),
     )
     resources["IngestAdmissionRegistration"].update(

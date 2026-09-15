@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     metadata_sync_batch_size: int = Field(default=64, ge=1, le=512)
     ingest_max_attempts: int = Field(default=8, ge=1, le=32)
     ingest_lease_seconds: int = Field(default=7200, ge=300, le=86400)
+    ingest_concurrency: int = Field(default=1, ge=1, le=4)
 
     # ── MinerU API ──
     mineru_api_key: str = ""

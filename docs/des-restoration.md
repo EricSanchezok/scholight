@@ -236,3 +236,33 @@ process cannot record its own failure. Inspect ECS termination and resource data
 before explicitly retrying them. Cooperative cancellation releases the lease and
 refunds that attempt. A same-version daily promotion updates the job's source as
 well as priority, so it cannot consume the reserved aged-backfill claim slot.
+
+## Bounded fulltext throughput tuning
+
+`drain-ingest` accepts `--concurrency 1..4`, defaulting to
+`SCHOLIGHT_INGEST_CONCURRENCY` (one outside the personal runtime). Parallel mode
+requires a verified destination queue and `SCHOLIGHT_PG_POOL_MAX_SIZE >= lanes + 1`.
+A paper holds an advisory-lock connection during embedding and installation; the
+extra connection prevents renewal starvation. Each lane has a distinct lease owner.
+All lanes share one absolute task deadline and are joined before cancellation returns;
+interrupted leases are released without spending the paper retry budget. The existing
+new/revision priority and aged-backfill reservation remain in the durable queue.
+
+Production requests four lanes and a thirty-minute admission interval. Downloads and
+parsing remain serialized; remote embedding and verified recovery I/O can overlap.
+No additional ECS service or heavy task is allowed. Compare two- and four-lane
+bounded canaries using actual scoped papers before enabling a new digest. Retain
+the 2 GiB task ceiling, host memory/disk gates, exact-version downloads, recovery
+shards, vector readback and precise old-chunk cleanup. If the capacity gate fails,
+keep ingestion paused and use a reviewed lower-concurrency task definition; do not
+raise the host size automatically. An application rollback must restore its matching
+connection-pool and admission configuration too.
+
+`ingestion stage finished` events report per-paper download, parse, embedding,
+prepare and install durations. `prepare_including_embedding` includes its nested
+embedding measurements; do not sum overlapping stages or lanes. Compare successful
+completion receipts per task minute and per wall-clock hour separately. Drain job
+counts include released or failed claims and are not a completion counter. Record
+canary sample size, task cgroup peak memory, host available memory, retry causes and
+concurrent Standard/Thorough latency; do not extrapolate a promised speedup from
+concurrency alone.

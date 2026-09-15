@@ -125,10 +125,14 @@ Extract memory ceilings are initially 768 MiB each, with web at 128 MiB. Validat
 representative real traffic before adoption and stop admission on a failed capacity
 gate. Metadata has a 768 MiB task ceiling, one embedding request at a time and
 64-paper batches. PostgreSQL pools are limited to three API and two metadata
-connections. All logs expire after seven days. Fulltext is an hourly admitted task, not an ECS
-service: it exits within thirty minutes, uses at most 2,048 MiB and 512 CPU units,
-and opens at most two database connections. Embedding runs in one lane with
-64 chunks per request. Its role can only read/write the dedicated encrypted
+connections. All logs expire after seven days. Fulltext is admitted every thirty minutes, not an ECS
+service: it exits within thirty minutes and retains a 2,048 MiB memory ceiling
+and 512 CPU units. Four paper lanes overlap network I/O inside that one task;
+download and parsing each have one shared slot. Each paper sends one embedding
+request at a time, with 64 chunks per request (at most four requests across lanes).
+Zilliz writes use the shared SDK write lock. The ingest pool allows five database
+connections: four per-paper advisory locks plus one slot for claims and heartbeats.
+This changes neither the host's single-heavy-task gate nor online service pools. Its role can only read/write the dedicated encrypted
 `recovery/des/` prefix; restoration objects and noncurrent versions expire after
 30 days. Ingest admission defaults to disabled until baseline and canary verification.
 
@@ -186,6 +190,6 @@ complete destination-aware contract must use their retained version 1 rollback
 manifests instead. This prevents a newly built legacy sync image from being
 mislabelled as a destination-aware consumer.
 
-The hourly fulltext registration uses Platform admission priority 1 (the protocol
+The thirty-minute fulltext registration uses Platform admission priority 1 (the protocol
 accepts only 0 and 1). Fresh/revision versus aged historical ordering is enforced
 inside Scholight's target queue, independently of the host admission priority.
