@@ -47,12 +47,18 @@ def _download(url: str, destination: Path) -> int:
             status = response.status_code
             if status != 200:
                 return status
+            length = response.headers.get("content-length", "")
+            if length.isascii() and length.isdecimal() and int(length) > _MAX_DOWNLOAD:
+                raise ResourceCorruptError("Resource exceeds download limit")
             with destination.open("wb") as output:
                 for block in response.iter_bytes(1024 * 1024):
                     size += len(block)
                     if size > _MAX_DOWNLOAD:
                         raise ResourceCorruptError("Resource exceeds download limit")
                     output.write(block)
+    except ResourceCorruptError:
+        destination.unlink(missing_ok=True)
+        raise
     except (httpx.HTTPError, OSError) as exc:
         destination.unlink(missing_ok=True)
         raise ResourceTemporaryError("Resource download failed") from exc
@@ -141,7 +147,12 @@ def fetch_paper_resource(arxiv_id: str, version: int, scratch: Path) -> Download
     """Fetch the exact arXiv revision, preferring source and falling back to PDF."""
     versioned_id = f"{arxiv_id}v{version}"
     source_archive = scratch / "source.download"
-    source_status = _download(f"{ARXIV_SOURCE_ORIGIN}/src/{versioned_id}", source_archive)
+    try:
+        source_status = _download(f"{ARXIV_SOURCE_ORIGIN}/src/{versioned_id}", source_archive)
+    except ResourceCorruptError:
+        # The source returned 200 but exceeded validation limits. Its PDF may
+        # still fit the same cap; an existing oversized source is not a 404.
+        return _fetch_pdf_resource(arxiv_id, version, scratch, source_status=200)
     if source_status == 200:
         if _valid_pdf(source_archive):
             pdf_path = scratch / "paper.pdf"
