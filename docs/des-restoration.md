@@ -84,6 +84,13 @@ fallback uses the existing download/parser gates and cooperative stop checks. If
 it also produces no usable content, the job remains a source/parse failure under
 the normal retry policy; no empty installation or success receipt is recorded.
 
+Source packages that exceed the 100 MiB download cap also fall back to the exact
+version's PDF, under the same cap. A declared oversized response is rejected before
+reading its body; streamed responses remain bounded even without a Content-Length.
+Rejected partial downloads are removed before fallback. An oversized PDF still
+fails, and temporary source errors retain the normal retry behavior. Resource
+limits, parsing gates, and completion requirements are unchanged.
+
 Bound workers retain exact-version LaTeX/PDF behavior and split embedding calls
 into sequential batches of at most 64 chunks. Prepared float32 vectors and old
 chunks are stored in checksummed Parquet/Zstandard shards under the dedicated
