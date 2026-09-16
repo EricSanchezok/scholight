@@ -273,7 +273,8 @@ new/revision priority and aged-backfill reservation remain in the durable queue.
 
 Production requests four lanes and a thirty-minute admission interval. Downloads and
 parsing remain serialized; remote embedding and verified recovery I/O can overlap.
-No additional ECS service or heavy task is allowed. Compare two- and four-lane
+No additional Scholight ECS service or ingest task is allowed. Scholens may run
+independently through Platform's interactive lane after capacity validation. Compare two- and four-lane
 bounded canaries using actual scoped papers before enabling a new digest. Retain
 the 2 GiB task ceiling, host memory/disk gates, exact-version downloads, recovery
 shards, vector readback and precise old-chunk cleanup. If the capacity gate fails,

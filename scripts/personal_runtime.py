@@ -376,7 +376,7 @@ def runtime() -> dict[str, Any]:
         ("Web", 128, 64, 32, 13200),
         ("Extract", 768, 256, 128, 18201),
         ("Metadata", 768, 768, 256, None),
-        ("Ingest", 2048, 2048, 512, None),
+        ("Ingest", 2048, 512, 512, None),
         ("Migration", 512, 256, 128, None),
     ):
         environment = dict(common)
@@ -666,7 +666,9 @@ def runtime() -> dict[str, Any]:
             "ContainerDefinitions": [container],
         }
         if name in ("Metadata", "Migration", "Ingest"):
-            properties.update(Cpu="256" if name == "Migration" else "512", Memory=str(memory))
+            properties["Cpu"] = "256" if name == "Migration" else "512"
+            if name != "Ingest":
+                properties["Memory"] = str(memory)
         resources[name + "Task"] = resource("AWS::ECS::TaskDefinition", **properties)
         outputs[name + "TaskDefinitionArn"] = {"Value": ref(name + "Task")}
         outputs[name + "ExecutionRoleArn"] = {"Value": arn(name + "ExecutionRole")}

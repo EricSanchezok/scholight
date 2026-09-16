@@ -16,7 +16,7 @@ def runtime():
 def test_ingest_has_bounded_resources_and_no_service():
     resources = runtime()["Resources"]
     task = resources["IngestTask"]["Properties"]
-    assert task["Memory"] == "2048"
+    assert task["ContainerDefinitions"][0]["Memory"] == 2048
     assert task["Cpu"] == "512"
     assert "IngestService" not in resources
     container = task["ContainerDefinitions"][0]
@@ -76,3 +76,12 @@ def test_ingest_permissions_only_cover_recovery_prefix_and_exact_task_revision()
     assert writes[0]["Resource"]["Fn::Sub"].endswith("/recovery/des/*")
     grants = resources["IngestAdmissionGrant"]["Properties"]["PolicyDocument"]["Statement"]
     assert grants[0]["Resource"] == {"Ref": "IngestTask"}
+
+
+def test_ingestion_reserves_typical_memory_and_retains_hard_ceiling() -> None:
+    template = runtime()
+    task = template["Resources"]["IngestTask"]["Properties"]
+    assert "Memory" not in task
+    container = task["ContainerDefinitions"][0]
+    assert container["MemoryReservation"] == 512
+    assert container["Memory"] == 2048
