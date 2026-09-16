@@ -132,12 +132,17 @@ gate. Metadata has a 768 MiB task ceiling, one embedding request at a time and
 64-paper batches. PostgreSQL pools are limited to three API and two metadata
 connections. All logs expire after seven days. Fulltext is admitted every thirty minutes, not an ECS
 service: it exits within thirty minutes and retains a 2,048 MiB memory ceiling
-and 512 CPU units. Four paper lanes overlap network I/O inside that one task;
+and 512 CPU units. Ingest reserves 512 MiB through its container, while its
+2,048 MiB container hard limit remains enforced; task-level memory is omitted
+so ECS does not reserve the full ceiling. Four paper lanes overlap network I/O inside that one task;
 download and parsing each have one shared slot. Each paper sends one embedding
 request at a time, with 64 chunks per request (at most four requests across lanes).
 Zilliz writes use the shared SDK write lock. The ingest pool allows five database
 connections: four per-paper advisory locks plus one slot for claims and heartbeats.
-This changes neither the host's single-heavy-task gate nor online service pools. Its role can only read/write the dedicated encrypted
+Platform admits the batch lane independently from Scholens user work, with one
+batch task at a time. Host capacity pressure may request graceful shutdown and
+resume from durable leases; no queue, cursor or completion receipt is discarded.
+Online service pools remain unchanged. Its role can only read/write the dedicated encrypted
 `recovery/des/` prefix; restoration objects and noncurrent versions expire after
 30 days. Ingest admission defaults to disabled until baseline and canary verification.
 
