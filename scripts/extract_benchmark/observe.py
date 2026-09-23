@@ -57,9 +57,14 @@ MEMORY_FIELDS = frozenset(
         "ParserStarts",
         "BrowserStarts",
         "ScratchReservedBytes",
-        "DownloadQueued",
-        "ParseQueued",
-        "BrowserQueued",
+        "DownloadActive",
+        "ParseActive",
+        "DownloadQueueDepth",
+        "ParseQueueDepth",
+        "BrowserQueueDepth",
+        "DownloadQueueRejected",
+        "ParseQueueRejected",
+        "BrowserQueueRejected",
     }
 )
 ERROR_TERMS = (

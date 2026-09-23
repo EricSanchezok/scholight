@@ -202,7 +202,8 @@ soak remain necessary. Inspect the evidence before adopting any coefficient.
 `observe.py` is a read-only hourly evidence collector. Supply an explicit AWS
 profile, expected account, region, cluster/service, log prefix and timezone-aware
 start/end. It checks account identity, records exact task/image/resource state,
-retains completion and per-second memory fields through an allowlist, and records
+retains completion, per-second memory and actual queue depth/rejection fields
+through an allowlist, and records
 only the type/time of lifecycle error matches. It never reads secret values.
 Pass every relevant `--canary-report` to separate actual server-issued request IDs.
 API initial calls, pagination, internal calls and canaries have separate counts;

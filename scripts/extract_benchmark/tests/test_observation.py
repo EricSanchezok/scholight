@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import json
+from unittest.mock import patch
 
+import pytest
 from observe import completion_summary, sanitize
+
+from scholight.web_extract.admission import BoundedGate
 
 
 def event(request_id="natural", scope="rest", pagination=False):
@@ -41,3 +45,17 @@ def test_observation_allowlist_drops_urls_and_secret_or_unknown_fields():
     assert "private" not in json.dumps(result)
     assert "secret" not in json.dumps(result)
     assert result["request_id"] == "natural"
+
+
+@pytest.mark.asyncio
+async def test_observer_retains_actual_producer_queue_metrics():
+    for stage in ("Download", "Parse", "Browser"):
+        gate = BoundedGate(stage, capacity=1, max_waiters=1, wait_seconds=1)
+        with patch("scholight.web_extract.admission.emit_emf") as emit:
+            await gate.acquire()
+            gate.release()
+        produced = {key: value[0] for key, value in emit.call_args.kwargs["metrics"].items()}
+        row = sanitize({"timestamp": 1234, "eventId": "id", "logStreamName": "stream"}, produced)
+        assert row[f"{stage}Active"] == 0
+        assert row[f"{stage}QueueDepth"] == 0
+        assert row[f"{stage}QueueRejected"] == 0
