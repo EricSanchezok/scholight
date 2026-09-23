@@ -31,3 +31,12 @@ Do not run multiple benchmark variants at once: the subnet intentionally conflic
 and creation must fail. Cleanup removes only resources created by that invocation.
 Output directories must not exist before a run, preventing accidental replacement
 of earlier evidence. Credentials in this harness are fixture-only constants.
+
+For mixed-version wire checks, run `uv run python
+scripts/extract_benchmark/mixed_versions.py --output data/extract-benchmark/mixed-A`.
+The baseline defaults to the frozen production SHA above; fetch that revision if
+using a shallow checkout. Both peers import their own full source tree in separate
+Python processes and communicate through a real Unix socket. Checks cover unchanged
+request JSON, optional headers, response/error mapping, immutable pagination and
+cross-actor rejection in both directions. The document producer is a fixed stub;
+this is a wire check, not an authentication, database or extraction-quality test.

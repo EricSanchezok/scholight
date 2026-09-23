@@ -9,14 +9,17 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import subprocess  # nosec B404: isolated Docker CLI; never invokes a shell
+
+# Isolated Docker CLI; never invokes a shell.
+import subprocess  # nosec B404
 import time
 from pathlib import Path
 
 from corpus import corpus
 
 ROOT = Path(__file__).resolve().parents[2]
-TOKEN = "isolated-benchmark-token-not-a-production-secret"  # nosec B105: fixture only
+# Fixture-only value; this runner has no production access.
+TOKEN = "isolated-benchmark-token-not-a-production-secret"  # nosec B105
 
 
 def docker(*args: str) -> str:
@@ -47,7 +50,9 @@ def run(image: str, output: Path, seconds: float, requests: int, seed: int) -> N
     }
     (output / "manifest.json").write_text(json.dumps(metadata, indent=2))
     suffix = str(time.time_ns())
-    network, fixture, app = [f"extract-bench-{name}-{suffix}" for name in ["net", "fixture", "app"]]
+    network, fixture, app, client = [
+        f"extract-bench-{name}-{suffix}" for name in ["net", "fixture", "app", "client"]
+    ]
     created: list[str] = []
     probe = None
     try:
@@ -57,6 +62,7 @@ def run(image: str, output: Path, seconds: float, requests: int, seed: int) -> N
         docker(
             "run",
             "-d",
+            "--no-healthcheck",
             "--name",
             fixture,
             "--network",
@@ -103,7 +109,9 @@ def run(image: str, output: Path, seconds: float, requests: int, seed: int) -> N
             image,
         )
         created.append(app)
-        (output / "containers.json").write_text(json.dumps({"app": app, "fixture": fixture}))
+        (output / "containers.json").write_text(
+            json.dumps({"app": app, "fixture": fixture, "client": client, "network": network})
+        )
         for _ in range(90):
             try:
                 docker(
@@ -125,8 +133,10 @@ def run(image: str, output: Path, seconds: float, requests: int, seed: int) -> N
                 stderr=subprocess.STDOUT,
             )
             docker(
-                "run",
-                "--rm",
+                "create",
+                "--name",
+                client,
+                "--no-healthcheck",
                 "--network",
                 network,
                 "--ip",
@@ -143,6 +153,12 @@ def run(image: str, output: Path, seconds: float, requests: int, seed: int) -> N
                 str(requests),
                 str(seed),
             )
+            created.append(client)
+            docker("start", client)
+            exit_code = int(docker("wait", client))
+            (output / "client.log").write_text(docker("logs", client))
+            if exit_code:
+                raise RuntimeError(f"Benchmark client exited with status {exit_code}")
     finally:
         if probe is not None:
             probe.terminate()
