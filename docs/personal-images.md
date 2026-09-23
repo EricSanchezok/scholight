@@ -39,6 +39,9 @@ The report renderer uses its URLFetcher response contract while retaining the
 bundled/report-local asset allowlist and refusing external resources.
 CI tooling pins pip 26.2 or newer, Vitest 4.1.11, and js-yaml 4.3.2 to
 resolve audit findings; both Python and frontend dependency audits are CI gates.
+AnyIO is constrained to 4.14.2 or newer within major version 4 to address
+CVE-2026-63374 (TLS hostname validation) and CVE-2026-64847 (process-worker stderr
+deadlock). The Identity revision and database contracts remain unchanged.
 
 Metadata commands default to one embedding request at a time. PostgreSQL advisory
 locking serializes overlapping scheduled runs. A configurable 6,600-second timeout
