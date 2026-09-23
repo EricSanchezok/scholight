@@ -11,6 +11,8 @@ all response outcomes and content, per-second cgroup working set/anon/file/OOM
 events, and final container state/logs. Run versions sequentially on the same
 machine; alternate baseline/A/B for at least five cold/warm performance rounds.
 Keep timing assertions out of ordinary unit tests.
+Deterministic harness regression tests are included in the default backend test
+suite and CI; long native experiments still require explicit execution.
 
 Use `--mode cold` for unique request keys and `--mode warm` for a separate recorded
 48-case warmup followed by fixed-key measurements. The default `mixed` mode keeps
