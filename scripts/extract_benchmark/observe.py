@@ -45,6 +45,7 @@ MEMORY_FIELDS = frozenset(
         "MemoryWorkingSet",
         "MemoryAnon",
         "MemoryFile",
+        "MemoryOOMKills",
         "MemoryAdmissionPaused",
         "MemorySampleFailure",
         "MemoryReclaimFailure",
@@ -318,6 +319,14 @@ def collect(args) -> None:
             "peak_working_set_bytes": max(
                 (r["MemoryWorkingSet"] for r in memory if "MemoryWorkingSet" in r), default=None
             ),
+            "cgroup_oom_kills_by_stream": {
+                stream: max(
+                    r["MemoryOOMKills"]
+                    for r in memory
+                    if r["stream"] == stream and "MemoryOOMKills" in r
+                )
+                for stream in {r["stream"] for r in memory if "MemoryOOMKills" in r}
+            },
             "memory_log_streams": sorted({r["stream"] for r in memory}),
             "limitations": [
                 "STOPPED task retention is at least one hour; retain hourly snapshots and investigate stream/task changes.",

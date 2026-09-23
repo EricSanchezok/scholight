@@ -148,3 +148,22 @@ def test_canary_schedule_excludes_login_setup_and_keeps_failed_runtime_runs():
     report = canary_schedule(reports, stamp(0), stamp(43201))
     assert len(report["runs"]) == 2 and report["failed_runs"] == 1
     assert report["six_hour_periods_without_run"] == [2]
+
+
+def test_oom_counts_are_maxima_per_container_including_a_nonzero_first_sample():
+    rows = [
+        {
+            "stream": stream,
+            "timestamp": stamp(time),
+            "MemoryWorkingSet": 100,
+            "MemoryOOMKills": count,
+        }
+        for stream, time, count in (("extract/a", 0, 1), ("extract/a", 1, 1), ("extract/b", 2, 2))
+    ]
+    report = memory_trends(rows, [])
+    assert report["cgroup_oom_counter_available"]
+    assert report["cgroup_oom_kills_since_container_start"] == 3
+    rows.append({"stream": "extract/legacy", "timestamp": stamp(3), "MemoryWorkingSet": 100})
+    partial = memory_trends(rows, [])
+    assert not partial["cgroup_oom_counter_available"]
+    assert partial["cgroup_oom_kills_since_container_start"] == 3

@@ -101,9 +101,20 @@ def memory_trends(rows: list[dict], completions: list[dict]) -> dict:
             "trend_has_minimum_samples": min(len(first), len(last)) >= 60,
             "sampling_gap_count": sum(gap > 5 for gap in gaps),
             "largest_sampling_gap_seconds": max(gaps, default=None),
+            "oom_kills_since_container_start": max(
+                (r["MemoryOOMKills"] for r in events if "MemoryOOMKills" in r), default=None
+            ),
         }
     all_times.sort()
     global_gaps = [right - left for left, right in pairwise(all_times)]
+    oom_available = bool(streams) and all(
+        s["oom_kills_since_container_start"] is not None for s in streams.values()
+    )
+    known_oom = [
+        s["oom_kills_since_container_start"]
+        for s in streams.values()
+        if s["oom_kills_since_container_start"] is not None
+    ]
     return {
         "available": bool(streams),
         "streams": streams,
@@ -115,6 +126,8 @@ def memory_trends(rows: list[dict], completions: list[dict]) -> dict:
         "largest_global_sampling_gap_seconds": max(global_gaps, default=None),
         "first_sample": all_times[0] if all_times else None,
         "last_sample": all_times[-1] if all_times else None,
+        "cgroup_oom_counter_available": oom_available,
+        "cgroup_oom_kills_since_container_start": sum(known_oom) if known_oom else None,
         "method": "Per task/log stream; exclude active worker gauges and internal request intervals plus 250ms. Compare minutes 10-70 with the final hour; never splice restarted tasks into one idle trend.",
     }
 

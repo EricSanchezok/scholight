@@ -210,6 +210,9 @@ start/end. It checks account identity, records exact task/image/resource state,
 retains completion, per-second memory, actual queue depth/rejection fields and
 deferred idle-memory reclamation counts through an allowlist. Lifecycle error
 matches retain only their type and time. It never reads secret values.
+`MemoryOOMKills` preserves cumulative cgroup child-process kills even when the ECS
+task survives. Per-stream maxima include nonzero first samples; repeated samples
+must not be summed and old collectors without the counter are unavailable evidence.
 Pass every relevant `--canary-report` to separate actual server-issued request IDs.
 API initial calls, pagination, internal calls and canaries have separate counts;
 all errors/rejections remain in denominators. The existing baseline lacks the new

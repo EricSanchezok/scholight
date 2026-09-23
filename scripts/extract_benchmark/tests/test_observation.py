@@ -75,3 +75,13 @@ async def test_observer_retains_deferred_memory_recovery_evidence():
     }
     row = sanitize({"timestamp": 1234, "eventId": "id", "logStreamName": "stream"}, produced)
     assert row["MemoryIdleReclaim"] == 1
+
+
+@pytest.mark.asyncio
+async def test_observer_retains_worker_oom_count_after_resident_memory_recovers():
+    guard = MemoryGuard(lambda: MemorySample(100, 100, 0, oom_kills=2), AsyncMock())
+    with patch("scholight.web_extract.memory.emit_emf") as emit:
+        await guard.tick()
+    produced = {key: value[0] for key, value in emit.call_args.kwargs["metrics"].items()}
+    row = sanitize({"timestamp": 1234, "eventId": "id", "logStreamName": "stream"}, produced)
+    assert row["MemoryOOMKills"] == 2
