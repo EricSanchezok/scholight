@@ -8,6 +8,7 @@ import os
 import signal
 import sys
 import time
+import urllib.request
 from pathlib import Path
 
 from checks import require
@@ -23,6 +24,14 @@ def alive_group(group: int) -> bool:
     except ProcessLookupError:
         return False
     return True
+
+
+def navigation_started(path: str) -> bool:
+    # The only reachable endpoint is the runner-owned, isolated fixture server.
+    with urllib.request.urlopen(  # nosec B310
+        "http://93.184.216.2:8000/control/requests", timeout=1
+    ) as response:
+        return any(row["path"] == path for row in json.load(response))
 
 
 async def run() -> None:
@@ -107,22 +116,34 @@ async def run() -> None:
         require(current is not None, "current is not None")
         descendants = process_groups(current) - {current}
         require(descendants, "descendants")
-        for group in descendants:
-            os.killpg(group, signal.SIGKILL)
-        await asyncio.sleep(0.05)
-        started = time.monotonic()
         with spool.allocate(1000) as result:
-            async with asyncio.timeout(3):
-                reply = await browser.call(
+            target = "/fault/slow?active-chromium-loss"
+            pending = asyncio.create_task(
+                browser.call(
                     {
                         "request": {
-                            "url": "http://93.184.216.2:8000/article-0",
+                            "url": "http://93.184.216.2:8000" + target,
                             "render": "always",
                         },
                         "result_path": str(result.path),
                         "result_limit": result.limit,
                     }
                 )
+            )
+            try:
+                async with asyncio.timeout(3):
+                    while not await asyncio.to_thread(navigation_started, target):
+                        require(not pending.done(), "Browser failed before navigation was observed")
+                        await asyncio.sleep(0.02)
+                require(not pending.done(), "Navigation must be active when Chromium is killed")
+                started = time.monotonic()
+                for group in descendants:
+                    os.killpg(group, signal.SIGKILL)
+                async with asyncio.timeout(3):
+                    reply = await pending
+            finally:
+                pending.cancel()
+                await asyncio.gather(pending, return_exceptions=True)
             require(
                 "error" in reply and reply.get("retire") is True,
                 '"error" in reply and reply.get("retire") is True',
@@ -137,6 +158,7 @@ async def run() -> None:
                 "fault": "chromium_connection_loss",
                 "failure_and_cleanup_seconds": time.monotonic() - started,
                 "retired": True,
+                "navigation_observed_before_kill": True,
             }
         )
 

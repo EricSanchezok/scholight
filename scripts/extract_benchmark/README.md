@@ -21,6 +21,12 @@ and timed-out requests. Run at least five alternating cold/warm rounds per versi
 when the host is otherwise quiet. Do not use build-overlapped soak timings for the
 latency gate.
 
+`--mode short --concurrency 8 --requests 8 --seconds 0` isolates the eight-short-
+request queue acceptance case. Fixture logs include each actual request path and
+peer connection address, so duplicate-work and connection-reuse claims can be
+checked against upstream observations as well as service telemetry. No request
+headers, cookies or production addresses are recorded by this owned fixture.
+
 The 48 self-owned fixtures cover articles, documentation, Chinese, short pages,
 tables, code, JavaScript, JSON/XML and valid/malformed PDFs. Expected evidence
 tokens are a smoke gate; they do not substitute for paragraph/table/link quality
@@ -132,11 +138,12 @@ review; passing a few expected marker strings cannot hide missing paragraphs.
 `run.py --mode faults --seconds 0 --requests 1` uses the same isolated fixture
 network for slow responses, slow/excessive redirect chains, client disconnects
 and recovery requests. Its `faults.json` records actual response deadlines; this
-mode is a lifecycle check, not a latency benchmark. Run `worker_faults.py` inside
-the final image with `--network none`, 768 MiB and CPU shares 128 to stop a real
-parser, kill an idle worker and Chromium, and race eight close callers. Set the
-explicit `SCHOLIGHT_BENCHMARK_CONTAINER=1` marker; the probe also requires the exact
-768 MiB cgroup hard limit. It checks
+mode is a lifecycle check, not a latency benchmark. Use `run.py --mode worker-faults
+--seconds 0 --requests 1` to run the final image with 768 MiB and CPU shares 128,
+stop a real parser, kill an idle worker and Chromium, and race eight close callers.
+The runner sets `SCHOLIGHT_BENCHMARK_CONTAINER=1`; the probe also requires the exact
+768 MiB cgroup hard limit. A slow navigation must first be observed by the isolated
+fixture before killing Chromium, proving loss during active work. The probe checks
 owned process-group termination/reaping and recovery; never run it on a production
 task or in the host namespace.
 

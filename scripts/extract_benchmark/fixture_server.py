@@ -5,13 +5,17 @@ from __future__ import annotations
 import json
 import os
 import time
+from collections import deque
 from contextlib import suppress
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from threading import Lock
 from urllib.parse import urlsplit
 
 from corpus import corpus
 
 CASES = {case.name: case for case in corpus()}
+REQUESTS: deque[dict] = deque(maxlen=10_000)
+REQUEST_LOCK = Lock()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -19,6 +23,19 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         name = urlsplit(self.path).path.strip("/")
+        if name == "control/requests":
+            with REQUEST_LOCK:
+                body = json.dumps(list(REQUESTS)).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        record = {"path": self.path, "time": time.time(), "peer": list(self.client_address)}
+        with REQUEST_LOCK:
+            REQUESTS.append(record)
+        print(json.dumps({"event": "fixture_request", **record}), flush=True)
         if name.startswith("fault/"):
             parts = name.split("/")
             if parts[1] == "slow":

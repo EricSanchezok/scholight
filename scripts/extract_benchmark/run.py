@@ -133,12 +133,28 @@ def run(
             "-e",
             "SCHOLIGHT_EXTRACT_CACHE_MAX_BYTES=33554432",
             *(["-e", ABLATIONS[disable] + "=false"] if disable is not None else []),
+            *(
+                [
+                    "-e",
+                    "SCHOLIGHT_BENCHMARK_CONTAINER=1",
+                    "--no-healthcheck",
+                    "--entrypoint",
+                    "/app/.venv/bin/python",
+                ]
+                if mode == "worker-faults"
+                else []
+            ),
             image,
+            *(["/benchmark/worker_faults.py"] if mode == "worker-faults" else []),
         )
         created.append(app)
         (output / "containers.json").write_text(
             json.dumps({"app": app, "fixture": fixture, "client": client, "network": network})
         )
+        if mode == "worker-faults":
+            if int(docker("wait", app)):
+                raise RuntimeError("Owned worker fault probe failed; inspect service.log")
+            return
         for _ in range(90):
             try:
                 docker(
@@ -195,6 +211,8 @@ def run(
         if app in created:
             (output / "container-final.json").write_text(docker("inspect", app))
             (output / "service.log").write_text(docker("logs", app))
+        if fixture in created:
+            (output / "fixture.log").write_text(docker("logs", fixture))
         for container in reversed(created[1:]):
             docker("rm", "-f", container)
         if network in created:
@@ -209,7 +227,9 @@ if __name__ == "__main__":
     parser.add_argument("--requests", type=int, default=2400)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
-        "--mode", choices=["mixed", "cold", "warm", "duplicate", "faults"], default="mixed"
+        "--mode",
+        choices=["mixed", "cold", "warm", "duplicate", "short", "faults", "worker-faults"],
+        default="mixed",
     )
     parser.add_argument("--concurrency", type=int, choices=[1, 2, 4, 8, 16], default=1)
     parser.add_argument("--disable", choices=sorted(ABLATIONS))
