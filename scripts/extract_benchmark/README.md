@@ -160,6 +160,15 @@ compressed PDFs; actual mixed-load soak and download/browser phase measurements
 remain required before the model is accepted. Calibration is not a production
 stress test and does not change runtime coefficients automatically.
 
+`run.py --mode phase-calibration --seconds 0 --requests 1` complements parser
+calibration with three repetitions of real streaming downloads (8 KiB through
+49 MB) and Chromium DOMs (100 through 15,000 nested paragraph/link structures).
+It uses the same isolated network and 768 MiB container, idle sibling workers,
+10 ms sampling and 640 MiB/45 second guard. Reports preserve actual deltas and
+recommendations with 50% margin plus 8 MiB. These finite inputs do not bound
+arbitrary JavaScript/assets or compressed documents; the memory guard and mixed
+soak remain necessary. Inspect the evidence before adopting any coefficient.
+
 ## Serial production canary
 
 `observe.py` is a read-only hourly evidence collector. Supply an explicit AWS

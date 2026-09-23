@@ -141,19 +141,21 @@ def run(
                     "--entrypoint",
                     "/app/.venv/bin/python",
                 ]
-                if mode == "worker-faults"
+                if mode in {"worker-faults", "phase-calibration"}
                 else []
             ),
+            *(["-v", f"{output.resolve()}:/results"] if mode == "phase-calibration" else []),
             image,
             *(["/benchmark/worker_faults.py"] if mode == "worker-faults" else []),
+            *(["/benchmark/phase_calibrate.py"] if mode == "phase-calibration" else []),
         )
         created.append(app)
         (output / "containers.json").write_text(
             json.dumps({"app": app, "fixture": fixture, "client": client, "network": network})
         )
-        if mode == "worker-faults":
+        if mode in {"worker-faults", "phase-calibration"}:
             if int(docker("wait", app)):
-                raise RuntimeError("Owned worker fault probe failed; inspect service.log")
+                raise RuntimeError("Owned native probe failed; inspect service.log")
             return
         for _ in range(90):
             try:
@@ -228,7 +230,16 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
         "--mode",
-        choices=["mixed", "cold", "warm", "duplicate", "short", "faults", "worker-faults"],
+        choices=[
+            "mixed",
+            "cold",
+            "warm",
+            "duplicate",
+            "short",
+            "faults",
+            "worker-faults",
+            "phase-calibration",
+        ],
         default="mixed",
     )
     parser.add_argument("--concurrency", type=int, choices=[1, 2, 4, 8, 16], default=1)

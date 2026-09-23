@@ -52,7 +52,31 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header("Content-Length", "0")
                 self.end_headers()
                 return
-        if name == "manifest":
+        if name.startswith("calibration/download/"):
+            size = int(name.rsplit("/", 1)[1])
+            if size not in {8192, 1_048_576, 8_388_608, 33_554_432, 49_000_000}:
+                self.send_error(400)
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(size))
+            self.end_headers()
+            with suppress(BrokenPipeError, ConnectionResetError):
+                for offset in range(0, size, 65_536):
+                    self.wfile.write(b"e" * min(65_536, size - offset))
+            return
+        if name.startswith("calibration/dom/"):
+            nodes = int(name.rsplit("/", 1)[1])
+            if nodes not in {100, 1000, 5000, 15_000}:
+                self.send_error(400)
+                return
+            body = (
+                "<!doctype html><html><body><article>"
+                + "<p><a href='#evidence'>Evidence</a> and complete research context.</p>" * nodes
+                + "</article><script>document.body.dataset.ready = 'yes';</script></body></html>"
+            ).encode()
+            mime = "text/html"
+        elif name == "manifest":
             body = json.dumps(
                 [
                     {
