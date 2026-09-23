@@ -3832,6 +3832,8 @@ extract = [
     { name = "fastapi" },
     { name = "markdownify" },
     { name = "playwright" },
+    { name = "pymupdf" },
+    { name = "pymupdf4llm" },
     { name = "trafilatura" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -3914,6 +3916,8 @@ requires-dist = [
     { name = "pymilvus", marker = "extra == 'archive'", specifier = ">=2.4" },
     { name = "pymilvus", marker = "extra == 'ingest'", specifier = ">=2.4" },
     { name = "pymilvus", marker = "extra == 'metadata'", specifier = ">=2.4" },
+    { name = "pymupdf", marker = "extra == 'extract'", specifier = ">=1.27.2.3" },
+    { name = "pymupdf4llm", marker = "extra == 'extract'", specifier = ">=1.27.2.3" },
     { name = "pymupdf4llm", marker = "extra == 'ingest'", specifier = ">=1.27.2.3" },
     { name = "pymupdf4llm", marker = "extra == 'survey'", specifier = ">=1.27.2.3" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },

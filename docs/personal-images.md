@@ -22,13 +22,17 @@ tags before enabling the workflow. Deploy by digest, never by a floating tag.
 | Search API | `api` | Lean; no WeasyPrint, matplotlib, PDF/LaTeX tools, or browser |
 | Metadata sync | `metadata` | Lean; one scheduled process, no PDF/LaTeX or Survey dependencies |
 | Web | `frontend/Dockerfile` | Unprivileged Nginx, port 8080 |
-| Extract | `docker/scholight-extract/Dockerfile` | Independent process and Chromium, configurable port |
+| Extract | `docker/scholight-extract/Dockerfile` | Independent process, Chromium and native PDF extraction, configurable port |
 | Retained full API | `api-full` | Explicit full profile and report dependencies for regression/recovery |
 | Retained ingest | `ingest` | Requires explicit full profile before processing |
 | Retained Survey | `survey` | AMD64 toolchain; requires explicit full profile before processing |
 
 Native ARM64 and AMD64 CI starts the four lean images and exercises lifecycle,
 search parameter compatibility, capabilities, metadata writes, and Chromium.
+The Extract extra includes PyMuPDF and PyMuPDF4LLM. Both native image checks
+extract text and metadata from a real PDF using the shipped parser and verify
+malformed-document errors. PDF documents are closed on successful conversion
+and conversion failure; no PDF parser is mocked in the image check.
 The retained AMD64 deployment job runs full Survey/report and ingest regressions.
 WeasyPrint is upgraded to the audited version 70 series in the full profile.
 The report renderer uses its URLFetcher response contract while retaining the

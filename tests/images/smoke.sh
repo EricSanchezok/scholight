@@ -18,6 +18,9 @@ docker run --rm -e SCHOLIGHT_DISABLE_DOTENV=1 -e SCHOLIGHT_RUNTIME_PROFILE=full 
   --entrypoint /app/.venv/bin/scholight scholight-ingest:lean-ci scheduler drain-ingest --help >/dev/null
 docker run --rm --entrypoint /app/.venv/bin/python scholight-ingest:lean-ci -c \
   'import pyarrow, boto3; from scholight.scheduler.ingest_worker import process_job; from scholight.store.fulltext_install import FulltextInstall'
+docker run --rm -e SCHOLIGHT_DISABLE_DOTENV=1 \
+  -v "$PWD/tests/images/extract_pdf_smoke.py:/app/extract_pdf_smoke.py:ro" \
+  --entrypoint /app/.venv/bin/python scholight-extract:lean-ci /app/extract_pdf_smoke.py
 docker run -d --name "$prefix-web" --add-host api:127.0.0.1 \
   -e SCHOLIGHT_PUBLIC_WEB_URL=http://localhost:7200 scholight-web:lean-ci >/dev/null
 docker run -d --name "$prefix-extract" -e SCHOLIGHT_DISABLE_DOTENV=1 \

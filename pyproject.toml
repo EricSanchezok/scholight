@@ -35,6 +35,8 @@ extract = [
     "fastapi>=0.115",
     "markdownify>=0.13,<2",
     "playwright>=1.52,<2",
+    "pymupdf>=1.27.2.3",
+    "pymupdf4llm>=1.27.2.3",
     "trafilatura>=2.0,<3",
     "uvicorn[standard]>=0.30",
 ]
@@ -200,7 +202,12 @@ pythonpath = ["."]
 testpaths = ["scholight", "tests"]
 addopts = ["-rXs", "--strict-config", "--strict-markers", "-m", "not pg_integration"]
 xfail_strict = true
-filterwarnings = ["error"]
+filterwarnings = [
+    "error",
+    # SWIG native type warnings can segfault PyMuPDF when promoted to exceptions.
+    # https://github.com/pymupdf/PyMuPDF/issues/4392
+    "ignore:builtin type .* has no __module__ attribute:DeprecationWarning",
+]
 markers = [
     "browser_integration: launches a real local Chromium instance",
     "pg_integration: requires SCHOLIGHT_TEST_DATABASE_URL pointing to an isolated PostgreSQL database",
