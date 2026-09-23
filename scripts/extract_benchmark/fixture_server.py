@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
@@ -12,6 +13,8 @@ CASES = {case.name: case for case in corpus()}
 
 
 class Handler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/" + os.environ.get("EXTRACT_BENCH_HTTP_VERSION", "1.0")
+
     def do_GET(self) -> None:
         name = urlsplit(self.path).path.strip("/")
         if name == "manifest":

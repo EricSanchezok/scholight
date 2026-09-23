@@ -20,6 +20,12 @@ from corpus import corpus
 ROOT = Path(__file__).resolve().parents[2]
 # Fixture-only value; this runner has no production access.
 TOKEN = "isolated-benchmark-token-not-a-production-secret"  # nosec B105
+ABLATIONS = {
+    "parse-reuse": "SCHOLIGHT_EXTRACT_PARSE_REUSE",
+    "singleflight": "SCHOLIGHT_EXTRACT_SINGLEFLIGHT",
+    "queueing": "SCHOLIGHT_EXTRACT_QUEUEING",
+    "connections": "SCHOLIGHT_EXTRACT_CONNECTION_REUSE",
+}
 
 
 def docker(*args: str) -> str:
@@ -35,6 +41,8 @@ def run(
     seed: int,
     mode: str = "mixed",
     concurrency: int = 1,
+    disable: str | None = None,
+    http_version: str = "1.0",
 ) -> None:
     output.mkdir(parents=True, exist_ok=False)
     case_list = corpus()
@@ -56,6 +64,8 @@ def run(
         "seed": seed,
         "mode": mode,
         "concurrency": concurrency,
+        "disabled_feature": disable,
+        "fixture_http_version": http_version,
         "corpus": manifest,
     }
     (output / "manifest.json").write_text(json.dumps(metadata, indent=2))
@@ -79,6 +89,8 @@ def run(
             network,
             "--ip",
             "93.184.216.2",
+            "-e",
+            f"EXTRACT_BENCH_HTTP_VERSION={http_version}",
             "-v",
             mount,
             "--entrypoint",
@@ -116,6 +128,7 @@ def run(
             "SCHOLIGHT_EXTRACT_BROWSER_CONCURRENCY=1",
             "-e",
             "SCHOLIGHT_EXTRACT_CACHE_MAX_BYTES=33554432",
+            *(["-e", ABLATIONS[disable] + "=false"] if disable is not None else []),
             image,
         )
         created.append(app)
@@ -193,7 +206,17 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--mode", choices=["mixed", "cold", "warm", "duplicate"], default="mixed")
     parser.add_argument("--concurrency", type=int, choices=[1, 2, 4, 8, 16], default=1)
+    parser.add_argument("--disable", choices=sorted(ABLATIONS))
+    parser.add_argument("--http-version", choices=["1.0", "1.1"], default="1.0")
     args = parser.parse_args()
     run(
-        args.image, args.output, args.seconds, args.requests, args.seed, args.mode, args.concurrency
+        args.image,
+        args.output,
+        args.seconds,
+        args.requests,
+        args.seed,
+        args.mode,
+        args.concurrency,
+        args.disable,
+        args.http_version,
     )

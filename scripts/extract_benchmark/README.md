@@ -97,3 +97,24 @@ cost, and reports each exclusion. Completion order is only an approximation to
 concurrent arrival order, and rotating instance keys prevent joining across
 restarts. Historical logs without identifiers cannot establish real reuse;
 synthetic keys must never be described as an actual production cache trajectory.
+
+## Alternating matrices and analysis
+
+`matrix.py --baseline BASELINE_IMAGE --reliability A_IMAGE --output DIRECTORY`
+runs five alternating cold/warm rounds. Add `--efficiency B_IMAGE --ablations`
+for B plus each independently disabled optimization and 2/4/8/16-way cold/duplicate
+bursts. The exact sequential plan is saved before execution; only one variant runs
+at a time. `run.py --disable parse-reuse|singleflight|queueing|connections` applies
+one documented runtime feature switch. Metadata records the switch and fixture
+HTTP version. Soaks default to the original fixture HTTP/1.0 behavior; latency
+matrices explicitly use HTTP/1.1 so connection reuse is measurable. All compared
+variants in a matrix use the same protocol.
+
+`analyze.py DIRECTORY` writes `analysis.json` for a run or matrix. It retains all
+statuses and quality failures, reports ordinary successful P95 against the explicit
+set of baseline-supported cases, and includes every PDF error in overall counts.
+Memory analysis excludes request intervals with a 250 ms margin, skips the first
+ten minutes before the initial idle-hour median, and compares it with the final
+hour. It reports sample counts and cannot pass incomplete four-hour/2,000-request
+soaks. A single successful latency gate does not substitute for failure, queue,
+quality, cleanup, memory or production observation gates.
