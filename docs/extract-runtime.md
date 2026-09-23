@@ -112,6 +112,14 @@ second. Family RSS can double-count shared pages and is diagnostic only; the
 container working set controls admission. Missing cgroup measurements fail closed.
 Local macOS development uses a conservative process RSS bound instead.
 
+`MemoryOOMKills` reports the cumulative `memory.events:oom_kill` count for the
+container, including child workers. A worker can be killed while the supervisor
+and ECS task remain alive, so task exit status alone cannot establish zero OOM.
+Use the maximum counter for each task/log stream, never sum repeated samples or
+subtract away a nonzero first sample. Review any nonzero value before acceptance
+and apply the rollout's rollback criteria. See the
+[Linux cgroup-v2 memory events contract](https://docs.kernel.org/admin-guide/cgroup-v2.html#memory-interface-files).
+
 At 640 MiB working set, new requests and stage transitions stop, the shared cache
 is cleared, and workers are reclaimed. Admission resumes below 512 MiB after
 reclamation finishes. Liveness remains independent of this temporary backpressure.

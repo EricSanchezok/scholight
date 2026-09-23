@@ -17,15 +17,18 @@ class MemorySample:
     working_set: int
     anon: int
     file: int
+    oom_kills: int = 0
 
 
 def read_cgroup(root: Path = Path("/sys/fs/cgroup")) -> MemorySample:
     current = int((root / "memory.current").read_text())
     stats = dict(line.split() for line in (root / "memory.stat").read_text().splitlines())
+    events = dict(line.split() for line in (root / "memory.events").read_text().splitlines())
     return MemorySample(
         working_set=max(0, current - int(stats["inactive_file"])),
         anon=int(stats["anon"]),
         file=int(stats["file"]),
+        oom_kills=int(events["oom_kill"]),
     )
 
 
@@ -87,6 +90,7 @@ class MemoryGuard:
                 "MemoryWorkingSet": (sample.working_set, "Bytes"),
                 "MemoryAnon": (sample.anon, "Bytes"),
                 "MemoryFile": (sample.file, "Bytes"),
+                "MemoryOOMKills": (sample.oom_kills, "Count"),
                 "MemoryAdmissionPaused": (int(self.paused), "Count"),
             },
         )
