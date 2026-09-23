@@ -164,6 +164,7 @@ def parse_document(
     *,
     rendered: bool,
     reuse_quality: bool = True,
+    fast_html: bool = False,
 ) -> ParsedContent:
     """Synchronous parsing entry point; production calls it only inside a worker."""
     content_type = _mime(fetched.content_type)
@@ -178,6 +179,7 @@ def parse_document(
                     html,
                     source_url=fetched.final_url,
                     output=ExtractResponseFormat.MAIN_MARKDOWN,
+                    fast=fast_html,
                 )
             except ExtractError as error:
                 quality_error = error
@@ -188,7 +190,9 @@ def parse_document(
                 if quality_error is not None:
                     raise quality_error
                 return ParsedContent(extracted=quality_result)
-        extracted = extract_html(html, source_url=fetched.final_url, output=request.output)
+        extracted = extract_html(
+            html, source_url=fetched.final_url, output=request.output, fast=fast_html
+        )
     elif content_type == "application/pdf" or data.startswith(b"%PDF-"):
         extracted = _pdf(data)
     elif content_type.startswith("text/") or content_type in {

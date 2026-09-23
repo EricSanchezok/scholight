@@ -110,6 +110,12 @@ callback failures are confined to their context and abort the affected resource.
 The Python library's injectable in-process engine remains available for isolated unit tests;
 the deployed runtime always injects supervised workers.
 
+Full Trafilatura extraction remains the deployed default. The private parser
+worker accepts an explicit `fast_html` experiment flag; the public/internal HTTP
+models and runtime assembly do not enable it. Compare this candidate against the
+full mode using annotated content and native worker CPU measurements before any
+future activation. Faster execution alone cannot waive the quality gate.
+
 ## Deadlines, cancellation and telemetry
 
 Public REST/MCP extraction uses one absolute 55-second operation deadline (or the
