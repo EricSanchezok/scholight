@@ -66,10 +66,17 @@ def build_extract_app() -> FastAPI:
         rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss + parser_rss + browser_rss
         return MemorySample(working_set=rss, anon=rss, file=0)
 
-    memory = MemoryGuard(sample_memory, reclaim)
+    memory = MemoryGuard(
+        sample_memory,
+        reclaim,
+        can_reclaim=lambda: (
+            budget.reserved_bytes == 0 and not parser_worker.busy and not browser_worker.busy
+        ),
+    )
     budget = MemoryBudget(
         lambda: (read_cgroup() if sys.platform == "linux" else sample_memory()).working_set,
         memory.admit,
+        on_pressure=memory.request_reclaim,
     )
     browser = IsolatedBrowser(
         browser_worker,

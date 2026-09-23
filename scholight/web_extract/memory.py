@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
@@ -37,11 +38,17 @@ class MemoryGuard:
         *,
         high: int = 640 * 1024 * 1024,
         low: int = 512 * 1024 * 1024,
+        can_reclaim: Callable[[], bool] | None = None,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._sample = sample
         self._reclaim = reclaim
         self._high = high
         self._low = low
+        self._can_reclaim = can_reclaim or (lambda: False)
+        self._clock = clock
+        self._pressure = False
+        self._last_pressure_reclaim = float("-inf")
         self.paused = False
         self._recovery: asyncio.Task[None] | None = None
 
@@ -59,6 +66,9 @@ class MemoryGuard:
         async with asyncio.timeout(2):
             await self._reclaim()
 
+    def request_reclaim(self) -> None:
+        self._pressure = True
+
     async def tick(self) -> None:
         try:
             sample = self._sample()
@@ -66,8 +76,21 @@ class MemoryGuard:
             self.paused = True
             emit_emf(service="extract", metrics={"MemorySampleFailure": (1, "Count")})
             return
-        if sample.working_set >= self._high and (not self.paused or self._recovery is None):
+        high_water = sample.working_set >= self._high and (
+            not self.paused or self._recovery is None
+        )
+        idle_pressure = (
+            self._pressure
+            and self._recovery is None
+            and self._clock() - self._last_pressure_reclaim >= 30
+            and self._can_reclaim()
+        )
+        if high_water or idle_pressure:
             self.paused = True
+            self._pressure = False
+            self._last_pressure_reclaim = self._clock()
+            if idle_pressure:
+                emit_emf(service="extract", metrics={"MemoryIdleReclaim": (1, "Count")})
             self._recovery = asyncio.create_task(self._recover(), name="extract-memory-reclaim")
             await asyncio.sleep(0)
         if (

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -70,6 +70,47 @@ def test_startup_envelope_adds_to_job_and_releases_after_readiness() -> None:
         with budget.startup("browser"):
             pytest.fail("A cold browser exceeded the combined memory budget")
     assert budget.reserved_bytes == 20
+    lease.close()
+
+
+def test_reservation_pressure_requests_reclamation_only_for_retained_memory() -> None:
+    working = 100
+    pressure = Mock()
+    budget = MemoryBudget(
+        lambda: working, lambda: None, model=_model(), high=200, on_pressure=pressure
+    )
+    first, second = budget.lease(), budget.lease()
+    first.transfer("browser")
+    with pytest.raises(ExtractError):
+        second.transfer("parse", size=15, mime="application/pdf")
+    pressure.assert_not_called()  # A competing execution owns the missing headroom.
+    with pytest.raises(ExtractError):
+        second.transfer("parse", size=100, mime="application/pdf")
+    pressure.assert_not_called()  # This job cannot fit even in an empty container.
+    working = 160
+    with pytest.raises(ExtractError):
+        second.transfer("browser")
+    pressure.assert_called_once()
+    first.close()
+    second.close()
+
+
+def test_cold_start_rejection_can_defer_reclamation_of_its_existing_job_envelope() -> None:
+    pressure = Mock()
+    budget = MemoryBudget(
+        lambda: 100,
+        lambda: None,
+        model=MemoryModel(download=StageCost(40, 0), parser_startup=80),
+        high=200,
+        on_pressure=pressure,
+    )
+    lease = budget.lease()
+    lease.transfer("download")
+    with pytest.raises(ExtractError):
+        with budget.startup("parser"):
+            pytest.fail("Cold startup ignored the existing job envelope")
+    pressure.assert_called_once()
+    assert budget.reserved_bytes == 40
     lease.close()
 
 

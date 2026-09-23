@@ -6,6 +6,7 @@ import pytest
 
 from scholight.web_extract.errors import ExtractError
 from scholight.web_extract.memory import MemoryGuard, MemorySample, read_cgroup
+from scholight.web_extract.reservations import MemoryBudget, MemoryModel, StageCost
 
 
 def test_working_set_excludes_inactive_file_cache(tmp_path) -> None:
@@ -42,3 +43,78 @@ async def test_missing_memory_measurement_stops_admission() -> None:
     await guard.tick()
     with pytest.raises(ExtractError):
         guard.admit()
+
+
+@pytest.mark.asyncio
+async def test_reservation_pressure_waits_for_idle_and_recovers_below_high_water() -> None:
+    working = 150
+
+    async def reclaim():
+        nonlocal working
+        # Pause admission before awaiting any cleanup, including queued grants.
+        with pytest.raises(ExtractError):
+            guard.admit()
+        working = 100
+
+    cleanup = AsyncMock(side_effect=reclaim)
+    guard = MemoryGuard(
+        lambda: MemorySample(working, working, 0),
+        cleanup,
+        high=200,
+        low=120,
+        can_reclaim=lambda: budget.reserved_bytes == 0,
+    )
+    budget = MemoryBudget(
+        lambda: working,
+        guard.admit,
+        high=200,
+        model=MemoryModel(download=StageCost(10, 0), browser=StageCost(80, 0)),
+        on_pressure=guard.request_reclaim,
+    )
+    lease = budget.lease()
+    lease.transfer("download")
+    with pytest.raises(ExtractError):
+        lease.transfer("browser")
+    await guard.tick()
+    cleanup.assert_not_awaited()
+    assert not guard.paused and budget.reserved_bytes == 10
+    lease.close()
+    await guard.tick()
+    assert guard.paused
+    await guard.tick()
+    guard.admit()
+    cleanup.assert_awaited_once()
+    later = budget.lease()
+    later.transfer("browser")
+    later.close()
+
+
+@pytest.mark.asyncio
+async def test_pressure_recovery_is_throttled_but_physical_high_water_is_not() -> None:
+    now = 0.0
+    sample = MemorySample(100, 100, 0)
+    reclaim = AsyncMock()
+    guard = MemoryGuard(
+        lambda: sample,
+        reclaim,
+        high=200,
+        low=120,
+        can_reclaim=lambda: True,
+        clock=lambda: now,
+    )
+    guard.request_reclaim()
+    await guard.tick()
+    await guard.tick()
+    reclaim.assert_awaited_once()
+    now = 1
+    guard.request_reclaim()
+    await guard.tick()
+    reclaim.assert_awaited_once()
+    now = 30
+    await guard.tick()
+    await guard.tick()
+    assert reclaim.await_count == 2
+    now = 31
+    sample = MemorySample(201, 201, 0)
+    await guard.tick()
+    assert reclaim.await_count == 3 and guard.paused

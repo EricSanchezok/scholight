@@ -195,6 +195,17 @@ warm worker calls. Initial readiness, scheduled recycling and replacement of an
 idle crashed generation all use the same path. Failed or cancelled startup keeps
 the allowance until the owned process family has been reaped.
 
+If retained heaps leave insufficient room for a new envelope below the physical
+high watermark, the guard schedules reclamation after all execution reservations
+and worker slots become idle. It pauses admission before cleanup and resumes
+below 512 MiB. Soft-pressure reclamation runs at most once per 30 seconds; a job
+that cannot fit even without competing reservations must not interrupt active
+work. Warm-phase competition alone, or an envelope exceeding the whole budget,
+does not request reclamation. A rejected cold start may request idle reclamation
+because its job already owns another allowance. The physical 640 MiB emergency
+guard remains immediate.
+`MemoryIdleReclaim` counts these deferred recoveries.
+
 The estimate is conservative: it adds a complete phase envelope to measured
 memory even when some allocations are already reflected in the working set.
 `MemoryReservedBytes` is sampled once per second; rejected growth increments

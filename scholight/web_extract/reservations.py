@@ -63,11 +63,13 @@ class MemoryBudget:
         *,
         model: MemoryModel | None = None,
         high: int = 640 * MIB,
+        on_pressure: Callable[[], None] | None = None,
     ) -> None:
         self._sample = sample
         self._admit = admit
         self._model = model or MemoryModel()
         self._high = high
+        self._on_pressure = on_pressure or (lambda: None)
         self.reserved_bytes = 0
 
     def lease(self) -> MemoryReservation:
@@ -79,14 +81,16 @@ class MemoryBudget:
     @contextmanager
     def startup(self, kind: WorkerKind) -> Iterator[None]:
         amount = self._replace(
-            0, self._model.parser_startup if kind == "parser" else self._model.browser_startup
+            0,
+            self._model.parser_startup if kind == "parser" else self._model.browser_startup,
+            startup=True,
         )
         try:
             yield
         finally:
             self.release(amount)
 
-    def _replace(self, old: int, new: int) -> int:
+    def _replace(self, old: int, new: int, *, startup: bool = False) -> int:
         self._admit()
         try:
             working = self._sample()
@@ -95,6 +99,11 @@ class MemoryBudget:
         reserved = self.reserved_bytes - old + new
         if working + reserved > self._high:
             emit_emf(service="extract", metrics={"MemoryReservationRejected": (1, "Count")})
+            if (working + new > self._high or startup) and new <= self._high:
+                # Reclaim retained heaps when idle; competing reservations and
+                # intrinsically oversized jobs alone do not recycle warm workers.
+                # A cold generation also needs room for its existing job envelope.
+                self._on_pressure()
             raise capacity_error()
         self.reserved_bytes = reserved
         return new
