@@ -142,6 +142,22 @@ the burst variant order rotates across rounds as well as the serial order.
 
 ## Isolated faults and memory calibration
 
+For the native B behavior gate, use `run.py --mode semantics --seconds 0 --requests 1
+--http-version 1.1`. Eight simultaneous callers must cause exactly one observed
+static request; one leaving caller must not cancel its peer. Distinct fixture
+credentials must remain separate. A DNS alias on the owned bridge exercises
+cookie handling through a redirect and then a fresh request over the same actual
+TCP connection. Public 503 responses retry exactly once after Retry-After;
+credentialed requests do not retry. Fixture identities are authored test values.
+
+`--mode overload --seconds 60 --requests 1 --http-version 1.1` continuously drives
+16 isolated callers against a 400 ms fixture, with each caller capped at 10 requests
+per second. Every success and rejection is retained; responses must stay within
+the queue/fixture budget. Both modes verify queue and execution maxima from actual
+service metrics, require all queues/active slots to drain, and verify scratch-file
+cleanup. Missing metrics cannot count as passing evidence. These probes are only
+for B's isolated image, never the production endpoint or an A latency comparison.
+
 `run.py --mode faults --seconds 0 --requests 1` uses the same isolated fixture
 network for slow responses, slow/excessive redirect chains, client disconnects
 and recovery requests. Its `faults.json` records actual response deadlines; this

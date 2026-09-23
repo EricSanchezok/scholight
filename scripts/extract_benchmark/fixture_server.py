@@ -36,6 +36,34 @@ class Handler(BaseHTTPRequestHandler):
         with REQUEST_LOCK:
             REQUESTS.append(record)
         print(json.dumps({"event": "fixture_request", **record}), flush=True)
+        probe_body = None
+        if name == "probe/delay":
+            time.sleep(0.4)
+            name = "article-0"
+        elif name == "probe/private":
+            time.sleep(0.2)
+            probe_body = (
+                "Private fixture: " + self.headers.get("X-Fixture-Identity", "missing")
+            ).encode()
+        elif name == "probe/cookie-start":
+            self.send_response(302)
+            self.send_header("Set-Cookie", "fixture_session=one; Path=/")
+            self.send_header("Location", "/probe/cookie-read?redirect")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        elif name == "probe/cookie-read":
+            probe_body = ("cookie=" + self.headers.get("Cookie", "none")).encode()
+        elif name == "probe/retry":
+            with REQUEST_LOCK:
+                attempts = sum(row["path"] == self.path for row in REQUESTS)
+            if attempts == 1:
+                self.send_response(503)
+                self.send_header("Retry-After", "1")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            name = "article-0"
         if name.startswith("fault/"):
             parts = name.split("/")
             if parts[1] == "slow":
@@ -65,7 +93,9 @@ class Handler(BaseHTTPRequestHandler):
                 for offset in range(0, size, 65_536):
                     self.wfile.write(b"e" * min(65_536, size - offset))
             return
-        if name.startswith("calibration/dom/"):
+        if probe_body is not None:
+            body, mime = probe_body, "text/plain"
+        elif name.startswith("calibration/dom/"):
             nodes = int(name.rsplit("/", 1)[1])
             if nodes not in {100, 1000, 5000, 15_000}:
                 self.send_error(400)

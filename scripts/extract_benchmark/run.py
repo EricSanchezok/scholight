@@ -16,6 +16,7 @@ import time
 from pathlib import Path
 
 from corpus import corpus
+from runtime_probes import queue_evidence
 
 ROOT = Path(__file__).resolve().parents[2]
 # Fixture-only value; this runner has no production access.
@@ -100,6 +101,8 @@ def run(
             network,
             "--ip",
             "93.184.216.2",
+            "--network-alias",
+            "docs.extract.test",
             "-e",
             f"EXTRACT_BENCH_HTTP_VERSION={http_version}",
             "-v",
@@ -194,6 +197,8 @@ def run(
                 network,
                 "--ip",
                 "93.184.216.4",
+                "-e",
+                "SCHOLIGHT_BENCHMARK_CONTAINER=1",
                 "-v",
                 mount,
                 "-v",
@@ -201,7 +206,11 @@ def run(
                 "--entrypoint",
                 "/app/.venv/bin/python",
                 image,
-                "/benchmark/http_faults.py" if mode == "faults" else "/benchmark/client.py",
+                "/benchmark/runtime_probes.py"
+                if mode in {"semantics", "overload"}
+                else "/benchmark/http_faults.py"
+                if mode == "faults"
+                else "/benchmark/client.py",
                 str(seconds),
                 str(requests),
                 str(seed),
@@ -231,6 +240,11 @@ def run(
             (output / "scratch-final.json").write_text(json.dumps(scratch))
             if scratch:
                 raise RuntimeError("Finished requests left scratch files after cleanup budget")
+            if mode in {"semantics", "overload"}:
+                queues = queue_evidence(container_logs(app))
+                (output / "queue-evidence.json").write_text(json.dumps(queues, indent=2))
+                if not queues["passed"]:
+                    raise RuntimeError("Queue execution/waiting bounds or final cleanup failed")
             complete = True
     finally:
         (output / "run-status.json").write_text(
@@ -268,6 +282,8 @@ if __name__ == "__main__":
             "faults",
             "worker-faults",
             "phase-calibration",
+            "semantics",
+            "overload",
         ],
         default="mixed",
     )
