@@ -79,6 +79,7 @@ def build_extract_app() -> FastAPI:
         ),
         browser=browser,
         admit=memory.admit,
+        singleflight=settings.extract_singleflight,
         parser=IsolatedParser(
             parser_worker,
             spool,
@@ -98,7 +99,10 @@ def build_extract_app() -> FastAPI:
                 yield
         finally:
             try:
-                await asyncio.gather(browser_worker.close(), parser_worker.close())
+                try:
+                    await engine.close()
+                finally:
+                    await asyncio.gather(browser_worker.close(), parser_worker.close())
             finally:
                 spool.close()
 

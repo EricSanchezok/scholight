@@ -48,6 +48,19 @@ seals the file and releases unused scratch reservation; rendered files do the
 same before parsing. Configured download concurrency and browser concurrency do
 not increase.
 
+Static download and parsing can share one in-flight operation for an exact
+URL/render/output key with no target headers or cookies. The pool holds at most
+32 keys and eight callers per key, including its creator. Each caller has its own
+deadline and cancellation; only the last departing caller cancels and awaits the
+owned work. The shared operation has its own 50-second work deadline plus cleanup.
+Rendering is always independent and is never merged, including after shared SPA
+detection. `SCHOLIGHT_EXTRACT_SINGLEFLIGHT=false` disables merging for ablation.
+
+Each caller logs its join status and an opaque static-work ID. A separate
+`static_work` completion and `StaticWorkDownloadBytes` measure actual shared work,
+including work whose original caller disconnected. Joiners record zero additional
+download bytes. Do not count static-work completions as public requests.
+
 The production supervisor streams downloads into exclusive files below
 `SCHOLIGHT_DATA_ROOT/extract-spool`. It reserves at most 256 MiB of scratch
 capacity, including in-flight input and result files. Capacity is checked before

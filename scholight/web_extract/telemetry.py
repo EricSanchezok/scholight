@@ -25,6 +25,8 @@ class ExtractTrace:
     dom_bytes: int = 0
     upstream_status: int | None = None
     mime: str = "unknown"
+    static_work_id: str | None = None
+    singleflight_joined: bool = False
 
     def remaining(self) -> float:
         return max(0, self.deadline - time.monotonic())
@@ -92,6 +94,8 @@ def _log_completion(
     logger.info(
         "extract_completed",
         request_id=trace.request_id,
+        static_work_id=trace.static_work_id,
+        singleflight_joined=trace.singleflight_joined,
         scope=scope,
         outcome=outcome,
         render_mode=render,
