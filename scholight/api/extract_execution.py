@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
+import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Literal, Protocol
 from uuid import UUID
@@ -10,9 +13,18 @@ import httpx
 from sanchezcloud_identity.models.user import UserRecord
 
 from scholight.config import settings
+from scholight.logging.emf import emit_emf
 from scholight.models.web_extract import ExtractRequest, ExtractResponse
 from scholight.web_extract.cache import ExtractResultCache, PageSlice
+from scholight.web_extract.cancellation import ClientDisconnectedError, until_disconnect
 from scholight.web_extract.contracts import InternalExtractResponse
+from scholight.web_extract.telemetry import (
+    ExtractTrace,
+    current_trace,
+    log_completion,
+    mime_category,
+    safe_request_id,
+)
 
 
 class _ExtractActor(Protocol):
@@ -31,6 +43,7 @@ class ExtractInvocation:
     actor: _ExtractActor | None
     request_id: str
     transport: Literal["rest", "mcp"]
+    wait_for_disconnect: Callable[[], Awaitable[None]] | None = None
 
 
 class PublicExtractError(Exception):
@@ -64,7 +77,7 @@ class PublicExtractError(Exception):
 def _new_cache() -> ExtractResultCache:
     return ExtractResultCache(
         ttl_seconds=settings.extract_cache_ttl_seconds,
-        max_bytes=settings.extract_cache_max_bytes,
+        max_bytes=settings.extract_snapshot_max_bytes,
     )
 
 
@@ -75,6 +88,11 @@ def reset_extract_result_cache() -> None:
     """Reset process-local private cursor state at startup and in tests."""
     global _result_cache
     _result_cache = _new_cache()
+
+
+def prune_extract_result_cache() -> None:
+    """Expire private snapshots even when no new extraction requests arrive."""
+    _result_cache.prune()
 
 
 def _actor_key(actor: _ExtractActor) -> str:
@@ -115,6 +133,11 @@ async def _request_document(request: ExtractRequest) -> InternalExtractResponse:
         mode="json",
         include={"url", "render", "output", "headers", "cookies"},
     )
+    trace = current_trace.get()
+    headers = {"X-Scholight-Internal-Token": settings.extract_internal_token}
+    if trace is not None:
+        headers["X-Scholight-Request-Id"] = trace.request_id
+        headers["X-Scholight-Budget-Ms"] = str(int(min(52, trace.remaining() - 3) * 1000))
     try:
         async with httpx.AsyncClient(
             timeout=settings.extract_request_timeout_seconds,
@@ -122,7 +145,7 @@ async def _request_document(request: ExtractRequest) -> InternalExtractResponse:
         ) as client:
             response = await client.post(
                 f"{settings.extract_service_url.rstrip('/')}/v1/extract",
-                headers={"X-Scholight-Internal-Token": settings.extract_internal_token},
+                headers=headers,
                 json=payload,
             )
     except httpx.TimeoutException as exc:
@@ -165,7 +188,7 @@ def _page_response(page: PageSlice) -> ExtractResponse:
     )
 
 
-async def execute_public_extract(
+async def _execute_public_extract(
     request: ExtractRequest,
     invocation: ExtractInvocation,
 ) -> ExtractResponse:
@@ -219,6 +242,73 @@ async def execute_public_extract(
             retryable=True,
         )
     return _page_response(page)
+
+
+async def execute_public_extract(
+    request: ExtractRequest,
+    invocation: ExtractInvocation,
+) -> ExtractResponse:
+    started = time.monotonic()
+    budget = min(55, settings.extract_request_timeout_seconds)
+    trace = ExtractTrace(safe_request_id(invocation.request_id), started + budget)
+    context = current_trace.set(trace)
+    outcome = "unexpected_error"
+    try:
+        async with asyncio.timeout(budget):
+            operation = _execute_public_extract(request, invocation)
+            result = (
+                await until_disconnect(operation, invocation.wait_for_disconnect)
+                if invocation.wait_for_disconnect is not None
+                else await operation
+            )
+            if trace.remaining() <= 0:
+                raise TimeoutError
+        trace.mime = mime_category(result.content_type)
+        outcome = "pagination_success" if request.cursor else "initial_success"
+        return result
+    except ClientDisconnectedError as error:
+        outcome = "cancelled"
+        raise PublicExtractError(
+            status_code=499,
+            code="extract_cancelled",
+            message="Client disconnected.",
+            retryable=True,
+        ) from error
+    except (TimeoutError, httpx.TimeoutException) as error:
+        outcome = "error_extract_timeout"
+        raise PublicExtractError(
+            status_code=504,
+            code="extract_timeout",
+            message="Web extraction exceeded the request deadline.",
+            retryable=True,
+        ) from error
+    except PublicExtractError as error:
+        outcome = f"error_{error.code}"
+        raise
+    except asyncio.CancelledError:
+        outcome = "cancelled"
+        raise
+    finally:
+        emit_emf(
+            service="extract-api",
+            transport=invocation.transport,
+            outcome=outcome,
+            metrics={
+                "RequestCount": (1, "Count"),
+                "Latency": ((time.monotonic() - started) * 1000, "Milliseconds"),
+                "Pagination": (int(request.cursor is not None), "Count"),
+            },
+        )
+        log_completion(
+            trace=trace,
+            scope=invocation.transport,
+            outcome=outcome,
+            render=request.render.value,
+            cache_eligible=not request.headers and not request.cookies,
+            cache_hit=False,
+            pagination=request.cursor is not None,
+        )
+        current_trace.reset(context)
 
 
 __all__ = [

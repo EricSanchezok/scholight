@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
+from dataclasses import dataclass
 from http.cookies import SimpleCookie
 from urllib.parse import urlsplit
 
@@ -12,6 +13,7 @@ from playwright.async_api import (
     Browser,
     BrowserContext,
     Error as PlaywrightError,
+    Page,
     Playwright,
     Route,
     TimeoutError as PlaywrightTimeoutError,
@@ -26,6 +28,20 @@ from scholight.web_extract.policy import validate_public_target
 _SAFE_METHODS = frozenset({"GET", "HEAD"})
 _SAME_ORIGIN_POST_RESOURCE_TYPES = frozenset({"fetch", "xhr"})
 _USER_AGENT = "Scholight-Web-Extract/1.0"
+
+
+@dataclass
+class _CallbackState:
+    failed: bool = False
+
+    def raise_if_failed(self) -> None:
+        if self.failed:
+            raise ExtractError(
+                code="render_failed",
+                message="Browser rendering failed.",
+                status_code=502,
+                retryable=True,
+            )
 
 
 def _origin(url: str) -> tuple[str, str | None, int]:
@@ -64,13 +80,14 @@ class PlaywrightBrowserRenderer:
         self._startup_lock = asyncio.Lock()
         self._playwright: Playwright | None = None
         self._browser: Browser | None = None
+        self.recycle_required = False
 
     async def _ensure_browser(self) -> Browser:
         if self._browser is not None and self._browser.is_connected():
             return self._browser
         async with self._startup_lock:
             if self._browser is not None and not self._browser.is_connected():
-                with suppress(PlaywrightError):
+                with suppress(Exception):
                     await self._browser.close()
                 self._browser = None
             if self._browser is None:
@@ -84,11 +101,12 @@ class PlaywrightBrowserRenderer:
 
     async def close(self) -> None:
         if self._browser is not None:
-            with suppress(PlaywrightError):
+            with suppress(Exception):
                 await self._browser.close()
             self._browser = None
         if self._playwright is not None:
-            await self._playwright.stop()
+            with suppress(Exception):
+                await self._playwright.stop()
             self._playwright = None
 
     async def warmup(self) -> None:
@@ -99,7 +117,8 @@ class PlaywrightBrowserRenderer:
         self,
         context: BrowserContext,
         request: ExtractInput,
-    ) -> None:
+    ) -> _CallbackState:
+        state = _CallbackState()
         target_headers = {
             name: value for name, value in request.headers.items() if name.lower() != "cookie"
         }
@@ -148,12 +167,28 @@ class PlaywrightBrowserRenderer:
                 forwarded.update(target_headers)
             await route.continue_(headers=forwarded)
 
-        await context.route("**/*", enforce_policy)
+        async def safe_enforce_policy(route: Route) -> None:
+            try:
+                await enforce_policy(route)
+            except PlaywrightError:
+                pass  # A closed page can race the routing callback.
+            except Exception:
+                state.failed = True
+                with suppress(Exception):
+                    await route.abort("blockedbyclient")
+
+        await context.route("**/*", safe_enforce_policy)
 
         async def block_web_socket(web_socket: WebSocketRoute) -> None:
-            await web_socket.close(code=1008, reason="Web Extract blocks WebSockets")
+            try:
+                await web_socket.close(code=1008, reason="Web Extract blocks WebSockets")
+            except PlaywrightError:
+                pass
+            except Exception:
+                state.failed = True
 
         await context.route_web_socket("**", block_web_socket)
+        return state
 
     async def render(self, request: ExtractInput) -> FetchResult:
         if self._semaphore.locked():
@@ -164,6 +199,7 @@ class PlaywrightBrowserRenderer:
                 retryable=True,
             )
         await self._semaphore.acquire()
+        context: BrowserContext | None = None
         try:
             await self._validator(request.url)
             browser = await self._ensure_browser()
@@ -173,101 +209,115 @@ class PlaywrightBrowserRenderer:
                 service_workers="block",
                 user_agent=_USER_AGENT,
             )
-            try:
-                await self._configure_context(context, request)
-                page = await context.new_page()
-                page.on("popup", lambda popup: asyncio.create_task(popup.close()))
-                response = await page.goto(
-                    request.url,
-                    wait_until="domcontentloaded",
-                    timeout=self._timeout_ms,
-                )
-                if response is None:
-                    raise ExtractError(
-                        code="render_failed",
-                        message="Browser navigation completed without a response.",
-                        status_code=502,
-                        retryable=True,
-                    )
-                if response.status >= 400:
-                    raise ExtractError(
-                        code="upstream_http_error",
-                        message=f"Target returned HTTP {response.status}.",
-                        status_code=502,
-                        retryable=response.status == 429 or response.status >= 500,
-                    )
-                with suppress(PlaywrightTimeoutError):
-                    await page.wait_for_load_state(
-                        "networkidle", timeout=min(2500, self._timeout_ms)
-                    )
-                await page.evaluate(
-                    """
-                    () => new Promise((resolve) => {
-                      const quietMs = 250;
-                      const maximumMs = 1000;
-                      let quietTimer;
-                      let maximumTimer;
-                      const observer = new MutationObserver(() => schedule());
-                      const finish = () => {
-                        observer.disconnect();
-                        clearTimeout(quietTimer);
-                        clearTimeout(maximumTimer);
-                        resolve();
-                      };
-                      const schedule = () => {
-                        clearTimeout(quietTimer);
-                        quietTimer = setTimeout(finish, quietMs);
-                      };
-                      observer.observe(document.documentElement, {
-                        childList: true,
-                        subtree: true,
-                        attributes: true,
-                        characterData: true,
-                      });
-                      maximumTimer = setTimeout(finish, maximumMs);
-                      schedule();
-                    })
-                    """
-                )
-                final_url = page.url
-                await self._validator(final_url)
-                html = await page.content()
-                encoded_html = html.encode("utf-8")
-                if len(encoded_html) > self._max_content_bytes:
-                    raise ExtractError(
-                        code="response_too_large",
-                        message="Rendered page exceeds the download limit.",
-                        status_code=413,
-                        retryable=False,
-                    )
-                return FetchResult(
-                    requested_url=request.url,
-                    final_url=final_url,
-                    status_code=response.status,
-                    content_type=response.headers.get("content-type", "text/html; charset=utf-8"),
-                    charset="utf-8",
-                    body=encoded_html,
-                )
-            except ExtractError:
-                raise
-            except PlaywrightTimeoutError as exc:
-                raise ExtractError(
-                    code="render_timeout",
-                    message="Browser rendering exceeded the timeout.",
-                    status_code=504,
-                    retryable=True,
-                ) from exc
-            except PlaywrightError as exc:
+            callbacks = await self._configure_context(context, request)
+            page = await context.new_page()
+
+            async def close_popup(popup: Page) -> None:
+                try:
+                    await popup.close()
+                except PlaywrightError:
+                    pass
+                except Exception:
+                    callbacks.failed = True
+
+            page.on("popup", close_popup)
+            response = await page.goto(
+                request.url,
+                wait_until="domcontentloaded",
+                timeout=self._timeout_ms,
+            )
+            if response is None:
                 raise ExtractError(
                     code="render_failed",
-                    message="Browser rendering failed.",
+                    message="Browser navigation completed without a response.",
                     status_code=502,
                     retryable=True,
-                ) from exc
-            finally:
-                await context.close()
+                )
+            if response.status >= 400:
+                raise ExtractError(
+                    code="upstream_http_error",
+                    message=f"Target returned HTTP {response.status}.",
+                    status_code=502,
+                    retryable=response.status == 429 or response.status >= 500,
+                )
+            with suppress(PlaywrightTimeoutError):
+                await page.wait_for_load_state("networkidle", timeout=min(2500, self._timeout_ms))
+            await page.evaluate(
+                """
+                () => new Promise((resolve) => {
+                  const quietMs = 250;
+                  const maximumMs = 1000;
+                  let quietTimer;
+                  let maximumTimer;
+                  const observer = new MutationObserver(() => schedule());
+                  const finish = () => {
+                    observer.disconnect();
+                    clearTimeout(quietTimer);
+                    clearTimeout(maximumTimer);
+                    resolve();
+                  };
+                  const schedule = () => {
+                    clearTimeout(quietTimer);
+                    quietTimer = setTimeout(finish, quietMs);
+                  };
+                  observer.observe(document.documentElement, {
+                    childList: true,
+                    subtree: true,
+                    attributes: true,
+                    characterData: true,
+                  });
+                  maximumTimer = setTimeout(finish, maximumMs);
+                  schedule();
+                })
+                """
+            )
+            final_url = page.url
+            await self._validator(final_url)
+            html = await page.content()
+            callbacks.raise_if_failed()
+            encoded_html = html.encode("utf-8")
+            if len(encoded_html) > self._max_content_bytes:
+                raise ExtractError(
+                    code="response_too_large",
+                    message="Rendered page exceeds the download limit.",
+                    status_code=413,
+                    retryable=False,
+                )
+            return FetchResult(
+                requested_url=request.url,
+                final_url=final_url,
+                status_code=response.status,
+                content_type=response.headers.get("content-type", "text/html; charset=utf-8"),
+                charset="utf-8",
+                body=encoded_html,
+            )
+        except ExtractError:
+            raise
+        except PlaywrightTimeoutError as exc:
+            raise ExtractError(
+                code="render_timeout",
+                message="Browser rendering exceeded the timeout.",
+                status_code=504,
+                retryable=True,
+            ) from exc
+        except Exception as exc:
+            self.recycle_required = True
+            raise ExtractError(
+                code="render_failed",
+                message="Browser rendering failed.",
+                status_code=502,
+                retryable=True,
+            ) from exc
         finally:
-            self._semaphore.release()
+            try:
+                if context is not None:
+                    try:
+                        async with asyncio.timeout(1):
+                            await context.close()
+                    except Exception:
+                        self.recycle_required = True
+            finally:
+                self._semaphore.release()
 
 
 __all__ = ["PlaywrightBrowserRenderer"]

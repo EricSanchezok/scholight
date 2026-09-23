@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from structlog.contextvars import get_contextvars
 
 from scholight.api.deps import SearchActor, get_extract_actor
@@ -21,13 +21,25 @@ router = APIRouter()
 @router.post("", response_model=ExtractResponse)
 async def extract(
     body: ExtractRequest,
+    request: Request,
     actor: SearchActor = Depends(get_extract_actor),
 ) -> ExtractResponse:
     request_id = str(get_contextvars().get("request_id") or uuid4())
+
+    async def disconnected() -> None:
+        while True:
+            if (await request.receive())["type"] == "http.disconnect":
+                return
+
     try:
         return await execute_public_extract(
             body,
-            ExtractInvocation(actor=actor, request_id=request_id, transport="rest"),
+            ExtractInvocation(
+                actor=actor,
+                request_id=request_id,
+                transport="rest",
+                wait_for_disconnect=disconnected,
+            ),
         )
     except PublicExtractError as exc:
         headers = {"Retry-After": str(exc.retry_after)} if exc.retry_after is not None else None

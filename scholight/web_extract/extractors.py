@@ -7,9 +7,6 @@ import re
 from dataclasses import dataclass
 from html.parser import HTMLParser
 
-import markdownify
-import trafilatura
-
 from scholight.models.web_extract import ExtractResponseFormat
 from scholight.web_extract.errors import ExtractError
 
@@ -77,6 +74,9 @@ def extract_html(
     source_url: str,
     output: ExtractResponseFormat,
 ) -> ExtractedContent:
+    import markdownify
+    import trafilatura
+
     metadata = _metadata(html)
     if output is ExtractResponseFormat.RAW_HTML:
         content = html
