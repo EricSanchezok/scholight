@@ -68,3 +68,32 @@ until a separately reviewed activation.
 The candidate follows [Trafilatura's documented fast mode](https://trafilatura.readthedocs.io/en/latest/extraction-overview.html),
 which skips backup extraction. These fixtures establish reproducibility and
 identify regressions; they cannot establish universal quality on arbitrary sites.
+
+## Offline cache policies
+
+`uv run python scripts/extract_benchmark/cache_replay.py --output
+data/extract-benchmark/cache-synthetic` compares LRU, byte-weighted W-TinyLFU and
+GreedyDual-Size over five seeded hotspot, scan and repeated-burst traces. All use
+600-second write TTL, 32 MiB and at most 1,024 entries; hits never renew TTL.
+Sizes represent retained document objects, with additional conservative policy
+overheads (not measured container RSS). Reports include every request, hit ratio,
+saved observed/synthetic execution cost, charged memory and final entry count.
+
+The W-TinyLFU reference has a fixed 1% LRU admission window, an 80% protected main
+SLRU segment, four-bit Count-Min counters, a Bloom doorkeeper and periodic aging.
+For variable sizes it compares the candidate frequency with the sum of frequencies
+of all required victims. It is a transparent offline variant, not a port of
+Caffeine's adaptive implementation. GDS uses `H = L + cost / retained_size` and
+advances inflation `L` on eviction; a bounded linear minimum scan avoids retaining
+stale heap entries. These implementations are never imported by production.
+References: [TinyLFU paper](https://arxiv.org/abs/1512.00727),
+[Caffeine design](https://github.com/ben-manes/caffeine/wiki/Design),
+[GreedyDual-Size algorithm](https://static.usenix.org/publications/library/proceedings/usits97/full_papers/cao/cao_html/node8.html).
+
+Pass `--trace PATH` for anonymized `extract_completed` JSONL collected after A.
+Only existing opaque cache identifiers are accepted. The importer excludes
+canaries, credentialed calls, failures and hits without a previously observed miss
+cost, and reports each exclusion. Completion order is only an approximation to
+concurrent arrival order, and rotating instance keys prevent joining across
+restarts. Historical logs without identifiers cannot establish real reuse;
+synthetic keys must never be described as an actual production cache trajectory.
