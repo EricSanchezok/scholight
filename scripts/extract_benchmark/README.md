@@ -175,8 +175,10 @@ task or in the host namespace.
 Run `/app/.venv/bin/python /benchmark/calibrate.py` inside a native B image with
 the same limits, `SCHOLIGHT_BENCHMARK_CONTAINER=1`, no network, a mounted `/results`
 directory and this directory
-mounted at `/benchmark`. It warms the browser, restarts the parser before each
-sample, and takes 10 ms cgroup measurements across three repetitions of the frozen
+mounted at `/benchmark`. It first measures five cold starts of each worker with
+the sibling resident, including native imports and browser warmup. It then warms
+the browser, restarts the parser before each sample, and takes 10 ms cgroup
+measurements across five repetitions of the frozen
 non-JS corpus plus scaled prose, dense DOM, tables, Chinese, text and PDF streams.
 The measured parent imports the production runtime dependency graph. The probe
 cancels its owned task at 640 MiB or 45 seconds and leaves partial evidence for
@@ -187,9 +189,12 @@ remain required before the model is accepted. Calibration is not a production
 stress test and does not change runtime coefficients automatically. Every sample
 must complete; failed or guarded samples cannot silently disappear from the
 recommendation. Previous task/results are released before measuring the next sample.
+Startup recommendations are separate from per-job envelopes and cannot be omitted
+from an accepted memory model. Measure before process creation through readiness;
+a baseline taken only after warmup cannot establish this cost.
 
 `run.py --mode phase-calibration --seconds 0 --requests 1` complements parser
-calibration with three repetitions of real streaming downloads (8 KiB through
+calibration with five repetitions of real streaming downloads (8 KiB through
 49 MB) and Chromium DOMs (100 through 15,000 nested paragraph/link structures).
 It uses the same isolated network and 768 MiB container, idle sibling workers,
 10 ms sampling and 640 MiB/45 second guard. Reports preserve actual deltas and

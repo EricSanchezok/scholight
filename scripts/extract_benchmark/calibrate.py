@@ -54,7 +54,16 @@ def calibration_cases() -> list[Case]:
 def recommended(rows: list[dict]) -> dict:
     if not rows or any(not row["completed"] for row in rows):
         raise ValueError("Cannot recommend a memory envelope from incomplete calibration")
+    if not {"parser_startup", "browser_startup"} <= {r["kind"] for r in rows}:
+        raise ValueError("Missing cold worker startup measurements")
     result = {}
+    for kind in ("parser_startup", "browser_startup"):
+        samples = [r for r in rows if r["kind"] == kind]
+        result[kind] = {
+            "fixed_bytes": math.ceil((1.5 * max(r["peak_delta"] for r in samples) + 8 * MIB) / MIB)
+            * MIB,
+            "samples": len(samples),
+        }
     for kind in ("html", "pdf", "text"):
         samples = [r for r in rows if r["kind"] == kind and r["completed"]]
         small = [r for r in samples if r["input_bytes"] <= 65_536]
@@ -70,6 +79,43 @@ def recommended(rows: list[dict]) -> dict:
         )
         result[kind] = {"fixed_bytes": fixed, "per_input_byte": multiplier, "samples": len(samples)}
     return result
+
+
+async def startup_sample(worker: WorkerSupervisor, trial: int) -> dict:
+    await worker.close()
+    gc.collect()
+    baseline = peak = read_cgroup().working_set
+    started = time.monotonic()
+    task = asyncio.create_task(worker.warmup())
+    stopped = False
+    try:
+        while not task.done():
+            peak = max(peak, read_cgroup().working_set)
+            if peak >= 640 * MIB or time.monotonic() - started > 45:
+                stopped = True
+                task.cancel()
+                break
+            await asyncio.sleep(0.01)
+        result = await asyncio.gather(task, return_exceptions=True)
+        peak = max(peak, read_cgroup().working_set)
+        return {
+            "case": f"{worker.kind}-cold-start",
+            "round": trial,
+            "kind": f"{worker.kind}_startup",
+            "input_bytes": 0,
+            "baseline": baseline,
+            "peak": peak,
+            "peak_delta": max(0, peak - baseline),
+            "stopped_by_probe": stopped,
+            "completed": not isinstance(result[0], BaseException),
+            "error_type": type(result[0]).__name__
+            if isinstance(result[0], BaseException)
+            else None,
+            "elapsed_seconds": time.monotonic() - started,
+        }
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
 
 
 async def run() -> None:
@@ -94,9 +140,20 @@ async def run() -> None:
     adapter = IsolatedParser(parser, spool, max_output_bytes=50_000_000)
     rows = []
     try:
+        await parser.warmup()
         await browser.warmup()
         with (output / "measurements.jsonl").open("w") as records:
-            for trial in range(3):
+            for trial in range(5):
+                for worker in (parser, browser):
+                    row = await startup_sample(worker, trial)
+                    rows.append(row)
+                    records.write(json.dumps(row) + "\n")
+                    records.flush()
+                    if row["stopped_by_probe"] or not row["completed"]:
+                        raise RuntimeError(
+                            "Cold startup calibration failed; inspect partial evidence"
+                        )
+            for trial in range(5):
                 for case in calibration_cases():
                     await parser.close()
                     await parser.warmup()
@@ -171,11 +228,13 @@ async def run() -> None:
     report = {
         "python": sys.version,
         "machine": platform.machine(),
+        "rounds": 5,
         "sample_interval_seconds": 0.01,
         "recommendation": recommended(rows),
         "limitations": [
             "Observed envelope with 50% margin plus 8 MiB; not a bound on arbitrary compressed documents.",
             "Parser-only calibration with browser idle. Validate combined workloads separately.",
+            "Cold startup envelopes cover native imports and browser warmup with a resident sibling.",
             "Download/browser envelopes require end-to-end phase measurements.",
         ],
     }

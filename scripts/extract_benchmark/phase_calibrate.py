@@ -86,7 +86,7 @@ async def run() -> None:
         await parser.warmup()
         await browser.warmup()
         with Path("/results/phase-measurements.jsonl").open("w") as records:
-            for trial in range(3):
+            for trial in range(5):
                 for kind, sizes in (
                     ("download", (8192, MIB, 8 * MIB, 32 * MIB, 49_000_000)),
                     ("browser", (100, 1000, 5000, 15_000)),
@@ -138,6 +138,7 @@ async def run() -> None:
     report = {
         "python": sys.version,
         "machine": platform.machine(),
+        "rounds": 5,
         "sample_interval_seconds": 0.01,
         "download": {
             "fixed_bytes": download_fixed,
