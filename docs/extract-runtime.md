@@ -65,9 +65,16 @@ configured shorter request timeout). API forwards optional
 caps that budget at 52 seconds and reserves its last two seconds for process/file
 cleanup. Queueing, redirects, download, browser work and parsing consume the same
 remaining budget. A disconnected internal client cancels the active operation.
-REST client disconnects propagate cancellation through the internal HTTP call;
-disconnect handling completes as a controlled 499 lifecycle event. MCP tool
-cancellation uses the SDK's task cancellation path.
+REST and MCP HTTP client disconnects propagate cancellation through the internal
+HTTP call; disconnect handling completes as a controlled 499 lifecycle event.
+MCP's JSON response transport needs an explicit disconnect monitor while awaiting
+the tool result. One ASGI reader and a one-message queue preserve body chunks and
+keep disconnect signals scoped to their request. MCP protocol tool cancellation
+also retains the SDK's task cancellation path.
+If the ASGI caller itself is cancelled, the owned JSON request gets up to two
+seconds to deliver its cancelled result internally and terminate its stateless
+SDK session. Closed-socket sends do not interrupt that cleanup. This prevents
+cancelled Extract calls from accumulating idle MCP server tasks.
 Both older APIs without these headers and older Extract services ignoring them
 retain the same JSON contract. Old services retain their older resource behavior.
 
