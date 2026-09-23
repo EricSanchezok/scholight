@@ -1,6 +1,7 @@
 """Generate small, self-owned public canaries; no external content or secrets."""
 # ruff: noqa: RUF001
 
+import subprocess  # nosec B404
 from pathlib import Path
 
 from corpus import _html, _pdf
@@ -37,6 +38,16 @@ setTimeout(() => {
 </script>""",
         )
         + b"\n"
+    )
+    # Use the repository's pinned formatter so generated HTML passes frontend CI.
+    subprocess.run(  # nosec
+        [
+            str(ROOT.parents[1] / "node_modules/.bin/prettier"),
+            "--write",
+            str(ROOT / "static.html"),
+            str(ROOT / "javascript.html"),
+        ],
+        check=True,
     )
 
 

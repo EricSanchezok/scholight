@@ -121,7 +121,8 @@ The web image serves three tiny, self-owned fixtures below `/extract-canary/`:
 or account state. Every response, including errors, carries `X-Robots-Tag:
 noindex, nofollow, noarchive` and `Cache-Control: no-store`; robots.txt also excludes
 the path. Regenerate them with `uv run python
-scripts/extract_benchmark/canary_fixtures.py`. Native web image smoke verifies these
+scripts/extract_benchmark/canary_fixtures.py` after installing the locked frontend
+dependencies with `npm ci --prefix frontend`. Native web image smoke verifies these
 headers. Do not add these operational samples to product navigation or sitemaps.
 
 Acceptance calls use the public authenticated REST/MCP endpoints with a dedicated
