@@ -73,6 +73,7 @@ def build_extract_app() -> FastAPI:
             parser_worker,
             spool,
             max_output_bytes=settings.extract_max_download_bytes,
+            reuse_quality=settings.extract_parse_reuse,
         ),
     )
 

@@ -49,7 +49,9 @@ def _parse(job: WorkerJob, request: ExtractInput) -> dict[str, object]:
     try:
         started_cpu = time.process_time()
         fetched = FetchResult(**job.fetched.model_dump(), body=Path(job.body_path).read_bytes())
-        parsed = parse_document(fetched, request, rendered=job.rendered)
+        parsed = parse_document(
+            fetched, request, rendered=job.rendered, reuse_quality=job.reuse_quality
+        )
         cpu_ms = (time.process_time() - started_cpu) * 1000
         size = _write_result(job, asdict(parsed))
         return {"size": size, "cpu_ms": cpu_ms}

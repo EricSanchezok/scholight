@@ -28,6 +28,12 @@ database, response-model or cross-version internal JSON changes are required.
 
 ## Execution isolation
 
+For `auto` plus `main_markdown`, the complete static extraction used for the render
+decision is also the final static result, including its metadata. A different output
+format or a rendered DOM uses a new parse. The full extraction algorithm remains
+the default; no fast-mode quality tradeoff is introduced. The internal setting
+`SCHOLIGHT_EXTRACT_PARSE_REUSE=false` disables reuse for isolated ablation runs.
+
 The production supervisor streams downloads into exclusive files below
 `SCHOLIGHT_DATA_ROOT/extract-spool`. It reserves at most 256 MiB of scratch
 capacity, including in-flight input and result files. Capacity is checked before

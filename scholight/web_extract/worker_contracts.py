@@ -23,6 +23,7 @@ class WorkerJob(BaseModel):
     body_path: str = ""
     fetched: FetchMetadata | None = None
     rendered: bool = False
+    reuse_quality: bool = True
 
 
 class WorkerFailure(BaseModel):

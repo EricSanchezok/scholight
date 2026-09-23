@@ -33,10 +33,18 @@ def _raise_failure(reply: dict[str, object]) -> None:
 
 
 class IsolatedParser:
-    def __init__(self, worker: WorkerSupervisor, spool: Spool, *, max_output_bytes: int) -> None:
+    def __init__(
+        self,
+        worker: WorkerSupervisor,
+        spool: Spool,
+        *,
+        max_output_bytes: int,
+        reuse_quality: bool = True,
+    ) -> None:
         self._worker = worker
         self._spool = spool
         self._max_output_bytes = max_output_bytes
+        self._reuse_quality = reuse_quality
 
     async def parse(
         self,
@@ -55,6 +63,7 @@ class IsolatedParser:
                     {name: getattr(fetched, name) for name in FetchMetadata.model_fields}
                 ),
                 rendered=rendered,
+                reuse_quality=self._reuse_quality,
                 result_path=str(result.path),
                 result_limit=result.limit,
             )
