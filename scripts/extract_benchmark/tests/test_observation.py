@@ -1,0 +1,43 @@
+from __future__ import annotations
+
+import json
+
+from observe import completion_summary, sanitize
+
+
+def event(request_id="natural", scope="rest", pagination=False):
+    return {
+        "event": "extract_completed",
+        "request_id": request_id,
+        "scope": scope,
+        "pagination": pagination,
+        "outcome": "initial_success",
+        "mime": "html",
+        "render_mode": "auto",
+        "duration_ms": 12,
+    }
+
+
+def test_observation_counts_natural_first_extractions_without_internal_duplicates():
+    rows = [event(), event(scope="internal"), event(pagination=True), event("canary")]
+    report = completion_summary(rows, {"canary"})
+    assert report["natural_public_initial"]["requests"] == 1
+    assert report["natural_public_pagination"]["requests"] == 1
+    assert report["canary"]["requests"] == 1
+
+
+def test_observation_keeps_errors_and_rejections_in_rate_denominator():
+    success, rejected = event(), event()
+    rejected["outcome"] = "error_extract_capacity_exceeded"
+    summary = completion_summary([success, rejected], set())["natural_public_initial"]
+    assert summary["success_rate"] == 0.5
+    assert summary["rejection_rate"] == 0.5
+
+
+def test_observation_allowlist_drops_urls_and_secret_or_unknown_fields():
+    row = event()
+    row.update(url="https://private.example", headers={"Authorization": "secret"}, custom="secret")
+    result = sanitize({"timestamp": 1234, "eventId": "id", "logStreamName": "stream"}, row)
+    assert "private" not in json.dumps(result)
+    assert "secret" not in json.dumps(result)
+    assert result["request_id"] == "natural"

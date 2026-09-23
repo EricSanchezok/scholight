@@ -162,6 +162,25 @@ stress test and does not change runtime coefficients automatically.
 
 ## Serial production canary
 
+`observe.py` is a read-only hourly evidence collector. Supply an explicit AWS
+profile, expected account, region, cluster/service, log prefix and timezone-aware
+start/end. It checks account identity, records exact task/image/resource state,
+retains completion and per-second memory fields through an allowlist, and records
+only the type/time of lifecycle error matches. It never reads secret values.
+Pass every relevant `--canary-report` to separate actual server-issued request IDs.
+API initial calls, pagination, internal calls and canaries have separate counts;
+all errors/rejections remain in denominators. The existing baseline lacks the new
+events: unavailable telemetry must not be read as zero activity.
+
+Collect overlapping windows ending two minutes before the current time to allow
+log delivery, and deduplicate retained `event_id` values when combining windows.
+Keep every output directory; incomplete collection has `window.complete=false`.
+ECS retains stopped task details for at least one hour, so retain hourly snapshots
+and investigate task/stream changes rather than infer zero OOM from an empty
+stopped-task list. A one-hour summary cannot establish multi-day acceptance.
+References: [CloudWatch filtering](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/FilterAndPatternSyntax.html),
+[ECS stopped-task retention](https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_DescribeTasks.html).
+
 `canary.py setup --base https://HOST --login-file PRIVATE_LOGIN_JSON --state-file
 PRIVATE_STATE_JSON --output REPORT_JSON` logs in through the normal account API,
 checks the designated email, and issues the named temporary Access Key. Login input
