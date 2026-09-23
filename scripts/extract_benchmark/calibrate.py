@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import gc
 import json
 import math
+import os
 import platform
 import sys
 import time
@@ -50,6 +52,8 @@ def calibration_cases() -> list[Case]:
 
 
 def recommended(rows: list[dict]) -> dict:
+    if not rows or any(not row["completed"] for row in rows):
+        raise ValueError("Cannot recommend a memory envelope from incomplete calibration")
     result = {}
     for kind in ("html", "pdf", "text"):
         samples = [r for r in rows if r["kind"] == kind and r["completed"]]
@@ -75,6 +79,11 @@ async def run() -> None:
         or sys.version_info[:2] != (3, 11)
     ):
         raise RuntimeError("Calibration requires Linux ARM64 / Python 3.11")
+    if (
+        os.environ.get("SCHOLIGHT_BENCHMARK_CONTAINER") != "1"
+        or int(Path("/sys/fs/cgroup/memory.max").read_text()) != 768 * MIB
+    ):
+        raise RuntimeError("Calibration requires an owned container with a 768 MiB hard limit")
     output = Path("/results/calibration")
     output.mkdir(parents=True, exist_ok=False)
     enable_subreaping()
@@ -91,6 +100,7 @@ async def run() -> None:
                 for case in calibration_cases():
                     await parser.close()
                     await parser.warmup()
+                    gc.collect()
                     with spool.allocate(len(case.body)) as body:
                         body.write(case.body)
                         fetched = FetchResult(
@@ -150,9 +160,10 @@ async def run() -> None:
                         rows.append(row)
                         records.write(json.dumps(row) + "\n")
                         records.flush()
-                        if stopped:
+                        del result, task, fetched
+                        if stopped or not row["completed"]:
                             raise RuntimeError(
-                                "Calibration hit its guard; review evidence before increasing input"
+                                "Calibration failed or hit its guard; inspect partial evidence"
                             )
     finally:
         await asyncio.gather(parser.close(), browser.close())

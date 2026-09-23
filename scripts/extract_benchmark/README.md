@@ -154,7 +154,8 @@ owned process-group termination/reaping and recovery; never run it on a producti
 task or in the host namespace.
 
 Run `/app/.venv/bin/python /benchmark/calibrate.py` inside a native B image with
-the same limits, no network, a mounted `/results` directory and this directory
+the same limits, `SCHOLIGHT_BENCHMARK_CONTAINER=1`, no network, a mounted `/results`
+directory and this directory
 mounted at `/benchmark`. It warms the browser, restarts the parser before each
 sample, and takes 10 ms cgroup measurements across three repetitions of the frozen
 non-JS corpus plus scaled prose, dense DOM, tables, Chinese, text and PDF streams.
@@ -164,7 +165,9 @@ review. Recommendations use observed fixed/size costs with a 50% margin and an
 additional 8 MiB fixed allowance. This finite parser corpus cannot bound arbitrary
 compressed PDFs; actual mixed-load soak and download/browser phase measurements
 remain required before the model is accepted. Calibration is not a production
-stress test and does not change runtime coefficients automatically.
+stress test and does not change runtime coefficients automatically. Every sample
+must complete; failed or guarded samples cannot silently disappear from the
+recommendation. Previous task/results are released before measuring the next sample.
 
 `run.py --mode phase-calibration --seconds 0 --requests 1` complements parser
 calibration with three repetitions of real streaming downloads (8 KiB through
