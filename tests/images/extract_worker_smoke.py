@@ -40,7 +40,9 @@ async def main() -> None:
         assert browser.pid is not None
         groups = process_groups(browser.pid)
         assert len(groups) >= 2, "Chromium must launch a real detached process group"
-        assert read_cgroup().working_set < 640 * 1024 * 1024
+        sample = read_cgroup()
+        assert sample.working_set < 640 * 1024 * 1024
+        assert sample.oom_kills == 0
         with pymupdf.open() as document:
             document.new_page().insert_text((72, 72), "Scholight isolated PDF worker works.")
             data = document.tobytes()

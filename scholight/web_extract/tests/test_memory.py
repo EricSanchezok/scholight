@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -12,8 +12,17 @@ from scholight.web_extract.reservations import MemoryBudget, MemoryModel, StageC
 def test_working_set_excludes_inactive_file_cache(tmp_path) -> None:
     (tmp_path / "memory.current").write_text("800")
     (tmp_path / "memory.stat").write_text("anon 500\nfile 300\ninactive_file 200\n")
+    (tmp_path / "memory.events").write_text("low 0\nhigh 0\nmax 8\noom 3\noom_kill 2\n")
     sample = read_cgroup(tmp_path)
-    assert (sample.working_set, sample.anon, sample.file) == (600, 500, 300)
+    assert (sample.working_set, sample.anon, sample.file, sample.oom_kills) == (600, 500, 300, 2)
+
+
+@pytest.mark.asyncio
+async def test_worker_oom_kill_is_reported_after_working_set_has_recovered() -> None:
+    guard = MemoryGuard(lambda: MemorySample(100, 100, 0, oom_kills=2), AsyncMock())
+    with patch("scholight.web_extract.memory.emit_emf") as emit:
+        await guard.tick()
+    assert emit.call_args.kwargs["metrics"]["MemoryOOMKills"] == (2, "Count")
 
 
 @pytest.mark.asyncio
