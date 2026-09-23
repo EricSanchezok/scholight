@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
 from datetime import date
 from typing import Annotated, Any, Literal, cast
@@ -26,6 +27,7 @@ from scholight.api.extract_execution import (
     PublicExtractError,
     execute_public_extract,
 )
+from scholight.api.mcp_disconnect import monitor_disconnect, run_owned_request
 from scholight.api.models.search import (
     PublicSearchFilters,
     PublicSearchRequest,
@@ -48,6 +50,10 @@ from scholight.models.web_extract import (
 
 _current_invocation: ContextVar[SearchInvocation | None] = ContextVar(
     "scholight_mcp_invocation",
+    default=None,
+)
+_current_disconnect: ContextVar[Callable[[], Awaitable[None]] | None] = ContextVar(
+    "scholight_mcp_disconnect",
     default=None,
 )
 
@@ -169,10 +175,19 @@ class _MCPRequestBoundary:
         )
         survey_job_id = getattr(actor, "survey_job_id", None)
         try:
-            with bound_contextvars(
-                **({"survey_job_id": str(survey_job_id)} if survey_job_id is not None else {})
-            ):
-                await self._app(scope, receive, send)
+            async with monitor_disconnect(receive) as monitored:
+                disconnect_context = _current_disconnect.set(monitored.disconnected)
+                try:
+                    with bound_contextvars(
+                        **(
+                            {"survey_job_id": str(survey_job_id)}
+                            if survey_job_id is not None
+                            else {}
+                        )
+                    ):
+                        await run_owned_request(self._app, scope, monitored, send)
+                finally:
+                    _current_disconnect.reset(disconnect_context)
         finally:
             _current_invocation.reset(context)
 
@@ -446,6 +461,7 @@ async def extract_url(
                 actor=invocation.actor,
                 request_id=invocation.request_id,
                 transport="mcp",
+                wait_for_disconnect=_current_disconnect.get(),
             ),
         )
     except PublicExtractError as exc:
