@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+from unittest.mock import patch
 
 import pytest
 
@@ -81,3 +82,31 @@ async def test_worker_close_kills_detached_descendant_groups() -> None:
         check=False,
     ).stdout.strip()
     assert not status or status.startswith("Z")
+
+
+async def test_cancellation_during_spawn_cannot_orphan_the_new_process() -> None:
+    spawn = asyncio.create_subprocess_exec
+    spawned = asyncio.Event()
+    process = None
+
+    async def delayed_spawn(*args, **kwargs):
+        nonlocal process
+        process = await spawn(*args, **kwargs)
+        spawned.set()
+        await asyncio.sleep(0.05)
+        return process
+
+    worker = WorkerSupervisor("parser", command=(sys.executable, "-u", "-c", ECHO))
+    try:
+        with patch("asyncio.create_subprocess_exec", delayed_spawn):
+            task = asyncio.create_task(worker.call({}))
+            await spawned.wait()
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        assert process.returncode is not None
+    finally:
+        await worker.close()
+        if process is not None and process.returncode is None:
+            process.kill()
+            await process.wait()

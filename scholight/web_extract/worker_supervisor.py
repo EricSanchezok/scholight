@@ -53,22 +53,32 @@ class WorkerSupervisor:
         return self._lock.locked()
 
     async def _start(self) -> None:
-        async with self._stop_lock:
-            if self._process is not None and self._process.returncode is None:
-                return
-            self._process = await asyncio.create_subprocess_exec(
-                *self._command,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                # Native parser/browser diagnostics can include target content.
-                stderr=asyncio.subprocess.DEVNULL,
-                start_new_session=True,
-                limit=1024 * 1024,
-            )
-            self.restarts += 1
-            self._completed = 0
-            self._groups = {self._process.pid}
         try:
+            async with self._stop_lock:
+                if self._process is not None and self._process.returncode is None:
+                    return
+                spawning = asyncio.create_task(
+                    asyncio.create_subprocess_exec(
+                        *self._command,
+                        stdin=asyncio.subprocess.PIPE,
+                        stdout=asyncio.subprocess.PIPE,
+                        # Native diagnostics can include target content.
+                        stderr=asyncio.subprocess.DEVNULL,
+                        start_new_session=True,
+                        limit=1024 * 1024,
+                    )
+                )
+                try:
+                    self._process = await asyncio.shield(spawning)
+                except asyncio.CancelledError:
+                    # Process creation can already have forked before returning its handle.
+                    # Retain ownership before allowing cancellation to leave this scope.
+                    self._process = await asyncio.shield(spawning)
+                    self._groups = {self._process.pid}
+                    raise
+                self.restarts += 1
+                self._completed = 0
+                self._groups = {self._process.pid}
             async with asyncio.timeout(15):
                 if (await self._receive()).get("ready") is not True:
                     raise _worker_error()
@@ -132,8 +142,9 @@ class WorkerSupervisor:
             if process is None:
                 return
             # Kill descendants even if the worker has already exited (e.g. Chromium).
-            groups = kill_family(process.pid, self._groups)
             async with asyncio.timeout(2):
+                groups = kill_family(process.pid, self._groups)
                 await asyncio.shield(process.wait())
-            reap_groups(groups)
+                while not reap_groups(groups):
+                    await asyncio.sleep(0.01)
             self._process = None

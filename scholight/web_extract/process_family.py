@@ -69,11 +69,15 @@ def kill_family(root: int, known_groups: set[int]) -> set[int]:
     return groups
 
 
-def reap_groups(groups: set[int]) -> None:
+def reap_groups(groups: set[int]) -> bool:
+    complete = True
     for group in groups:
         with suppress(ChildProcessError):
-            while os.waitpid(-group, os.WNOHANG)[0] > 0:
-                pass
+            while True:
+                if os.waitpid(-group, os.WNOHANG)[0] == 0:
+                    complete = False
+                    break
+    return complete
 
 
 def family_rss(root: int | None) -> int:

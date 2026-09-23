@@ -21,6 +21,10 @@ docker run --rm --entrypoint /app/.venv/bin/python scholight-ingest:lean-ci -c \
 docker run --rm -e SCHOLIGHT_DISABLE_DOTENV=1 \
   -v "$PWD/tests/images/extract_pdf_smoke.py:/app/extract_pdf_smoke.py:ro" \
   --entrypoint /app/.venv/bin/python scholight-extract:lean-ci /app/extract_pdf_smoke.py
+docker run --rm --network none --memory 768m --memory-swap 768m --cpu-shares 128 \
+  -e SCHOLIGHT_DISABLE_DOTENV=1 \
+  -v "$PWD/tests/images/extract_worker_smoke.py:/app/extract_worker_smoke.py:ro" \
+  --entrypoint /app/.venv/bin/python scholight-extract:lean-ci /app/extract_worker_smoke.py
 docker run -d --name "$prefix-web" --add-host api:127.0.0.1 \
   -e SCHOLIGHT_PUBLIC_WEB_URL=http://localhost:7200 scholight-web:lean-ci >/dev/null
 docker run -d --name "$prefix-extract" -e SCHOLIGHT_DISABLE_DOTENV=1 \
