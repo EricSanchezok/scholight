@@ -42,5 +42,9 @@ for component in web extract; do
   done
 done
 docker exec "$prefix-web" wget -q -O /dev/null http://127.0.0.1:8080/
+for fixture in static.html document.pdf javascript.html; do
+  docker exec "$prefix-web" wget -S -O /dev/null "http://127.0.0.1:8080/extract-canary/$fixture" 2>&1 \
+    | grep -iF 'X-Robots-Tag: noindex, nofollow, noarchive' >/dev/null
+done
 docker exec "$prefix-extract" /app/.venv/bin/python -c \
   'from playwright.sync_api import sync_playwright; p=sync_playwright().start(); b=p.chromium.launch(headless=True, args=["--no-sandbox"]); page=b.new_page(); page.set_content("<p>Native browser works</p>"); assert page.inner_text("p")=="Native browser works"; b.close(); p.stop()'

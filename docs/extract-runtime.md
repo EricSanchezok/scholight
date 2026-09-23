@@ -93,3 +93,20 @@ is cleared, and workers are reclaimed. Admission resumes below 512 MiB after
 reclamation finishes. Liveness remains independent of this temporary backpressure.
 All workers remain within the existing 768 MiB container hard limit; no ECS,
 Identity, schema, ingestion binding or shared infrastructure change is required.
+
+## Production acceptance fixtures
+
+The web image serves three tiny, self-owned fixtures below `/extract-canary/`:
+`static.html`, `document.pdf` and `javascript.html`. They have no external requests
+or account state. Every response, including errors, carries `X-Robots-Tag:
+noindex, nofollow, noarchive` and `Cache-Control: no-store`; robots.txt also excludes
+the path. Regenerate them with `uv run python
+scripts/extract_benchmark/canary_fixtures.py`. Native web image smoke verifies these
+headers. Do not add these operational samples to product navigation or sitemaps.
+
+Acceptance calls use the public authenticated REST/MCP endpoints with a dedicated
+temporary Access Key and distinct request IDs. Run serially at no more than one
+call per ten seconds, repeating the fixed suite every six hours during observation.
+Keep credentials out of command-line arguments, evidence and reports. Separate
+canary request IDs from natural traffic and revoke the key after acceptance.
+Load tests and fault injection remain confined to the isolated benchmark network.
