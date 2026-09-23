@@ -33,6 +33,60 @@ def latencies(rows: list[dict]) -> dict:
         "all_outcome_p95_ms": percentile([r["latency_ms"] for r in rows], 0.95),
         "rejected": sum(r["status"] == 503 for r in rows),
         "timed_out": sum(r["status"] in {0, 504} for r in rows),
+        "mime_render_counts": dict(Counter(mime_render_group(r) for r in rows)),
+    }
+
+
+def mime_render_group(row: dict) -> str:
+    result = row.get("result", {})
+    mime = result.get("content_type", "unknown").partition(";")[0]
+    rendered = "rendered" if result.get("rendered") else "static"
+    return f"{mime}|{rendered}" if row["status"] == 200 else "unknown|failed"
+
+
+def compare_outputs(before: list[dict], after: list[dict]) -> dict:
+    """Compare paired supported requests; marker checks alone can miss content loss."""
+    candidates = {(r["index"], r["case"]): r for r in after}
+    mismatches = []
+    schema_mismatches = failures = compared = 0
+    for original in before:
+        if original["status"] != 200:
+            continue
+        compared += 1
+        candidate = candidates.get((original["index"], original["case"]))
+        if candidate is None or candidate["status"] != 200:
+            failures += 1
+            mismatches.append(
+                {"index": original["index"], "case": original["case"], "fields": ["status"]}
+            )
+            continue
+        left, right = original["result"], candidate["result"]
+        # These intentional A accounting corrections are reviewed independently.
+        # Their wire types are still checked. No content or metadata is normalized.
+        fields = sorted(
+            key
+            for key in left.keys() | right.keys()
+            if key not in {"fetched_at", "source_bytes"} and left.get(key) != right.get(key)
+        )
+        schema = {key: type(value).__name__ for key, value in left.items()} != {
+            key: type(value).__name__ for key, value in right.items()
+        }
+        schema_mismatches += schema
+        if fields or schema:
+            mismatches.append(
+                {
+                    "index": original["index"],
+                    "case": original["case"],
+                    "fields": fields,
+                    "schema_changed": schema,
+                }
+            )
+    return {
+        "compared_supported_requests": compared,
+        "supported_case_failures": failures,
+        "schema_mismatches": schema_mismatches,
+        "mismatches": mismatches,
+        "gate": compared > 0 and not mismatches,
     }
 
 
@@ -81,13 +135,16 @@ def memory_report(rows: list[dict], samples: list[dict]) -> dict:
 def summarize(directory: Path) -> dict:
     rows = read_rows(directory / "requests.jsonl")
     groups: dict[str, list[dict]] = defaultdict(list)
+    mime_groups: dict[str, list[dict]] = defaultdict(list)
     for row in rows:
         groups[row["category"]].append(row)
+        mime_groups[mime_render_group(row)].append(row)
     samples = read_rows(directory / "memory.jsonl")
     return {
         "directory": str(directory),
         "overall": latencies(rows),
         "categories": {key: latencies(value) for key, value in sorted(groups.items())},
+        "mime_render": {key: latencies(value) for key, value in sorted(mime_groups.items())},
         "memory": memory_report(rows, samples),
     }
 
@@ -131,6 +188,7 @@ def matrix(directory: Path) -> dict:
                     "baseline": before,
                     "candidate": after,
                     "ordinary_latency_gate": latency_gate if concurrency == 1 else None,
+                    "paired_outputs": compare_outputs(baseline, rows),
                     "note": "All errors/rejections remain in per-run reports; latency alone is not acceptance.",
                 }
             )

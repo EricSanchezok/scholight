@@ -119,6 +119,14 @@ hour. It reports sample counts and cannot pass incomplete four-hour/2,000-reques
 soaks. A single successful latency gate does not substitute for failure, queue,
 quality, cleanup, memory or production observation gates.
 
+The analyzer also compares every paired baseline-supported request's complete
+content, metadata, warnings and wire field types. Only collection timestamps and
+the intentionally corrected `source_bytes` value are excluded from value equality;
+their types are still checked. Rejections and missing responses fail this paired
+gate. Reports group success latency by MIME and actual rendered state, and retain
+unclassified failures separately. Content differences require explicit quality
+review; passing a few expected marker strings cannot hide missing paragraphs.
+
 ## Isolated faults and memory calibration
 
 `run.py --mode faults --seconds 0 --requests 1` uses the same isolated fixture
