@@ -33,6 +33,12 @@ def docker(*args: str) -> str:
     return result.strip()
 
 
+def container_logs(container: str) -> str:
+    return subprocess.check_output(  # nosec
+        ["docker", "logs", container], stderr=subprocess.STDOUT, text=True
+    )
+
+
 def run(
     image: str,
     output: Path,
@@ -79,6 +85,7 @@ def run(
     ]
     created: list[str] = []
     probe = None
+    complete = False
     try:
         docker("network", "create", "--internal", "--subnet", "93.184.216.0/24", network)
         created.append(network)
@@ -156,6 +163,7 @@ def run(
         if mode in {"worker-faults", "phase-calibration"}:
             if int(docker("wait", app)):
                 raise RuntimeError("Owned native probe failed; inspect service.log")
+            complete = True
             return
         for _ in range(90):
             try:
@@ -203,18 +211,39 @@ def run(
             created.append(client)
             docker("start", client)
             exit_code = int(docker("wait", client))
-            (output / "client.log").write_text(docker("logs", client))
+            (output / "client.log").write_text(container_logs(client))
             if exit_code:
                 raise RuntimeError(f"Benchmark client exited with status {exit_code}")
+            for _ in range(11):
+                scratch = json.loads(
+                    docker(
+                        "exec",
+                        app,
+                        "/app/.venv/bin/python",
+                        "-c",
+                        "import json; from pathlib import Path; "
+                        "print(json.dumps([p.name for p in Path('/data/extract-spool').glob('extract-*.tmp')]))",
+                    )
+                )
+                if not scratch:
+                    break
+                time.sleep(0.2)
+            (output / "scratch-final.json").write_text(json.dumps(scratch))
+            if scratch:
+                raise RuntimeError("Finished requests left scratch files after cleanup budget")
+            complete = True
     finally:
+        (output / "run-status.json").write_text(
+            json.dumps({"complete": complete, "finished_at": time.time()})
+        )
         if probe is not None:
             probe.terminate()
             probe.wait(timeout=5)
         if app in created:
             (output / "container-final.json").write_text(docker("inspect", app))
-            (output / "service.log").write_text(docker("logs", app))
+            (output / "service.log").write_text(container_logs(app))
         if fixture in created:
-            (output / "fixture.log").write_text(docker("logs", fixture))
+            (output / "fixture.log").write_text(container_logs(fixture))
         for container in reversed(created[1:]):
             docker("rm", "-f", container)
         if network in created:

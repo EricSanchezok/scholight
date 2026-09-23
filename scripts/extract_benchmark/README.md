@@ -133,6 +133,12 @@ gate. Reports group success latency by MIME and actual rendered state, and retai
 unclassified failures separately. Content differences require explicit quality
 review; passing a few expected marker strings cannot hide missing paragraphs.
 
+Each new run records explicit completion and verifies scratch-file cleanup before
+removing its owned containers. The analyzer rejects partial request sets even if
+container inspection files exist. Both stdout and stderr are retained. Comparisons
+include B against A (including newly working PDFs), and each B ablation against B;
+the burst variant order rotates across rounds as well as the serial order.
+
 ## Isolated faults and memory calibration
 
 `run.py --mode faults --seconds 0 --requests 1` uses the same isolated fixture

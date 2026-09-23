@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import json
 from copy import deepcopy
 
-from analyze import compare_outputs, latencies
+from analyze import compare_outputs, latencies, matrix
 
 
 def row(index=0):
@@ -55,3 +56,15 @@ def test_aggregate_reports_content_mime_and_rendered_groups():
     rendered["result"]["rendered"] = True
     report = latencies([static, rendered])
     assert report["mime_render_counts"] == {"text/html|static": 1, "text/html|rendered": 1}
+
+
+def test_matrix_does_not_accept_partial_client_results(tmp_path):
+    item = {"name": "partial", "mode": "cold", "concurrency": 1, "seed": 42, "variant": "baseline"}
+    (tmp_path / "plan.json").write_text(json.dumps([item]))
+    child = tmp_path / "partial"
+    child.mkdir()
+    (child / "container-final.json").write_text("[]")
+    (child / "manifest.json").write_text(json.dumps({"requests": 2}))
+    (child / "requests.jsonl").write_text(json.dumps({**row(), "category": "article"}) + "\n")
+    (child / "memory.jsonl").write_text("")
+    assert not matrix(tmp_path)["complete"]

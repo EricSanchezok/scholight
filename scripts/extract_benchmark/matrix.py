@@ -44,9 +44,10 @@ if __name__ == "__main__":
                 )
     if args.efficiency:
         for trial in range(args.rounds):
+            rotated = variants[trial % len(variants) :] + variants[: trial % len(variants)]
             for concurrency in (2, 4, 8, 16):
-                for mode in ("cold", "duplicate"):
-                    for name, image, disable in variants:
+                for mode in ("cold", "duplicate", "short"):
+                    for name, image, disable in rotated:
                         plan.append(
                             {
                                 "name": f"burst-{trial + 1}-{mode}-{concurrency}-{name}",

@@ -149,13 +149,26 @@ def summarize(directory: Path) -> dict:
     }
 
 
+def run_complete(directory: Path) -> bool:
+    if not all(
+        (directory / name).exists()
+        for name in ("container-final.json", "manifest.json", "requests.jsonl")
+    ):
+        return False
+    status = directory / "run-status.json"
+    if status.exists() and not json.loads(status.read_text())["complete"]:
+        return False
+    expected = json.loads((directory / "manifest.json").read_text())["requests"]
+    return len(read_rows(directory / "requests.jsonl")) == expected
+
+
 def matrix(directory: Path) -> dict:
     plan = json.loads((directory / "plan.json").read_text())
     reports = []
     by_scenario: dict[tuple[str, int, int], dict[str, list[dict]]] = defaultdict(dict)
     for item in plan:
         child = directory / item["name"]
-        if not (child / "container-final.json").exists():
+        if not run_complete(child):
             reports.append({"name": item["name"], "complete": False})
             continue
         reports.append({"name": item["name"], "complete": True, **summarize(child)})
@@ -163,16 +176,16 @@ def matrix(directory: Path) -> dict:
         by_scenario[scenario][item["variant"]] = read_rows(child / "requests.jsonl")
     comparisons = []
     for (mode, concurrency, seed), variants in sorted(by_scenario.items()):
-        if "baseline" not in variants:
-            continue
-        baseline = variants["baseline"]
-        # Existing supported cases are explicit; failed PDFs remain in the overall report.
-        supported = {row["case"] for row in baseline if row["status"] == 200}
-        before = latencies([r for r in baseline if r["case"] in supported])
-        p95 = before["success_p95_ms"]
-        for name, rows in variants.items():
-            if name == "baseline":
+        pairs = [("baseline", name) for name in variants if name != "baseline"]
+        pairs += [("A", "B")] + [("B", name) for name in variants if name.startswith("B-no-")]
+        for reference, name in pairs:
+            if reference not in variants or name not in variants:
                 continue
+            baseline, rows = variants[reference], variants[name]
+            # Unsupported PDFs remain failures in overall counts, never hidden.
+            supported = {row["case"] for row in baseline if row["status"] == 200}
+            before = latencies([r for r in baseline if r["case"] in supported])
+            p95 = before["success_p95_ms"]
             after = latencies([r for r in rows if r["case"] in supported])
             later = after["success_p95_ms"]
             latency_gate = (
@@ -184,10 +197,14 @@ def matrix(directory: Path) -> dict:
                     "concurrency": concurrency,
                     "seed": seed,
                     "variant": name,
+                    "reference": reference,
                     "comparable_case_count": len(supported),
                     "baseline": before,
                     "candidate": after,
                     "ordinary_latency_gate": latency_gate if concurrency == 1 else None,
+                    "p95_improvement_ratio": (p95 - later) / p95
+                    if p95 and later is not None
+                    else None,
                     "paired_outputs": compare_outputs(baseline, rows),
                     "note": "All errors/rejections remain in per-run reports; latency alone is not acceptance.",
                 }
