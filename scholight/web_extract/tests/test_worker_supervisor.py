@@ -3,12 +3,13 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+from contextlib import contextmanager
 from unittest.mock import patch
 
 import pytest
 
 from scholight.web_extract.errors import ExtractError
-from scholight.web_extract.reservations import MemoryBudget, MemoryModel
+from scholight.web_extract.reservations import MemoryBudget, MemoryModel, StageCost
 from scholight.web_extract.worker_supervisor import WorkerSupervisor
 
 pytestmark = pytest.mark.asyncio
@@ -63,6 +64,38 @@ async def test_cold_start_is_reserved_before_spawn_and_warm_calls_do_not_reserve
         assert worker.restarts == 1 and budget.reserved_bytes == 0
     finally:
         await worker.close()
+
+
+async def test_cold_start_peak_is_replaced_by_resident_memory_before_job_admission() -> None:
+    working = 100
+    budget = MemoryBudget(
+        lambda: working,
+        lambda: None,
+        model=MemoryModel(parser_startup=80, html=StageCost(50, 0)),
+        high=200,
+    )
+    lease = budget.lease()
+
+    @contextmanager
+    def startup():
+        nonlocal working
+        with budget.startup("parser"):
+            yield
+            working = 150  # Native startup has settled into a smaller resident heap.
+
+    def prepare():
+        lease.transfer("parse", size=10, mime="text/html")
+        return {}
+
+    worker = WorkerSupervisor(
+        "parser", command=(sys.executable, "-u", "-c", ECHO), reserve_start=startup
+    )
+    try:
+        assert (await worker.call(prepare))["pid"] == worker.pid
+        assert working == 150 and budget.reserved_bytes == 50
+    finally:
+        await worker.close()
+        lease.close()
 
 
 async def test_idle_crash_replacement_also_requires_startup_memory() -> None:

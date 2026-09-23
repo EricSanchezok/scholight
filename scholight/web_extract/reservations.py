@@ -102,7 +102,7 @@ class MemoryBudget:
             if (working + new > self._high or startup) and new <= self._high:
                 # Reclaim retained heaps when idle; competing reservations and
                 # intrinsically oversized jobs alone do not recycle warm workers.
-                # A cold generation also needs room for its existing job envelope.
+                # A cold generation also needs room for its retained input.
                 self._on_pressure()
             raise capacity_error()
         self.reserved_bytes = reserved

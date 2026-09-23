@@ -190,8 +190,11 @@ waiters share the execution owner's reservation.
 
 A cold worker also owns a separate startup allowance from before process creation
 until readiness; the container working set then accounts for its resident heap.
-This allowance is additive to the active job envelope, and is not charged for
-warm worker calls. Initial readiness, scheduled recycling and replacement of an
+The downloaded-input allowance remains owned during startup. Job admission and
+result-file allocation happen after readiness, when a fresh working-set sample
+includes the worker's resident heap; startup and execution peaks are not charged
+at the same time. Warm worker calls need no startup allowance. Initial readiness,
+scheduled recycling and replacement of an
 idle crashed generation all use the same path. Failed or cancelled startup keeps
 the allowance until the owned process family has been reaped.
 
@@ -202,7 +205,7 @@ below 512 MiB. Soft-pressure reclamation runs at most once per 30 seconds; a job
 that cannot fit even without competing reservations must not interrupt active
 work. Warm-phase competition alone, or an envelope exceeding the whole budget,
 does not request reclamation. A rejected cold start may request idle reclamation
-because its job already owns another allowance. The physical 640 MiB emergency
+because its downloaded input already owns an allowance. The physical 640 MiB emergency
 guard remains immediate.
 `MemoryIdleReclaim` counts these deferred recoveries.
 

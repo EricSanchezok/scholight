@@ -58,7 +58,7 @@ def test_failed_phase_growth_preserves_prior_ownership_for_cleanup() -> None:
     assert budget.reserved_bytes == 0
 
 
-def test_startup_envelope_adds_to_job_and_releases_after_readiness() -> None:
+def test_startup_envelope_adds_to_input_and_releases_after_readiness() -> None:
     model = MemoryModel(download=StageCost(10, 1), parser_startup=80, browser_startup=90)
     budget = MemoryBudget(lambda: 100, lambda: None, model=model, high=200)
     lease = budget.lease()

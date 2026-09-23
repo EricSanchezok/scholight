@@ -81,7 +81,7 @@ class WorkerSupervisor:
                 if self._process is not None and self._process.returncode is None:
                     return
                 # A cold generation adds native import/browser heaps beyond the
-                # active job envelope. Keep this allowance until ready or reaped.
+                # retained input. Keep this allowance until ready or reaped.
                 startup.enter_context(self._reserve_start())
                 spawning = asyncio.create_task(
                     asyncio.create_subprocess_exec(
@@ -136,10 +136,16 @@ class WorkerSupervisor:
     ) -> dict[str, object]:
         async with self._gate.slot():
             self._admit()
-            # Allocate stage resources only after this worker grants execution.
-            prepared = message() if callable(message) else message
             try:
                 await self._start()
+            except (OSError, ValueError) as error:
+                # _start already owns cleanup for failed/cancelled readiness.
+                raise _worker_error() from error
+            self._admit()
+            # Startup has released its transient allowance. Its resident heap is
+            # now in the fresh working-set sample used for job admission.
+            prepared = message() if callable(message) else message
+            try:
                 process = self._process
                 if process is None or process.stdin is None:
                     raise _worker_error()
