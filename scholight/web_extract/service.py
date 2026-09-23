@@ -18,6 +18,7 @@ from fastapi import FastAPI, Header, Request
 from fastapi.responses import JSONResponse
 
 from scholight.logging.emf import MetricUnit, emit_emf
+from scholight.web_extract.cancellation import ClientDisconnectedError, until_disconnect
 from scholight.web_extract.contracts import (
     InternalExtractRequest,
     InternalExtractResponse,
@@ -170,7 +171,7 @@ async def _until_disconnect(
             if message["type"] == "http.disconnect":
                 return
 
-    work = asyncio.create_task(
+    return await until_disconnect(
         engine.extract(
             ExtractInput(
                 url=str(request.url),
@@ -179,18 +180,9 @@ async def _until_disconnect(
                 headers=request.headers,
                 cookies=request.cookies,
             )
-        )
+        ),
+        disconnected,
     )
-    watcher = asyncio.create_task(disconnected())
-    try:
-        done, _ = await asyncio.wait({work, watcher}, return_when=asyncio.FIRST_COMPLETED)
-        if work in done:
-            return await work
-        raise asyncio.CancelledError
-    finally:
-        work.cancel()
-        watcher.cancel()
-        await asyncio.gather(work, watcher, return_exceptions=True)
 
 
 def create_extract_service(
@@ -280,6 +272,13 @@ def create_extract_service(
         except asyncio.CancelledError:
             outcome = "cancelled"
             raise
+        except ClientDisconnectedError:
+            error = ExtractError(
+                code="extract_cancelled",
+                message="Client disconnected.",
+                status_code=499,
+                retryable=True,
+            )
         except TimeoutError:
             error = ExtractError(
                 code="extract_timeout",
@@ -298,7 +297,9 @@ def create_extract_service(
             )
         finally:
             if error is not None:
-                outcome = f"error_{error.code}"
+                outcome = (
+                    "cancelled" if error.code == "extract_cancelled" else f"error_{error.code}"
+                )
                 if error.status_code >= 500:
                     emit_emf(service="extract", metrics={"ExtractServiceFailure": (1, "Count")})
             _emit_extract_metrics(

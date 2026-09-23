@@ -61,6 +61,9 @@ configured shorter request timeout). API forwards optional
 caps that budget at 52 seconds and reserves its last two seconds for process/file
 cleanup. Queueing, redirects, download, browser work and parsing consume the same
 remaining budget. A disconnected internal client cancels the active operation.
+REST client disconnects propagate cancellation through the internal HTTP call;
+disconnect handling completes as a controlled 499 lifecycle event. MCP tool
+cancellation uses the SDK's task cancellation path.
 Both older APIs without these headers and older Extract services ignoring them
 retain the same JSON contract. Old services retain their older resource behavior.
 

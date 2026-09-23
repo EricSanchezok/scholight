@@ -101,3 +101,29 @@ async def test_cache_hits_report_zero_download_bytes() -> None:
                     headers={"X-Scholight-Internal-Token": "internal-secret"},
                 )
     assert emit.call_args.kwargs["metrics"]["DownloadBytes"] == (0, "Bytes")
+
+
+async def test_public_disconnect_cancels_internal_work_with_a_controlled_result() -> None:
+    started = asyncio.Event()
+    stopped = asyncio.Event()
+
+    async def forever(_request):
+        started.set()
+        try:
+            await asyncio.sleep(10)
+        finally:
+            stopped.set()
+
+    with patch("scholight.api.extract_execution._request_document", forever):
+        with pytest.raises(PublicExtractError) as error:
+            await execute_public_extract(
+                ExtractRequest.model_validate({"url": "https://example.com"}),
+                ExtractInvocation(
+                    actor=_actor(),
+                    request_id="disconnect-test",
+                    transport="rest",
+                    wait_for_disconnect=started.wait,
+                ),
+            )
+    assert error.value.status_code == 499
+    assert stopped.is_set()

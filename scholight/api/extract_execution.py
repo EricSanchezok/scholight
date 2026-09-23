@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Literal, Protocol
 from uuid import UUID
@@ -15,6 +16,7 @@ from scholight.config import settings
 from scholight.logging.emf import emit_emf
 from scholight.models.web_extract import ExtractRequest, ExtractResponse
 from scholight.web_extract.cache import ExtractResultCache, PageSlice
+from scholight.web_extract.cancellation import ClientDisconnectedError, until_disconnect
 from scholight.web_extract.contracts import InternalExtractResponse
 from scholight.web_extract.telemetry import (
     ExtractTrace,
@@ -41,6 +43,7 @@ class ExtractInvocation:
     actor: _ExtractActor | None
     request_id: str
     transport: Literal["rest", "mcp"]
+    wait_for_disconnect: Callable[[], Awaitable[None]] | None = None
 
 
 class PublicExtractError(Exception):
@@ -252,12 +255,25 @@ async def execute_public_extract(
     outcome = "unexpected_error"
     try:
         async with asyncio.timeout(budget):
-            result = await _execute_public_extract(request, invocation)
+            operation = _execute_public_extract(request, invocation)
+            result = (
+                await until_disconnect(operation, invocation.wait_for_disconnect)
+                if invocation.wait_for_disconnect is not None
+                else await operation
+            )
             if trace.remaining() <= 0:
                 raise TimeoutError
         trace.mime = mime_category(result.content_type)
         outcome = "pagination_success" if request.cursor else "initial_success"
         return result
+    except ClientDisconnectedError as error:
+        outcome = "cancelled"
+        raise PublicExtractError(
+            status_code=499,
+            code="extract_cancelled",
+            message="Client disconnected.",
+            retryable=True,
+        ) from error
     except (TimeoutError, httpx.TimeoutException) as error:
         outcome = "error_extract_timeout"
         raise PublicExtractError(
