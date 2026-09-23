@@ -49,3 +49,22 @@ Python processes and communicate through a real Unix socket. Checks cover unchan
 request JSON, optional headers, response/error mapping, immutable pagination and
 cross-actor rejection in both directions. The document producer is a fixed stub;
 this is a wire check, not an authentication, database or extraction-quality test.
+
+For the optional fast parser candidate, mount this directory into the final B
+image and run `/app/.venv/bin/python /benchmark/parser_compare.py --output
+/results/parser --rounds 5` with an output volume. Keep Linux ARM64, Python 3.11
+and the same container limits. The harness alternates complete/fast parsing in
+supervised workers, records every output and CPU time, and resets parser caches
+after each job. It adds 18 authored, annotated HTML pages to the frozen 48 cases.
+Chinese characters and Unicode words form a multiset precision/recall score;
+critical paragraph/code/table/link checks and full-mode line retention are
+separate gates. The six JS parser fixtures use their exact authored hydration
+payload; this does not replace real browser integration tests. Report HTML CPU
+improvement and total mixed-corpus CPU separately. A `--allow-host --rounds 1`
+development smoke is explicitly ineligible for acceptance. Quality must pass
+and HTML parsing CPU must improve by at least 20%; runtime remains in full mode
+until a separately reviewed activation.
+
+The candidate follows [Trafilatura's documented fast mode](https://trafilatura.readthedocs.io/en/latest/extraction-overview.html),
+which skips backup extraction. These fixtures establish reproducibility and
+identify regressions; they cannot establish universal quality on arbitrary sites.
