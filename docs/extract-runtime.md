@@ -90,7 +90,14 @@ an exclusive directory lock. No full document is placed in an IPC message.
 
 One serial parser worker handles HTML, text and PDF. A separate serial browser
 worker owns Chromium. Startup checks actual PDF imports and browser launch before
-readiness. Parsing-library caches are cleared after each parse. Each worker is
+readiness. Parsing-library caches are cleared after each parse.
+The parser first collects and freezes its startup-only Python object graph before
+reading any job. Per-job library cache reset and garbage collection still run,
+but do not repeatedly scan process-lifetime imports. New request objects and
+reference cycles remain collectible; no job is added to the permanent generation.
+This uses Python's [GC permanent generation](https://docs.python.org/3.11/library/gc.html#gc.freeze)
+only inside the parser child, never in the API or browser worker.
+The bounded worker lifetime also bounds the frozen startup state. Each worker is
 terminated after 100 tasks and its successor starts only after it has exited.
 On cancellation the supervisor kills the worker and its descendant process
 groups, including Chromium's detached group. Linux subreaping prevents orphaned

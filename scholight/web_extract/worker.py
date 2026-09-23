@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import gc
 import json
 import sys
 import time
@@ -76,6 +77,11 @@ async def _main(kind: str, channel: TextIO) -> None:
 
             # Referencing the native entry points verifies all optional imports loaded.
             _ = pymupdf.open, pymupdf4llm.to_markdown
+            # Cache reset performs full GC after each parse. Import graphs are
+            # process-lifetime state; scan them once before accepting any jobs.
+            # New request objects remain collectible and are never frozen.
+            gc.collect()
+            gc.freeze()
         elif kind == "browser":
             from scholight.config import settings
 
