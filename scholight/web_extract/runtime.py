@@ -31,11 +31,13 @@ def build_extract_app() -> FastAPI:
         "parser",
         queueing=settings.extract_queueing,
         admit=lambda: memory.admit(),
+        reserve_start=lambda: budget.startup("parser"),
     )
     browser_worker = WorkerSupervisor(
         "browser",
         queueing=settings.extract_queueing,
         admit=lambda: memory.admit(),
+        reserve_start=lambda: budget.startup("browser"),
     )
 
     async def reclaim() -> None:

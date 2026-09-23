@@ -6,6 +6,7 @@ import asyncio
 import json
 import sys
 from collections.abc import Callable
+from contextlib import AbstractContextManager, ExitStack, nullcontext
 from typing import Literal
 
 from scholight.web_extract.admission import BoundedGate
@@ -32,6 +33,7 @@ class WorkerSupervisor:
         recycle_after: int = 100,
         queueing: bool = False,
         admit: Callable[[], None] | None = None,
+        reserve_start: Callable[[], AbstractContextManager[None]] | None = None,
     ) -> None:
         self.kind = kind
         self._command = command or (
@@ -49,6 +51,7 @@ class WorkerSupervisor:
             wait_seconds=2 if kind == "parser" else 5,
         )
         self._admit = admit or (lambda: None)
+        self._reserve_start = reserve_start or nullcontext
         self._stop_lock = asyncio.Lock()
         self._completed = 0
         self._recycle_after = recycle_after
@@ -65,6 +68,10 @@ class WorkerSupervisor:
         return self._gate.active > 0
 
     async def _start(self) -> None:
+        with ExitStack() as startup:
+            await self._start_reserved(startup)
+
+    async def _start_reserved(self, startup: ExitStack) -> None:
         try:
             if self._process is not None and self._process.returncode is not None:
                 # An idle crash can leave detached children holding the old pipes.
@@ -73,6 +80,9 @@ class WorkerSupervisor:
             async with self._stop_lock:
                 if self._process is not None and self._process.returncode is None:
                     return
+                # A cold generation adds native import/browser heaps beyond the
+                # active job envelope. Keep this allowance until ready or reaped.
+                startup.enter_context(self._reserve_start())
                 spawning = asyncio.create_task(
                     asyncio.create_subprocess_exec(
                         *self._command,

@@ -188,6 +188,13 @@ the reservation to its output file before waiting for parsing. All success,
 failure and cancellation paths release the reservation once. Singleflight
 waiters share the execution owner's reservation.
 
+A cold worker also owns a separate startup allowance from before process creation
+until readiness; the container working set then accounts for its resident heap.
+This allowance is additive to the active job envelope, and is not charged for
+warm worker calls. Initial readiness, scheduled recycling and replacement of an
+idle crashed generation all use the same path. Failed or cancelled startup keeps
+the allowance until the owned process family has been reaped.
+
 The estimate is conservative: it adds a complete phase envelope to measured
 memory even when some allocations are already reflected in the working set.
 `MemoryReservedBytes` is sampled once per second; rejected growth increments

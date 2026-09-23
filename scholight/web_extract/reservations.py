@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Literal
 
@@ -11,6 +12,7 @@ from scholight.web_extract.admission import capacity_error
 
 MIB = 1024 * 1024
 Stage = Literal["download", "parse", "browser"]
+WorkerKind = Literal["parser", "browser"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,6 +32,8 @@ class MemoryModel:
     pdf: StageCost = StageCost(64 * MIB, 128)
     text: StageCost = StageCost(8 * MIB, 8)
     browser: StageCost = StageCost(192 * MIB, 0)
+    parser_startup: int = 128 * MIB
+    browser_startup: int = 192 * MIB
 
     def estimate(self, stage: Stage, size: int, mime: str) -> int:
         if size < 0:
@@ -70,8 +74,20 @@ class MemoryBudget:
         return MemoryReservation(self)
 
     def transfer(self, old: int, *, stage: Stage, size: int, mime: str) -> int:
+        return self._replace(old, self._model.estimate(stage, size, mime))
+
+    @contextmanager
+    def startup(self, kind: WorkerKind) -> Iterator[None]:
+        amount = self._replace(
+            0, self._model.parser_startup if kind == "parser" else self._model.browser_startup
+        )
+        try:
+            yield
+        finally:
+            self.release(amount)
+
+    def _replace(self, old: int, new: int) -> int:
         self._admit()
-        new = self._model.estimate(stage, size, mime)
         try:
             working = self._sample()
         except (OSError, ValueError, KeyError) as error:

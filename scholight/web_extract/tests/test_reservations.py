@@ -58,6 +58,21 @@ def test_failed_phase_growth_preserves_prior_ownership_for_cleanup() -> None:
     assert budget.reserved_bytes == 0
 
 
+def test_startup_envelope_adds_to_job_and_releases_after_readiness() -> None:
+    model = MemoryModel(download=StageCost(10, 1), parser_startup=80, browser_startup=90)
+    budget = MemoryBudget(lambda: 100, lambda: None, model=model, high=200)
+    lease = budget.lease()
+    lease.transfer("download", size=10)
+    with budget.startup("parser"):
+        assert budget.reserved_bytes == 100
+    assert budget.reserved_bytes == 20
+    with pytest.raises(ExtractError):
+        with budget.startup("browser"):
+            pytest.fail("A cold browser exceeded the combined memory budget")
+    assert budget.reserved_bytes == 20
+    lease.close()
+
+
 @pytest.mark.asyncio
 async def test_cancelled_worker_queue_has_no_parse_or_scratch_reservation(tmp_path) -> None:
     from scholight.models.web_extract import ExtractResponseFormat, RenderMode

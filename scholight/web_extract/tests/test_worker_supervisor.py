@@ -8,6 +8,7 @@ from unittest.mock import patch
 import pytest
 
 from scholight.web_extract.errors import ExtractError
+from scholight.web_extract.reservations import MemoryBudget, MemoryModel
 from scholight.web_extract.worker_supervisor import WorkerSupervisor
 
 pytestmark = pytest.mark.asyncio
@@ -29,6 +30,89 @@ for line in sys.stdin:
         time.sleep(60)
     print(json.dumps({'pid': os.getpid()}), flush=True)
 """
+
+
+async def test_cold_start_is_reserved_before_spawn_and_warm_calls_do_not_reserve() -> None:
+    working = 100
+    budget = MemoryBudget(
+        lambda: working, lambda: None, model=MemoryModel(parser_startup=80), high=200
+    )
+    worker = WorkerSupervisor(
+        "parser",
+        command=(sys.executable, "-u", "-c", ECHO),
+        reserve_start=lambda: budget.startup("parser"),
+        recycle_after=2,
+    )
+    receive = worker._receive
+    measured = []
+
+    async def measured_receive():
+        measured.append(budget.reserved_bytes)
+        return await receive()
+
+    try:
+        with patch.object(worker, "_receive", measured_receive):
+            await worker.warmup()
+            assert measured == [80] and budget.reserved_bytes == 0
+            working = 130
+            first = await worker.call({})
+            assert (await worker.call({})) == first
+            assert measured == [80, 0, 0] and worker.pid is None
+            with pytest.raises(ExtractError):
+                await worker.call({})
+        assert worker.restarts == 1 and budget.reserved_bytes == 0
+    finally:
+        await worker.close()
+
+
+async def test_idle_crash_replacement_also_requires_startup_memory() -> None:
+    working = 100
+    budget = MemoryBudget(
+        lambda: working, lambda: None, model=MemoryModel(parser_startup=80), high=200
+    )
+    worker = WorkerSupervisor(
+        "parser",
+        command=(sys.executable, "-u", "-c", ECHO),
+        reserve_start=lambda: budget.startup("parser"),
+    )
+    try:
+        await worker.warmup()
+        process = worker._process
+        assert process is not None
+        process.kill()
+        await process.wait()
+        working = 130
+        with pytest.raises(ExtractError):
+            await worker.call({})
+        assert worker.restarts == 1 and worker.pid is None and budget.reserved_bytes == 0
+    finally:
+        await worker.close()
+
+
+async def test_cancelled_readiness_releases_startup_only_after_process_cleanup() -> None:
+    budget = MemoryBudget(lambda: 100, lambda: None, model=MemoryModel(parser_startup=80), high=200)
+    worker = WorkerSupervisor(
+        "parser",
+        command=(sys.executable, "-u", "-c", ECHO),
+        reserve_start=lambda: budget.startup("parser"),
+    )
+    receiving = asyncio.Event()
+
+    async def delayed_ready():
+        receiving.set()
+        await asyncio.Event().wait()
+
+    try:
+        with patch.object(worker, "_receive", delayed_ready):
+            task = asyncio.create_task(worker.warmup())
+            await asyncio.wait_for(receiving.wait(), timeout=2)
+            assert budget.reserved_bytes == 80
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        assert worker.pid is None and budget.reserved_bytes == 0
+    finally:
+        await worker.close()
 
 
 async def test_worker_is_reused_then_recycled_without_overlap() -> None:
