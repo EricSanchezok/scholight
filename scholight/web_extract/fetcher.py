@@ -15,6 +15,7 @@ from scholight.web_extract.engine import ExtractInput, FetchResult
 from scholight.web_extract.errors import ExtractError
 from scholight.web_extract.policy import resolve_public_addresses, validate_public_target
 from scholight.web_extract.spool import Spool
+from scholight.web_extract.telemetry import current_trace, mime_category
 
 _REDIRECTS = frozenset({301, 302, 303, 307, 308})
 _DEFAULT_HEADERS = {"User-Agent": "Scholight-Web-Extract/1.0"}
@@ -123,6 +124,10 @@ class HttpFetcher:
                             headers=headers,
                             allow_redirects=False,
                         ) as response:
+                            trace = current_trace.get()
+                            if trace is not None:
+                                trace.upstream_status = response.status
+                                trace.mime = mime_category(response.headers.get("Content-Type", ""))
                             if response.status in _REDIRECTS and "Location" in response.headers:
                                 if redirect_count >= self._max_redirects:
                                     raise ExtractError(
@@ -167,6 +172,9 @@ class HttpFetcher:
                                 if body_file is not None:
                                     body_file.close()
                                 raise
+                            finally:
+                                if trace is not None:
+                                    trace.download_bytes += response.content.total_raw_bytes
                             return FetchResult(
                                 requested_url=requested_url,
                                 final_url=str(response.url),

@@ -9,6 +9,7 @@ from scholight.web_extract.engine import ExtractInput, FetchResult, ParsedConten
 from scholight.web_extract.errors import ExtractError
 from scholight.web_extract.extractors import ExtractedContent
 from scholight.web_extract.spool import Spool
+from scholight.web_extract.telemetry import current_trace
 from scholight.web_extract.worker_contracts import FetchMetadata, WorkerFailure, WorkerJob
 from scholight.web_extract.worker_supervisor import WorkerSupervisor
 
@@ -59,6 +60,9 @@ class IsolatedParser:
             )
             reply = await self._worker.call(job.model_dump(mode="json"))
             _raise_failure(reply)
+            cpu_ms = reply.get("cpu_ms")
+            if (trace := current_trace.get()) is not None and isinstance(cpu_ms, (int, float)):
+                trace.phases["ParseCPU"] = trace.phases.get("ParseCPU", 0) + cpu_ms
             data = json.loads(result.path.read_bytes())
             return ParsedContent(
                 extracted=ExtractedContent(**data["extracted"]) if data["extracted"] else None,

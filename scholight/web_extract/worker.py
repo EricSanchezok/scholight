@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+import time
 from contextlib import redirect_stdout
 from dataclasses import asdict
 from pathlib import Path
@@ -46,10 +47,12 @@ def _parse(job: WorkerJob, request: ExtractInput) -> dict[str, object]:
     if job.fetched is None:
         raise ValueError("Missing fetched metadata")
     try:
+        started_cpu = time.process_time()
         fetched = FetchResult(**job.fetched.model_dump(), body=Path(job.body_path).read_bytes())
         parsed = parse_document(fetched, request, rendered=job.rendered)
+        cpu_ms = (time.process_time() - started_cpu) * 1000
         size = _write_result(job, asdict(parsed))
-        return {"size": size}
+        return {"size": size, "cpu_ms": cpu_ms}
     finally:
         reset_caches()
         pymupdf.TOOLS.store_shrink(100)  # type: ignore[no-untyped-call]

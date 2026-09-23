@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Protocol
@@ -15,6 +16,7 @@ from scholight.web_extract.extractors import (
     normalize_text,
     should_render_html,
 )
+from scholight.web_extract.telemetry import current_trace, mime_category, phase
 
 if TYPE_CHECKING:
     from scholight.web_extract.spool import SpoolFile
@@ -188,10 +190,12 @@ class ExtractEngine:
         fetcher: Fetcher,
         browser: BrowserRenderer,
         parser: Parser | None = None,
+        admit: Callable[[], None] | None = None,
     ) -> None:
         self._fetcher = fetcher
         self._browser = browser
         self._parser = parser
+        self._admit = admit or (lambda: None)
 
     async def _parse(
         self,
@@ -200,20 +204,40 @@ class ExtractEngine:
         *,
         rendered: bool,
     ) -> ParsedContent:
-        if self._parser is not None:
-            return await self._parser.parse(fetched, request, rendered=rendered)
-        return parse_document(fetched, request, rendered=rendered)
+        with phase("ParseLatency"):
+            self._admit()
+            if self._parser is not None:
+                return await self._parser.parse(fetched, request, rendered=rendered)
+            return parse_document(fetched, request, rendered=rendered)
 
     async def extract(self, request: ExtractInput) -> ExtractDocument:
+        self._admit()
         rendered = request.render is RenderMode.ALWAYS
-        fetched = (
-            await self._browser.render(request) if rendered else await self._fetcher.fetch(request)
-        )
+        with phase("RenderLatency" if rendered else "DownloadLatency"):
+            fetched = (
+                await self._browser.render(request)
+                if rendered
+                else await self._fetcher.fetch(request)
+            )
+        trace = current_trace.get()
+        if trace is not None:
+            trace.upstream_status = fetched.status_code
+            trace.mime = mime_category(fetched.content_type)
+            if rendered:
+                trace.dom_bytes = fetched.source_bytes
+            else:
+                trace.source_bytes = fetched.source_bytes
         try:
             parsed = await self._parse(fetched, request, rendered=rendered)
             if parsed.needs_render:
                 fetched.close()
-                fetched = await self._browser.render(request)
+                self._admit()
+                with phase("RenderLatency"):
+                    fetched = await self._browser.render(request)
+                if trace is not None:
+                    trace.upstream_status = fetched.status_code
+                    trace.dom_bytes = fetched.source_bytes
+                    trace.mime = mime_category(fetched.content_type)
                 rendered = True
                 parsed = await self._parse(fetched, request, rendered=True)
             if parsed.extracted is None:

@@ -74,3 +74,27 @@ def reap_groups(groups: set[int]) -> None:
         with suppress(ChildProcessError):
             while os.waitpid(-group, os.WNOHANG)[0] > 0:
                 pass
+
+
+def family_rss(root: int | None) -> int:
+    if root is None:
+        return 0
+    groups = process_groups(root)
+    if sys.platform == "linux":
+        total = 0
+        for pid, _parent, group in _processes():
+            if group in groups:
+                with suppress(OSError, ValueError, IndexError):
+                    resident = int(Path(f"/proc/{pid}/statm").read_text().split()[1])
+                    total += resident * os.sysconf("SC_PAGE_SIZE")
+        return total
+    output = subprocess.check_output(  # nosec
+        ["/bin/ps", "-A", "-o", "pgid=,rss="],
+        text=True,
+        timeout=1,
+    )
+    return sum(
+        int(rss) * 1024
+        for group, rss in (line.split() for line in output.splitlines())
+        if int(group) in groups
+    )

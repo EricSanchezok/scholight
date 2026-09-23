@@ -48,3 +48,36 @@ Browser startup, context creation, policy callbacks and close races use stable
 errors. Cleanup errors cannot replace the original document error. The Python
 library's injectable in-process engine remains available for isolated unit tests;
 the deployed runtime always injects supervised workers.
+
+## Deadlines, cancellation and telemetry
+
+Public REST/MCP extraction uses one absolute 55-second operation deadline (or the
+configured shorter request timeout). API forwards optional
+`X-Scholight-Request-Id` and `X-Scholight-Budget-Ms` headers. Internal extraction
+caps that budget at 52 seconds and reserves its last two seconds for process/file
+cleanup. Queueing, redirects, download, browser work and parsing consume the same
+remaining budget. A disconnected internal client cancels the active operation.
+Both older APIs without these headers and older Extract services ignoring them
+retain the same JSON contract. Old services retain their older resource behavior.
+
+One `extract_completed` event per public or internal operation covers success,
+controlled error, timeout, cancellation and unexpected failure. Public records
+distinguish initial extraction from pagination. Correlation identifiers are
+sanitized and appear only in logs. No target URL, query, cookie, header, document
+content or raw exception message is recorded. Records include MIME category,
+requested render mode, cache eligibility and hit status, upstream status,
+stage elapsed time and parser CPU time. EMF uses bounded service/outcome dimensions.
+
+Static transfer bytes, decoded source-document bytes and rendered DOM bytes are
+separate measurements. A cache hit records zero transfer bytes. Cgroup-v2 memory
+sampling reports working set (`memory.current - inactive_file`), anonymous memory,
+file memory, parser/browser family RSS, activity and worker start gauges each
+second. Family RSS can double-count shared pages and is diagnostic only; the
+container working set controls admission. Missing cgroup measurements fail closed.
+Local macOS development uses a conservative process RSS bound instead.
+
+At 640 MiB working set, new requests and stage transitions stop, the shared cache
+is cleared, and workers are reclaimed. Admission resumes below 512 MiB after
+reclamation finishes. Liveness remains independent of this temporary backpressure.
+All workers remain within the existing 768 MiB container hard limit; no ECS,
+Identity, schema, ingestion binding or shared infrastructure change is required.
