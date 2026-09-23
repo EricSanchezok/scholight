@@ -1,9 +1,21 @@
-<!doctype html><html><head><meta charset="utf-8"><meta name="robots" content="noindex,nofollow"><title>Scholight JavaScript canary</title></head><body><main id="root">Enable JavaScript</main><script>
-setTimeout(() => {
-  document.getElementById('root').innerHTML = '<article><h1>ScholightJSEvidence2026</h1>'
-    + '<p>This fixed paragraph is inserted by JavaScript after the page loads. '
-    + 'Successful extraction confirms that the browser rendered the document, '
-    + 'waited for its content and preserved this evidence in the returned result. '
-    + 'The sample makes no network requests and changes no account state.</p></article>';
-}, 40);
-</script></body></html>
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="robots" content="noindex,nofollow" />
+    <title>Scholight JavaScript canary</title>
+  </head>
+  <body>
+    <main id="root">Enable JavaScript</main>
+    <script>
+      setTimeout(() => {
+        document.getElementById("root").innerHTML =
+          "<article><h1>ScholightJSEvidence2026</h1>" +
+          "<p>This fixed paragraph is inserted by JavaScript after the page loads. " +
+          "Successful extraction confirms that the browser rendered the document, " +
+          "waited for its content and preserved this evidence in the returned result. " +
+          "The sample makes no network requests and changes no account state.</p></article>";
+      }, 40);
+    </script>
+  </body>
+</html>
