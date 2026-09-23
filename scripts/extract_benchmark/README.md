@@ -118,3 +118,29 @@ ten minutes before the initial idle-hour median, and compares it with the final
 hour. It reports sample counts and cannot pass incomplete four-hour/2,000-request
 soaks. A single successful latency gate does not substitute for failure, queue,
 quality, cleanup, memory or production observation gates.
+
+## Isolated faults and memory calibration
+
+`run.py --mode faults --seconds 0 --requests 1` uses the same isolated fixture
+network for slow responses, slow/excessive redirect chains, client disconnects
+and recovery requests. Its `faults.json` records actual response deadlines; this
+mode is a lifecycle check, not a latency benchmark. Run `worker_faults.py` inside
+the final image with `--network none`, 768 MiB and CPU shares 128 to stop a real
+parser, kill an idle worker and Chromium, and race eight close callers. Set the
+explicit `SCHOLIGHT_BENCHMARK_CONTAINER=1` marker; the probe also requires the exact
+768 MiB cgroup hard limit. It checks
+owned process-group termination/reaping and recovery; never run it on a production
+task or in the host namespace.
+
+Run `/app/.venv/bin/python /benchmark/calibrate.py` inside a native B image with
+the same limits, no network, a mounted `/results` directory and this directory
+mounted at `/benchmark`. It warms the browser, restarts the parser before each
+sample, and takes 10 ms cgroup measurements across three repetitions of the frozen
+non-JS corpus plus scaled prose, dense DOM, tables, Chinese, text and PDF streams.
+The measured parent imports the production runtime dependency graph. The probe
+cancels its owned task at 640 MiB or 45 seconds and leaves partial evidence for
+review. Recommendations use observed fixed/size costs with a 50% margin and an
+additional 8 MiB fixed allowance. This finite parser corpus cannot bound arbitrary
+compressed PDFs; actual mixed-load soak and download/browser phase measurements
+remain required before the model is accepted. Calibration is not a production
+stress test and does not change runtime coefficients automatically.

@@ -171,7 +171,7 @@ def run(
                 "--entrypoint",
                 "/app/.venv/bin/python",
                 image,
-                "/benchmark/client.py",
+                "/benchmark/http_faults.py" if mode == "faults" else "/benchmark/client.py",
                 str(seconds),
                 str(requests),
                 str(seed),
@@ -204,7 +204,9 @@ if __name__ == "__main__":
     parser.add_argument("--seconds", type=float, default=14_400)
     parser.add_argument("--requests", type=int, default=2400)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--mode", choices=["mixed", "cold", "warm", "duplicate"], default="mixed")
+    parser.add_argument(
+        "--mode", choices=["mixed", "cold", "warm", "duplicate", "faults"], default="mixed"
+    )
     parser.add_argument("--concurrency", type=int, choices=[1, 2, 4, 8, 16], default=1)
     parser.add_argument("--disable", choices=sorted(ABLATIONS))
     parser.add_argument("--http-version", choices=["1.0", "1.1"], default="1.0")

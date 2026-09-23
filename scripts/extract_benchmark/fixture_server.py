@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+import time
+from contextlib import suppress
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
@@ -17,6 +19,22 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         name = urlsplit(self.path).path.strip("/")
+        if name.startswith("fault/"):
+            parts = name.split("/")
+            if parts[1] == "slow":
+                time.sleep(10)
+                name = "article-0"
+            elif parts[1] in {"redirect", "slow-redirect"}:
+                count = min(100, int(parts[2]))
+                if parts[1] == "slow-redirect":
+                    time.sleep(0.3)
+                self.send_response(302)
+                self.send_header(
+                    "Location", f"/fault/{parts[1]}/{count - 1}" if count else "/article-0"
+                )
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
         if name == "manifest":
             body = json.dumps(
                 [
@@ -41,7 +59,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("X-Robots-Tag", "noindex, nofollow")
         self.end_headers()
-        self.wfile.write(body)
+        # Expected when a fault-case caller cancels its owned request.
+        with suppress(BrokenPipeError, ConnectionResetError):
+            self.wfile.write(body)
 
     def log_message(self, _format: str, *_args: object) -> None:
         pass
