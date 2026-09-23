@@ -66,6 +66,8 @@ dotenv，并拒绝非 `127.0.0.1:55432` 的 PostgreSQL。Zilliz 只允许只读�
 
 `POST /extract` 与 MCP `extract_url` 提供同一套通用读取能力：HTTP/HTTPS GET、公开任意端口、自定义目标请求头、无状态 Cookie、静态/Chromium 自动切换，以及 HTML、JSON、XML、PDF 到 Markdown/文本/原始 HTML 的转换。长内容用短期、身份绑定的 `next_cursor` 延续，不会重新抓取源站。
 
+缓存、分页快照和运行边界见 [Web Extract runtime](docs/extract-runtime.md)。
+
 Web Extract 要求 Access Key，但不消耗搜索日额度。带目标请求头或 Cookie 的调用不进入共享缓存。v1 暂不支持目标 POST、用户代理、自定义 JavaScript 与非 HTTP(S) URL。
 
 抽取 sidecar 仅记录静态/浏览器路径、稳定错误码、耗时、下载/输出字节数与缓存命中指标；目标 URL、Authorization、Cookie 和响应正文不会进入日志或指标。

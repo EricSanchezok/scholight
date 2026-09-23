@@ -64,7 +64,7 @@ class PublicExtractError(Exception):
 def _new_cache() -> ExtractResultCache:
     return ExtractResultCache(
         ttl_seconds=settings.extract_cache_ttl_seconds,
-        max_bytes=settings.extract_cache_max_bytes,
+        max_bytes=settings.extract_snapshot_max_bytes,
     )
 
 
@@ -75,6 +75,11 @@ def reset_extract_result_cache() -> None:
     """Reset process-local private cursor state at startup and in tests."""
     global _result_cache
     _result_cache = _new_cache()
+
+
+def prune_extract_result_cache() -> None:
+    """Expire private snapshots even when no new extraction requests arrive."""
+    _result_cache.prune()
 
 
 def _actor_key(actor: _ExtractActor) -> str:

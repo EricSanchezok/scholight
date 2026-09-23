@@ -7,8 +7,8 @@ import hmac
 import json
 import time
 from collections import OrderedDict
-from collections.abc import Callable
-from contextlib import AbstractAsyncContextManager
+from collections.abc import AsyncIterator, Callable
+from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
@@ -22,6 +22,8 @@ from scholight.web_extract.contracts import (
 )
 from scholight.web_extract.engine import ExtractDocument, ExtractInput
 from scholight.web_extract.errors import ExtractError
+from scholight.web_extract.maintenance import cache_maintenance
+from scholight.web_extract.retained_size import INDEX_BYTES, retained_size
 
 
 class _Engine(Protocol):
@@ -48,26 +50,37 @@ def _response_from_document(document: ExtractDocument) -> InternalExtractRespons
 
 
 class _SharedCache:
-    def __init__(self, *, ttl_seconds: int, max_bytes: int) -> None:
+    def __init__(
+        self,
+        *,
+        ttl_seconds: int,
+        max_bytes: int,
+        max_entries: int = 1024,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
         self._ttl = timedelta(seconds=ttl_seconds)
         self._max_bytes = max_bytes
+        self._max_entries = max_entries
+        self._clock = clock or (lambda: datetime.now(UTC))
         self._entries: OrderedDict[str, tuple[datetime, int, InternalExtractResponse]] = (
             OrderedDict()
         )
         self._bytes = 0
 
-    def _prune(self) -> None:
-        now = datetime.now(UTC)
+    def prune(self) -> None:
+        now = self._clock()
         for key, (expires_at, size, _value) in list(self._entries.items()):
             if expires_at <= now:
                 self._entries.pop(key)
                 self._bytes -= size
-        while self._bytes > self._max_bytes and self._entries:
+        while self._entries and (
+            self._bytes > self._max_bytes or len(self._entries) > self._max_entries
+        ):
             _key, (_expires_at, size, _value) = self._entries.popitem(last=False)
             self._bytes -= size
 
     def get(self, key: str) -> InternalExtractResponse | None:
-        self._prune()
+        self.prune()
         entry = self._entries.get(key)
         if entry is None:
             return None
@@ -75,16 +88,17 @@ class _SharedCache:
         return entry[2]
 
     def put(self, key: str, value: InternalExtractResponse) -> None:
-        self._prune()
-        size = len(value.content.encode("utf-8"))
+        self.prune()
+        expires_at = self._clock() + self._ttl
+        size = retained_size((key, expires_at, value)) + INDEX_BYTES
         if size > self._max_bytes:
             return
         previous = self._entries.pop(key, None)
         if previous is not None:
             self._bytes -= previous[1]
-        self._entries[key] = (datetime.now(UTC) + self._ttl, size, value)
+        self._entries[key] = (expires_at, size, value)
         self._bytes += size
-        self._prune()
+        self.prune()
 
 
 def _cache_key(request: InternalExtractRequest) -> str:
@@ -127,16 +141,25 @@ def create_extract_service(
     engine: _Engine,
     internal_token: str,
     cache_ttl_seconds: int = 600,
-    cache_max_bytes: int = 256 * 1024 * 1024,
+    cache_max_bytes: int = 32 * 1024 * 1024,
     lifespan: Callable[[FastAPI], AbstractAsyncContextManager[None]] | None = None,
 ) -> FastAPI:
+    cache = _SharedCache(ttl_seconds=cache_ttl_seconds, max_bytes=cache_max_bytes)
+
+    @asynccontextmanager
+    async def managed_lifespan(app: FastAPI) -> AsyncIterator[None]:
+        async with AsyncExitStack() as stack:
+            if lifespan is not None:
+                await stack.enter_async_context(lifespan(app))
+            await stack.enter_async_context(cache_maintenance(cache.prune))
+            yield
+
     app = FastAPI(
         title="Scholight Extract Service",
         docs_url=None,
         redoc_url=None,
-        lifespan=lifespan,
+        lifespan=managed_lifespan,
     )
-    cache = _SharedCache(ttl_seconds=cache_ttl_seconds, max_bytes=cache_max_bytes)
 
     @app.get("/livez")
     async def livez() -> dict[str, str]:

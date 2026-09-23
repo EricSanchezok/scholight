@@ -154,7 +154,12 @@ class Settings(BaseSettings):
     extract_max_download_bytes: int = Field(default=50_000_000, ge=1024, le=250_000_000)
     extract_cache_ttl_seconds: int = Field(default=600, ge=1, le=86400)
     extract_cache_max_bytes: int = Field(
-        default=256 * 1024 * 1024,
+        default=32 * 1024 * 1024,
+        ge=1024 * 1024,
+        le=2 * 1024 * 1024 * 1024,
+    )
+    extract_snapshot_max_bytes: int = Field(
+        default=64 * 1024 * 1024,
         ge=1024 * 1024,
         le=2 * 1024 * 1024 * 1024,
     )
