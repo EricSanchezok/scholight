@@ -76,6 +76,7 @@ class HttpFetcher:
         spool: Spool | None = None,
         queueing: bool = False,
         admit: Callable[[], None] | None = None,
+        reuse_connections: bool = False,
     ) -> None:
         self._validator = validator
         self._resolver = resolver
@@ -90,6 +91,29 @@ class HttpFetcher:
         )
         self._spool = spool
         self._admit = admit or (lambda: None)
+        self._reuse_connections = reuse_connections
+        self._connection_limit = concurrency
+        self._connector: aiohttp.TCPConnector | None = None
+
+    def _connection_pool(self, *, reuse: bool) -> aiohttp.TCPConnector:
+        if reuse and self._connector is not None and not self._connector.closed:
+            return self._connector
+        connector = aiohttp.TCPConnector(
+            resolver=self._resolver or PublicResolver(),
+            use_dns_cache=False,
+            ttl_dns_cache=0,
+            limit=self._connection_limit,
+            limit_per_host=self._connection_limit,
+            keepalive_timeout=15,
+        )
+        if reuse:
+            self._connector = connector
+        return connector
+
+    async def close(self) -> None:
+        connector, self._connector = self._connector, None
+        if connector is not None:
+            await connector.close()
 
     async def fetch(self, request: ExtractInput) -> FetchResult:
         await self._gate.acquire()
@@ -118,17 +142,15 @@ class HttpFetcher:
         if request.cookies and not any(name.lower() == "cookie" for name in headers):
             headers["Cookie"] = _cookie_header(request.cookies)
 
-        resolver = self._resolver or PublicResolver()
-        connector = aiohttp.TCPConnector(
-            resolver=resolver,
-            use_dns_cache=False,
-            ttl_dns_cache=0,
-        )
+        reuse = self._reuse_connections and not request.headers and not request.cookies
+        connector = self._connection_pool(reuse=reuse)
         try:
             async with aiohttp.ClientSession(
                 connector=connector,
+                connector_owner=not reuse,
                 timeout=self._timeout,
                 auto_decompress=True,
+                trust_env=False,
             ) as session:
                 for redirect_count in range(self._max_redirects + 1):
                     await self._validator(current_url)
@@ -217,7 +239,8 @@ class HttpFetcher:
                             retryable=True,
                         ) from exc
         finally:
-            await connector.close()
+            if not reuse:
+                await connector.close()
         raise AssertionError("redirect loop exited without a result")
 
 

@@ -39,7 +39,7 @@ def build_extract_app() -> FastAPI:
 
     async def reclaim() -> None:
         app.state.extract_cache.clear()
-        await asyncio.gather(browser_worker.close(), parser_worker.close())
+        await asyncio.gather(browser_worker.close(), parser_worker.close(), fetcher.close())
 
     def sample_memory() -> MemorySample:
         parser_rss = family_rss(parser_worker.pid)
@@ -68,15 +68,17 @@ def build_extract_app() -> FastAPI:
         spool,
         max_content_bytes=settings.extract_max_download_bytes,
     )
+    fetcher = HttpFetcher(
+        max_download_bytes=settings.extract_max_download_bytes,
+        timeout_seconds=settings.extract_fetch_timeout_seconds,
+        concurrency=settings.extract_static_concurrency,
+        spool=spool,
+        queueing=settings.extract_queueing,
+        admit=memory.admit,
+        reuse_connections=settings.extract_connection_reuse,
+    )
     engine = ExtractEngine(
-        fetcher=HttpFetcher(
-            max_download_bytes=settings.extract_max_download_bytes,
-            timeout_seconds=settings.extract_fetch_timeout_seconds,
-            concurrency=settings.extract_static_concurrency,
-            spool=spool,
-            queueing=settings.extract_queueing,
-            admit=memory.admit,
-        ),
+        fetcher=fetcher,
         browser=browser,
         admit=memory.admit,
         singleflight=settings.extract_singleflight,
@@ -102,7 +104,9 @@ def build_extract_app() -> FastAPI:
                 try:
                     await engine.close()
                 finally:
-                    await asyncio.gather(browser_worker.close(), parser_worker.close())
+                    await asyncio.gather(
+                        browser_worker.close(), parser_worker.close(), fetcher.close()
+                    )
             finally:
                 spool.close()
 

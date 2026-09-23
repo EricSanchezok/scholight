@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Literal, Protocol
 from uuid import UUID
@@ -82,6 +83,41 @@ def _new_cache() -> ExtractResultCache:
 
 
 _result_cache = _new_cache()
+_internal_client: httpx.AsyncClient | None = None
+
+
+def _new_internal_client() -> httpx.AsyncClient:
+    return httpx.AsyncClient(
+        timeout=settings.extract_request_timeout_seconds,
+        trust_env=False,
+        limits=httpx.Limits(max_connections=32, max_keepalive_connections=8, keepalive_expiry=30),
+    )
+
+
+@asynccontextmanager
+async def extract_client_lifespan() -> AsyncIterator[None]:
+    global _internal_client
+    if not settings.extract_connection_reuse:
+        yield
+        return
+    if _internal_client is not None:
+        raise RuntimeError("The internal Extract client is already running")
+    async with _new_internal_client() as client:
+        _internal_client = client
+        try:
+            yield
+        finally:
+            _internal_client = None
+
+
+@asynccontextmanager
+async def _document_client() -> AsyncIterator[httpx.AsyncClient]:
+    if settings.extract_connection_reuse and _internal_client is not None:
+        yield _internal_client
+    else:
+        # Isolated invocation without an API lifespan, or an explicit ablation.
+        async with _new_internal_client() as client:
+            yield client
 
 
 def reset_extract_result_cache() -> None:
@@ -139,10 +175,7 @@ async def _request_document(request: ExtractRequest) -> InternalExtractResponse:
         headers["X-Scholight-Request-Id"] = trace.request_id
         headers["X-Scholight-Budget-Ms"] = str(int(min(52, trace.remaining() - 3) * 1000))
     try:
-        async with httpx.AsyncClient(
-            timeout=settings.extract_request_timeout_seconds,
-            trust_env=False,
-        ) as client:
+        async with _document_client() as client:
             response = await client.post(
                 f"{settings.extract_service_url.rstrip('/')}/v1/extract",
                 headers=headers,

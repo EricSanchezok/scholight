@@ -61,6 +61,17 @@ Each caller logs its join status and an opaque static-work ID. A separate
 including work whose original caller disconnected. Joiners record zero additional
 download bytes. Do not count static-work completions as public requests.
 
+The API owns one internal HTTPX client for its lifespan, with per-call token,
+request-ID and budget headers. External static requests share only a TCP connector;
+each fetch has its own session/cookie jar, preserving cookies within that request's
+redirect chain without carrying them into another caller.
+Requests with caller-supplied target headers or cookies own a private connector,
+so connection-bound authentication cannot cross callers. New connections still use
+the policy-enforcing resolver, and every URL and redirect is validated even when a
+connection is reused. Environment proxies remain disabled. Memory reclamation and
+shutdown close the external connector. `SCHOLIGHT_EXTRACT_CONNECTION_REUSE=false`
+disables both pools for isolated ablation runs.
+
 The production supervisor streams downloads into exclusive files below
 `SCHOLIGHT_DATA_ROOT/extract-spool`. It reserves at most 256 MiB of scratch
 capacity, including in-flight input and result files. Capacity is checked before

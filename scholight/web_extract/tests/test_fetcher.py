@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
 import aiohttp
@@ -15,7 +15,9 @@ from scholight.web_extract.fetcher import HttpFetcher
 
 
 @asynccontextmanager
-async def _server(handler: web.RequestHandler) -> AsyncIterator[str]:
+async def _server(
+    handler: Callable[[web.Request], Awaitable[web.StreamResponse]],
+) -> AsyncIterator[str]:
     app = web.Application()
     app.router.add_route("*", "/{tail:.*}", handler)
     runner = web.AppRunner(app)

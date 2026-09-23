@@ -168,6 +168,7 @@ class Settings(BaseSettings):
     extract_parse_reuse: bool = True
     extract_queueing: bool = True
     extract_singleflight: bool = True
+    extract_connection_reuse: bool = True
     extract_server_host: str = "127.0.0.1"
     extract_server_port: int = Field(default=7202, ge=1, le=65535)
 
