@@ -51,8 +51,10 @@ the same two-second cleanup budget. Native image tests assert that Chromium's
 detached groups leave neither running processes nor zombies behind.
 
 Browser startup, context creation, policy callbacks and close races use stable
-errors. Cleanup errors cannot replace the original document error. The Python
-library's injectable in-process engine remains available for isolated unit tests;
+errors. Cleanup errors cannot replace the original document error. The browser
+worker is retired after unexpected lifecycle or cleanup failures. Route
+callback failures are confined to their context and abort the affected resource.
+The Python library's injectable in-process engine remains available for isolated unit tests;
 the deployed runtime always injects supervised workers.
 
 ## Deadlines, cancellation and telemetry
@@ -76,6 +78,7 @@ sanitized and appear only in logs. No target URL, query, cookie, header, documen
 content or raw exception message is recorded. Records include MIME category,
 requested render mode, cache eligibility and hit status, upstream status,
 stage elapsed time and parser CPU time. EMF uses bounded service/outcome dimensions.
+Telemetry sinks are best effort and cannot replace a response or its original error.
 
 Static transfer bytes, decoded source-document bytes and rendered DOM bytes are
 separate measurements. A cache hit records zero transfer bytes. Cgroup-v2 memory

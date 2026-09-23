@@ -56,6 +56,10 @@ class WorkerSupervisor:
 
     async def _start(self) -> None:
         try:
+            if self._process is not None and self._process.returncode is not None:
+                # An idle crash can leave detached children holding the old pipes.
+                # Reclaim that generation before discarding its group ownership.
+                await self.close()
             async with self._stop_lock:
                 if self._process is not None and self._process.returncode is None:
                     return
@@ -125,7 +129,7 @@ class WorkerSupervisor:
                 result = await self._receive()
                 self._groups.update(process_groups(process.pid))
                 self._completed += 1
-                if self._completed >= self._recycle_after:
+                if self._completed >= self._recycle_after or result.get("retire") is True:
                     # Await death before a later request is allowed to start its successor.
                     await self.close()
                 return result

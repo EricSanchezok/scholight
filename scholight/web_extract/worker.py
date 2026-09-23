@@ -129,6 +129,8 @@ async def _main(kind: str, channel: TextIO) -> None:
                         retryable=True,
                     ).model_dump()
                 }
+            if browser is not None and browser.recycle_required:
+                result["retire"] = True
             channel.write(json.dumps(result) + "\n")
             channel.flush()
     finally:

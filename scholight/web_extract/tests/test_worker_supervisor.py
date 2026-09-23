@@ -18,6 +18,9 @@ import subprocess
 print(json.dumps({'ready': True}), flush=True)
 for line in sys.stdin:
     message = json.loads(line)
+    if message.get('retire'):
+        print(json.dumps({'pid': os.getpid(), 'retire': True}), flush=True)
+        continue
     if message.get('child'):
         child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'], start_new_session=True)
         print(json.dumps({'pid': child.pid}), flush=True)
@@ -68,6 +71,18 @@ async def test_worker_crash_is_a_controlled_retryable_error() -> None:
         await worker.close()
 
 
+async def test_worker_can_retire_after_returning_a_result() -> None:
+    worker = WorkerSupervisor("browser", command=(sys.executable, "-u", "-c", ECHO))
+    try:
+        result = await worker.call({"retire": True})
+        assert worker.pid is None
+        with pytest.raises(ProcessLookupError):
+            os.kill(result["pid"], 0)
+        assert (await worker.call({}))["pid"] != result["pid"]
+    finally:
+        await worker.close()
+
+
 async def test_worker_close_kills_detached_descendant_groups() -> None:
     worker = WorkerSupervisor("browser", command=(sys.executable, "-u", "-c", ECHO))
     child = await worker.call({"child": True})
@@ -82,6 +97,35 @@ async def test_worker_close_kills_detached_descendant_groups() -> None:
         check=False,
     ).stdout.strip()
     assert not status or status.startswith("Z")
+
+
+async def test_replacing_an_idle_crashed_worker_reclaims_its_descendants() -> None:
+    worker = WorkerSupervisor("browser", command=(sys.executable, "-u", "-c", ECHO))
+    child = await worker.call({"child": True})
+    process = worker._process
+    assert process is not None
+    process.kill()
+    # The orphan still inherits the pipe, so wait() can wait for its EOF too.
+    async with asyncio.timeout(1):
+        while process.returncode is None:
+            await asyncio.sleep(0.01)
+    try:
+        await worker.call({})
+        import subprocess
+
+        status = subprocess.run(
+            ["/bin/ps", "-o", "stat=", "-p", str(child["pid"])],
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout.strip()
+        assert not status or status.startswith("Z")
+    finally:
+        await worker.close()
+        try:
+            os.kill(child["pid"], 9)
+        except ProcessLookupError:
+            pass
 
 
 async def test_cancellation_during_spawn_cannot_orphan_the_new_process() -> None:

@@ -72,6 +72,23 @@ def log_completion(
     cache_hit: bool,
     pagination: bool = False,
 ) -> None:
+    try:
+        _log_completion(trace, scope, outcome, render, cache_eligible, cache_hit, pagination)
+    except Exception:
+        # A broken log sink must not replace a result/error or prevent context cleanup.
+        # Logging this failure through the same sink could recurse.
+        return
+
+
+def _log_completion(
+    trace: ExtractTrace,
+    scope: str,
+    outcome: str,
+    render: str,
+    cache_eligible: bool,
+    cache_hit: bool,
+    pagination: bool,
+) -> None:
     logger.info(
         "extract_completed",
         request_id=trace.request_id,

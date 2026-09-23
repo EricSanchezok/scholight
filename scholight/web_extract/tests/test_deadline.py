@@ -15,6 +15,7 @@ from scholight.api.tests.test_extract_execution import _actor
 from scholight.config import settings
 from scholight.models.web_extract import ExtractRequest
 from scholight.web_extract.service import create_extract_service
+from scholight.web_extract.telemetry import current_trace
 from scholight.web_extract.tests.test_service import _Engine
 
 pytestmark = pytest.mark.asyncio
@@ -101,6 +102,21 @@ async def test_cache_hits_report_zero_download_bytes() -> None:
                     headers={"X-Scholight-Internal-Token": "internal-secret"},
                 )
     assert emit.call_args.kwargs["metrics"]["DownloadBytes"] == (0, "Bytes")
+
+
+async def test_completion_logging_failure_preserves_result_and_trace_context() -> None:
+    app = create_extract_service(engine=_Engine(), internal_token="internal-secret")
+    with patch("scholight.web_extract.telemetry.logger.info", side_effect=OSError("closed pipe")):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://extract"
+        ) as client:
+            response = await client.post(
+                "/v1/extract",
+                json={"url": "https://example.com"},
+                headers={"X-Scholight-Internal-Token": "internal-secret"},
+            )
+    assert response.status_code == 200
+    assert current_trace.get() is None
 
 
 async def test_public_disconnect_cancels_internal_work_with_a_controlled_result() -> None:
