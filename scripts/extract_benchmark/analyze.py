@@ -140,12 +140,16 @@ def summarize(directory: Path) -> dict:
         groups[row["category"]].append(row)
         mime_groups[mime_render_group(row)].append(row)
     samples = read_rows(directory / "memory.jsonl")
+    complete = run_complete(directory)
+    memory = memory_report(rows, samples)
+    memory["gate"] = complete and memory.get("gate", False)
     return {
         "directory": str(directory),
+        "run_complete": complete,
         "overall": latencies(rows),
         "categories": {key: latencies(value) for key, value in sorted(groups.items())},
         "mime_render": {key: latencies(value) for key, value in sorted(mime_groups.items())},
-        "memory": memory_report(rows, samples),
+        "memory": memory,
     }
 
 

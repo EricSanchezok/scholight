@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from copy import deepcopy
 
-from analyze import compare_outputs, latencies, matrix
+from analyze import compare_outputs, latencies, matrix, summarize
 
 
 def row(index=0):
@@ -68,3 +68,18 @@ def test_matrix_does_not_accept_partial_client_results(tmp_path):
     (child / "requests.jsonl").write_text(json.dumps({**row(), "category": "article"}) + "\n")
     (child / "memory.jsonl").write_text("")
     assert not matrix(tmp_path)["complete"]
+
+
+def test_standalone_soak_rejects_truncated_request_set_despite_four_hours(tmp_path):
+    (tmp_path / "container-final.json").write_text("[]")
+    (tmp_path / "manifest.json").write_text(json.dumps({"requests": 2400}))
+    (tmp_path / "requests.jsonl").write_text(
+        "\n".join(json.dumps({**row(i), "time": 10000, "category": "article"}) for i in range(2000))
+    )
+    (tmp_path / "memory.jsonl").write_text(
+        "\n".join(
+            json.dumps({"time": time, "working_set": 1, "oom_kill": 0})
+            for time in (0, 601, 12000, 14400)
+        )
+    )
+    assert not summarize(tmp_path)["memory"]["gate"]
