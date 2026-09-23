@@ -44,7 +44,9 @@ groups, including Chromium's detached group. Linux subreaping prevents orphaned
 browser children from accumulating after termination. All processes remain
 inside the same Extract container memory limit.
 Cancellation during process creation retains the returned process handle before
-cleanup. Shutdown waits for adopted descendants to exit and reaps them within
+cleanup, including repeated cancellation. Concurrent close callers share one owned
+cleanup task; cancelling a caller cannot abandon that task. Shutdown waits for
+adopted descendants to exit and reaps them within
 the same two-second cleanup budget. Native image tests assert that Chromium's
 detached groups leave neither running processes nor zombies behind.
 

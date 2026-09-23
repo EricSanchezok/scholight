@@ -7,6 +7,7 @@ import json
 import sys
 from typing import Literal
 
+from scholight.web_extract.cancellation import finish_after_cancellation
 from scholight.web_extract.errors import ExtractError
 from scholight.web_extract.process_family import kill_family, process_groups, reap_groups
 
@@ -43,6 +44,7 @@ class WorkerSupervisor:
         self._recycle_after = recycle_after
         self.restarts = 0
         self._groups: set[int] = set()
+        self._closing: asyncio.Task[None] | None = None
 
     @property
     def pid(self) -> int | None:
@@ -73,7 +75,7 @@ class WorkerSupervisor:
                 except asyncio.CancelledError:
                     # Process creation can already have forked before returning its handle.
                     # Retain ownership before allowing cancellation to leave this scope.
-                    self._process = await asyncio.shield(spawning)
+                    self._process = await finish_after_cancellation(spawning)
                     self._groups = {self._process.pid}
                     raise
                 self.restarts += 1
@@ -137,6 +139,15 @@ class WorkerSupervisor:
                 raise _worker_error() from error
 
     async def close(self) -> None:
+        if self._closing is None or self._closing.done():
+            self._closing = asyncio.create_task(self._stop())
+        try:
+            await asyncio.shield(self._closing)
+        except asyncio.CancelledError:
+            await finish_after_cancellation(self._closing)
+            raise
+
+    async def _stop(self) -> None:
         async with self._stop_lock:
             process = self._process
             if process is None:
@@ -144,7 +155,7 @@ class WorkerSupervisor:
             # Kill descendants even if the worker has already exited (e.g. Chromium).
             async with asyncio.timeout(2):
                 groups = kill_family(process.pid, self._groups)
-                await asyncio.shield(process.wait())
+                await process.wait()
                 while not reap_groups(groups):
                     await asyncio.sleep(0.01)
             self._process = None

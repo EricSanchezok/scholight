@@ -13,6 +13,20 @@ class ClientDisconnectedError(Exception):
     """A normal client lifecycle event, not an unhandled ASGI cancellation."""
 
 
+async def finish_after_cancellation(task: asyncio.Future[T]) -> T:
+    """Finish already-owned cleanup despite repeated cancellation of its caller.
+
+    Only use after catching cancellation, then re-raise the original cancellation.
+    The owned operation must have its own cleanup deadline where appropriate.
+    """
+    while True:
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            if task.done():
+                return task.result()
+
+
 async def until_disconnect(
     work: Awaitable[T],
     disconnected: Callable[[], Awaitable[None]],

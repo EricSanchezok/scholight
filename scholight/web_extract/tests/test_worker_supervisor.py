@@ -110,3 +110,60 @@ async def test_cancellation_during_spawn_cannot_orphan_the_new_process() -> None
         if process is not None and process.returncode is None:
             process.kill()
             await process.wait()
+
+
+async def test_repeated_cancellation_still_waits_for_spawn_ownership() -> None:
+    spawn = asyncio.create_subprocess_exec
+    spawned = asyncio.Event()
+    process = None
+
+    async def delayed_spawn(*args, **kwargs):
+        nonlocal process
+        process = await spawn(*args, **kwargs)
+        spawned.set()
+        await asyncio.sleep(0.05)
+        return process
+
+    worker = WorkerSupervisor("parser", command=(sys.executable, "-u", "-c", ECHO))
+    try:
+        with patch("asyncio.create_subprocess_exec", delayed_spawn):
+            task = asyncio.create_task(worker.call({}))
+            await spawned.wait()
+            task.cancel()
+            await asyncio.sleep(0)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        assert process.returncode is not None
+    finally:
+        await worker.close()
+        if process is not None and process.returncode is None:
+            process.kill()
+            await process.wait()
+
+
+async def test_repeated_cancellation_waits_for_owned_cleanup() -> None:
+    worker = WorkerSupervisor("parser", command=(sys.executable, "-u", "-c", ECHO))
+    await worker.warmup()
+    process = worker._process
+    assert process is not None
+    wait = process.wait
+    waiting = asyncio.Event()
+
+    async def delayed_wait():
+        waiting.set()
+        await asyncio.sleep(0.05)
+        return await wait()
+
+    try:
+        with patch.object(process, "wait", delayed_wait):
+            closing = asyncio.create_task(worker.close())
+            await waiting.wait()
+            closing.cancel()
+            await asyncio.sleep(0)
+            closing.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await closing
+        assert worker.pid is None
+    finally:
+        await worker.close()
