@@ -14,6 +14,7 @@ from aiohttp.abc import AbstractResolver, ResolveResult
 from scholight.web_extract.engine import ExtractInput, FetchResult
 from scholight.web_extract.errors import ExtractError
 from scholight.web_extract.policy import resolve_public_addresses, validate_public_target
+from scholight.web_extract.spool import Spool
 
 _REDIRECTS = frozenset({301, 302, 303, 307, 308})
 _DEFAULT_HEADERS = {"User-Agent": "Scholight-Web-Extract/1.0"}
@@ -70,6 +71,7 @@ class HttpFetcher:
         timeout_seconds: float = 30.0,
         max_redirects: int = 8,
         concurrency: int = 16,
+        spool: Spool | None = None,
     ) -> None:
         self._validator = validator
         self._resolver = resolver
@@ -77,6 +79,7 @@ class HttpFetcher:
         self._timeout = aiohttp.ClientTimeout(total=timeout_seconds, connect=10, sock_read=15)
         self._max_redirects = max_redirects
         self._semaphore = asyncio.Semaphore(concurrency)
+        self._spool = spool
 
     async def fetch(self, request: ExtractInput) -> FetchResult:
         if self._semaphore.locked():
@@ -142,15 +145,28 @@ class HttpFetcher:
                                     retryable=response.status == 429 or response.status >= 500,
                                 )
                             body = bytearray()
-                            async for chunk in response.content.iter_chunked(64 * 1024):
-                                body.extend(chunk)
-                                if len(body) > self._max_download_bytes:
-                                    raise ExtractError(
-                                        code="response_too_large",
-                                        message="Target response exceeds the download limit.",
-                                        status_code=413,
-                                        retryable=False,
-                                    )
+                            body_file = (
+                                self._spool.allocate(self._max_download_bytes)
+                                if self._spool is not None
+                                else None
+                            )
+                            try:
+                                async for chunk in response.content.iter_chunked(64 * 1024):
+                                    if body_file is not None:
+                                        body_file.write(chunk)
+                                    else:
+                                        body.extend(chunk)
+                                        if len(body) > self._max_download_bytes:
+                                            raise ExtractError(
+                                                code="response_too_large",
+                                                message="Target response exceeds the download limit.",
+                                                status_code=413,
+                                                retryable=False,
+                                            )
+                            except BaseException:
+                                if body_file is not None:
+                                    body_file.close()
+                                raise
                             return FetchResult(
                                 requested_url=requested_url,
                                 final_url=str(response.url),
@@ -160,6 +176,7 @@ class HttpFetcher:
                                 ),
                                 charset=response.charset,
                                 body=bytes(body),
+                                spool_file=body_file,
                             )
                     except ExtractError:
                         raise

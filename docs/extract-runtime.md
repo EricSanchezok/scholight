@@ -25,3 +25,26 @@ metadata and content remain immutable. The snapshot validates the complete actor
 identity (including Access Key), expiry and eviction status. Cursor signatures use
 a process-local random secret; API restarts invalidate cursors as before. No
 database, response-model or cross-version internal JSON changes are required.
+
+## Execution isolation
+
+The production supervisor streams downloads into exclusive files below
+`SCHOLIGHT_DATA_ROOT/extract-spool`. It reserves at most 256 MiB of scratch
+capacity, including in-flight input and result files. Capacity is checked before
+allocation and each write has an individual limit. Success, failure and
+cancellation release ownership; startup removes stale owned files while holding
+an exclusive directory lock. No full document is placed in an IPC message.
+
+One serial parser worker handles HTML, text and PDF. A separate serial browser
+worker owns Chromium. Startup checks actual PDF imports and browser launch before
+readiness. Parsing-library caches are cleared after each parse. Each worker is
+terminated after 100 tasks and its successor starts only after it has exited.
+On cancellation the supervisor kills the worker and its descendant process
+groups, including Chromium's detached group. Linux subreaping prevents orphaned
+browser children from accumulating after termination. All processes remain
+inside the same Extract container memory limit.
+
+Browser startup, context creation, policy callbacks and close races use stable
+errors. Cleanup errors cannot replace the original document error. The Python
+library's injectable in-process engine remains available for isolated unit tests;
+the deployed runtime always injects supervised workers.

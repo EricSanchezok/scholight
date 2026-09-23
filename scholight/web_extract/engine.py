@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from scholight.models.web_extract import ExtractResponseFormat, RenderMode
 from scholight.web_extract.errors import ExtractError
@@ -15,6 +15,9 @@ from scholight.web_extract.extractors import (
     normalize_text,
     should_render_html,
 )
+
+if TYPE_CHECKING:
+    from scholight.web_extract.spool import SpoolFile
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,7 +36,16 @@ class FetchResult:
     status_code: int
     content_type: str
     charset: str | None
-    body: bytes
+    body: bytes = b""
+    spool_file: SpoolFile | None = None
+
+    @property
+    def source_bytes(self) -> int:
+        return self.spool_file.size if self.spool_file is not None else len(self.body)
+
+    def close(self) -> None:
+        if self.spool_file is not None:
+            self.spool_file.close()
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,70 +111,124 @@ def _pdf(data: bytes) -> ExtractedContent:
     )
 
 
+@dataclass(frozen=True, slots=True)
+class ParsedContent:
+    extracted: ExtractedContent | None
+    needs_render: bool = False
+
+
+class Parser(Protocol):
+    async def parse(
+        self,
+        fetched: FetchResult,
+        request: ExtractInput,
+        *,
+        rendered: bool,
+    ) -> ParsedContent: ...
+
+
+def parse_document(
+    fetched: FetchResult,
+    request: ExtractInput,
+    *,
+    rendered: bool,
+) -> ParsedContent:
+    """Synchronous parsing entry point; production calls it only inside a worker."""
+    content_type = _mime(fetched.content_type)
+    data = fetched.spool_file.path.read_bytes() if fetched.spool_file is not None else fetched.body
+    if content_type in {"text/html", "application/xhtml+xml"}:
+        html = normalize_text(data, content_type, charset=fetched.charset)
+        if request.render is RenderMode.AUTO and not rendered:
+            try:
+                quality_content = extract_html(
+                    html,
+                    source_url=fetched.final_url,
+                    output=ExtractResponseFormat.MAIN_MARKDOWN,
+                ).content
+            except ExtractError:
+                quality_content = ""
+            if should_render_html(html, extracted_content=quality_content):
+                return ParsedContent(extracted=None, needs_render=True)
+        extracted = extract_html(html, source_url=fetched.final_url, output=request.output)
+    elif content_type == "application/pdf" or data.startswith(b"%PDF-"):
+        extracted = _pdf(data)
+    elif content_type.startswith("text/") or content_type in {
+        "application/json",
+        "application/xml",
+    }:
+        content = normalize_text(data, content_type, charset=fetched.charset).strip()
+        if not content:
+            raise ExtractError(
+                code="extraction_failed",
+                message="Response contains no readable text.",
+                status_code=422,
+                retryable=False,
+            )
+        extracted = ExtractedContent(
+            content=content,
+            title=None,
+            author=None,
+            published_at=None,
+            extractor="text",
+        )
+    else:
+        raise ExtractError(
+            code="unsupported_content_type",
+            message=f"Content type {content_type or 'unknown'} is not supported.",
+            status_code=415,
+            retryable=False,
+        )
+    return ParsedContent(extracted=extracted)
+
+
 class ExtractEngine:
-    def __init__(self, *, fetcher: Fetcher, browser: BrowserRenderer) -> None:
+    def __init__(
+        self,
+        *,
+        fetcher: Fetcher,
+        browser: BrowserRenderer,
+        parser: Parser | None = None,
+    ) -> None:
         self._fetcher = fetcher
         self._browser = browser
+        self._parser = parser
+
+    async def _parse(
+        self,
+        fetched: FetchResult,
+        request: ExtractInput,
+        *,
+        rendered: bool,
+    ) -> ParsedContent:
+        if self._parser is not None:
+            return await self._parser.parse(fetched, request, rendered=rendered)
+        return parse_document(fetched, request, rendered=rendered)
 
     async def extract(self, request: ExtractInput) -> ExtractDocument:
         rendered = request.render is RenderMode.ALWAYS
         fetched = (
             await self._browser.render(request) if rendered else await self._fetcher.fetch(request)
         )
-        content_type = _mime(fetched.content_type)
-        warnings: list[str] = []
+        try:
+            parsed = await self._parse(fetched, request, rendered=rendered)
+            if parsed.needs_render:
+                fetched.close()
+                fetched = await self._browser.render(request)
+                rendered = True
+                parsed = await self._parse(fetched, request, rendered=True)
+            if parsed.extracted is None:
+                raise RuntimeError("Parser returned no document")
+            return self._document(fetched, parsed.extracted, rendered=rendered)
+        finally:
+            fetched.close()
 
-        if content_type in {"text/html", "application/xhtml+xml"}:
-            html = normalize_text(fetched.body, content_type, charset=fetched.charset)
-            if request.render is RenderMode.AUTO:
-                try:
-                    quality_content = extract_html(
-                        html,
-                        source_url=fetched.final_url,
-                        output=ExtractResponseFormat.MAIN_MARKDOWN,
-                    ).content
-                except ExtractError:
-                    quality_content = ""
-                if should_render_html(html, extracted_content=quality_content):
-                    fetched = await self._browser.render(request)
-                    content_type = _mime(fetched.content_type)
-                    html = normalize_text(fetched.body, content_type, charset=fetched.charset)
-                    rendered = True
-            extracted = extract_html(
-                html,
-                source_url=fetched.final_url,
-                output=request.output,
-            )
-        elif content_type == "application/pdf" or fetched.body.startswith(b"%PDF-"):
-            extracted = _pdf(fetched.body)
-        elif content_type.startswith("text/") or content_type in {
-            "application/json",
-            "application/xml",
-            "application/xhtml+xml",
-        }:
-            content = normalize_text(fetched.body, content_type, charset=fetched.charset).strip()
-            if not content:
-                raise ExtractError(
-                    code="extraction_failed",
-                    message="Response contains no readable text.",
-                    status_code=422,
-                    retryable=False,
-                )
-            extracted = ExtractedContent(
-                content=content,
-                title=None,
-                author=None,
-                published_at=None,
-                extractor="text",
-            )
-        else:
-            raise ExtractError(
-                code="unsupported_content_type",
-                message=f"Content type {content_type or 'unknown'} is not supported.",
-                status_code=415,
-                retryable=False,
-            )
-
+    @staticmethod
+    def _document(
+        fetched: FetchResult,
+        extracted: ExtractedContent,
+        *,
+        rendered: bool,
+    ) -> ExtractDocument:
         content_hash = hashlib.sha256(extracted.content.encode("utf-8")).hexdigest()
         return ExtractDocument(
             requested_url=fetched.requested_url,
@@ -171,14 +237,14 @@ class ExtractEngine:
             title=extracted.title,
             author=extracted.author,
             published_at=extracted.published_at,
-            content_type=content_type,
+            content_type=_mime(fetched.content_type),
             content=extracted.content,
             rendered=rendered,
             extractor=extracted.extractor,
-            warnings=tuple(warnings),
+            warnings=(),
             content_hash=content_hash,
             fetched_at=datetime.now(UTC),
-            source_bytes=len(fetched.body),
+            source_bytes=fetched.source_bytes,
         )
 
 
