@@ -98,6 +98,7 @@ class IsolatedBrowser:
             body.size = body.path.stat().st_size
             if body.size > body.limit:
                 raise RuntimeError("Browser exceeded its scratch allowance")
+            body.seal()
             metadata = FetchMetadata.model_validate(reply["fetched"])
             return FetchResult(**metadata.model_dump(), spool_file=body)
         except BaseException:

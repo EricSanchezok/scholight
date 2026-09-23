@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
-import asyncio
 import socket
 from collections.abc import Awaitable, Callable
+from dataclasses import replace
 from http.cookies import SimpleCookie
 from urllib.parse import urljoin, urlsplit
 
 import aiohttp
 from aiohttp.abc import AbstractResolver, ResolveResult
 
+from scholight.web_extract.admission import BoundedGate, Permit
 from scholight.web_extract.engine import ExtractInput, FetchResult
 from scholight.web_extract.errors import ExtractError
 from scholight.web_extract.policy import resolve_public_addresses, validate_public_target
@@ -73,28 +74,41 @@ class HttpFetcher:
         max_redirects: int = 8,
         concurrency: int = 16,
         spool: Spool | None = None,
+        queueing: bool = False,
+        admit: Callable[[], None] | None = None,
     ) -> None:
         self._validator = validator
         self._resolver = resolver
         self._max_download_bytes = max_download_bytes
         self._timeout = aiohttp.ClientTimeout(total=timeout_seconds, connect=10, sock_read=15)
         self._max_redirects = max_redirects
-        self._semaphore = asyncio.Semaphore(concurrency)
+        self._gate = BoundedGate(
+            "Download",
+            capacity=concurrency,
+            max_waiters=8 if queueing else 0,
+            wait_seconds=2,
+        )
         self._spool = spool
+        self._admit = admit or (lambda: None)
 
     async def fetch(self, request: ExtractInput) -> FetchResult:
-        if self._semaphore.locked():
-            raise ExtractError(
-                code="extract_capacity_exceeded",
-                message="Static extraction capacity is temporarily exhausted.",
-                status_code=503,
-                retryable=True,
-            )
-        await self._semaphore.acquire()
+        await self._gate.acquire()
+        permit = Permit(self._gate)
+        fetched = None
         try:
-            return await self._fetch(request)
-        finally:
-            self._semaphore.release()
+            self._admit()
+            fetched = await self._fetch(request)
+            if fetched.spool_file is not None:
+                fetched.spool_file.seal()
+                # Bound downloaded files waiting for the serial parser as well as I/O.
+                return replace(fetched, permit=permit)
+            permit.close()
+            return fetched
+        except BaseException:
+            permit.close()
+            if fetched is not None:
+                fetched.close()
+            raise
 
     async def _fetch(self, request: ExtractInput) -> FetchResult:
         requested_url = request.url

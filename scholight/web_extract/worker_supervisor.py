@@ -5,8 +5,10 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+from collections.abc import Callable
 from typing import Literal
 
+from scholight.web_extract.admission import BoundedGate
 from scholight.web_extract.cancellation import finish_after_cancellation
 from scholight.web_extract.errors import ExtractError
 from scholight.web_extract.process_family import kill_family, process_groups, reap_groups
@@ -28,6 +30,8 @@ class WorkerSupervisor:
         *,
         command: tuple[str, ...] | None = None,
         recycle_after: int = 100,
+        queueing: bool = False,
+        admit: Callable[[], None] | None = None,
     ) -> None:
         self.kind = kind
         self._command = command or (
@@ -38,7 +42,13 @@ class WorkerSupervisor:
             kind,
         )
         self._process: asyncio.subprocess.Process | None = None
-        self._lock = asyncio.Lock()
+        self._gate = BoundedGate(
+            "Parse" if kind == "parser" else "Browser",
+            capacity=1,
+            max_waiters=(4 if kind == "parser" else 2) if queueing else 0,
+            wait_seconds=2 if kind == "parser" else 5,
+        )
+        self._admit = admit or (lambda: None)
         self._stop_lock = asyncio.Lock()
         self._completed = 0
         self._recycle_after = recycle_after
@@ -52,7 +62,7 @@ class WorkerSupervisor:
 
     @property
     def busy(self) -> bool:
-        return self._lock.locked()
+        return self._gate.active > 0
 
     async def _start(self) -> None:
         try:
@@ -107,18 +117,13 @@ class WorkerSupervisor:
         return value
 
     async def warmup(self) -> None:
-        async with self._lock:
+        async with self._gate.slot():
+            self._admit()
             await self._start()
 
     async def call(self, message: dict[str, object]) -> dict[str, object]:
-        if self._lock.locked():
-            raise ExtractError(
-                code="extract_capacity_exceeded",
-                message="Extraction worker is busy.",
-                status_code=503,
-                retryable=True,
-            )
-        async with self._lock:
+        async with self._gate.slot():
+            self._admit()
             try:
                 await self._start()
                 process = self._process

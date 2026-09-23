@@ -19,6 +19,7 @@ from scholight.web_extract.extractors import (
 from scholight.web_extract.telemetry import current_trace, mime_category, phase
 
 if TYPE_CHECKING:
+    from scholight.web_extract.admission import Permit
     from scholight.web_extract.spool import SpoolFile
 
 
@@ -40,14 +41,19 @@ class FetchResult:
     charset: str | None
     body: bytes = b""
     spool_file: SpoolFile | None = None
+    permit: Permit | None = None
 
     @property
     def source_bytes(self) -> int:
         return self.spool_file.size if self.spool_file is not None else len(self.body)
 
     def close(self) -> None:
-        if self.spool_file is not None:
-            self.spool_file.close()
+        try:
+            if self.spool_file is not None:
+                self.spool_file.close()
+        finally:
+            if self.permit is not None:
+                self.permit.close()
 
 
 @dataclass(frozen=True, slots=True)

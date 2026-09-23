@@ -38,6 +38,11 @@ class SpoolFile:
             self._spool.release(self)
             self._closed = True
 
+    def seal(self) -> None:
+        """Stop writes and retain only the completed file's actual disk allowance."""
+        self._spool.reserved_bytes -= self.limit - self.size
+        self.limit = self.size
+
     def __enter__(self) -> SpoolFile:
         return self
 

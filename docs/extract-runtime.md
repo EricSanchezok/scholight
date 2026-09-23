@@ -34,6 +34,20 @@ format or a rendered DOM uses a new parse. The full extraction algorithm remains
 the default; no fast-mode quality tradeoff is introduced. The internal setting
 `SCHOLIGHT_EXTRACT_PARSE_REUSE=false` disables reuse for isolated ablation runs.
 
+The download, parser and browser stages admit at most 8, 4 and 2 FIFO waiters,
+with respective waiting limits of 2, 2 and 5 seconds. The total request deadline
+and memory pause also constrain admission. Cancellation returns a granted permit
+exactly once, including the grant/cancellation race. Queue depths, waits and
+rejections are observable. `SCHOLIGHT_EXTRACT_QUEUEING=false` restores immediate
+rejection for isolated ablation runs.
+
+A static download retains its execution permit until its file has been parsed or
+discarded. This bounds downloaded documents waiting for the serial parser and
+prevents a fast downloader from overflowing the next stage. Download completion
+seals the file and releases unused scratch reservation; rendered files do the
+same before parsing. Configured download concurrency and browser concurrency do
+not increase.
+
 The production supervisor streams downloads into exclusive files below
 `SCHOLIGHT_DATA_ROOT/extract-spool`. It reserves at most 256 MiB of scratch
 capacity, including in-flight input and result files. Capacity is checked before

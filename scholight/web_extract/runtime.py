@@ -26,8 +26,16 @@ from scholight.web_extract.worker_supervisor import WorkerSupervisor
 def build_extract_app() -> FastAPI:
     validate_extract_runtime_settings()
     spool = Spool(Path(settings.data_root) / "extract-spool")
-    parser_worker = WorkerSupervisor("parser")
-    browser_worker = WorkerSupervisor("browser")
+    parser_worker = WorkerSupervisor(
+        "parser",
+        queueing=settings.extract_queueing,
+        admit=lambda: memory.admit(),
+    )
+    browser_worker = WorkerSupervisor(
+        "browser",
+        queueing=settings.extract_queueing,
+        admit=lambda: memory.admit(),
+    )
 
     async def reclaim() -> None:
         app.state.extract_cache.clear()
@@ -66,6 +74,8 @@ def build_extract_app() -> FastAPI:
             timeout_seconds=settings.extract_fetch_timeout_seconds,
             concurrency=settings.extract_static_concurrency,
             spool=spool,
+            queueing=settings.extract_queueing,
+            admit=memory.admit,
         ),
         browser=browser,
         admit=memory.admit,
