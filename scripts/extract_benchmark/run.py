@@ -27,7 +27,15 @@ def docker(*args: str) -> str:
     return result.strip()
 
 
-def run(image: str, output: Path, seconds: float, requests: int, seed: int) -> None:
+def run(
+    image: str,
+    output: Path,
+    seconds: float,
+    requests: int,
+    seed: int,
+    mode: str = "mixed",
+    concurrency: int = 1,
+) -> None:
     output.mkdir(parents=True, exist_ok=False)
     case_list = corpus()
     manifest = [
@@ -46,6 +54,8 @@ def run(image: str, output: Path, seconds: float, requests: int, seed: int) -> N
         "seconds": seconds,
         "requests": requests,
         "seed": seed,
+        "mode": mode,
+        "concurrency": concurrency,
         "corpus": manifest,
     }
     (output / "manifest.json").write_text(json.dumps(metadata, indent=2))
@@ -152,6 +162,8 @@ def run(image: str, output: Path, seconds: float, requests: int, seed: int) -> N
                 str(seconds),
                 str(requests),
                 str(seed),
+                mode,
+                str(concurrency),
             )
             created.append(client)
             docker("start", client)
@@ -179,5 +191,9 @@ if __name__ == "__main__":
     parser.add_argument("--seconds", type=float, default=14_400)
     parser.add_argument("--requests", type=int, default=2400)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--mode", choices=["mixed", "cold", "warm", "duplicate"], default="mixed")
+    parser.add_argument("--concurrency", type=int, choices=[1, 2, 4, 8, 16], default=1)
     args = parser.parse_args()
-    run(args.image, args.output, args.seconds, args.requests, args.seed)
+    run(
+        args.image, args.output, args.seconds, args.requests, args.seed, args.mode, args.concurrency
+    )

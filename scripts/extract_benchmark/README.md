@@ -12,6 +12,15 @@ events, and final container state/logs. Run versions sequentially on the same
 machine; alternate baseline/A/B for at least five cold/warm performance rounds.
 Keep timing assertions out of ordinary unit tests.
 
+Use `--mode cold` for unique request keys and `--mode warm` for a separate recorded
+48-case warmup followed by fixed-key measurements. The default `mixed` mode keeps
+the seeded 20% hot / 80% cold soak workload. `--concurrency 2`, `4`, `8` or `16`
+submits bounded waves from a separate client cgroup; `--mode duplicate` submits one
+exact static key per wave. All outcomes remain in the evidence, including rejected
+and timed-out requests. Run at least five alternating cold/warm rounds per version
+when the host is otherwise quiet. Do not use build-overlapped soak timings for the
+latency gate.
+
 The 48 self-owned fixtures cover articles, documentation, Chinese, short pages,
 tables, code, JavaScript, JSON/XML and valid/malformed PDFs. Expected evidence
 tokens are a smoke gate; they do not substitute for paragraph/table/link quality
