@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import hmac
 import json
+import secrets
 import time
 from collections import OrderedDict
 from collections.abc import AsyncIterator, Callable
@@ -76,6 +77,14 @@ class _SharedCache:
             OrderedDict()
         )
         self._bytes = 0
+        self._trace_secret = secrets.token_bytes(32)
+
+    def trace_id(self, key: str) -> str:
+        return hmac.new(self._trace_secret, key.encode(), hashlib.sha256).hexdigest()
+
+    def entry_size(self, key: str) -> int:
+        entry = self._entries.get(key)
+        return entry[1] if entry is not None else 0
 
     def prune(self) -> None:
         now = self._clock()
@@ -101,18 +110,19 @@ class _SharedCache:
         self._entries.clear()
         self._bytes = 0
 
-    def put(self, key: str, value: InternalExtractResponse) -> None:
+    def put(self, key: str, value: InternalExtractResponse) -> int:
         self.prune()
         expires_at = self._clock() + self._ttl
         size = retained_size((key, expires_at, value)) + INDEX_BYTES
         if size > self._max_bytes:
-            return
+            return size
         previous = self._entries.pop(key, None)
         if previous is not None:
             self._bytes -= previous[1]
         self._entries[key] = (expires_at, size, value)
         self._bytes += size
         self.prune()
+        return size
 
 
 def _cache_key(request: InternalExtractRequest) -> str:
@@ -254,9 +264,13 @@ def create_extract_service(
             if admit is not None:
                 admit()
             key = _cache_key(request)
+            if cacheable:
+                trace.cache_key_id = cache.trace_id(key)
+                trace.cache_ttl_seconds = cache_ttl_seconds
             if cacheable and (cached := cache.get(key)) is not None:
                 response, cache_hit, outcome = cached, True, "cache_hit"
                 trace.mime = mime_category(cached.content_type)
+                trace.cache_entry_bytes = cache.entry_size(key)
                 return cached
             if budget <= 2:
                 raise TimeoutError
@@ -266,7 +280,7 @@ def create_extract_service(
             response = _response_from_document(document)
             trace.mime = mime_category(response.content_type)
             if cacheable:
-                cache.put(key, response)
+                trace.cache_entry_bytes = cache.put(key, response)
             outcome = "browser_success" if response.rendered else "static_success"
             return response
         except asyncio.CancelledError:

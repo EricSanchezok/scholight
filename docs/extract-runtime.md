@@ -80,6 +80,16 @@ requested render mode, cache eligibility and hit status, upstream status,
 stage elapsed time and parser CPU time. EMF uses bounded service/outcome dimensions.
 Telemetry sinks are best effort and cannot replace a response or its original error.
 
+Cache-eligible internal completion logs include an opaque HMAC key identifier,
+the conservative retained entry size and TTL, and elapsed operation time. The
+HMAC secret is random for each service instance and never persisted or logged;
+identifiers cannot be joined across restarts or reversed by hashing guessed URLs.
+Credentialed requests omit the identifier and size. These fields allow an offline
+cache trace to preserve repeat patterns without logging URLs. They are log fields,
+never metric dimensions. A hit does not reveal the counterfactual extraction cost;
+offline replays must carry forward only an observed miss cost and label incomplete
+or censored traces explicitly.
+
 Static transfer bytes, decoded source-document bytes and rendered DOM bytes are
 separate measurements. A cache hit records zero transfer bytes. Cgroup-v2 memory
 sampling reports working set (`memory.current - inactive_file`), anonymous memory,
