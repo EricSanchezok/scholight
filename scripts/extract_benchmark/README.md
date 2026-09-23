@@ -207,10 +207,9 @@ soak remain necessary. Inspect the evidence before adopting any coefficient.
 `observe.py` is a read-only hourly evidence collector. Supply an explicit AWS
 profile, expected account, region, cluster/service, log prefix and timezone-aware
 start/end. It checks account identity, records exact task/image/resource state,
-retains completion, per-second memory and actual queue depth/rejection fields
-including deferred idle-memory reclamation counts,
-through an allowlist, and records
-only the type/time of lifecycle error matches. It never reads secret values.
+retains completion, per-second memory, actual queue depth/rejection fields and
+deferred idle-memory reclamation counts through an allowlist. Lifecycle error
+matches retain only their type and time. It never reads secret values.
 Pass every relevant `--canary-report` to separate actual server-issued request IDs.
 API initial calls, pagination, internal calls and canaries have separate counts;
 all errors/rejections remain in denominators. The existing baseline lacks the new
@@ -222,6 +221,25 @@ Keep every output directory; incomplete collection has `window.complete=false`.
 ECS retains stopped task details for at least one hour, so retain hourly snapshots
 and investigate task/stream changes rather than infer zero OOM from an empty
 stopped-task list. A one-hour summary cannot establish multi-day acceptance.
+
+`observation_series.py --observation DIRECTORY [--observation DIRECTORY ...]
+--start ISO_TIMESTAMP --end ISO_TIMESTAMP --stage A|B --output NEW_DIRECTORY`
+combines these windows offline. Pass all relevant `--canary-report` files again.
+It rejects conflicting duplicate events and mixed AWS targets, clips to the
+selected release interval, and does not fill gaps with incomplete collections.
+It exports deduplicated completion events for the actual cache replay and reports
+natural traffic independently of canaries and internal duplicates.
+
+Idle memory trends remain separate per task/log stream. Active worker gauges and
+internal request intervals plus 250 ms are excluded; the first stable hour and
+last hour include their sample counts, disjointness and growth. Sampling gaps,
+including gaps across restarted tasks, remain visible. Retained OOM/exit-137 task
+evidence cannot disappear because a later inventory omits an old stopped task.
+The report shows A's 24-hour or B's 72-hour elapsed requirement, B's 100 natural
+initial calls/seven-day extension, six-hour canary periods and actual run gaps.
+Inspect release identity, resources, inventory continuity, every failed canary and
+sparse/missing telemetry before acceptance; this reporting tool never approves a
+rollout or turns unavailable observations into successful gates.
 References: [CloudWatch filtering](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/FilterAndPatternSyntax.html),
 [ECS stopped-task retention](https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_DescribeTasks.html).
 
