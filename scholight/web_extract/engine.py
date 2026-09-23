@@ -260,6 +260,7 @@ class ExtractEngine:
                     trace.upstream_status = static.trace.upstream_status
                     if not trace.singleflight_joined:
                         trace.download_bytes += static.trace.download_bytes
+                        trace.retry_count += static.trace.retry_count
                         trace.phases.update(static.trace.phases)
                 document = static.document
             else:

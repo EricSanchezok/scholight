@@ -72,6 +72,15 @@ connection is reused. Environment proxies remain disabled. Memory reclamation an
 shutdown close the external connector. `SCHOLIGHT_EXTRACT_CONNECTION_REUSE=false`
 disables both pools for isolated ablation runs.
 
+Only static GETs without target headers/cookies can retry, at most once, after a
+transient connection failure or HTTP 429/500/502/503/504. TLS certificate failures,
+permanent DNS errors and read timeouts are not automatically retried. Full Jitter
+starts at 200 ms with a 1-second cap. A valid `Retry-After` supplies a minimum delay;
+if it cannot fit the remaining budget, return the original failure without retrying.
+Both attempts, their redirects and waiting share the fetch and request deadlines.
+The public aiohttp middleware boundary disables implicit transport replay, so the
+library cannot add attempts beyond this budget. Browser work is never retried.
+
 The production supervisor streams downloads into exclusive files below
 `SCHOLIGHT_DATA_ROOT/extract-spool`. It reserves at most 256 MiB of scratch
 capacity, including in-flight input and result files. Capacity is checked before

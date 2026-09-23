@@ -76,6 +76,7 @@ def build_extract_app() -> FastAPI:
         queueing=settings.extract_queueing,
         admit=memory.admit,
         reuse_connections=settings.extract_connection_reuse,
+        retry_enabled=True,
     )
     engine = ExtractEngine(
         fetcher=fetcher,
