@@ -66,6 +66,10 @@ def run(
         "concurrency": concurrency,
         "disabled_feature": disable,
         "fixture_http_version": http_version,
+        "harness_sha256": {
+            path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in sorted((ROOT / "scripts/extract_benchmark").glob("*.py"))
+        },
         "corpus": manifest,
     }
     (output / "manifest.json").write_text(json.dumps(metadata, indent=2))

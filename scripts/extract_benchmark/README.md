@@ -144,3 +144,32 @@ additional 8 MiB fixed allowance. This finite parser corpus cannot bound arbitra
 compressed PDFs; actual mixed-load soak and download/browser phase measurements
 remain required before the model is accepted. Calibration is not a production
 stress test and does not change runtime coefficients automatically.
+
+## Serial production canary
+
+`canary.py setup --base https://HOST --login-file PRIVATE_LOGIN_JSON --state-file
+PRIVATE_STATE_JSON --output REPORT_JSON` logs in through the normal account API,
+checks the designated email, and issues the named temporary Access Key. Login input
+contains only `email` and `password`. Both credential files must live outside
+tracked source and have owner-only permissions. The state contains secrets and
+must never be attached as evidence. Setup refuses duplicate active canary names.
+
+Use `canary.py run` with the same base/state and a new output report after release,
+then every six hours. Every HTTP operation is serial and spaced by at least ten
+seconds, including auth and MCP initialization. Checks cover REST/MCP static,
+PDF and JS; immutable pagination/replay; cache reuse; cursor tampering; login and
+search. Cross-key isolation briefly issues a second key for the same user, verifies
+that it cannot read the primary key's cursor, then revokes it immediately. A pending
+cleanup ID remains in private state if interrupted. This complements cross-user
+isolation tests in the isolated suite; it does not impersonate a second production
+user. `canary.py revoke` removes pending auxiliary keys, revokes the primary key,
+logs out this canary session and removes its private state. Retain the login file
+only for authorized recovery and remove the task's private copy after acceptance.
+
+Reports contain status, latency and **server-generated response request IDs**, not
+credentials, headers or response bodies. Public middleware assigns these IDs;
+client-provided prefixes are not authoritative. Pass every report with repeatable
+`cache_replay.py --canary-report REPORT_JSON` arguments when importing actual logs.
+Also exclude those exact IDs when computing natural-traffic production metrics.
+Transport failures lacking a response ID remain explicit unidentified failures;
+do not silently count them as natural evidence or erase them from acceptance.

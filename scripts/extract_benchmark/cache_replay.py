@@ -38,7 +38,7 @@ def synthetic(kind: str, *, seed: int, count: int) -> list[Access]:
     return result
 
 
-def real_trace(path: Path) -> tuple[list[Access], dict]:
+def real_trace(path: Path, canary_ids: set[str] | None = None) -> tuple[list[Access], dict]:
     """Never read URLs; preserve observed order and forward only prior miss costs."""
     rows = []
     excluded = {"canary": 0, "private_or_missing_key": 0, "failure": 0, "unknown_cost": 0}
@@ -51,7 +51,8 @@ def real_trace(path: Path) -> tuple[list[Access], dict]:
                 continue
         if item.get("event") != "extract_completed" or item.get("scope") != "internal":
             continue
-        if str(item.get("request_id", "")).startswith("canary-"):
+        request_id = str(item.get("request_id", ""))
+        if request_id in (canary_ids or set()) or request_id.startswith("canary-"):
             excluded["canary"] += 1
             continue
         key = item.get("cache_key_id")
@@ -106,6 +107,7 @@ def replay(trace: list[Access], capacity: int) -> dict:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--trace", type=Path, help="Redacted completion logs in JSONL")
+    parser.add_argument("--canary-report", type=Path, action="append", default=[])
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--count", type=int, default=20_000)
     parser.add_argument("--rounds", type=int, default=5)
@@ -114,7 +116,13 @@ if __name__ == "__main__":
     args.output.mkdir(parents=True, exist_ok=False)
     reports = []
     if args.trace:
-        accesses, provenance = real_trace(args.trace)
+        canary_ids = {
+            row["request_id"]
+            for path in args.canary_report
+            for row in json.loads(path.read_text())["records"]
+            if row.get("request_id")
+        }
+        accesses, provenance = real_trace(args.trace, canary_ids)
         reports.append({"source": provenance, "policies": replay(accesses, args.capacity)})
     else:
         for seed in range(42, 42 + args.rounds):
