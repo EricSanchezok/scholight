@@ -28,6 +28,10 @@ class ExtractTrace:
     static_work_id: str | None = None
     singleflight_joined: bool = False
     retry_count: int = 0
+    cache_key_id: str | None = None
+    cache_entry_bytes: int = 0
+    cache_ttl_seconds: int = 0
+    started: float = field(default_factory=time.perf_counter)
 
     def remaining(self) -> float:
         return max(0, self.deadline - time.monotonic())
@@ -105,6 +109,10 @@ def _log_completion(
         pagination=pagination,
         cache_eligible=cache_eligible,
         cache_hit=cache_hit,
+        cache_key_id=trace.cache_key_id,
+        cache_entry_bytes=trace.cache_entry_bytes,
+        cache_ttl_seconds=trace.cache_ttl_seconds,
+        duration_ms=(time.perf_counter() - trace.started) * 1000,
         static_download_bytes=trace.download_bytes,
         source_document_bytes=trace.source_bytes,
         rendered_dom_bytes=trace.dom_bytes,
