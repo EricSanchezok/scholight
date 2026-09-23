@@ -18,6 +18,7 @@ from scholight.web_extract.fetcher import HttpFetcher
 from scholight.web_extract.isolated import IsolatedBrowser, IsolatedParser
 from scholight.web_extract.memory import MemoryGuard, MemorySample, read_cgroup
 from scholight.web_extract.process_family import enable_subreaping, family_rss
+from scholight.web_extract.reservations import MemoryBudget
 from scholight.web_extract.service import create_extract_service
 from scholight.web_extract.spool import Spool
 from scholight.web_extract.worker_supervisor import WorkerSupervisor
@@ -54,6 +55,7 @@ def build_extract_app() -> FastAPI:
                 "ParserStarts": (parser_worker.restarts, "Count"),
                 "BrowserStarts": (browser_worker.restarts, "Count"),
                 "ScratchReservedBytes": (spool.reserved_bytes, "Bytes"),
+                "MemoryReservedBytes": (budget.reserved_bytes, "Bytes"),
             },
         )
         if sys.platform == "linux":
@@ -63,10 +65,15 @@ def build_extract_app() -> FastAPI:
         return MemorySample(working_set=rss, anon=rss, file=0)
 
     memory = MemoryGuard(sample_memory, reclaim)
+    budget = MemoryBudget(
+        lambda: (read_cgroup() if sys.platform == "linux" else sample_memory()).working_set,
+        memory.admit,
+    )
     browser = IsolatedBrowser(
         browser_worker,
         spool,
         max_content_bytes=settings.extract_max_download_bytes,
+        memory=budget,
     )
     fetcher = HttpFetcher(
         max_download_bytes=settings.extract_max_download_bytes,
@@ -77,6 +84,7 @@ def build_extract_app() -> FastAPI:
         admit=memory.admit,
         reuse_connections=settings.extract_connection_reuse,
         retry_enabled=True,
+        memory=budget,
     )
     engine = ExtractEngine(
         fetcher=fetcher,

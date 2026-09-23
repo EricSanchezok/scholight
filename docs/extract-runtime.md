@@ -147,6 +147,25 @@ reclamation finishes. Liveness remains independent of this temporary backpressur
 All workers remain within the existing 768 MiB container hard limit; no ECS,
 Identity, schema, ingestion binding or shared infrastructure change is required.
 
+Each executing task owns one memory reservation. Admission requires a fresh
+container working-set sample plus all retained reservations to remain at or below
+640 MiB. A phase replaces its prior reservation atomically; a failed increase
+retains the old ownership until cleanup. Queue waiters reserve no execution
+memory or result-file allowance. Download estimates grow with actual decoded
+bytes, parsing selects an input-size/MIME envelope (including PDF signature
+sniffing), and browser work has a separate envelope. Browser completion transfers
+the reservation to its output file before waiting for parsing. All success,
+failure and cancellation paths release the reservation once. Singleflight
+waiters share the execution owner's reservation.
+
+The estimate is conservative: it adds a complete phase envelope to measured
+memory even when some allocations are already reflected in the working set.
+`MemoryReservedBytes` is sampled once per second; rejected growth increments
+`MemoryReservationRejected`. The model in `reservations.py` is a release-gated
+calibration candidate. Validate its fixed costs and input multipliers against
+native same-resource peak measurements before accepting B; synthetic estimates
+alone are not evidence that the 640 MiB peak gate passes.
+
 ## Production acceptance fixtures
 
 The web image serves three tiny, self-owned fixtures below `/extract-canary/`:

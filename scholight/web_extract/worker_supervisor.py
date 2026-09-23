@@ -121,15 +121,19 @@ class WorkerSupervisor:
             self._admit()
             await self._start()
 
-    async def call(self, message: dict[str, object]) -> dict[str, object]:
+    async def call(
+        self, message: dict[str, object] | Callable[[], dict[str, object]]
+    ) -> dict[str, object]:
         async with self._gate.slot():
             self._admit()
+            # Allocate stage resources only after this worker grants execution.
+            prepared = message() if callable(message) else message
             try:
                 await self._start()
                 process = self._process
                 if process is None or process.stdin is None:
                     raise _worker_error()
-                process.stdin.write(json.dumps(message).encode() + b"\n")
+                process.stdin.write(json.dumps(prepared).encode() + b"\n")
                 await process.stdin.drain()
                 result = await self._receive()
                 self._groups.update(process_groups(process.pid))

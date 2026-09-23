@@ -31,6 +31,7 @@ from scholight.web_extract.telemetry import (
 
 if TYPE_CHECKING:
     from scholight.web_extract.admission import Permit
+    from scholight.web_extract.reservations import MemoryReservation
     from scholight.web_extract.spool import SpoolFile
 
 
@@ -53,6 +54,7 @@ class FetchResult:
     body: bytes = b""
     spool_file: SpoolFile | None = None
     permit: Permit | None = None
+    reservation: MemoryReservation | None = None
 
     @property
     def source_bytes(self) -> int:
@@ -63,8 +65,12 @@ class FetchResult:
             if self.spool_file is not None:
                 self.spool_file.close()
         finally:
-            if self.permit is not None:
-                self.permit.close()
+            try:
+                if self.reservation is not None:
+                    self.reservation.close()
+            finally:
+                if self.permit is not None:
+                    self.permit.close()
 
 
 @dataclass(frozen=True, slots=True)

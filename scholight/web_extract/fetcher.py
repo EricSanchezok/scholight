@@ -26,6 +26,7 @@ from scholight.web_extract.http_retry import (
     single_attempt,
 )
 from scholight.web_extract.policy import resolve_public_addresses, validate_public_target
+from scholight.web_extract.reservations import MemoryBudget, MemoryReservation
 from scholight.web_extract.spool import Spool
 from scholight.web_extract.telemetry import current_trace, mime_category, phase
 
@@ -89,6 +90,7 @@ class HttpFetcher:
         admit: Callable[[], None] | None = None,
         reuse_connections: bool = False,
         retry_enabled: bool = False,
+        memory: MemoryBudget | None = None,
     ) -> None:
         self._validator = validator
         self._resolver = resolver
@@ -107,6 +109,7 @@ class HttpFetcher:
         self._connection_limit = concurrency
         self._connector: aiohttp.TCPConnector | None = None
         self._retry_enabled = retry_enabled
+        self._memory = memory
 
     def _connection_pool(self, *, reuse: bool) -> aiohttp.TCPConnector:
         if reuse and self._connector is not None and not self._connector.closed:
@@ -131,23 +134,28 @@ class HttpFetcher:
     async def fetch(self, request: ExtractInput) -> FetchResult:
         await self._gate.acquire()
         permit = Permit(self._gate)
+        reservation = self._memory.lease() if self._memory is not None else None
         fetched = None
         try:
             self._admit()
-            fetched = await self._fetch_with_retry(request)
+            fetched = await self._fetch_with_retry(request, reservation)
             if fetched.spool_file is not None:
                 fetched.spool_file.seal()
                 # Bound downloaded files waiting for the serial parser as well as I/O.
-                return replace(fetched, permit=permit)
+                return replace(fetched, permit=permit, reservation=reservation)
             permit.close()
-            return fetched
+            return replace(fetched, reservation=reservation)
         except BaseException:
             permit.close()
+            if reservation is not None:
+                reservation.close()
             if fetched is not None:
                 fetched.close()
             raise
 
-    async def _fetch_with_retry(self, request: ExtractInput) -> FetchResult:
+    async def _fetch_with_retry(
+        self, request: ExtractInput, reservation: MemoryReservation | None
+    ) -> FetchResult:
         eligible = self._retry_enabled and not request.headers and not request.cookies
         deadline = time.monotonic() + (self._timeout.total or 30)
         trace = current_trace.get()
@@ -157,10 +165,12 @@ class HttpFetcher:
             async with asyncio.timeout_at(deadline):
                 for attempt in range(2):
                     self._admit()
+                    if reservation is not None:
+                        reservation.transfer("download")
                     if attempt and trace is not None:
                         trace.retry_count += 1
                     try:
-                        return await self._fetch(request)
+                        return await self._fetch(request, reservation)
                     except FetchAttemptError as error:
                         if attempt or not eligible or not error.transient:
                             raise
@@ -193,7 +203,9 @@ class HttpFetcher:
                 if trace is not None:
                     trace.download_bytes += response.content.total_raw_bytes
 
-    async def _fetch(self, request: ExtractInput) -> FetchResult:
+    async def _fetch(
+        self, request: ExtractInput, reservation: MemoryReservation | None
+    ) -> FetchResult:
         requested_url = request.url
         current_url = requested_url
         target_headers = dict(request.headers)
@@ -245,8 +257,12 @@ class HttpFetcher:
                                 if self._spool is not None
                                 else None
                             )
+                            downloaded = 0
                             try:
                                 async for chunk in response.content.iter_chunked(64 * 1024):
+                                    downloaded += len(chunk)
+                                    if reservation is not None:
+                                        reservation.transfer("download", size=downloaded)
                                     if body_file is not None:
                                         body_file.write(chunk)
                                     else:
