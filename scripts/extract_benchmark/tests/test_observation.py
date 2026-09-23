@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from observe import completion_summary, sanitize
 
 from scholight.web_extract.admission import BoundedGate
+from scholight.web_extract.memory import MemoryGuard, MemorySample
 
 
 def event(request_id="natural", scope="rest", pagination=False):
@@ -59,3 +60,18 @@ async def test_observer_retains_actual_producer_queue_metrics():
         assert row[f"{stage}Active"] == 0
         assert row[f"{stage}QueueDepth"] == 0
         assert row[f"{stage}QueueRejected"] == 0
+
+
+@pytest.mark.asyncio
+async def test_observer_retains_deferred_memory_recovery_evidence():
+    guard = MemoryGuard(lambda: MemorySample(100, 100, 0), AsyncMock(), can_reclaim=lambda: True)
+    guard.request_reclaim()
+    with patch("scholight.web_extract.memory.emit_emf") as emit:
+        await guard.tick()
+    produced = {
+        key: value[0]
+        for call in emit.call_args_list
+        for key, value in call.kwargs["metrics"].items()
+    }
+    row = sanitize({"timestamp": 1234, "eventId": "id", "logStreamName": "stream"}, produced)
+    assert row["MemoryIdleReclaim"] == 1

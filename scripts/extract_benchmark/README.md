@@ -208,6 +208,7 @@ soak remain necessary. Inspect the evidence before adopting any coefficient.
 profile, expected account, region, cluster/service, log prefix and timezone-aware
 start/end. It checks account identity, records exact task/image/resource state,
 retains completion, per-second memory and actual queue depth/rejection fields
+including deferred idle-memory reclamation counts,
 through an allowlist, and records
 only the type/time of lifecycle error matches. It never reads secret values.
 Pass every relevant `--canary-report` to separate actual server-issued request IDs.
