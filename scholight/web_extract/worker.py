@@ -14,6 +14,7 @@ from typing import TextIO
 
 from scholight.web_extract.engine import ExtractInput, FetchResult, parse_document
 from scholight.web_extract.errors import ExtractError
+from scholight.web_extract.heap import release_unused_heap
 from scholight.web_extract.worker_contracts import WorkerFailure, WorkerJob
 
 
@@ -141,6 +142,10 @@ async def _main(kind: str, channel: TextIO) -> None:
                         retryable=True,
                     ).model_dump()
                 }
+            if browser is None:
+                # Cache cleanup and the parse/exception frames must finish first;
+                # live document buffers cannot be returned to the allocator.
+                release_unused_heap()
             if browser is not None and browser.recycle_required:
                 result["retire"] = True
             channel.write(json.dumps(result) + "\n")

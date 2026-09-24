@@ -97,6 +97,14 @@ but do not repeatedly scan process-lifetime imports. New request objects and
 reference cycles remain collectible; no job is added to the permanent generation.
 This uses Python's [GC permanent generation](https://docs.python.org/3.11/library/gc.html#gc.freeze)
 only inside the parser child, never in the API or browser worker.
+After the parse frame and any handled exception traceback have been released,
+the Linux parser asks glibc to return unused heap pages with
+[`malloc_trim(0)`](https://man7.org/linux/man-pages/man3/malloc_trim.3.html).
+This releases allocator retention that otherwise triggers unnecessary worker
+restarts; it does not free live objects or change extraction results. The native
+symbol is resolved once. Unsupported platforms and optional maintenance failures
+leave the document result intact. Admission always resamples actual memory;
+successful trimming is not assumed, and the calibrated margins remain unchanged.
 The bounded worker lifetime also bounds the frozen startup state. Each worker is
 terminated after 100 tasks and its successor starts only after it has exited.
 On cancellation the supervisor kills the worker and its descendant process
