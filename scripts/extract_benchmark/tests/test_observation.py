@@ -1,13 +1,20 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from observe import completion_summary, sanitize
+from observe import completion_summary, sanitize, validate_window
 
 from scholight.web_extract.admission import BoundedGate
 from scholight.web_extract.memory import MemoryGuard, MemorySample
+
+
+def test_observation_rejects_a_window_ending_after_collection_starts():
+    now = datetime(2026, 9, 24, tzinfo=UTC)
+    with pytest.raises(AssertionError, match="future"):
+        validate_window(now - timedelta(hours=1), now + timedelta(seconds=1), now)
 
 
 def event(request_id="natural", scope="rest", pagination=False):

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from observation_series import aggregate, canary_schedule, coverage, memory_trends
 
 
@@ -69,6 +70,16 @@ def test_incomplete_window_cannot_bridge_an_observation_gap(tmp_path):
     assert not report["coverage"]["complete"]
     assert report["coverage"]["missing_seconds"] == 200
     assert len(report["incomplete_inputs"]) == 1
+
+
+def test_future_ending_window_cannot_claim_complete_historical_coverage(tmp_path):
+    source = window(tmp_path, "early", 0, 300)
+    path = source / "window.json"
+    metadata = json.loads(path.read_text())
+    metadata["collected_at"] = stamp(290)
+    path.write_text(json.dumps(metadata))
+    with pytest.raises(AssertionError, match=r"before.*ended"):
+        aggregate([source], start=stamp(0), end=stamp(300), canary_ids=set())
 
 
 def test_coverage_clips_windows_to_selected_release_interval():

@@ -182,6 +182,10 @@ def aggregate(
         if not window["complete"] or not all(path.is_file() for path in required):
             incomplete.append(str(directory))
             continue
+        require(
+            right <= seconds(window["collected_at"]),
+            "Source observation was collected before its window ended",
+        )
         intervals.append((left, right))
         inputs.append(
             {

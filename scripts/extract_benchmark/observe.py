@@ -152,14 +152,21 @@ def write_jsonl(path: Path, rows: list[dict]) -> None:
     path.write_text("".join(json.dumps(row) + "\n" for row in rows))
 
 
+def validate_window(start: datetime, end: datetime, collected_at: datetime) -> None:
+    require(
+        start.tzinfo is not None and end.tzinfo is not None,
+        "Window must have explicit time zones",
+    )
+    require(start < end, "Observation window must be positive")
+    require(end <= collected_at, "Observation window cannot end in the future")
+
+
 def collect(args) -> None:
     import boto3
 
     start, end = datetime.fromisoformat(args.start), datetime.fromisoformat(args.end)
-    require(
-        start.tzinfo is not None and end.tzinfo is not None, "Window must have explicit time zones"
-    )
-    require(start < end, "Observation window must be positive")
+    collected_at = datetime.now(UTC)
+    validate_window(start, end, collected_at)
     require(not args.output.exists(), "Preserve previous observation evidence")
     session = boto3.Session(profile_name=args.profile, region_name=args.region)
     require(
@@ -172,7 +179,7 @@ def collect(args) -> None:
             {
                 "start": start.isoformat(),
                 "end": end.isoformat(),
-                "collected_at": datetime.now(UTC).isoformat(),
+                "collected_at": collected_at.isoformat(),
                 "account": args.expected_account,
                 "region": args.region,
                 "cluster": args.cluster,

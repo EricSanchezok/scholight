@@ -225,6 +225,9 @@ events: unavailable telemetry must not be read as zero activity.
 
 Collect overlapping windows ending two minutes before the current time to allow
 log delivery, and deduplicate retained `event_id` values when combining windows.
+Collection rejects future end times. Aggregation also rejects historical inputs
+whose declared window had not ended when collection started; these cannot prove
+complete coverage. Preserve such evidence and collect a new completed window.
 Keep every output directory; incomplete collection has `window.complete=false`.
 ECS retains stopped task details for at least one hour, so retain hourly snapshots
 and investigate task/stream changes rather than infer zero OOM from an empty
