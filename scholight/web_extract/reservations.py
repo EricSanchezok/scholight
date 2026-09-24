@@ -9,10 +9,25 @@ from typing import Literal
 
 from scholight.logging.emf import emit_emf
 from scholight.web_extract.admission import capacity_error
+from scholight.web_extract.errors import ExtractError
 
 MIB = 1024 * 1024
 Stage = Literal["download", "parse", "browser"]
 WorkerKind = Literal["parser", "browser"]
+
+
+class RetainedMemoryPressureError(ExtractError):
+    """An execution envelope may fit after retiring idle resident heaps."""
+
+    def __init__(self) -> None:
+        error = capacity_error()
+        super().__init__(
+            code=error.code,
+            message=error.message,
+            status_code=error.status_code,
+            retryable=error.retryable,
+            retry_after=error.retry_after,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,14 +41,15 @@ class StageCost:
 
 @dataclass(frozen=True, slots=True)
 class MemoryModel:
-    # Calibration must validate these conservative envelopes before release.
-    download: StageCost = StageCost(8 * MIB, 1)
-    html: StageCost = StageCost(32 * MIB, 64)
-    pdf: StageCost = StageCost(64 * MIB, 128)
-    text: StageCost = StageCost(8 * MIB, 8)
-    browser: StageCost = StageCost(192 * MIB, 0)
-    parser_startup: int = 128 * MIB
-    browser_startup: int = 192 * MIB
+    # Five native ARM64 rounds, observed peak deltas + 50% and 8 MiB fixed margin.
+    # Final combined-load validation remains a release gate; see extract-runtime.md.
+    download: StageCost = StageCost(11 * MIB, 1)
+    html: StageCost = StageCost(63 * MIB, 106)
+    pdf: StageCost = StageCost(309 * MIB, 1)
+    text: StageCost = StageCost(25 * MIB, 1)
+    browser: StageCost = StageCost(253 * MIB, 0)
+    parser_startup: int = 224 * MIB
+    browser_startup: int = 265 * MIB
 
     def estimate(self, stage: Stage, size: int, mime: str) -> int:
         if size < 0:
@@ -104,6 +120,7 @@ class MemoryBudget:
                 # intrinsically oversized jobs alone do not recycle warm workers.
                 # A cold generation also needs room for its retained input.
                 self._on_pressure()
+                raise RetainedMemoryPressureError
             raise capacity_error()
         self.reserved_bytes = reserved
         return new

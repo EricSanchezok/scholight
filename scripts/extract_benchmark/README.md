@@ -213,8 +213,10 @@ soak remain necessary. Inspect the evidence before adopting any coefficient.
 profile, expected account, region, cluster/service, log prefix and timezone-aware
 start/end. It checks account identity, records exact task/image/resource state,
 retains completion, per-second memory, actual queue depth/rejection fields and
-deferred idle-memory reclamation counts through an allowlist. Lifecycle error
-matches retain only their type and time. It never reads secret values.
+deferred idle-memory reclamation counts through an allowlist.
+The `MemoryPreparationRecovery` counter records a successful bounded reclamation
+before a worker receives its job; it does not count a replay of executed work.
+Lifecycle error matches retain only their type and time. It never reads secret values.
 `MemoryOOMKills` preserves cumulative cgroup child-process kills even when the ECS
 task survives. Per-stream maxima include nonzero first samples; repeated samples
 must not be summed and old collectors without the counter are unavailable evidence.

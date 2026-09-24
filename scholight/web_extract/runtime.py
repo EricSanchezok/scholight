@@ -32,13 +32,21 @@ def build_extract_app() -> FastAPI:
         queueing=settings.extract_queueing,
         admit=lambda: memory.admit(),
         reserve_start=lambda: budget.startup("parser"),
+        recover_capacity=lambda: recover_idle(browser_worker),
+        capacity_recovered=lambda: memory.capacity_recovered(),
     )
     browser_worker = WorkerSupervisor(
         "browser",
         queueing=settings.extract_queueing,
         admit=lambda: memory.admit(),
         reserve_start=lambda: budget.startup("browser"),
+        recover_capacity=lambda: recover_idle(parser_worker),
+        capacity_recovered=lambda: memory.capacity_recovered(),
     )
+
+    async def recover_idle(sibling: WorkerSupervisor) -> None:
+        memory.admit()
+        await sibling.close_if_idle()
 
     async def reclaim() -> None:
         app.state.extract_cache.clear()

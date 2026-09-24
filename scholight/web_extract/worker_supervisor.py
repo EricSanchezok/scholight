@@ -5,14 +5,16 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from contextlib import AbstractContextManager, ExitStack, nullcontext
 from typing import Literal
 
+from scholight.logging.emf import emit_emf
 from scholight.web_extract.admission import BoundedGate
 from scholight.web_extract.cancellation import finish_after_cancellation
 from scholight.web_extract.errors import ExtractError
 from scholight.web_extract.process_family import kill_family, process_groups, reap_groups
+from scholight.web_extract.reservations import RetainedMemoryPressureError
 
 
 def _worker_error() -> ExtractError:
@@ -34,6 +36,8 @@ class WorkerSupervisor:
         queueing: bool = False,
         admit: Callable[[], None] | None = None,
         reserve_start: Callable[[], AbstractContextManager[None]] | None = None,
+        recover_capacity: Callable[[], Awaitable[None]] | None = None,
+        capacity_recovered: Callable[[], None] | None = None,
     ) -> None:
         self.kind = kind
         self._command = command or (
@@ -52,6 +56,8 @@ class WorkerSupervisor:
         )
         self._admit = admit or (lambda: None)
         self._reserve_start = reserve_start or nullcontext
+        self._recover_capacity = recover_capacity
+        self._capacity_recovered = capacity_recovered or (lambda: None)
         self._stop_lock = asyncio.Lock()
         self._completed = 0
         self._recycle_after = recycle_after
@@ -128,23 +134,51 @@ class WorkerSupervisor:
 
     async def warmup(self) -> None:
         async with self._gate.slot():
+            await self._prepare(None)
+
+    async def _prepare(
+        self, message: dict[str, object] | Callable[[], dict[str, object]] | None
+    ) -> dict[str, object] | None:
+        for attempt in range(2):
             self._admit()
-            await self._start()
+            try:
+                try:
+                    await self._start()
+                except (OSError, ValueError) as error:
+                    raise _worker_error() from error
+                self._admit()
+                prepared = message() if callable(message) else message
+            except RetainedMemoryPressureError as error:
+                if attempt or self._recover_capacity is None:
+                    raise
+                # No job has been dispatched. Retire this idle generation while
+                # the runtime optionally closes the idle sibling.
+                # Retain the caller's input lease and the FIFO execution permit.
+                self._admit()
+                try:
+                    async with asyncio.timeout(2):
+                        results = await asyncio.gather(
+                            self.close(), self._recover_capacity(), return_exceptions=True
+                        )
+                except TimeoutError:
+                    raise error from None
+                for result in results:
+                    if isinstance(result, BaseException):
+                        raise error from result
+                continue
+            if attempt:
+                self._capacity_recovered()
+                emit_emf(service="extract", metrics={"MemoryPreparationRecovery": (1, "Count")})
+            return prepared
+        raise RuntimeError("Worker preparation exhausted its bounded attempts")
 
     async def call(
         self, message: dict[str, object] | Callable[[], dict[str, object]]
     ) -> dict[str, object]:
         async with self._gate.slot():
-            self._admit()
-            try:
-                await self._start()
-            except (OSError, ValueError) as error:
-                # _start already owns cleanup for failed/cancelled readiness.
-                raise _worker_error() from error
-            self._admit()
             # Startup has released its transient allowance. Its resident heap is
             # now in the fresh working-set sample used for job admission.
-            prepared = message() if callable(message) else message
+            prepared = await self._prepare(message)
             try:
                 process = self._process
                 if process is None or process.stdin is None:
@@ -166,6 +200,15 @@ class WorkerSupervisor:
                 if isinstance(error, ExtractError):
                     raise
                 raise _worker_error() from error
+
+    async def close_if_idle(self) -> bool:
+        if self.busy or self._gate.waiting:
+            return False
+        # An uncontended acquire does not suspend; ownership is established
+        # before close can yield and another call can start using the process.
+        async with self._gate.slot():
+            await self.close()
+        return True
 
     async def close(self) -> None:
         if self._closing is None or self._closing.done():

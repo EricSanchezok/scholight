@@ -4,12 +4,18 @@ import asyncio
 import os
 import sys
 from contextlib import contextmanager
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from scholight.web_extract.admission import capacity_error
 from scholight.web_extract.errors import ExtractError
-from scholight.web_extract.reservations import MemoryBudget, MemoryModel, StageCost
+from scholight.web_extract.reservations import (
+    MemoryBudget,
+    MemoryModel,
+    RetainedMemoryPressureError,
+    StageCost,
+)
 from scholight.web_extract.worker_supervisor import WorkerSupervisor
 
 pytestmark = pytest.mark.asyncio
@@ -31,6 +37,175 @@ for line in sys.stdin:
         time.sleep(60)
     print(json.dumps({'pid': os.getpid()}), flush=True)
 """
+
+
+async def test_retained_heap_pressure_reclaims_before_dispatch_and_keeps_input_lease() -> None:
+    working = 150
+    budget = MemoryBudget(
+        lambda: working,
+        lambda: None,
+        model=MemoryModel(download=StageCost(10, 0), html=StageCost(80, 0)),
+        high=200,
+    )
+    lease = budget.lease()
+    lease.transfer("download")
+    attempts = []
+
+    async def recover():
+        nonlocal working
+        assert budget.reserved_bytes == 10
+        working = 100
+
+    def prepare():
+        attempts.append(worker.pid)
+        lease.transfer("parse", size=1, mime="text/html")
+        return {}
+
+    worker = WorkerSupervisor(
+        "parser", command=(sys.executable, "-u", "-c", ECHO), recover_capacity=recover
+    )
+    try:
+        result = await worker.call(prepare)
+        assert len(attempts) == 2 and attempts[0] != result["pid"] == attempts[1]
+        assert budget.reserved_bytes == 80
+        with pytest.raises(ProcessLookupError):
+            os.kill(attempts[0], 0)
+    finally:
+        await worker.close()
+        lease.close()
+
+
+async def test_pre_dispatch_memory_recovery_is_bounded_to_one_attempt() -> None:
+    budget = MemoryBudget(
+        lambda: 150, lambda: None, model=MemoryModel(html=StageCost(80, 0)), high=200
+    )
+    lease = budget.lease()
+    recover = AsyncMock()
+    worker = WorkerSupervisor(
+        "parser", command=(sys.executable, "-u", "-c", ECHO), recover_capacity=recover
+    )
+
+    def prepare():
+        lease.transfer("parse", size=1, mime="text/html")
+        return {}
+
+    try:
+        with pytest.raises(ExtractError):
+            await worker.call(prepare)
+        assert worker.restarts == 2
+        recover.assert_awaited_once()
+    finally:
+        await worker.close()
+        lease.close()
+
+
+async def test_cold_start_admission_can_reclaim_before_spawning() -> None:
+    working = 150
+    budget = MemoryBudget(
+        lambda: working, lambda: None, model=MemoryModel(parser_startup=80), high=200
+    )
+
+    async def recover():
+        nonlocal working
+        assert worker.pid is None and budget.reserved_bytes == 0
+        working = 100
+
+    worker = WorkerSupervisor(
+        "parser",
+        command=(sys.executable, "-u", "-c", ECHO),
+        reserve_start=lambda: budget.startup("parser"),
+        recover_capacity=recover,
+    )
+    try:
+        await worker.warmup()
+        assert worker.restarts == 1 and budget.reserved_bytes == 0
+    finally:
+        await worker.close()
+
+
+async def test_cancellation_during_preparation_recovery_owns_worker_cleanup() -> None:
+    recovering = asyncio.Event()
+
+    async def recover():
+        recovering.set()
+        await asyncio.Event().wait()
+
+    def prepare():
+        raise RetainedMemoryPressureError
+
+    worker = WorkerSupervisor(
+        "parser", command=(sys.executable, "-u", "-c", ECHO), recover_capacity=recover
+    )
+    task = asyncio.create_task(worker.call(prepare))
+    try:
+        await asyncio.wait_for(recovering.wait(), 2)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, 2)
+        assert worker.pid is None and not worker.busy
+    finally:
+        await worker.close()
+
+
+async def test_memory_failure_after_dispatch_never_replays_worker_execution() -> None:
+    recover = AsyncMock()
+    worker = WorkerSupervisor(
+        "browser", command=(sys.executable, "-u", "-c", ECHO), recover_capacity=recover
+    )
+    try:
+        await worker.warmup()
+        with patch.object(worker, "_receive", side_effect=RetainedMemoryPressureError()):
+            with pytest.raises(ExtractError):
+                await worker.call({})
+        recover.assert_not_awaited()
+        assert worker.restarts == 1 and worker.pid is None
+    finally:
+        await worker.close()
+
+
+async def test_queue_or_competing_capacity_error_does_not_recycle_workers() -> None:
+    recover = AsyncMock()
+    worker = WorkerSupervisor(
+        "parser", command=(sys.executable, "-u", "-c", ECHO), recover_capacity=recover
+    )
+
+    def prepare():
+        raise capacity_error()
+
+    try:
+        with pytest.raises(ExtractError):
+            await worker.call(prepare)
+        recover.assert_not_awaited()
+        assert worker.restarts == 1
+    finally:
+        await worker.close()
+
+
+async def test_pressure_reclamation_does_not_interrupt_an_active_sibling() -> None:
+    worker = WorkerSupervisor("browser", command=(sys.executable, "-u", "-c", ECHO))
+    await worker.warmup()
+    task = asyncio.create_task(worker.call({"hang": True}))
+    try:
+        await asyncio.sleep(0.03)
+        assert await worker.close_if_idle() is False
+        assert not task.done() and worker.pid is not None
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        await worker.close()
+
+
+async def test_pressure_reclamation_owns_the_idle_worker_gate_until_reaped() -> None:
+    worker = WorkerSupervisor("browser", command=(sys.executable, "-u", "-c", ECHO))
+    await worker.warmup()
+    process = worker.pid
+    try:
+        assert await worker.close_if_idle() is True
+        assert worker.pid is None and not worker.busy
+        with pytest.raises(ProcessLookupError):
+            os.kill(process, 0)
+    finally:
+        await worker.close()
 
 
 async def test_cold_start_is_reserved_before_spawn_and_warm_calls_do_not_reserve() -> None:

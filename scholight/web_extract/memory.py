@@ -72,6 +72,11 @@ class MemoryGuard:
     def request_reclaim(self) -> None:
         self._pressure = True
 
+    def capacity_recovered(self) -> None:
+        # A pre-dispatch retry already reclaimed and passed a fresh reservation.
+        # Emergency recovery is independent and must not be cancelled here.
+        self._pressure = False
+
     async def tick(self) -> None:
         try:
             sample = self._sample()

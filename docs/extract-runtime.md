@@ -217,13 +217,43 @@ because its downloaded input already owns an allowance. The physical 640 MiB eme
 guard remains immediate.
 `MemoryIdleReclaim` counts these deferred recoveries.
 
+Before dispatching a worker job, retained-memory pressure may reclaim once within
+a two-second cleanup budget and then recheck admission. The current generation
+has not received any job and is retired; its sibling is retired only after
+acquiring an idle execution permit. Active sibling work is never interrupted by
+this path. The input file, its reservation and the caller's FIFO permit stay
+owned throughout. Cold startup and preparation share one recovery attempt;
+already dispatched jobs, browser POSTs and downloads are never replayed.
+Competing reservations, oversized envelopes and emergency admission pauses still
+reject work. Successful recovery clears the stale deferred-reclaim request and
+emits `MemoryPreparationRecovery`.
+
 The estimate is conservative: it adds a complete phase envelope to measured
 memory even when some allocations are already reflected in the working set.
 `MemoryReservedBytes` is sampled once per second; rejected growth increments
-`MemoryReservationRejected`. The model in `reservations.py` is a release-gated
-calibration candidate. Validate its fixed costs and input multipliers against
-native same-resource peak measurements before accepting B; synthetic estimates
-alone are not evidence that the 640 MiB peak gate passes.
+`MemoryReservationRejected`. Five native Linux ARM64/Python 3.11 rounds measured
+330 startup/parser samples and 45 streaming-download/browser samples with the
+768 MiB hard limit and unchanged CPU shares. The runtime tree was `37dc0b4` and
+the corrected harness was `a88948b`; the fixed 48-document corpus was unchanged.
+The resulting envelopes use the maximum observed delta with 50% margin plus
+8 MiB fixed allowance, rounded up:
+
+| Envelope | Fixed MiB | Per input byte |
+| --- | ---: | ---: |
+| Download | 11 | 1 |
+| HTML parse | 63 | 106 |
+| PDF parse | 309 | 1 |
+| Text parse | 25 | 1 |
+| Browser render | 253 | 0 |
+| Parser startup | 224 | 0 |
+| Browser startup | 265 | 0 |
+
+The PDF envelope cannot fit alongside both idle workers in the measured samples;
+bounded pre-dispatch reclamation is required rather than reducing its measured
+margin. These finite authored samples do not bound arbitrary compressed PDFs or
+JavaScript. The updated runtime still requires the final mixed-load, latency,
+overload and four-hour soak gates before release. Coefficient calibration alone
+does not establish that the 640 MiB peak gate passes.
 
 ## Production acceptance fixtures
 

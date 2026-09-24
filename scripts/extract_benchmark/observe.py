@@ -50,6 +50,7 @@ MEMORY_FIELDS = frozenset(
         "MemorySampleFailure",
         "MemoryReclaimFailure",
         "MemoryIdleReclaim",
+        "MemoryPreparationRecovery",
         "MemoryReservedBytes",
         "MemoryReservationRejected",
         "ParserRSS",
