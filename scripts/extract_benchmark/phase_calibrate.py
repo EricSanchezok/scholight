@@ -8,23 +8,115 @@ import json
 import math
 import os
 import platform
+import random
 import sys
 import time
 from pathlib import Path
 
+from calibrate import calibration_cases
 from checks import require
 
 from scholight.models.web_extract import ExtractResponseFormat, RenderMode
 from scholight.web_extract import runtime  # noqa: F401
-from scholight.web_extract.engine import ExtractInput
+from scholight.web_extract.engine import ExtractInput, FetchResult
 from scholight.web_extract.fetcher import HttpFetcher
-from scholight.web_extract.isolated import IsolatedBrowser
+from scholight.web_extract.isolated import IsolatedBrowser, IsolatedParser
 from scholight.web_extract.memory import read_cgroup
 from scholight.web_extract.process_family import enable_subreaping
 from scholight.web_extract.spool import Spool
 from scholight.web_extract.worker_supervisor import WorkerSupervisor
 
 MIB = 1024 * 1024
+
+
+def warm_envelopes(rows: list[dict]) -> dict:
+    result = {}
+    for kind, count in (("pdf_warm", 40), ("browser_warm", 20)):
+        samples = [row for row in rows if row["kind"] == kind]
+        require(
+            len(samples) == count and {row["round"] for row in samples} == set(range(5)),
+            "Warm calibration requires five complete rounds",
+        )
+        require(
+            all(row["completed"] and not row["stopped_by_probe"] for row in samples),
+            "Warm calibration is incomplete",
+        )
+        result[kind] = {
+            "fixed_bytes": math.ceil((1.5 * max(r["peak_delta"] for r in samples) + 8 * MIB) / MIB)
+            * MIB,
+            "per_input_byte": int(kind == "pdf_warm"),
+        }
+    return result
+
+
+async def warm_measurements(parser, browser, spool, records, rows) -> None:
+    pdfs = [case for case in calibration_cases() if case.mime == "application/pdf"]
+    pdf_adapter = IsolatedParser(parser, spool, max_output_bytes=50_000_000)
+    browser_adapter = IsolatedBrowser(browser, spool, max_content_bytes=50_000_000)
+
+    async def pdf_operation(case):
+        body = spool.allocate(len(case.body))
+        try:
+            body.write(case.body)
+            fetched = FetchResult(
+                "https://example.org",
+                "https://example.org",
+                200,
+                case.mime,
+                "utf-8",
+                spool_file=body,
+            )
+            await pdf_adapter.parse(
+                fetched,
+                ExtractInput(
+                    "https://example.org", RenderMode.NEVER, ExtractResponseFormat.MAIN_MARKDOWN
+                ),
+                rendered=False,
+            )
+            return fetched
+        except BaseException:
+            body.close()
+            raise
+
+    def browser_operation(size):
+        return browser_adapter.render(
+            ExtractInput(
+                f"http://93.184.216.2:8000/calibration/dom/{size}",
+                RenderMode.ALWAYS,
+                ExtractResponseFormat.MAIN_MARKDOWN,
+            )
+        )
+
+    async def sample(kind, trial, case, operation):
+        gc.collect()
+        row = await measure(operation)
+        row.update(kind=kind, round=trial, case=case)
+        rows.append(row)
+        records.write(json.dumps(row) + "\n")
+        records.flush()
+        require(
+            row["completed"] and not row["stopped_by_probe"],
+            "Warm calibration failed or reached its guard; retain partial evidence",
+        )
+        require(spool.reserved_bytes == 0, "Warm calibration leaked spool ownership")
+
+    for trial in range(5):
+        for kind in ("pdf", "browser"):
+            await asyncio.gather(parser.close(), browser.close())
+            await parser.warmup()
+            await browser.warmup()
+            if kind == "pdf":
+                await sample("pdf_prime", trial, pdfs[0].name, pdf_operation(pdfs[0]))
+                ordered = list(pdfs)
+                random.Random(42 + trial).shuffle(ordered)  # nosec B311 - fixed benchmark seed
+                for case in ordered:
+                    await sample("pdf_warm", trial, case.name, pdf_operation(case))
+            else:
+                await sample("browser_prime", trial, "100", browser_operation(100))
+                sizes = [100, 1000, 5000, 15_000]
+                random.Random(142 + trial).shuffle(sizes)  # nosec B311 - fixed benchmark seed
+                for size in sizes:
+                    await sample("browser_warm", trial, str(size), browser_operation(size))
 
 
 async def measure(operation) -> dict:
@@ -124,6 +216,7 @@ async def run() -> None:
                             )
                         finally:
                             await fetcher.close()
+            await warm_measurements(parser, browser, spool, records, rows)
     finally:
         await asyncio.gather(parser.close(), browser.close())
         spool.close()
@@ -159,6 +252,7 @@ async def run() -> None:
             * MIB,
             "per_input_byte": 0,
         },
+        **warm_envelopes(rows),
         "limitations": [
             "Finite owned document corpus, not a bound on arbitrary JavaScript, assets or compressed documents.",
             "Measured phase deltas include idle sibling workers; validate combined workloads and retained caches in the soak.",

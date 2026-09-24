@@ -206,6 +206,12 @@ It uses the same isolated network and 768 MiB container, idle sibling workers,
 recommendations with 50% margin plus 8 MiB. These finite inputs do not bound
 arbitrary JavaScript/assets or compressed documents; the memory guard and mixed
 soak remain necessary. Inspect the evidence before adopting any coefficient.
+The phase probe also measures five warm PDF and browser rounds, preserving each
+worker generation across shuffled documents after one explicit priming operation.
+Both workers are restarted between phase/trial groups. Priming rows are retained
+and guarded separately; warm recommendations retain the same 50% plus 8 MiB
+margin and require all 40 PDF and 20 browser measurements. This distinguishes
+retained native initialization from incremental work without assuming it is free.
 
 ## Serial production canary
 
