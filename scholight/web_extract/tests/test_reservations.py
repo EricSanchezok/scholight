@@ -19,6 +19,17 @@ def _model() -> MemoryModel:
     )
 
 
+def test_warm_pdf_reserves_incremental_work_above_its_resident_heap() -> None:
+    model = MemoryModel(pdf=StageCost(80, 0), pdf_warm=StageCost(20, 0))
+    budget = MemoryBudget(lambda: 150, lambda: None, model=model, high=200)
+    lease = budget.lease()
+    with pytest.raises(ExtractError):
+        lease.transfer("parse", size=1, mime="application/pdf")
+    lease.transfer("parse", size=1, mime="application/pdf", warm=True)
+    assert budget.reserved_bytes == 20
+    lease.close()
+
+
 def test_phase_transition_replaces_the_same_reservation() -> None:
     budget = MemoryBudget(lambda: 100, lambda: None, model=_model(), high=200)
     lease = budget.lease()

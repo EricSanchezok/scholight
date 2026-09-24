@@ -7,9 +7,68 @@ import pytest
 
 from scholight.models.web_extract import ExtractResponseFormat, RenderMode
 from scholight.web_extract.engine import ExtractInput, FetchResult
+from scholight.web_extract.errors import ExtractError
 from scholight.web_extract.isolated import IsolatedParser
+from scholight.web_extract.reservations import MemoryBudget, MemoryModel, StageCost
 from scholight.web_extract.spool import Spool
 from scholight.web_extract.worker_supervisor import WorkerSupervisor
+
+
+@pytest.mark.asyncio
+async def test_pdf_warm_envelope_requires_success_in_the_same_live_generation(
+    tmp_path: Path,
+) -> None:
+    import pymupdf
+
+    with pymupdf.open() as document:
+        document.new_page().insert_text((72, 72), "Measured PDF phase evidence.")
+        pdf = document.tobytes()
+    working = 100
+    budget = MemoryBudget(
+        lambda: working,
+        lambda: None,
+        model=MemoryModel(pdf=StageCost(80, 0), pdf_warm=StageCost(20, 0)),
+        high=200,
+    )
+    worker = WorkerSupervisor("parser", recycle_after=3)
+    spool = Spool(tmp_path)
+    spool.start()
+    parser = IsolatedParser(worker, spool, max_output_bytes=10_000)
+    request = ExtractInput(
+        "https://example.org", RenderMode.NEVER, ExtractResponseFormat.MAIN_MARKDOWN
+    )
+    lease = budget.lease()
+    try:
+        with spool.allocate(10_000) as body:
+            # Sniffing must choose the PDF envelope despite the unhelpful MIME.
+            fetched = FetchResult(
+                request.url,
+                request.url,
+                200,
+                "application/octet-stream",
+                None,
+                spool_file=body,
+                reservation=lease,
+            )
+            body.write(b"%PDF-invalid")
+            with pytest.raises(ExtractError, match="PDF"):
+                await parser.parse(fetched, request, rendered=False)
+            assert not worker.phase_warm("pdf")
+            body.path.write_bytes(pdf)
+            body.size = len(pdf)
+            result = await parser.parse(fetched, request, rendered=False)
+            assert result.extracted is not None and "Measured PDF" in result.extracted.content
+            assert worker.phase_warm("pdf") and budget.reserved_bytes == 80
+            working = 150
+            await parser.parse(fetched, request, rendered=False)
+            assert budget.reserved_bytes == 20
+            assert worker.pid is None and not worker.phase_warm("pdf")
+            with pytest.raises(ExtractError):
+                await parser.parse(fetched, request, rendered=False)
+    finally:
+        lease.close()
+        await worker.close()
+        spool.close()
 
 
 @pytest.mark.asyncio

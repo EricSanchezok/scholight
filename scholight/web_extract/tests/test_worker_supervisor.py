@@ -55,6 +55,7 @@ async def test_retained_heap_pressure_reclaims_before_dispatch_and_keeps_input_l
         nonlocal working
         assert budget.reserved_bytes == 10
         working = 100
+        return False
 
     def prepare():
         attempts.append(worker.pid)
@@ -80,7 +81,7 @@ async def test_pre_dispatch_memory_recovery_is_bounded_to_one_attempt() -> None:
         lambda: 150, lambda: None, model=MemoryModel(html=StageCost(80, 0)), high=200
     )
     lease = budget.lease()
-    recover = AsyncMock()
+    recover = AsyncMock(return_value=False)
     worker = WorkerSupervisor(
         "parser", command=(sys.executable, "-u", "-c", ECHO), recover_capacity=recover
     )
@@ -109,6 +110,7 @@ async def test_cold_start_admission_can_reclaim_before_spawning() -> None:
         nonlocal working
         assert worker.pid is None and budget.reserved_bytes == 0
         working = 100
+        return False
 
     worker = WorkerSupervisor(
         "parser",
@@ -177,6 +179,50 @@ async def test_queue_or_competing_capacity_error_does_not_recycle_workers() -> N
             await worker.call(prepare)
         recover.assert_not_awaited()
         assert worker.restarts == 1
+    finally:
+        await worker.close()
+
+
+async def test_reclaiming_an_idle_sibling_preserves_the_ready_target_generation() -> None:
+    working = 150
+    budget = MemoryBudget(
+        lambda: working, lambda: None, model=MemoryModel(html=StageCost(80, 0)), high=200
+    )
+    lease = budget.lease()
+
+    async def recover():
+        nonlocal working
+        working = 100
+        return True
+
+    def prepare():
+        lease.transfer("parse", size=1, mime="text/html")
+        return {}
+
+    worker = WorkerSupervisor(
+        "parser", command=(sys.executable, "-u", "-c", ECHO), recover_capacity=recover
+    )
+    try:
+        await worker.warmup()
+        original = worker.pid
+        assert (await worker.call(prepare))["pid"] == original
+        assert worker.restarts == 1
+    finally:
+        await worker.close()
+        lease.close()
+
+
+async def test_warm_phase_evidence_expires_with_the_worker_generation() -> None:
+    worker = WorkerSupervisor("parser", command=(sys.executable, "-u", "-c", ECHO))
+    try:
+        await worker.warmup()
+        assert not worker.phase_warm("pdf")
+        worker.mark_phase_warm("pdf")
+        assert worker.phase_warm("pdf")
+        await worker.call({"retire": True})
+        assert not worker.phase_warm("pdf")
+        await worker.warmup()
+        assert not worker.phase_warm("pdf")
     finally:
         await worker.close()
 

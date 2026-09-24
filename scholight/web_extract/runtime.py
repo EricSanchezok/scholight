@@ -44,9 +44,9 @@ def build_extract_app() -> FastAPI:
         capacity_recovered=lambda: memory.capacity_recovered(),
     )
 
-    async def recover_idle(sibling: WorkerSupervisor) -> None:
+    async def recover_idle(sibling: WorkerSupervisor) -> bool:
         memory.admit()
-        await sibling.close_if_idle()
+        return await sibling.close_if_idle()
 
     async def reclaim() -> None:
         app.state.extract_cache.clear()

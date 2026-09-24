@@ -59,17 +59,22 @@ class IsolatedParser:
             raise RuntimeError("Isolated parsing requires a spooled document")
         body_path = str(fetched.spool_file.path)
         result: SpoolFile | None = None
+        is_pdf = False
         with ExitStack() as scratch:
 
             def prepare() -> dict[str, object]:
-                nonlocal result
+                nonlocal result, is_pdf
+                with open(body_path, "rb") as source:
+                    is_pdf = source.read(5) == b"%PDF-"
+                is_pdf = (
+                    is_pdf or fetched.content_type.partition(";")[0].lower() == "application/pdf"
+                )
                 if fetched.reservation is not None:
-                    with open(body_path, "rb") as source:
-                        is_pdf = source.read(5) == b"%PDF-"
                     fetched.reservation.transfer(
                         "parse",
                         size=fetched.source_bytes,
                         mime="application/pdf" if is_pdf else fetched.content_type,
+                        warm=is_pdf and self._worker.phase_warm("pdf"),
                     )
                 result = scratch.enter_context(self._spool.allocate(self._max_output_bytes))
                 return WorkerJob(
@@ -86,6 +91,8 @@ class IsolatedParser:
 
             reply = await self._worker.call(prepare)
             _raise_failure(reply)
+            if is_pdf:
+                self._worker.mark_phase_warm("pdf")
             cpu_ms = reply.get("cpu_ms")
             if (trace := current_trace.get()) is not None and isinstance(cpu_ms, (int, float)):
                 trace.phases["ParseCPU"] = trace.phases.get("ParseCPU", 0) + cpu_ms
@@ -120,7 +127,7 @@ class IsolatedBrowser:
             def prepare() -> dict[str, object]:
                 nonlocal body
                 if reservation is not None:
-                    reservation.transfer("browser")
+                    reservation.transfer("browser", warm=self._worker.phase_warm("browser"))
                 body = self._spool.allocate(self._max_content_bytes)
                 return WorkerJob(
                     request=_request(request),
@@ -130,6 +137,7 @@ class IsolatedBrowser:
 
             reply = await self._worker.call(prepare)
             _raise_failure(reply)
+            self._worker.mark_phase_warm("browser")
             if body is None:
                 raise RuntimeError("Browser did not allocate its result")
             body.size = body.path.stat().st_size

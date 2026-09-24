@@ -36,7 +36,7 @@ class WorkerSupervisor:
         queueing: bool = False,
         admit: Callable[[], None] | None = None,
         reserve_start: Callable[[], AbstractContextManager[None]] | None = None,
-        recover_capacity: Callable[[], Awaitable[None]] | None = None,
+        recover_capacity: Callable[[], Awaitable[bool]] | None = None,
         capacity_recovered: Callable[[], None] | None = None,
     ) -> None:
         self.kind = kind
@@ -64,6 +64,7 @@ class WorkerSupervisor:
         self.restarts = 0
         self._groups: set[int] = set()
         self._closing: asyncio.Task[None] | None = None
+        self._warm_phases: set[str] = set()
 
     @property
     def pid(self) -> int | None:
@@ -72,6 +73,17 @@ class WorkerSupervisor:
     @property
     def busy(self) -> bool:
         return self._gate.active > 0
+
+    def phase_warm(self, phase: Literal["pdf", "browser"]) -> bool:
+        return (
+            self._process is not None
+            and self._process.returncode is None
+            and phase in self._warm_phases
+        )
+
+    def mark_phase_warm(self, phase: Literal["pdf", "browser"]) -> None:
+        if self._process is not None and self._process.returncode is None:
+            self._warm_phases.add(phase)
 
     async def _start(self) -> None:
         with ExitStack() as startup:
@@ -109,6 +121,7 @@ class WorkerSupervisor:
                     self._groups = {self._process.pid}
                     raise
                 self.restarts += 1
+                self._warm_phases.clear()
                 self._completed = 0
                 self._groups = {self._process.pid}
             async with asyncio.timeout(15):
@@ -151,20 +164,21 @@ class WorkerSupervisor:
             except RetainedMemoryPressureError as error:
                 if attempt or self._recover_capacity is None:
                     raise
-                # No job has been dispatched. Retire this idle generation while
-                # the runtime optionally closes the idle sibling.
+                # No job has been dispatched. Prefer retiring the idle sibling;
+                # retain this ready generation when that frees headroom.
                 # Retain the caller's input lease and the FIFO execution permit.
                 self._admit()
                 try:
                     async with asyncio.timeout(2):
-                        results = await asyncio.gather(
-                            self.close(), self._recover_capacity(), return_exceptions=True
-                        )
+                        if not await self._recover_capacity():
+                            await self.close()
+                except asyncio.CancelledError:
+                    await self.close()
+                    raise
                 except TimeoutError:
                     raise error from None
-                for result in results:
-                    if isinstance(result, BaseException):
-                        raise error from result
+                except Exception as cleanup_error:
+                    raise error from cleanup_error
                 continue
             if attempt:
                 self._capacity_recovered()
@@ -202,7 +216,7 @@ class WorkerSupervisor:
                 raise _worker_error() from error
 
     async def close_if_idle(self) -> bool:
-        if self.busy or self._gate.waiting:
+        if self.pid is None or self.busy or self._gate.waiting:
             return False
         # An uncontended acquire does not suspend; ownership is established
         # before close can yield and another call can start using the process.

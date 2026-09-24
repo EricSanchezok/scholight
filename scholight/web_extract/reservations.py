@@ -46,23 +46,25 @@ class MemoryModel:
     download: StageCost = StageCost(11 * MIB, 1)
     html: StageCost = StageCost(63 * MIB, 106)
     pdf: StageCost = StageCost(309 * MIB, 1)
+    pdf_warm: StageCost = StageCost(94 * MIB, 1)
     text: StageCost = StageCost(25 * MIB, 1)
     browser: StageCost = StageCost(253 * MIB, 0)
+    browser_warm: StageCost = StageCost(243 * MIB, 0)
     parser_startup: int = 224 * MIB
     browser_startup: int = 265 * MIB
 
-    def estimate(self, stage: Stage, size: int, mime: str) -> int:
+    def estimate(self, stage: Stage, size: int, mime: str, *, warm: bool = False) -> int:
         if size < 0:
             raise ValueError("Input size must be nonnegative")
         mime = mime.partition(";")[0].strip().lower()
         if stage == "download":
             cost = self.download
         elif stage == "browser":
-            cost = self.browser
+            cost = self.browser_warm if warm else self.browser
         elif mime in {"text/html", "application/xhtml+xml"}:
             cost = self.html
         elif mime == "application/pdf":
-            cost = self.pdf
+            cost = self.pdf_warm if warm else self.pdf
         elif mime.startswith("text/") or mime in {"application/json", "application/xml"}:
             cost = self.text
         else:
@@ -91,8 +93,8 @@ class MemoryBudget:
     def lease(self) -> MemoryReservation:
         return MemoryReservation(self)
 
-    def transfer(self, old: int, *, stage: Stage, size: int, mime: str) -> int:
-        return self._replace(old, self._model.estimate(stage, size, mime))
+    def transfer(self, old: int, *, stage: Stage, size: int, mime: str, warm: bool = False) -> int:
+        return self._replace(old, self._model.estimate(stage, size, mime, warm=warm))
 
     @contextmanager
     def startup(self, kind: WorkerKind) -> Iterator[None]:
@@ -135,10 +137,12 @@ class MemoryReservation:
         self._amount = 0
         self._closed = False
 
-    def transfer(self, stage: Stage, *, size: int = 0, mime: str = "") -> None:
+    def transfer(self, stage: Stage, *, size: int = 0, mime: str = "", warm: bool = False) -> None:
         if self._closed:
             raise RuntimeError("Cannot transfer a closed reservation")
-        self._amount = self._budget.transfer(self._amount, stage=stage, size=size, mime=mime)
+        self._amount = self._budget.transfer(
+            self._amount, stage=stage, size=size, mime=mime, warm=warm
+        )
 
     def close(self) -> None:
         if not self._closed:

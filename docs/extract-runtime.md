@@ -218,11 +218,13 @@ guard remains immediate.
 `MemoryIdleReclaim` counts these deferred recoveries.
 
 Before dispatching a worker job, retained-memory pressure may reclaim once within
-a two-second cleanup budget and then recheck admission. The current generation
-has not received any job and is retired; its sibling is retired only after
-acquiring an idle execution permit. Active sibling work is never interrupted by
-this path. The input file, its reservation and the caller's FIFO permit stay
-owned throughout. Cold startup and preparation share one recovery attempt;
+a two-second cleanup budget and then recheck admission. It first retires the
+sibling after acquiring an idle execution permit, preserving the target's warm
+generation. If no idle sibling exists, it retires the target, which has not yet
+received the job. Active sibling work is never interrupted by this path.
+Cancellation still reaps the owned target process. The input file, its reservation
+and the caller's FIFO permit stay owned throughout. Cold startup and preparation
+share one recovery attempt;
 already dispatched jobs, browser POSTs and downloads are never replayed.
 Competing reservations, oversized envelopes and emergency admission pauses still
 reject work. Successful recovery clears the stale deferred-reclaim request and
@@ -242,13 +244,22 @@ The resulting envelopes use the maximum observed delta with 50% margin plus
 | --- | ---: | ---: |
 | Download | 11 | 1 |
 | HTML parse | 63 | 106 |
-| PDF parse | 309 | 1 |
+| PDF parse, first successful PDF in a generation | 309 | 1 |
+| PDF parse, after a successful PDF in the same live generation | 94 | 1 |
 | Text parse | 25 | 1 |
-| Browser render | 253 | 0 |
+| Browser render, first successful render in a generation | 253 | 0 |
+| Browser render, after a successful render in the same live generation | 243 | 0 |
 | Parser startup | 224 | 0 |
 | Browser startup | 265 | 0 |
 
-The PDF envelope cannot fit alongside both idle workers in the measured samples;
+Five further native rounds (`d95e968` harness, `32f867c` runtime) measured 40 warm
+PDF and 20 warm browser executions, plus explicit priming jobs. Warm allowances
+use the same maximum-delta, 50% and 8 MiB margins. A successful phase marks only
+its current live worker generation; errors never establish warmth, and restart,
+crash or scheduled retirement invalidates it. This avoids charging native
+initialization again when those resident allocations are already sampled.
+
+The cold PDF envelope cannot fit alongside both idle workers in the measured samples;
 bounded pre-dispatch reclamation is required rather than reducing its measured
 margin. These finite authored samples do not bound arbitrary compressed PDFs or
 JavaScript. The updated runtime still requires the final mixed-load, latency,
