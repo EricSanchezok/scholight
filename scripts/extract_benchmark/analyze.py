@@ -111,7 +111,9 @@ def memory_report(rows: list[dict], samples: list[dict]) -> dict:
     last = [s["working_set"] for s in idle if end - 3600 <= s["time"]]
     drift = statistics.median(last) - statistics.median(first) if first and last else None
     peak = max(s["working_set"] for s in samples)
-    oom = max(s["oom_kill"] for s in samples) - samples[0]["oom_kill"]
+    # Every run owns a fresh container; startup kills before probe attachment
+    # are failures too. Never subtract a nonzero initial cumulative counter.
+    oom = max(s["oom_kill"] for s in samples)
     elapsed = end - start
     # Probe starts just before the client; tolerate only its one-second sampling granularity.
     complete = elapsed >= 14_399 and len(rows) >= 2000

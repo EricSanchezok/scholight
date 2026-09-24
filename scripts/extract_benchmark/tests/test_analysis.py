@@ -3,7 +3,12 @@ from __future__ import annotations
 import json
 from copy import deepcopy
 
-from analyze import compare_outputs, latencies, matrix, summarize
+from analyze import compare_outputs, latencies, matrix, memory_report, summarize
+
+
+def test_soak_keeps_oom_kills_that_precede_the_first_memory_sample():
+    samples = [{"time": time, "working_set": 1, "oom_kill": 2} for time in (0, 1)]
+    assert memory_report([], samples)["oom_kills"] == 2
 
 
 def row(index=0):

@@ -220,6 +220,8 @@ Lifecycle error matches retain only their type and time. It never reads secret v
 `MemoryOOMKills` preserves cumulative cgroup child-process kills even when the ECS
 task survives. Per-stream maxima include nonzero first samples; repeated samples
 must not be summed and old collectors without the counter are unavailable evidence.
+Native benchmark reports also retain a nonzero first cumulative OOM sample:
+startup kills before the probe attaches must not disappear from the soak gate.
 Pass every relevant `--canary-report` to separate actual server-issued request IDs.
 API initial calls, pagination, internal calls and canaries have separate counts;
 all errors/rejections remain in denominators. The existing baseline lacks the new
