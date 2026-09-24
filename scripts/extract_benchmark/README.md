@@ -180,6 +180,11 @@ the sibling resident, including native imports and browser warmup. It then warms
 the browser, restarts the parser before each sample, and takes 10 ms cgroup
 measurements across five repetitions of the frozen
 non-JS corpus plus scaled prose, dense DOM, tables, Chinese, text and PDF streams.
+Scaled PDFs wrap ASCII text across visible lines and pages; extending a single
+line beyond the page produces invalid calibration evidence. These uncompressed
+fixtures are separate from the frozen 48-case corpus and load no PDF library in
+the measured supervisor. Regression tests verify that every input word remains
+visible to a real PDF parser.
 The measured parent imports the production runtime dependency graph. The probe
 cancels its owned task at 640 MiB or 45 seconds and leaves partial evidence for
 review. Recommendations use observed fixed/size costs with a 50% margin and an

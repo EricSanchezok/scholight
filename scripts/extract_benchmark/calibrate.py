@@ -12,7 +12,8 @@ import sys
 import time
 from pathlib import Path
 
-from corpus import Case, _html, _pdf, corpus
+from calibration_fixtures import paged_pdf
+from corpus import Case, _html, corpus
 
 from scholight.models.web_extract import ExtractResponseFormat, RenderMode
 
@@ -45,7 +46,11 @@ def calibration_cases() -> list[Case]:
     for size in (1000, 10_000, 100_000):
         cases.append(
             Case(
-                f"pdf-stream-{size}", "pdf", "application/pdf", _pdf("Evidence " * (size // 9)), ()
+                f"pdf-stream-{size}",
+                "pdf",
+                "application/pdf",
+                paged_pdf("Evidence " * (size // 9)),
+                (),
             )
         )
     return cases
