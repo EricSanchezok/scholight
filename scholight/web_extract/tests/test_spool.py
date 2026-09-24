@@ -53,3 +53,20 @@ def test_second_supervisor_cannot_clean_an_active_spool(tmp_path: Path) -> None:
             second.start()
         assert body.path.read_bytes() == b"1234"
     first.close()
+
+
+def test_sealing_a_download_releases_unused_disk_reservation(tmp_path: Path) -> None:
+    spool = Spool(tmp_path, max_bytes=10)
+    spool.start()
+    try:
+        with spool.allocate(10) as body:
+            body.write(b"abc")
+            body.seal()
+            body.seal()
+            assert spool.reserved_bytes == 3
+            with spool.allocate(7):
+                with pytest.raises(ExtractError):
+                    body.write(b"more")
+        assert spool.reserved_bytes == 0
+    finally:
+        spool.close()

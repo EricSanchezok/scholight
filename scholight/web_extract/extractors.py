@@ -73,6 +73,7 @@ def extract_html(
     *,
     source_url: str,
     output: ExtractResponseFormat,
+    fast: bool = False,
 ) -> ExtractedContent:
     import markdownify
     import trafilatura
@@ -100,6 +101,7 @@ def extract_html(
                 include_links=True,
                 include_tables=True,
                 favor_recall=True,
+                fast=fast,
             )
             or ""
         ).strip()

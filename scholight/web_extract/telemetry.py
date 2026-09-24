@@ -25,6 +25,9 @@ class ExtractTrace:
     dom_bytes: int = 0
     upstream_status: int | None = None
     mime: str = "unknown"
+    static_work_id: str | None = None
+    singleflight_joined: bool = False
+    retry_count: int = 0
     cache_key_id: str | None = None
     cache_entry_bytes: int = 0
     cache_ttl_seconds: int = 0
@@ -96,6 +99,9 @@ def _log_completion(
     logger.info(
         "extract_completed",
         request_id=trace.request_id,
+        static_work_id=trace.static_work_id,
+        singleflight_joined=trace.singleflight_joined,
+        retry_count=trace.retry_count,
         scope=scope,
         outcome=outcome,
         render_mode=render,

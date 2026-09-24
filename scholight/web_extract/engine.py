@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import json
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Protocol
 
+from scholight.logging.emf import emit_emf
 from scholight.models.web_extract import ExtractResponseFormat, RenderMode
 from scholight.web_extract.errors import ExtractError
 from scholight.web_extract.extractors import (
@@ -16,9 +20,18 @@ from scholight.web_extract.extractors import (
     normalize_text,
     should_render_html,
 )
-from scholight.web_extract.telemetry import current_trace, mime_category, phase
+from scholight.web_extract.singleflight import Singleflight
+from scholight.web_extract.telemetry import (
+    ExtractTrace,
+    current_trace,
+    log_completion,
+    mime_category,
+    phase,
+)
 
 if TYPE_CHECKING:
+    from scholight.web_extract.admission import Permit
+    from scholight.web_extract.reservations import MemoryReservation
     from scholight.web_extract.spool import SpoolFile
 
 
@@ -40,14 +53,24 @@ class FetchResult:
     charset: str | None
     body: bytes = b""
     spool_file: SpoolFile | None = None
+    permit: Permit | None = None
+    reservation: MemoryReservation | None = None
 
     @property
     def source_bytes(self) -> int:
         return self.spool_file.size if self.spool_file is not None else len(self.body)
 
     def close(self) -> None:
-        if self.spool_file is not None:
-            self.spool_file.close()
+        try:
+            if self.spool_file is not None:
+                self.spool_file.close()
+        finally:
+            try:
+                if self.reservation is not None:
+                    self.reservation.close()
+            finally:
+                if self.permit is not None:
+                    self.permit.close()
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,11 +152,19 @@ class Parser(Protocol):
     ) -> ParsedContent: ...
 
 
+@dataclass(frozen=True, slots=True)
+class _StaticResult:
+    document: ExtractDocument | None
+    trace: ExtractTrace
+
+
 def parse_document(
     fetched: FetchResult,
     request: ExtractInput,
     *,
     rendered: bool,
+    reuse_quality: bool = True,
+    fast_html: bool = False,
 ) -> ParsedContent:
     """Synchronous parsing entry point; production calls it only inside a worker."""
     content_type = _mime(fetched.content_type)
@@ -141,17 +172,27 @@ def parse_document(
     if content_type in {"text/html", "application/xhtml+xml"}:
         html = normalize_text(data, content_type, charset=fetched.charset)
         if request.render is RenderMode.AUTO and not rendered:
+            quality_result = None
+            quality_error = None
             try:
-                quality_content = extract_html(
+                quality_result = extract_html(
                     html,
                     source_url=fetched.final_url,
                     output=ExtractResponseFormat.MAIN_MARKDOWN,
-                ).content
-            except ExtractError:
-                quality_content = ""
+                    fast=fast_html,
+                )
+            except ExtractError as error:
+                quality_error = error
+            quality_content = quality_result.content if quality_result is not None else ""
             if should_render_html(html, extracted_content=quality_content):
                 return ParsedContent(extracted=None, needs_render=True)
-        extracted = extract_html(html, source_url=fetched.final_url, output=request.output)
+            if reuse_quality and request.output is ExtractResponseFormat.MAIN_MARKDOWN:
+                if quality_error is not None:
+                    raise quality_error
+                return ParsedContent(extracted=quality_result)
+        extracted = extract_html(
+            html, source_url=fetched.final_url, output=request.output, fast=fast_html
+        )
     elif content_type == "application/pdf" or data.startswith(b"%PDF-"):
         extracted = _pdf(data)
     elif content_type.startswith("text/") or content_type in {
@@ -191,11 +232,13 @@ class ExtractEngine:
         browser: BrowserRenderer,
         parser: Parser | None = None,
         admit: Callable[[], None] | None = None,
+        singleflight: bool = False,
     ) -> None:
         self._fetcher = fetcher
         self._browser = browser
         self._parser = parser
         self._admit = admit or (lambda: None)
+        self._flights = Singleflight[_StaticResult]() if singleflight else None
 
     async def _parse(
         self,
@@ -212,7 +255,82 @@ class ExtractEngine:
 
     async def extract(self, request: ExtractInput) -> ExtractDocument:
         self._admit()
-        rendered = request.render is RenderMode.ALWAYS
+        if request.render is not RenderMode.ALWAYS:
+            if self._flights is not None and not request.headers and not request.cookies:
+                key = hashlib.sha256(
+                    json.dumps((request.url, request.render.value, request.output.value)).encode()
+                ).hexdigest()
+                static = await self._flights.do(
+                    key,
+                    lambda work_id: self._shared_static(request, work_id),
+                )
+                if (trace := current_trace.get()) is not None:
+                    trace.source_bytes = static.trace.source_bytes
+                    trace.mime = static.trace.mime
+                    trace.upstream_status = static.trace.upstream_status
+                    if not trace.singleflight_joined:
+                        trace.download_bytes += static.trace.download_bytes
+                        trace.retry_count += static.trace.retry_count
+                        trace.phases.update(static.trace.phases)
+                document = static.document
+            else:
+                document = await self._perform(request, rendered=False)
+            if document is not None:
+                return document
+        # Browser operations can include POST and always belong to this caller alone.
+        self._admit()
+        document = await self._perform(request, rendered=True)
+        if document is None:
+            raise RuntimeError("Parser returned no rendered document")
+        return document
+
+    async def _shared_static(self, request: ExtractInput, work_id: str) -> _StaticResult:
+        # The work has its own bound; one short-lived waiter cannot expire others.
+        trace = ExtractTrace(work_id, time.monotonic() + 52, static_work_id=work_id)
+        context = current_trace.set(trace)
+        outcome = "unexpected_error"
+        try:
+            async with asyncio.timeout(50):
+                document = await self._perform(request, rendered=False)
+            outcome = "needs_render" if document is None else "static_success"
+            return _StaticResult(document, trace)
+        except asyncio.CancelledError:
+            outcome = "cancelled"
+            raise
+        except TimeoutError as error:
+            outcome = "error_extract_timeout"
+            raise ExtractError(
+                code="extract_timeout",
+                message="Static extraction exceeded its deadline.",
+                status_code=504,
+                retryable=True,
+            ) from error
+        except ExtractError as error:
+            outcome = f"error_{error.code}"
+            raise
+        finally:
+            emit_emf(
+                service="extract",
+                metrics={
+                    "StaticWorkCount": (1, "Count"),
+                    "StaticWorkDownloadBytes": (trace.download_bytes, "Bytes"),
+                },
+            )
+            log_completion(
+                trace=trace,
+                scope="static_work",
+                outcome=outcome,
+                render=request.render.value,
+                cache_eligible=True,
+                cache_hit=False,
+            )
+            current_trace.reset(context)
+
+    async def close(self) -> None:
+        if self._flights is not None:
+            await self._flights.close()
+
+    async def _perform(self, request: ExtractInput, *, rendered: bool) -> ExtractDocument | None:
         with phase("RenderLatency" if rendered else "DownloadLatency"):
             fetched = (
                 await self._browser.render(request)
@@ -230,16 +348,7 @@ class ExtractEngine:
         try:
             parsed = await self._parse(fetched, request, rendered=rendered)
             if parsed.needs_render:
-                fetched.close()
-                self._admit()
-                with phase("RenderLatency"):
-                    fetched = await self._browser.render(request)
-                if trace is not None:
-                    trace.upstream_status = fetched.status_code
-                    trace.dom_bytes = fetched.source_bytes
-                    trace.mime = mime_category(fetched.content_type)
-                rendered = True
-                parsed = await self._parse(fetched, request, rendered=True)
+                return None
             if parsed.extracted is None:
                 raise RuntimeError("Parser returned no document")
             return self._document(fetched, parsed.extracted, rendered=rendered)

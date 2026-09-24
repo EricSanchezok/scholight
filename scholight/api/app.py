@@ -99,6 +99,7 @@ async def _is_zilliz_ready() -> bool:
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Startup / shutdown lifecycle for database connections."""
     from scholight.api.extract_execution import (
+        extract_client_lifespan,
         prune_extract_result_cache,
         reset_extract_result_cache,
     )
@@ -119,6 +120,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     reset_anonymous_minute_limits()
     reset_search_in_flight_tracker()
     async with (
+        extract_client_lifespan(),
         app.state.mcp_server.session_manager.run(),
         cache_maintenance(prune_extract_result_cache),
     ):

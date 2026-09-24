@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
 import aiohttp
@@ -15,7 +15,9 @@ from scholight.web_extract.fetcher import HttpFetcher
 
 
 @asynccontextmanager
-async def _server(handler: web.RequestHandler) -> AsyncIterator[str]:
+async def _server(
+    handler: Callable[[web.Request], Awaitable[web.StreamResponse]],
+) -> AsyncIterator[str]:
     app = web.Application()
     app.router.add_route("*", "/{tail:.*}", handler)
     runner = web.AppRunner(app)
@@ -130,12 +132,43 @@ async def test_http_fetcher_rejects_oversized_response() -> None:
 @pytest.mark.asyncio
 async def test_http_fetcher_rejects_saturation_instead_of_queueing() -> None:
     fetcher = HttpFetcher(validator=_allow_test_target, concurrency=1)
-    await fetcher._semaphore.acquire()
+    await fetcher._gate.acquire()
 
     with pytest.raises(ExtractError) as exc_info:
         await fetcher.fetch(_request("https://example.com"))
 
     assert exc_info.value.code == "extract_capacity_exceeded"
+
+
+@pytest.mark.asyncio
+async def test_spooled_download_holds_capacity_until_parsing_releases_the_file(tmp_path) -> None:
+    from scholight.web_extract.spool import Spool
+
+    async def handler(_request: web.Request) -> web.Response:
+        return web.Response(text="evidence")
+
+    spool = Spool(tmp_path)
+    spool.start()
+    try:
+        async with _server(handler) as base_url:
+            fetcher = HttpFetcher(
+                validator=_allow_test_target,
+                resolver=aiohttp.DefaultResolver(),
+                concurrency=1,
+                spool=spool,
+                queueing=True,
+            )
+            first = await fetcher.fetch(_request(base_url))
+            second = asyncio.create_task(fetcher.fetch(_request(base_url)))
+            await asyncio.sleep(0)
+            assert fetcher._gate.waiting == 1
+            assert spool.reserved_bytes == len(b"evidence")
+            first.close()
+            first.close()
+            (await second).close()
+            assert fetcher._gate.active == 0
+    finally:
+        spool.close()
 
 
 @pytest.mark.asyncio

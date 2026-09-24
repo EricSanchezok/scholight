@@ -18,6 +18,7 @@ from scholight.web_extract.fetcher import HttpFetcher
 from scholight.web_extract.isolated import IsolatedBrowser, IsolatedParser
 from scholight.web_extract.memory import MemoryGuard, MemorySample, read_cgroup
 from scholight.web_extract.process_family import enable_subreaping, family_rss
+from scholight.web_extract.reservations import MemoryBudget
 from scholight.web_extract.service import create_extract_service
 from scholight.web_extract.spool import Spool
 from scholight.web_extract.worker_supervisor import WorkerSupervisor
@@ -26,12 +27,30 @@ from scholight.web_extract.worker_supervisor import WorkerSupervisor
 def build_extract_app() -> FastAPI:
     validate_extract_runtime_settings()
     spool = Spool(Path(settings.data_root) / "extract-spool")
-    parser_worker = WorkerSupervisor("parser")
-    browser_worker = WorkerSupervisor("browser")
+    parser_worker = WorkerSupervisor(
+        "parser",
+        queueing=settings.extract_queueing,
+        admit=lambda: memory.admit(),
+        reserve_start=lambda: budget.startup("parser"),
+        recover_capacity=lambda: recover_idle(browser_worker),
+        capacity_recovered=lambda: memory.capacity_recovered(),
+    )
+    browser_worker = WorkerSupervisor(
+        "browser",
+        queueing=settings.extract_queueing,
+        admit=lambda: memory.admit(),
+        reserve_start=lambda: budget.startup("browser"),
+        recover_capacity=lambda: recover_idle(parser_worker),
+        capacity_recovered=lambda: memory.capacity_recovered(),
+    )
+
+    async def recover_idle(sibling: WorkerSupervisor) -> bool:
+        memory.admit()
+        return await sibling.close_if_idle()
 
     async def reclaim() -> None:
         app.state.extract_cache.clear()
-        await asyncio.gather(browser_worker.close(), parser_worker.close())
+        await asyncio.gather(browser_worker.close(), parser_worker.close(), fetcher.close())
 
     def sample_memory() -> MemorySample:
         parser_rss = family_rss(parser_worker.pid)
@@ -46,6 +65,7 @@ def build_extract_app() -> FastAPI:
                 "ParserStarts": (parser_worker.restarts, "Count"),
                 "BrowserStarts": (browser_worker.restarts, "Count"),
                 "ScratchReservedBytes": (spool.reserved_bytes, "Bytes"),
+                "MemoryReservedBytes": (budget.reserved_bytes, "Bytes"),
             },
         )
         if sys.platform == "linux":
@@ -54,25 +74,45 @@ def build_extract_app() -> FastAPI:
         rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss + parser_rss + browser_rss
         return MemorySample(working_set=rss, anon=rss, file=0)
 
-    memory = MemoryGuard(sample_memory, reclaim)
+    memory = MemoryGuard(
+        sample_memory,
+        reclaim,
+        can_reclaim=lambda: (
+            budget.reserved_bytes == 0 and not parser_worker.busy and not browser_worker.busy
+        ),
+    )
+    budget = MemoryBudget(
+        lambda: (read_cgroup() if sys.platform == "linux" else sample_memory()).working_set,
+        memory.admit,
+        on_pressure=memory.request_reclaim,
+    )
     browser = IsolatedBrowser(
         browser_worker,
         spool,
         max_content_bytes=settings.extract_max_download_bytes,
+        memory=budget,
+    )
+    fetcher = HttpFetcher(
+        max_download_bytes=settings.extract_max_download_bytes,
+        timeout_seconds=settings.extract_fetch_timeout_seconds,
+        concurrency=settings.extract_static_concurrency,
+        spool=spool,
+        queueing=settings.extract_queueing,
+        admit=memory.admit,
+        reuse_connections=settings.extract_connection_reuse,
+        retry_enabled=True,
+        memory=budget,
     )
     engine = ExtractEngine(
-        fetcher=HttpFetcher(
-            max_download_bytes=settings.extract_max_download_bytes,
-            timeout_seconds=settings.extract_fetch_timeout_seconds,
-            concurrency=settings.extract_static_concurrency,
-            spool=spool,
-        ),
+        fetcher=fetcher,
         browser=browser,
         admit=memory.admit,
+        singleflight=settings.extract_singleflight,
         parser=IsolatedParser(
             parser_worker,
             spool,
             max_output_bytes=settings.extract_max_download_bytes,
+            reuse_quality=settings.extract_parse_reuse,
         ),
     )
 
@@ -87,7 +127,12 @@ def build_extract_app() -> FastAPI:
                 yield
         finally:
             try:
-                await asyncio.gather(browser_worker.close(), parser_worker.close())
+                try:
+                    await engine.close()
+                finally:
+                    await asyncio.gather(
+                        browser_worker.close(), parser_worker.close(), fetcher.close()
+                    )
             finally:
                 spool.close()
 

@@ -65,6 +65,8 @@ def run(seconds: float, requests: int, seed: int, mode: str, concurrency: int) -
                 warmup.write(json.dumps(request_one(case, index, "warm", seed, True)) + "\n")
     if mode == "duplicate":
         case_list = [case_list[0]]
+    elif mode == "short":
+        case_list = [case for case in case_list if case.category == "short"]
     with Path("/results/requests.jsonl").open("w") as records:
         rng = random.Random(seed)  # nosec B311: repeatable workload, not cryptography
         started = time.monotonic()

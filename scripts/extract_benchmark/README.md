@@ -11,6 +11,8 @@ all response outcomes and content, per-second cgroup working set/anon/file/OOM
 events, and final container state/logs. Run versions sequentially on the same
 machine; alternate baseline/A/B for at least five cold/warm performance rounds.
 Keep timing assertions out of ordinary unit tests.
+Deterministic harness regression tests are included in the default backend test
+suite and CI; long native experiments still require explicit execution.
 
 Use `--mode cold` for unique request keys and `--mode warm` for a separate recorded
 48-case warmup followed by fixed-key measurements. The default `mixed` mode keeps
@@ -20,6 +22,12 @@ exact static key per wave. All outcomes remain in the evidence, including reject
 and timed-out requests. Run at least five alternating cold/warm rounds per version
 when the host is otherwise quiet. Do not use build-overlapped soak timings for the
 latency gate.
+
+`--mode short --concurrency 8 --requests 8 --seconds 0` isolates the eight-short-
+request queue acceptance case. Fixture logs include each actual request path and
+peer connection address, so duplicate-work and connection-reuse claims can be
+checked against upstream observations as well as service telemetry. No request
+headers, cookies or production addresses are recorded by this owned fixture.
 
 The 48 self-owned fixtures cover articles, documentation, Chinese, short pages,
 tables, code, JavaScript, JSON/XML and valid/malformed PDFs. Expected evidence
@@ -49,3 +57,236 @@ Python processes and communicate through a real Unix socket. Checks cover unchan
 request JSON, optional headers, response/error mapping, immutable pagination and
 cross-actor rejection in both directions. The document producer is a fixed stub;
 this is a wire check, not an authentication, database or extraction-quality test.
+
+For the optional fast parser candidate, mount this directory into the final B
+image and run `/app/.venv/bin/python /benchmark/parser_compare.py --output
+/results/parser --rounds 5` with an output volume. Keep Linux ARM64, Python 3.11
+and the same container limits. The harness alternates complete/fast parsing in
+supervised workers, records every output and CPU time, and resets parser caches
+after each job. It adds 18 authored, annotated HTML pages to the frozen 48 cases.
+Chinese characters and Unicode words form a multiset precision/recall score;
+critical paragraph/code/table/link checks and full-mode line retention are
+separate gates. The six JS parser fixtures use their exact authored hydration
+payload; this does not replace real browser integration tests. Report HTML CPU
+improvement and total mixed-corpus CPU separately. A `--allow-host --rounds 1`
+development smoke is explicitly ineligible for acceptance. Quality must pass
+and HTML parsing CPU must improve by at least 20%; runtime remains in full mode
+until a separately reviewed activation.
+
+The candidate follows [Trafilatura's documented fast mode](https://trafilatura.readthedocs.io/en/latest/extraction-overview.html),
+which skips backup extraction. These fixtures establish reproducibility and
+identify regressions; they cannot establish universal quality on arbitrary sites.
+
+## Offline cache policies
+
+`uv run python scripts/extract_benchmark/cache_replay.py --output
+data/extract-benchmark/cache-synthetic` compares LRU, byte-weighted W-TinyLFU and
+GreedyDual-Size over five seeded hotspot, scan and repeated-burst traces. All use
+600-second write TTL, 32 MiB and at most 1,024 entries; hits never renew TTL.
+Sizes represent retained document objects, with additional conservative policy
+overheads (not measured container RSS). Reports include every request, hit ratio,
+saved observed/synthetic execution cost, charged memory and final entry count.
+
+The W-TinyLFU reference has a fixed 1% LRU admission window, an 80% protected main
+SLRU segment, four-bit Count-Min counters, a Bloom doorkeeper and periodic aging.
+For variable sizes it compares the candidate frequency with the sum of frequencies
+of all required victims. It is a transparent offline variant, not a port of
+Caffeine's adaptive implementation. GDS uses `H = L + cost / retained_size` and
+advances inflation `L` on eviction; a bounded linear minimum scan avoids retaining
+stale heap entries. These implementations are never imported by production.
+References: [TinyLFU paper](https://arxiv.org/abs/1512.00727),
+[Caffeine design](https://github.com/ben-manes/caffeine/wiki/Design),
+[GreedyDual-Size algorithm](https://static.usenix.org/publications/library/proceedings/usits97/full_papers/cao/cao_html/node8.html).
+
+Pass `--trace PATH` for anonymized `extract_completed` JSONL collected after A.
+Only existing opaque cache identifiers are accepted. The importer excludes
+canaries, credentialed calls, failures and hits without a previously observed miss
+cost, and reports each exclusion. Completion order is only an approximation to
+concurrent arrival order, and rotating instance keys prevent joining across
+restarts. Historical logs without identifiers cannot establish real reuse;
+synthetic keys must never be described as an actual production cache trajectory.
+
+## Alternating matrices and analysis
+
+`matrix.py --baseline BASELINE_IMAGE --reliability A_IMAGE --output DIRECTORY`
+runs five alternating cold/warm rounds. Add `--efficiency B_IMAGE --ablations`
+for B plus each independently disabled optimization and 2/4/8/16-way cold/duplicate
+bursts. The exact sequential plan is saved before execution; only one variant runs
+at a time. `run.py --disable parse-reuse|singleflight|queueing|connections` applies
+one documented runtime feature switch. Metadata records the switch and fixture
+HTTP version. Soaks default to the original fixture HTTP/1.0 behavior; latency
+matrices explicitly use HTTP/1.1 so connection reuse is measurable. All compared
+variants in a matrix use the same protocol.
+
+`analyze.py DIRECTORY` writes `analysis.json` for a run or matrix. It retains all
+statuses and quality failures, reports ordinary successful P95 against the explicit
+set of baseline-supported cases, and includes every PDF error in overall counts.
+Memory analysis excludes request intervals with a 250 ms margin, skips the first
+ten minutes before the initial idle-hour median, and compares it with the final
+hour. It reports sample counts and cannot pass incomplete four-hour/2,000-request
+soaks. A single successful latency gate does not substitute for failure, queue,
+quality, cleanup, memory or production observation gates.
+
+The analyzer also compares every paired baseline-supported request's complete
+content, metadata, warnings and wire field types. Only collection timestamps and
+the intentionally corrected `source_bytes` value are excluded from value equality;
+their types are still checked. Rejections and missing responses fail this paired
+gate. Reports group success latency by MIME and actual rendered state, and retain
+unclassified failures separately. Content differences require explicit quality
+review; passing a few expected marker strings cannot hide missing paragraphs.
+
+Each new run records explicit completion and verifies scratch-file cleanup before
+removing its owned containers. The analyzer rejects partial request sets even if
+container inspection files exist; this also applies to standalone soak acceptance.
+Both stdout and stderr are retained. Comparisons
+include B against A (including newly working PDFs), and each B ablation against B;
+the burst variant order rotates across rounds as well as the serial order.
+
+## Isolated faults and memory calibration
+
+For the native B behavior gate, use `run.py --mode semantics --seconds 0 --requests 1
+--http-version 1.1`. Eight simultaneous callers must cause exactly one observed
+static request; one leaving caller must not cancel its peer. Distinct fixture
+credentials must remain separate. A DNS alias on the owned bridge exercises
+cookie handling through a redirect and then a fresh request over the same actual
+TCP connection. Public 503 responses retry exactly once after Retry-After;
+credentialed requests do not retry. Fixture identities are authored test values.
+
+`--mode overload --seconds 60 --requests 1 --http-version 1.1` continuously drives
+16 isolated callers against a 400 ms fixture, with each caller capped at 10 requests
+per second. Every success and rejection is retained; responses must stay within
+the queue/fixture budget. Both modes verify queue and execution maxima from actual
+service metrics, require all queues/active slots to drain, and verify scratch-file
+cleanup. Missing metrics cannot count as passing evidence. These probes are only
+for B's isolated image, never the production endpoint or an A latency comparison.
+
+`run.py --mode faults --seconds 0 --requests 1` uses the same isolated fixture
+network for slow responses, slow/excessive redirect chains, client disconnects
+and recovery requests. Its `faults.json` records actual response deadlines; this
+mode is a lifecycle check, not a latency benchmark. Use `run.py --mode worker-faults
+--seconds 0 --requests 1` to run the final image with 768 MiB and CPU shares 128,
+stop a real parser, kill an idle worker and Chromium, and race eight close callers.
+The runner sets `SCHOLIGHT_BENCHMARK_CONTAINER=1`; the probe also requires the exact
+768 MiB cgroup hard limit. A slow navigation must first be observed by the isolated
+fixture before killing Chromium, proving loss during active work. The probe checks
+owned process-group termination/reaping and recovery; never run it on a production
+task or in the host namespace.
+
+Run `/app/.venv/bin/python /benchmark/calibrate.py` inside a native B image with
+the same limits, `SCHOLIGHT_BENCHMARK_CONTAINER=1`, no network, a mounted `/results`
+directory and this directory
+mounted at `/benchmark`. It first measures five cold starts of each worker with
+the sibling resident, including native imports and browser warmup. It then warms
+the browser, restarts the parser before each sample, and takes 10 ms cgroup
+measurements across five repetitions of the frozen
+non-JS corpus plus scaled prose, dense DOM, tables, Chinese, text and PDF streams.
+Scaled PDFs wrap ASCII text across visible lines and pages; extending a single
+line beyond the page produces invalid calibration evidence. These uncompressed
+fixtures are separate from the frozen 48-case corpus and load no PDF library in
+the measured supervisor. Regression tests verify that every input word remains
+visible to a real PDF parser.
+The measured parent imports the production runtime dependency graph. The probe
+cancels its owned task at 640 MiB or 45 seconds and leaves partial evidence for
+review. Recommendations use observed fixed/size costs with a 50% margin and an
+additional 8 MiB fixed allowance. This finite parser corpus cannot bound arbitrary
+compressed PDFs; actual mixed-load soak and download/browser phase measurements
+remain required before the model is accepted. Calibration is not a production
+stress test and does not change runtime coefficients automatically. Every sample
+must complete; failed or guarded samples cannot silently disappear from the
+recommendation. Previous task/results are released before measuring the next sample.
+Startup recommendations are separate from per-job envelopes and cannot be omitted
+from an accepted memory model. Measure before process creation through readiness;
+a baseline taken only after warmup cannot establish this cost.
+
+`run.py --mode phase-calibration --seconds 0 --requests 1` complements parser
+calibration with five repetitions of real streaming downloads (8 KiB through
+49 MB) and Chromium DOMs (100 through 15,000 nested paragraph/link structures).
+It uses the same isolated network and 768 MiB container, idle sibling workers,
+10 ms sampling and 640 MiB/45 second guard. Reports preserve actual deltas and
+recommendations with 50% margin plus 8 MiB. These finite inputs do not bound
+arbitrary JavaScript/assets or compressed documents; the memory guard and mixed
+soak remain necessary. Inspect the evidence before adopting any coefficient.
+The phase probe also measures five warm PDF and browser rounds, preserving each
+worker generation across shuffled documents after one explicit priming operation.
+Both workers are restarted between phase/trial groups. Priming rows are retained
+and guarded separately; warm recommendations retain the same 50% plus 8 MiB
+margin and require all 40 PDF and 20 browser measurements. This distinguishes
+retained native initialization from incremental work without assuming it is free.
+
+## Serial production canary
+
+`observe.py` is a read-only hourly evidence collector. Supply an explicit AWS
+profile, expected account, region, cluster/service, log prefix and timezone-aware
+start/end. It checks account identity, records exact task/image/resource state,
+retains completion, per-second memory, actual queue depth/rejection fields and
+deferred idle-memory reclamation counts through an allowlist.
+The `MemoryPreparationRecovery` counter records a successful bounded reclamation
+before a worker receives its job; it does not count a replay of executed work.
+Lifecycle error matches retain only their type and time. It never reads secret values.
+`MemoryOOMKills` preserves cumulative cgroup child-process kills even when the ECS
+task survives. Per-stream maxima include nonzero first samples; repeated samples
+must not be summed and old collectors without the counter are unavailable evidence.
+Native benchmark reports also retain a nonzero first cumulative OOM sample:
+startup kills before the probe attaches must not disappear from the soak gate.
+Pass every relevant `--canary-report` to separate actual server-issued request IDs.
+API initial calls, pagination, internal calls and canaries have separate counts;
+all errors/rejections remain in denominators. The existing baseline lacks the new
+events: unavailable telemetry must not be read as zero activity.
+
+Collect overlapping windows ending two minutes before the current time to allow
+log delivery, and deduplicate retained `event_id` values when combining windows.
+Collection rejects future end times. Aggregation also rejects historical inputs
+whose declared window had not ended when collection started; these cannot prove
+complete coverage. Preserve such evidence and collect a new completed window.
+Keep every output directory; incomplete collection has `window.complete=false`.
+ECS retains stopped task details for at least one hour, so retain hourly snapshots
+and investigate task/stream changes rather than infer zero OOM from an empty
+stopped-task list. A one-hour summary cannot establish multi-day acceptance.
+
+`observation_series.py --observation DIRECTORY [--observation DIRECTORY ...]
+--start ISO_TIMESTAMP --end ISO_TIMESTAMP --stage A|B --output NEW_DIRECTORY`
+combines these windows offline. Pass all relevant `--canary-report` files again.
+It rejects conflicting duplicate events and mixed AWS targets, clips to the
+selected release interval, and does not fill gaps with incomplete collections.
+It exports deduplicated completion events for the actual cache replay and reports
+natural traffic independently of canaries and internal duplicates.
+
+Idle memory trends remain separate per task/log stream. Active worker gauges and
+internal request intervals plus 250 ms are excluded; the first stable hour and
+last hour include their sample counts, disjointness and growth. Sampling gaps,
+including gaps across restarted tasks, remain visible. Retained OOM/exit-137 task
+evidence cannot disappear because a later inventory omits an old stopped task.
+The report shows A's 24-hour or B's 72-hour elapsed requirement, B's 100 natural
+initial calls/seven-day extension, six-hour canary periods and actual run gaps.
+Inspect release identity, resources, inventory continuity, every failed canary and
+sparse/missing telemetry before acceptance; this reporting tool never approves a
+rollout or turns unavailable observations into successful gates.
+References: [CloudWatch filtering](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/FilterAndPatternSyntax.html),
+[ECS stopped-task retention](https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_DescribeTasks.html).
+
+`canary.py setup --base https://HOST --login-file PRIVATE_LOGIN_JSON --state-file
+PRIVATE_STATE_JSON --output REPORT_JSON` logs in through the normal account API,
+checks the designated email, and issues the named temporary Access Key. Login input
+contains only `email` and `password`. Both credential files must live outside
+tracked source and have owner-only permissions. The state contains secrets and
+must never be attached as evidence. Setup refuses duplicate active canary names.
+
+Use `canary.py run` with the same base/state and a new output report after release,
+then every six hours. Every HTTP operation is serial and spaced by at least ten
+seconds, including auth and MCP initialization. Checks cover REST/MCP static,
+PDF and JS; immutable pagination/replay; cache reuse; cursor tampering; login and
+search. Cross-key isolation briefly issues a second key for the same user, verifies
+that it cannot read the primary key's cursor, then revokes it immediately. A pending
+cleanup ID remains in private state if interrupted. This complements cross-user
+isolation tests in the isolated suite; it does not impersonate a second production
+user. `canary.py revoke` removes pending auxiliary keys, revokes the primary key,
+logs out this canary session and removes its private state. Retain the login file
+only for authorized recovery and remove the task's private copy after acceptance.
+
+Reports contain status, latency and **server-generated response request IDs**, not
+credentials, headers or response bodies. Public middleware assigns these IDs;
+client-provided prefixes are not authoritative. Pass every report with repeatable
+`cache_replay.py --canary-report REPORT_JSON` arguments when importing actual logs.
+Also exclude those exact IDs when computing natural-traffic production metrics.
+Transport failures lacking a response ID remain explicit unidentified failures;
+do not silently count them as natural evidence or erase them from acceptance.

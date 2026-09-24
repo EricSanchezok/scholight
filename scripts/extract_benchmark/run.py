@@ -16,15 +16,28 @@ import time
 from pathlib import Path
 
 from corpus import corpus
+from runtime_probes import queue_evidence
 
 ROOT = Path(__file__).resolve().parents[2]
 # Fixture-only value; this runner has no production access.
 TOKEN = "isolated-benchmark-token-not-a-production-secret"  # nosec B105
+ABLATIONS = {
+    "parse-reuse": "SCHOLIGHT_EXTRACT_PARSE_REUSE",
+    "singleflight": "SCHOLIGHT_EXTRACT_SINGLEFLIGHT",
+    "queueing": "SCHOLIGHT_EXTRACT_QUEUEING",
+    "connections": "SCHOLIGHT_EXTRACT_CONNECTION_REUSE",
+}
 
 
 def docker(*args: str) -> str:
     result = subprocess.check_output(["docker", *args], text=True)  # nosec
     return result.strip()
+
+
+def container_logs(container: str) -> str:
+    return subprocess.check_output(  # nosec
+        ["docker", "logs", container], stderr=subprocess.STDOUT, text=True
+    )
 
 
 def run(
@@ -35,6 +48,8 @@ def run(
     seed: int,
     mode: str = "mixed",
     concurrency: int = 1,
+    disable: str | None = None,
+    http_version: str = "1.0",
 ) -> None:
     output.mkdir(parents=True, exist_ok=False)
     case_list = corpus()
@@ -56,6 +71,12 @@ def run(
         "seed": seed,
         "mode": mode,
         "concurrency": concurrency,
+        "disabled_feature": disable,
+        "fixture_http_version": http_version,
+        "harness_sha256": {
+            path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in sorted((ROOT / "scripts/extract_benchmark").glob("*.py"))
+        },
         "corpus": manifest,
     }
     (output / "manifest.json").write_text(json.dumps(metadata, indent=2))
@@ -65,6 +86,7 @@ def run(
     ]
     created: list[str] = []
     probe = None
+    complete = False
     try:
         docker("network", "create", "--internal", "--subnet", "93.184.216.0/24", network)
         created.append(network)
@@ -79,6 +101,10 @@ def run(
             network,
             "--ip",
             "93.184.216.2",
+            "--network-alias",
+            "docs.extract.test",
+            "-e",
+            f"EXTRACT_BENCH_HTTP_VERSION={http_version}",
             "-v",
             mount,
             "--entrypoint",
@@ -116,12 +142,32 @@ def run(
             "SCHOLIGHT_EXTRACT_BROWSER_CONCURRENCY=1",
             "-e",
             "SCHOLIGHT_EXTRACT_CACHE_MAX_BYTES=33554432",
+            *(["-e", ABLATIONS[disable] + "=false"] if disable is not None else []),
+            *(
+                [
+                    "-e",
+                    "SCHOLIGHT_BENCHMARK_CONTAINER=1",
+                    "--no-healthcheck",
+                    "--entrypoint",
+                    "/app/.venv/bin/python",
+                ]
+                if mode in {"worker-faults", "phase-calibration"}
+                else []
+            ),
+            *(["-v", f"{output.resolve()}:/results"] if mode == "phase-calibration" else []),
             image,
+            *(["/benchmark/worker_faults.py"] if mode == "worker-faults" else []),
+            *(["/benchmark/phase_calibrate.py"] if mode == "phase-calibration" else []),
         )
         created.append(app)
         (output / "containers.json").write_text(
             json.dumps({"app": app, "fixture": fixture, "client": client, "network": network})
         )
+        if mode in {"worker-faults", "phase-calibration"}:
+            if int(docker("wait", app)):
+                raise RuntimeError("Owned native probe failed; inspect service.log")
+            complete = True
+            return
         for _ in range(90):
             try:
                 docker(
@@ -151,6 +197,8 @@ def run(
                 network,
                 "--ip",
                 "93.184.216.4",
+                "-e",
+                "SCHOLIGHT_BENCHMARK_CONTAINER=1",
                 "-v",
                 mount,
                 "-v",
@@ -158,7 +206,11 @@ def run(
                 "--entrypoint",
                 "/app/.venv/bin/python",
                 image,
-                "/benchmark/client.py",
+                "/benchmark/runtime_probes.py"
+                if mode in {"semantics", "overload"}
+                else "/benchmark/http_faults.py"
+                if mode == "faults"
+                else "/benchmark/client.py",
                 str(seconds),
                 str(requests),
                 str(seed),
@@ -168,16 +220,44 @@ def run(
             created.append(client)
             docker("start", client)
             exit_code = int(docker("wait", client))
-            (output / "client.log").write_text(docker("logs", client))
+            (output / "client.log").write_text(container_logs(client))
             if exit_code:
                 raise RuntimeError(f"Benchmark client exited with status {exit_code}")
+            for _ in range(11):
+                scratch = json.loads(
+                    docker(
+                        "exec",
+                        app,
+                        "/app/.venv/bin/python",
+                        "-c",
+                        "import json; from pathlib import Path; "
+                        "print(json.dumps([p.name for p in Path('/data/extract-spool').glob('extract-*.tmp')]))",
+                    )
+                )
+                if not scratch:
+                    break
+                time.sleep(0.2)
+            (output / "scratch-final.json").write_text(json.dumps(scratch))
+            if scratch:
+                raise RuntimeError("Finished requests left scratch files after cleanup budget")
+            if mode in {"semantics", "overload"}:
+                queues = queue_evidence(container_logs(app))
+                (output / "queue-evidence.json").write_text(json.dumps(queues, indent=2))
+                if not queues["passed"]:
+                    raise RuntimeError("Queue execution/waiting bounds or final cleanup failed")
+            complete = True
     finally:
+        (output / "run-status.json").write_text(
+            json.dumps({"complete": complete, "finished_at": time.time()})
+        )
         if probe is not None:
             probe.terminate()
             probe.wait(timeout=5)
         if app in created:
             (output / "container-final.json").write_text(docker("inspect", app))
-            (output / "service.log").write_text(docker("logs", app))
+            (output / "service.log").write_text(container_logs(app))
+        if fixture in created:
+            (output / "fixture.log").write_text(container_logs(fixture))
         for container in reversed(created[1:]):
             docker("rm", "-f", container)
         if network in created:
@@ -191,9 +271,34 @@ if __name__ == "__main__":
     parser.add_argument("--seconds", type=float, default=14_400)
     parser.add_argument("--requests", type=int, default=2400)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--mode", choices=["mixed", "cold", "warm", "duplicate"], default="mixed")
+    parser.add_argument(
+        "--mode",
+        choices=[
+            "mixed",
+            "cold",
+            "warm",
+            "duplicate",
+            "short",
+            "faults",
+            "worker-faults",
+            "phase-calibration",
+            "semantics",
+            "overload",
+        ],
+        default="mixed",
+    )
     parser.add_argument("--concurrency", type=int, choices=[1, 2, 4, 8, 16], default=1)
+    parser.add_argument("--disable", choices=sorted(ABLATIONS))
+    parser.add_argument("--http-version", choices=["1.0", "1.1"], default="1.0")
     args = parser.parse_args()
     run(
-        args.image, args.output, args.seconds, args.requests, args.seed, args.mode, args.concurrency
+        args.image,
+        args.output,
+        args.seconds,
+        args.requests,
+        args.seed,
+        args.mode,
+        args.concurrency,
+        args.disable,
+        args.http_version,
     )

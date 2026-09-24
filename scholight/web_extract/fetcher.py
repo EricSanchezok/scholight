@@ -3,19 +3,32 @@
 from __future__ import annotations
 
 import asyncio
+import random
 import socket
-from collections.abc import Awaitable, Callable
+import time
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
+from dataclasses import replace
 from http.cookies import SimpleCookie
 from urllib.parse import urljoin, urlsplit
 
 import aiohttp
 from aiohttp.abc import AbstractResolver, ResolveResult
 
+from scholight.web_extract.admission import BoundedGate, Permit
 from scholight.web_extract.engine import ExtractInput, FetchResult
 from scholight.web_extract.errors import ExtractError
+from scholight.web_extract.http_retry import (
+    RETRY_STATUSES,
+    FetchAttemptError,
+    network_failure,
+    retry_after,
+    single_attempt,
+)
 from scholight.web_extract.policy import resolve_public_addresses, validate_public_target
+from scholight.web_extract.reservations import MemoryBudget, MemoryReservation
 from scholight.web_extract.spool import Spool
-from scholight.web_extract.telemetry import current_trace, mime_category
+from scholight.web_extract.telemetry import current_trace, mime_category, phase
 
 _REDIRECTS = frozenset({301, 302, 303, 307, 308})
 _DEFAULT_HEADERS = {"User-Agent": "Scholight-Web-Extract/1.0"}
@@ -73,30 +86,126 @@ class HttpFetcher:
         max_redirects: int = 8,
         concurrency: int = 16,
         spool: Spool | None = None,
+        queueing: bool = False,
+        admit: Callable[[], None] | None = None,
+        reuse_connections: bool = False,
+        retry_enabled: bool = False,
+        memory: MemoryBudget | None = None,
     ) -> None:
         self._validator = validator
         self._resolver = resolver
         self._max_download_bytes = max_download_bytes
         self._timeout = aiohttp.ClientTimeout(total=timeout_seconds, connect=10, sock_read=15)
         self._max_redirects = max_redirects
-        self._semaphore = asyncio.Semaphore(concurrency)
+        self._gate = BoundedGate(
+            "Download",
+            capacity=concurrency,
+            max_waiters=8 if queueing else 0,
+            wait_seconds=2,
+        )
         self._spool = spool
+        self._admit = admit or (lambda: None)
+        self._reuse_connections = reuse_connections
+        self._connection_limit = concurrency
+        self._connector: aiohttp.TCPConnector | None = None
+        self._retry_enabled = retry_enabled
+        self._memory = memory
+
+    def _connection_pool(self, *, reuse: bool) -> aiohttp.TCPConnector:
+        if reuse and self._connector is not None and not self._connector.closed:
+            return self._connector
+        connector = aiohttp.TCPConnector(
+            resolver=self._resolver or PublicResolver(),
+            use_dns_cache=False,
+            ttl_dns_cache=0,
+            limit=self._connection_limit,
+            limit_per_host=self._connection_limit,
+            keepalive_timeout=15,
+        )
+        if reuse:
+            self._connector = connector
+        return connector
+
+    async def close(self) -> None:
+        connector, self._connector = self._connector, None
+        if connector is not None:
+            await connector.close()
 
     async def fetch(self, request: ExtractInput) -> FetchResult:
-        if self._semaphore.locked():
-            raise ExtractError(
-                code="extract_capacity_exceeded",
-                message="Static extraction capacity is temporarily exhausted.",
-                status_code=503,
-                retryable=True,
-            )
-        await self._semaphore.acquire()
+        await self._gate.acquire()
+        permit = Permit(self._gate)
+        reservation = self._memory.lease() if self._memory is not None else None
+        fetched = None
         try:
-            return await self._fetch(request)
-        finally:
-            self._semaphore.release()
+            self._admit()
+            fetched = await self._fetch_with_retry(request, reservation)
+            if fetched.spool_file is not None:
+                fetched.spool_file.seal()
+                # Bound downloaded files waiting for the serial parser as well as I/O.
+                return replace(fetched, permit=permit, reservation=reservation)
+            permit.close()
+            return replace(fetched, reservation=reservation)
+        except BaseException:
+            permit.close()
+            if reservation is not None:
+                reservation.close()
+            if fetched is not None:
+                fetched.close()
+            raise
 
-    async def _fetch(self, request: ExtractInput) -> FetchResult:
+    async def _fetch_with_retry(
+        self, request: ExtractInput, reservation: MemoryReservation | None
+    ) -> FetchResult:
+        eligible = self._retry_enabled and not request.headers and not request.cookies
+        deadline = time.monotonic() + (self._timeout.total or 30)
+        trace = current_trace.get()
+        if trace is not None:
+            deadline = min(deadline, trace.deadline - 2)
+        try:
+            async with asyncio.timeout_at(deadline):
+                for attempt in range(2):
+                    self._admit()
+                    if reservation is not None:
+                        reservation.transfer("download")
+                    if attempt and trace is not None:
+                        trace.retry_count += 1
+                    try:
+                        return await self._fetch(request, reservation)
+                    except FetchAttemptError as error:
+                        if attempt or not eligible or not error.transient:
+                            raise
+                        # Server minimum delay may exceed the Full Jitter cap.
+                        jitter = random.uniform(0, min(1.0, 0.2 * 2**attempt))  # nosec B311
+                        delay = max(jitter, error.retry_delay or 0)
+                        if delay >= deadline - time.monotonic():
+                            raise
+                        with phase("RetryLatency"):
+                            await asyncio.sleep(delay)
+        except TimeoutError as error:
+            raise network_failure(error) from error
+        raise AssertionError("retry loop exited without a result")
+
+    @staticmethod
+    @asynccontextmanager
+    async def _response(
+        session: aiohttp.ClientSession,
+        url: str,
+        headers: dict[str, str],
+    ) -> AsyncIterator[aiohttp.ClientResponse]:
+        async with session.get(url, headers=headers, allow_redirects=False) as response:
+            trace = current_trace.get()
+            if trace is not None:
+                trace.upstream_status = response.status
+                trace.mime = mime_category(response.headers.get("Content-Type", ""))
+            try:
+                yield response
+            finally:
+                if trace is not None:
+                    trace.download_bytes += response.content.total_raw_bytes
+
+    async def _fetch(
+        self, request: ExtractInput, reservation: MemoryReservation | None
+    ) -> FetchResult:
         requested_url = request.url
         current_url = requested_url
         target_headers = dict(request.headers)
@@ -104,30 +213,21 @@ class HttpFetcher:
         if request.cookies and not any(name.lower() == "cookie" for name in headers):
             headers["Cookie"] = _cookie_header(request.cookies)
 
-        resolver = self._resolver or PublicResolver()
-        connector = aiohttp.TCPConnector(
-            resolver=resolver,
-            use_dns_cache=False,
-            ttl_dns_cache=0,
-        )
+        reuse = self._reuse_connections and not request.headers and not request.cookies
+        connector = self._connection_pool(reuse=reuse)
         try:
             async with aiohttp.ClientSession(
                 connector=connector,
+                connector_owner=not reuse,
                 timeout=self._timeout,
                 auto_decompress=True,
+                trust_env=False,
+                middlewares=(single_attempt,),
             ) as session:
                 for redirect_count in range(self._max_redirects + 1):
                     await self._validator(current_url)
                     try:
-                        async with session.get(
-                            current_url,
-                            headers=headers,
-                            allow_redirects=False,
-                        ) as response:
-                            trace = current_trace.get()
-                            if trace is not None:
-                                trace.upstream_status = response.status
-                                trace.mime = mime_category(response.headers.get("Content-Type", ""))
+                        async with self._response(session, current_url, headers) as response:
                             if response.status in _REDIRECTS and "Location" in response.headers:
                                 if redirect_count >= self._max_redirects:
                                     raise ExtractError(
@@ -143,11 +243,13 @@ class HttpFetcher:
                                 current_url = next_url
                                 continue
                             if response.status >= 400:
-                                raise ExtractError(
+                                raise FetchAttemptError(
                                     code="upstream_http_error",
                                     message=f"Target returned HTTP {response.status}.",
                                     status_code=502,
                                     retryable=response.status == 429 or response.status >= 500,
+                                    transient=response.status in RETRY_STATUSES,
+                                    retry_delay=retry_after(response.headers.get("Retry-After")),
                                 )
                             body = bytearray()
                             body_file = (
@@ -155,8 +257,12 @@ class HttpFetcher:
                                 if self._spool is not None
                                 else None
                             )
+                            downloaded = 0
                             try:
                                 async for chunk in response.content.iter_chunked(64 * 1024):
+                                    downloaded += len(chunk)
+                                    if reservation is not None:
+                                        reservation.transfer("download", size=downloaded)
                                     if body_file is not None:
                                         body_file.write(chunk)
                                     else:
@@ -172,9 +278,6 @@ class HttpFetcher:
                                 if body_file is not None:
                                     body_file.close()
                                 raise
-                            finally:
-                                if trace is not None:
-                                    trace.download_bytes += response.content.total_raw_bytes
                             return FetchResult(
                                 requested_url=requested_url,
                                 final_url=str(response.url),
@@ -188,22 +291,11 @@ class HttpFetcher:
                             )
                     except ExtractError:
                         raise
-                    except TimeoutError as exc:
-                        raise ExtractError(
-                            code="fetch_timeout",
-                            message="Target did not respond before the timeout.",
-                            status_code=504,
-                            retryable=True,
-                        ) from exc
-                    except aiohttp.ClientError as exc:
-                        raise ExtractError(
-                            code="target_unreachable",
-                            message="Target could not be reached.",
-                            status_code=502,
-                            retryable=True,
-                        ) from exc
+                    except (TimeoutError, aiohttp.ClientError) as exc:
+                        raise network_failure(exc) from exc
         finally:
-            await connector.close()
+            if not reuse:
+                await connector.close()
         raise AssertionError("redirect loop exited without a result")
 
 

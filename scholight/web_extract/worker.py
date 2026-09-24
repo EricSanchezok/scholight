@@ -14,6 +14,7 @@ from typing import TextIO
 
 from scholight.web_extract.engine import ExtractInput, FetchResult, parse_document
 from scholight.web_extract.errors import ExtractError
+from scholight.web_extract.heap import release_unused_heap
 from scholight.web_extract.worker_contracts import WorkerFailure, WorkerJob
 
 
@@ -50,7 +51,13 @@ def _parse(job: WorkerJob, request: ExtractInput) -> dict[str, object]:
     try:
         started_cpu = time.process_time()
         fetched = FetchResult(**job.fetched.model_dump(), body=Path(job.body_path).read_bytes())
-        parsed = parse_document(fetched, request, rendered=job.rendered)
+        parsed = parse_document(
+            fetched,
+            request,
+            rendered=job.rendered,
+            reuse_quality=job.reuse_quality,
+            fast_html=job.fast_html,
+        )
         cpu_ms = (time.process_time() - started_cpu) * 1000
         size = _write_result(job, asdict(parsed))
         return {"size": size, "cpu_ms": cpu_ms}
@@ -135,6 +142,10 @@ async def _main(kind: str, channel: TextIO) -> None:
                         retryable=True,
                     ).model_dump()
                 }
+            if browser is None:
+                # Cache cleanup and the parse/exception frames must finish first;
+                # live document buffers cannot be returned to the allocator.
+                release_unused_heap()
             if browser is not None and browser.recycle_required:
                 result["retire"] = True
             channel.write(json.dumps(result) + "\n")
