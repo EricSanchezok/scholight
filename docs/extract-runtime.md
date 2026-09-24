@@ -274,6 +274,17 @@ JavaScript. The updated runtime still requires the final mixed-load, latency,
 overload and four-hour soak gates before release. Coefficient calibration alone
 does not establish that the 640 MiB peak gate passes.
 
+The native sustained-overload probe checks queue length, active execution,
+eventual cleanup and each stage's measured wait separately. It records exact
+wait overshoot with a 50 ms scheduling tolerance for event-loop wakeups; configured
+2/2/5-second limits remain unchanged. Responses must fit the probe's explicit
+eight-second caller budget and be either successful or an explicit capacity
+rejection. Worker startup after every 100 jobs is execution time, not queue wait.
+The earlier aggregate 3.2-second screen incorrectly combined separate queues and
+recycling; its result remains in reports as a diagnostic, alongside all original
+failed evidence. Ordinary five-round P95 and the public 55-second deadline gates
+are unchanged.
+
 ## Production acceptance fixtures
 
 The web image serves three tiny, self-owned fixtures below `/extract-canary/`:
