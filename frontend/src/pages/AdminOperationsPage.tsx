@@ -15,7 +15,7 @@ const RANGE_DAYS = 7;
 const ISSUE_LIMIT = 20;
 
 function openQueue(queue: AdminOperations["queue"]): number {
-  return queue.pending + queue.running + queue.retry + queue.dead;
+  return queue.pending + queue.running + queue.retry;
 }
 
 export function AdminOperationsPage() {
@@ -30,13 +30,14 @@ export function AdminOperationsPage() {
   }, [messages.titles.adminOperations]);
 
   const data = operations.data;
+  const syncError = data?.sync?.last_error_message || data?.sync?.last_error_code;
   return (
     <main className={`${styles.ledgerPage} ${styles.adminPage}`}>
       <header className={`${styles.ledgerHeading} ${styles.pageHeadingAction}`}>
         <div>
           <span className={styles.eyebrow}>Administration</span>
           <h1>Operations</h1>
-          <p>Monitor metadata sync, ingestion work, and recoverable failures.</p>
+          <p>{messages.adminOperations.description}</p>
         </div>
         <PageRefreshButton
           label="operations"
@@ -56,6 +57,11 @@ export function AdminOperationsPage() {
         <EditorialRowsSkeleton label="Loading operations" rows={6} />
       ) : (
         <>
+          {syncError && (
+            <div className={styles.sectionError} role="alert">
+              {messages.adminOperations.syncFailed(syncError)}
+            </div>
+          )}
           <section className={styles.adminOperationsSummary} aria-label="Operations summary">
             <div>
               <span>Last successful sync</span>
@@ -84,13 +90,13 @@ export function AdminOperationsPage() {
           <section className={styles.adminChartSection} aria-labelledby="admin-intake">
             <div>
               <h2 id="admin-intake">Seven-day intake</h2>
-              <p>Discovered papers and completed full-text ingestion by UTC day.</p>
+              <p>{messages.adminOperations.intakeDescription}</p>
             </div>
             <AdminGroupedBarChart
               title="Seven-day paper intake"
-              description="Papers discovered and full-text ingestion completed by UTC day."
-              primaryLabel="Discovered"
-              secondaryLabel="Full text completed"
+              description={messages.adminOperations.intakeDescription}
+              primaryLabel={messages.adminOperations.firstQueued}
+              secondaryLabel={messages.adminOperations.latestCompletion}
               valueLabel="Papers"
               points={data.intake.map((point) => ({
                 day: point.day,
@@ -126,13 +132,18 @@ export function AdminOperationsPage() {
                 <strong>Needs manual review</strong>
                 <small>{data.queue.dead.toLocaleString(locale)} papers</small>
               </div>
+              <div>
+                <span>{messages.adminOperations.succeeded}</span>
+                <strong>{messages.adminOperations.fullTextReady}</strong>
+                <small>{data.queue.succeeded.toLocaleString(locale)} papers</small>
+              </div>
             </div>
           </section>
 
           <section className={styles.adminIssues} aria-labelledby="recent-ingestion-issues">
             <div>
               <h2 id="recent-ingestion-issues">Recent issues</h2>
-              <p>Retryable and terminal ingestion failures, newest first.</p>
+              <p>{messages.adminOperations.issuesDescription}</p>
             </div>
             {data.recent_issues.length ? (
               <div className={styles.adminIssueLedger}>
@@ -156,7 +167,9 @@ export function AdminOperationsPage() {
                         {issue.max_attempts.toLocaleString(locale)}
                       </small>
                     </div>
-                    <time dateTime={issue.next_attempt_at}>
+                    <time
+                      dateTime={issue.status === "retry" ? issue.next_attempt_at : issue.updated_at}
+                    >
                       {issue.status === "retry"
                         ? formatFullDateTime(issue.next_attempt_at, locale)
                         : formatFullDateTime(issue.updated_at, locale)}

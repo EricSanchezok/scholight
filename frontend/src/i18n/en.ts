@@ -94,6 +94,16 @@ export const en = {
     todayAt: (value: string) => `Today, ${value}`,
     expires: (value: string) => `Expires ${value}`,
   },
+  adminOperations: {
+    description: "Monitor metadata sync, ingestion work, and failures needing review.",
+    syncFailed: (error: string) => `Metadata sync failed: ${error}`,
+    intakeDescription: "Papers first queued and their latest full-text completion by UTC day.",
+    firstQueued: "First queued",
+    latestCompletion: "Latest completion",
+    succeeded: "Succeeded",
+    fullTextReady: "Full text ready",
+    issuesDescription: "Terminal failures first, then latest updates within each state.",
+  },
   titles: {
     search: (query?: string) => (query ? `${query} — Scholight` : "Search — Scholight"),
     docs: "Docs — Scholight",

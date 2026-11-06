@@ -96,6 +96,20 @@ locked development dependency and virtual environment with the manual security
 check. It does not install packages into system Python. This avoids a second,
 older scanner environment silently skipping files on newer Python AST versions.
 
-The archive integration and hermetic Survey E2E stacks pull their digest-pinned MinIO image from the
-official `quay.io/minio/minio` registry. The equivalent Docker Hub image is no
-longer available; changing registries does not change the tested image digest.
+The archive integration and hermetic Survey E2E stacks build their MinIO fixture
+from the official `RELEASE.2025-09-07T16-13-09Z` source at commit
+`07c3a429bfed433e49018cb0f78a52145d4bedeb`, using `tests/minio/Dockerfile`.
+The former Quay image cannot be pulled anonymously in CI. Both the Go builder
+and runtime base images are pinned by digest; Go verifies the upstream module
+checksums. This test-only image is never published or used in production. Builds
+behind a TLS proxy can supply a combined CA bundle as the optional `proxy_ca`
+BuildKit secret; the bundle is not retained in the image.
+
+The locked security updates retain Identity v0.5.2 and its database contract.
+`tool.uv.override-dependencies` pins Pillow 13.0.0 because that SDK's optional
+avatar extra caps Pillow below 13, while
+[Pillow 13 contains the security fixes](https://pillow.readthedocs.io/en/stable/releasenotes/13.0.0.html).
+The SDK's 23 avatar manager/router/database/storage tests pass with this version.
+Keep the override until the pinned SDK accepts the patched series; do not change
+the Identity revision or suppress dependency audit findings to remove it. Run
+the complete backend tests, image checks, and `pip-audit` after dependency changes.

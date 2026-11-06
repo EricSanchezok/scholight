@@ -132,11 +132,58 @@ describe("administration pages", () => {
     const user = userEvent.setup();
     renderPage(<AdminOperationsPage />);
 
-    expect(await screen.findByText("16 papers")).toBeInTheDocument();
+    expect(await screen.findByText("15 papers")).toBeInTheDocument();
     expect(screen.getByText("2407.01512")).toBeInTheDocument();
     expect(screen.getByText("Source temporarily unavailable")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Refresh operations" }));
     await waitFor(() => expect(adminApi.operationsOverview).toHaveBeenCalledTimes(2));
+  });
+
+  it("shows the completed queue count separately from open work", async () => {
+    renderPage(<AdminOperationsPage />);
+
+    expect(await screen.findByText("300 papers")).toBeInTheDocument();
+  });
+
+  it("shows metadata failures while retaining the last successful coverage", async () => {
+    vi.mocked(adminApi.operationsOverview).mockResolvedValue({
+      ...operations,
+      sync: {
+        ...operations.sync!,
+        last_error_code: "ReadTimeout",
+        last_error_message: "Source timed out",
+      },
+    });
+    renderPage(<AdminOperationsPage />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Source timed out");
+    expect(screen.getByText(/Through Jul 23/)).toBeInTheDocument();
+  });
+
+  it("renders an empty target without inventing a completed sync", async () => {
+    vi.mocked(adminApi.operationsOverview).mockResolvedValue({
+      ...operations,
+      sync: null,
+      queue: { pending: 0, running: 0, retry: 0, succeeded: 0, dead: 0, oldest_waiting_at: null },
+      intake: [{ day: "2026-07-24", discovered: 0, full_text_completed: 0 }],
+      recent_issues: [],
+    });
+    renderPage(<AdminOperationsPage />);
+
+    expect(await screen.findByText("No completed sync")).toBeInTheDocument();
+    expect(screen.getByText("No recent issues")).toBeInTheDocument();
+  });
+
+  it("uses the terminal failure update time instead of a retry timestamp", async () => {
+    const issue = { ...operations.recent_issues[0]!, status: "dead" as const };
+    vi.mocked(adminApi.operationsOverview).mockResolvedValue({
+      ...operations,
+      recent_issues: [issue],
+    });
+    renderPage(<AdminOperationsPage />);
+
+    const row = (await screen.findByText("Needs review")).closest("article");
+    expect(row?.querySelector("time")).toHaveAttribute("datetime", issue.updated_at);
   });
 });

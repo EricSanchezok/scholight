@@ -235,6 +235,11 @@ dev = [
     "pytest-asyncio>=1.4.0",
 ]
 
+[tool.uv]
+# Identity v0.5.2 caps its optional avatar dependency at <13. Keep that SDK and
+# schema contract pinned while using Pillow's security fixes; see DEVELOPMENT.md.
+override-dependencies = ["pillow==13.0.0"]
+
 [tool.uv.sources]
 # Immutable identity/session SDK revision; products never depend on a moving branch.
 sanchezcloud-identity = { git = "https://github.com/EricSanchezok/sanchezcloud-identity.git", tag = "v0.5.2" }

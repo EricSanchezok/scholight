@@ -82,6 +82,32 @@ are outside it and must retain their task identities during an application relea
 All personal environments are production environments restricted to main, despite
 retained `personal-preview` names used in immutable OIDC subjects.
 
+## Administration operations
+
+The read-only `/admin/operations/overview` endpoint follows the API's
+`SCHOLIGHT_INGESTION_TARGET_ID`, the same destination selected by the ingestion
+workers. Its sync state comes from `arxiv:<target_id>` and its queue counts,
+daily intake and failure list come only from that target's
+`scholight.target_ingestion_jobs`. A configured target with no records returns an
+empty state, never the legacy cursor or another destination's work. Only a
+deployment without a target uses the legacy `arxiv` cursor and
+`scholight.ingestion_jobs`; it does not require the target queue table.
+
+The page keeps successful coverage visible when a later metadata run fails and
+shows the recorded sync error. Open work is pending + running + retry; terminal
+failures and succeeded papers are shown separately. Issues retain their exact
+target version and error, with terminal failures first and newest updates first
+within each state. Retry timestamps apply to retrying work; terminal failures
+display their last update time.
+
+The UTC daily chart is a queue snapshot: first queued counts use `created_at`,
+and latest full-text completions use each job's `succeeded_at`. It is not a count
+of newly published papers or every historical processing attempt. A later
+revision may retain an earlier successful completion while its current work is
+pending or failed. Days with no activity remain visible as zeroes. Reading or
+refreshing this page never claims jobs, retries failures, advances a cursor or
+calls Zilliz.
+
 ## Runtime configuration and recovery reference
 
 # Personal lean deployment

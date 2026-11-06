@@ -10,6 +10,13 @@ npm run dev
 
 Run the complete frontend quality gate with `npm run verify`. The generated OpenAPI schema and TypeScript declarations are committed; `npm run api:check` fails if the current backend contract has drifted.
 
+CI also requires `npm audit --audit-level=moderate`. Keep Vitest and its coverage
+provider on the same version. The scoped minimatch override for typescript-estree
+uses the patched 11.0.1 release for
+[GHSA-g3hv-75wg-m249](https://github.com/isaacs/minimatch/security/advisories/GHSA-g3hv-75wg-m249);
+remove it when typescript-estree's own dependency range includes a patched version.
+Run lint, type checking, tests and the build when changing this override.
+
 ## Brand assets
 
 Scholight has one canonical lynx artwork at `brand/source/scholight-lynx-master.png`.
