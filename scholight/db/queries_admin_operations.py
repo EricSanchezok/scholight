@@ -7,25 +7,43 @@ from typing import Any
 import asyncpg
 import structlog
 
+from scholight.config import settings
 from scholight.db.client import DBError, get_pool
 
 logger = structlog.get_logger(__name__)
 
+# Only these fixed SQL sources are selected; target values remain bound parameters.
+_TARGET_JOBS = """
+    WITH jobs AS NOT MATERIALIZED (
+        SELECT * FROM scholight.target_ingestion_jobs WHERE target_id = $1
+    )
+"""
+_LEGACY_JOBS = """
+    WITH jobs AS NOT MATERIALIZED (
+        SELECT * FROM scholight.ingestion_jobs WHERE $1::text IS NULL
+    )
+"""
+
 
 async def query_admin_operations(*, days: int, issue_limit: int) -> dict[str, Any]:
-    """Return bounded pipeline state without reading another product schema."""
+    """Read one configured destination, or legacy state only when none is configured."""
     pool = get_pool()
+    target_id = settings.ingestion_target_id or None
+    sync_source = f"arxiv:{target_id}" if target_id else "arxiv"
+    jobs = _TARGET_JOBS if target_id else _LEGACY_JOBS
     try:
         sync_row = await pool.fetchrow(
             """
             SELECT last_successful_date, last_started_at, last_succeeded_at,
                    last_error_code, last_error_message
             FROM scholight.ingestion_sync_state
-            WHERE source = 'arxiv'
-            """
+            WHERE source = $1
+            """,
+            sync_source,
         )
         queue_row = await pool.fetchrow(
-            """
+            jobs
+            + """
             SELECT
                 count(*) FILTER (WHERE status = 'pending')::BIGINT AS pending,
                 count(*) FILTER (WHERE status = 'running')::BIGINT AS running,
@@ -35,15 +53,17 @@ async def query_admin_operations(*, days: int, issue_limit: int) -> dict[str, An
                 min(available_at) FILTER (
                     WHERE status IN ('pending', 'retry')
                 ) AS oldest_waiting_at
-            FROM scholight.ingestion_jobs
-            """
+            FROM jobs
+            """,  # nosec B608
+            target_id,
         )
         intake_rows = await pool.fetch(
-            """
-            WITH days AS (
+            jobs
+            + """
+            , days AS (
                 SELECT generate_series(
                     (statement_timestamp() AT TIME ZONE 'UTC')::date
-                        - make_interval(days => $1 - 1),
+                        - make_interval(days => $2 - 1),
                     (statement_timestamp() AT TIME ZONE 'UTC')::date,
                     interval '1 day'
                 )::date AS day
@@ -51,20 +71,20 @@ async def query_admin_operations(*, days: int, issue_limit: int) -> dict[str, An
             discovered AS (
                 SELECT (created_at AT TIME ZONE 'UTC')::date AS day,
                        count(*)::BIGINT AS count
-                FROM scholight.ingestion_jobs
+                FROM jobs
                 WHERE created_at >= (
                     (statement_timestamp() AT TIME ZONE 'UTC')::date
-                        - make_interval(days => $1 - 1)
+                        - make_interval(days => $2 - 1)
                 ) AT TIME ZONE 'UTC'
                 GROUP BY day
             ),
             completed AS (
                 SELECT (succeeded_at AT TIME ZONE 'UTC')::date AS day,
                        count(*)::BIGINT AS count
-                FROM scholight.ingestion_jobs
+                FROM jobs
                 WHERE succeeded_at >= (
                     (statement_timestamp() AT TIME ZONE 'UTC')::date
-                        - make_interval(days => $1 - 1)
+                        - make_interval(days => $2 - 1)
                 ) AT TIME ZONE 'UTC'
                 GROUP BY day
             )
@@ -75,22 +95,25 @@ async def query_admin_operations(*, days: int, issue_limit: int) -> dict[str, An
             LEFT JOIN discovered USING (day)
             LEFT JOIN completed USING (day)
             ORDER BY days.day
-            """,
+            """,  # nosec B608
+            target_id,
             days,
         )
         issue_rows = await pool.fetch(
-            """
+            jobs
+            + """
             SELECT arxiv_id, target_version, source, status, attempt_count,
                    max_attempts, available_at AS next_attempt_at,
                    last_error_code, last_error_message, updated_at
-            FROM scholight.ingestion_jobs
+            FROM jobs
             WHERE status IN ('retry', 'dead')
             ORDER BY
                 CASE status WHEN 'dead' THEN 0 ELSE 1 END,
                 updated_at DESC,
                 arxiv_id
-            LIMIT $1
-            """,
+            LIMIT $2
+            """,  # nosec B608
+            target_id,
             issue_limit,
         )
     except asyncpg.PostgresError as exc:
