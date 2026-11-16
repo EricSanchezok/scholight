@@ -320,6 +320,11 @@ def runtime() -> dict[str, Any]:
         "Default": "lean",
         "AllowedValues": ["lean", "full"],
     }
+    template["Parameters"]["CloudWatchEmfMode"] = {
+        "Type": "String",
+        "Default": "critical",
+        "AllowedValues": ["critical", "all"],
+    }
     for flag in ("PublicThoroughEnabled", "IngestEnabled"):
         template["Parameters"][flag] = {
             "Type": "String",
@@ -362,6 +367,7 @@ def runtime() -> dict[str, Any]:
     ]
     common = {
         "SCHOLIGHT_RUNTIME_PROFILE": ref("RuntimeProfile"),
+        "SCHOLIGHT_CLOUDWATCH_EMF_MODE": ref("CloudWatchEmfMode"),
         "SCHOLIGHT_SURVEY_RUNTIME_ENABLED": "false",
         "SCHOLIGHT_SURVEY_PUBLIC_MODE": "off",
         "SCHOLIGHT_DISABLE_DOTENV": "1",

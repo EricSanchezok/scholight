@@ -24,6 +24,11 @@ on:
         description: Enable both schedules after separately verifying the destination baseline
         type: boolean
         default: false
+      cloudwatch_emf_mode:
+        description: Plan-only metric extraction mode; preserve retains the deployed selection
+        type: choice
+        options: [preserve, critical, all]
+        default: preserve
       change_set:
         description: Exact personal-runtime change set ARN for apply
         type: string
@@ -63,6 +68,7 @@ jobs:
           BINDING_KEY: ${{ inputs.binding_key }}
           ADOPTION_KEY: ${{ inputs.adoption_key }}
           RESUME_INGESTION: ${{ inputs.resume_ingestion }}
+          CLOUDWATCH_EMF_MODE: ${{ inputs.cloudwatch_emf_mode }}
           EXPECTED_ACCOUNT_ID: '669409472143'
           AWS_REGION: ${{ vars.AWS_REGION }}
           CLOUDFORMATION_ROLE_ARN: ${{ vars.CLOUDFORMATION_ROLE_ARN }}
@@ -75,6 +81,9 @@ jobs:
           fi
           if [ "$RESUME_INGESTION" = true ] && [ "$OPERATION" = plan ]; then
             args+=(--resume-ingestion --adoption-key "$ADOPTION_KEY")
+          fi
+          if [ "$OPERATION" = plan ]; then
+            args+=(--cloudwatch-emf-mode "${CLOUDWATCH_EMF_MODE:-preserve}")
           fi
           if [ "$OPERATION" = apply ]; then
             args+=(--change-set "$CHANGE_SET")

@@ -126,7 +126,12 @@ def main() -> None:
     parser.add_argument("--binding-key")
     parser.add_argument("--resume-ingestion", action="store_true")
     parser.add_argument("--adoption-key")
+    parser.add_argument(
+        "--cloudwatch-emf-mode", choices=["preserve", "critical", "all"], default="preserve"
+    )
     args = parser.parse_args()
+    if args.cloudwatch_emf_mode != "preserve" and args.operation != "plan":
+        parser.error("CloudWatch EMF mode is selected only when preparing a plan")
     account, region = os.environ["EXPECTED_ACCOUNT_ID"], os.environ["AWS_REGION"]
     if account != ACCOUNT or region != REGION:
         raise ValueError("Wrong personal account or region")
@@ -158,6 +163,8 @@ def main() -> None:
         for name, specification in template["Parameters"].items():
             if name not in parameters and "Default" in specification:
                 parameters[name] = str(specification["Default"])
+        if args.cloudwatch_emf_mode != "preserve":
+            parameters["CloudWatchEmfMode"] = args.cloudwatch_emf_mode
         adoption_digest = None
         if args.resume_ingestion:
             if manifest["version"] != 2:
@@ -241,6 +248,7 @@ def main() -> None:
                             "TargetEndpoint",
                             "IngestionTargetId",
                             "RuntimeProfile",
+                            "CloudWatchEmfMode",
                             "MetadataEnabled",
                             "IngestEnabled",
                         )

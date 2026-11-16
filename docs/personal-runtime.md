@@ -110,6 +110,68 @@ calls Zilliz.
 
 ## Runtime configuration and recovery reference
 
+## CloudWatch metric extraction
+
+`SCHOLIGHT_CLOUDWATCH_EMF_MODE=critical` is the default. Every existing
+`emf_metric` log event keeps its numeric fields and bounded labels. Only the
+selected metric definitions are included in `_aws.CloudWatchMetrics`; an event
+with no selected definitions remains an ordinary structured log event. Incident
+logs, the seven-day retention period, and log-reading benchmark tools remain
+available. This does not change request handling, queue claims, memory/admission
+controls, task protection, credentials, or IAM permissions.
+The emitter reads only this named process environment variable, without
+initializing application settings or opening dotenv files. For local commands,
+export it explicitly or use `uv run --env-file` with an isolated local file;
+loading a value only into a `Settings` object does not configure the emitter.
+
+The explicit policy in `scholight/logging/emf.py` retains:
+
+- Existing API service-level request, in-flight and unexpected-error aggregates,
+  plus existing success/error end-to-end latency metrics. Detailed search
+  counters remain logs only; they are not merged into the aggregate and cannot
+  double count it.
+- Existing Extract and Extract API request/latency metrics, with their current
+  dimensions, dependency failures, accounting/history queue depth and dropped
+  work, memory working set/OOM/admission failures, and bounded queue rejection.
+- Ingestion backlog, age, terminal failures, retries, leases and progress.
+- Survey capacity, queue age, task protection, notification failures, provider
+  failures/retries, canary, coverage and rejected-chart signals, including when
+  the corresponding feature is currently dormant.
+
+Stage timings, pagination, byte sizes, RSS/start counts and other detailed
+measurements stay in logs without custom-metric extraction. New metric names
+also default to logs only until reviewed for the policy. Before adding an alarm,
+add its exact metric and dimensions to this policy or select `all`. CloudWatch
+alarms/dashboard dependencies must be checked live; historical templates do not
+prove current dependencies. Retained operational metrics still incur custom
+metric charges. Reduced emission frequency alone does not prove lower
+metric-hour usage, and visible series counts are not billed metric-months.
+
+The runtime stack exposes the non-secret `CloudWatchEmfMode` parameter to Python
+tasks; the Web task has no metric emitter. The manual workflow's
+`cloudwatch_emf_mode` input is selected only for `operation=plan`:
+
+1. After a reviewed source merge, publish its immutable ARM64 manifest and plan
+   the release with `critical`. Review the exact change set, existing alarm
+   dependencies, unchanged secret/IAM contracts and current admission state.
+2. Apply the reviewed ARN through the normal protected production workflow.
+   Verify online health, retained critical metric samples and complete ordinary
+   log fields. Compare subsequent billed metric-hours after billing data arrives;
+   old series can remain listed after emission stops.
+3. To restore the previous complete extraction, plan with the **same manifest**
+   and `cloudwatch_emf_mode=all`, review and apply that new ARN. This restores the
+   previous metric definitions and dimensions without publishing another image.
+   Task replacement and the usual graceful admission drain are still required;
+   this is not a live process toggle. A retained application-manifest rollback
+   remains available through the existing release procedure.
+
+`preserve` is the workflow default: it retains an existing stack selection and
+uses `critical` only when first introducing the parameter. Apply uses the mode
+frozen in its reviewed plan. Selecting `all` does not disable local safeguards or
+alter any alarm. Deleting `cloudwatch:PutMetricData` permission is not a substitute
+for this policy: EMF extraction happens through log ingestion. See
+[AWS EMF documentation](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch_Embedded_Metric_Format.html).
+
 # Personal lean deployment
 
 `python scripts/personal_runtime.py foundation` renders the isolated ECR, KMS,
