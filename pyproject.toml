@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "scholight"
 version = "0.1.0"
 description = "AI-focused academic research engine with paper search and general web extraction"
-requires-python = ">=3.11"
+requires-python = ">=3.11.5"
 dependencies = [
     "anyio>=4.14.2,<5",
     "click>=8",
@@ -236,6 +236,9 @@ dev = [
 ]
 
 [tool.uv]
+# Security floors for optional/transitive DNS and HTML-selector dependencies.
+# Constraints respect upstream requirements; they do not override conflicts.
+constraint-dependencies = ["dnspython>=2.9.2,<3", "soupsieve>=4.1.1,<5"]
 # Identity v0.5.2 caps its optional avatar dependency at <13. Keep that SDK and
 # schema contract pinned while using Pillow's security fixes; see DEVELOPMENT.md.
 override-dependencies = ["pillow==13.0.0"]
