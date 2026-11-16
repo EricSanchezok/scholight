@@ -113,3 +113,22 @@ The SDK's 23 avatar manager/router/database/storage tests pass with this version
 Keep the override until the pinned SDK accepts the patched series; do not change
 the Identity revision or suppress dependency audit findings to remove it. Run
 the complete backend tests, image checks, and `pip-audit` after dependency changes.
+
+The DNS and HTML-selector security floors are dnspython 2.9.2 and Soup Sieve
+4.1.1. The locked upgrade keeps Beautiful Soup and Identity at their existing
+versions. Soup Sieve 3+ requires Python 3.11.5 or newer because earlier 3.11
+patch releases have broken possessive quantifiers; the project floor reflects
+that requirement. CI must continue to exercise Python 3.11 and the native ARM64
+and AMD64 image boundaries. This dependency change does not update the pinned
+Docker base or any trust, credential, IAM or encryption setting.
+
+Soup Sieve 4.0 fixes the descendant-combinator advisory but is not a complete
+current security floor: subsequent `:has()`, attribute-selector and nested
+`nth` advisories require 4.0.1, 4.1 and 4.1.1 respectively. See the
+[official advisories](https://github.com/facelessuser/soupsieve/security/advisories)
+and [changelog](https://facelessuser.github.io/soupsieve/about/changelog/).
+The major upgrade also changes strict `:has()` parsing and custom-selector
+ordering, plus `template`/`iframe` matching semantics. Run the local Web Extract
+HTML/Markdown and Survey math/table fixtures, the full backend suite, dependency
+audit and image checks before release. Do not restore the vulnerable behavior
+through `NOSTRICT`/`NOCACHE` or bypass audit to retain compatibility.

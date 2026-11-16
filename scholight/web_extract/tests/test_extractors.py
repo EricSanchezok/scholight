@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
+
 from scholight.models.web_extract import ExtractResponseFormat
 from scholight.web_extract.extractors import extract_html, normalize_text, should_render_html
 
@@ -85,3 +89,36 @@ def test_full_markdown_preserves_chinese_code_and_table() -> None:
     )
 
     assert all(value in result.content for value in ("中文标题", 'print("你好")', "名称", "42"))
+
+
+@pytest.mark.parametrize(
+    ("output", "extra_evidence"),
+    [
+        (ExtractResponseFormat.MAIN_MARKDOWN, ()),
+        (
+            ExtractResponseFormat.FULL_MARKDOWN,
+            ("def canary(value):", "[fixture evidence](#evidence)"),
+        ),
+    ],
+)
+def test_static_canary_survives_html_dependency_updates(
+    output: ExtractResponseFormat, extra_evidence: tuple[str, ...]
+) -> None:
+    fixture = Path(__file__).resolve().parents[3] / "frontend/public/extract-canary/static.html"
+    result = extract_html(
+        fixture.read_text(encoding="utf-8"),
+        source_url="https://example.invalid/canary",
+        output=output,
+    )
+
+    assert all(
+        value in result.content
+        for value in (
+            "ScholightStaticEvidence2026",
+            "ScholightStaticEnd2026",
+            "中文固定证据",
+            "CanaryTable",
+            "42",
+            *extra_evidence,
+        )
+    )
