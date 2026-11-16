@@ -156,8 +156,6 @@ def foundation() -> dict[str, Any]:
         "McpDelegation": "mcp-delegation",
         "DatabaseRuntime": "database-runtime",
         "DatabaseMigrator": "database-migrator",
-        "SearchApi": "search-api",
-        "SearchSync": "search-sync",
         "Mail": "mail",
         "DesApi": "des-api",
         "DesMetadata": "des-metadata",

@@ -119,6 +119,16 @@ product migration task. Templates make no AWS calls and require an explicit
 expected account. Image parameters require immutable digests. Keep actual account
 resources and populated parameters in operator configuration, never source files.
 
+The foundation no longer emits the legacy `SearchApiSecret` and `SearchSyncSecret`
+resources or their outputs. Existing secrets are retained by their deployed
+`RetainExceptOnCreate` policies when a reviewed foundation change removes them.
+That ownership change does not delete either value or reduce storage charges.
+Retiring those secrets and their old ACTIVE task references requires a separate
+review of the exact targets and recovery-window expiration. Runtime parameter
+names `SearchApiSecretArn` and `SearchSyncSecretArn` remain the binding inputs for
+the independent, version-pinned `personal/des-*` credentials; supported DES
+application rollback keeps that adopted binding.
+
 ## Ownership and authentication
 
 Platform owns the host, private network and ingress. This repository owns all
