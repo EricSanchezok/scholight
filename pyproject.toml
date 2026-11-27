@@ -236,9 +236,9 @@ dev = [
 ]
 
 [tool.uv]
-# Security floors for optional/transitive DNS and HTML-selector dependencies.
+# Security floors for optional/transitive dependencies and development tooling.
 # Constraints respect upstream requirements; they do not override conflicts.
-constraint-dependencies = ["dnspython>=2.9.2,<3", "soupsieve>=4.1.1,<5"]
+constraint-dependencies = ["dnspython>=2.9.2,<3", "soupsieve>=4.1.1,<5", "virtualenv>=21.14.13"]
 # Identity v0.5.2 caps its optional avatar dependency at <13. Keep that SDK and
 # schema contract pinned while using Pillow's security fixes; see DEVELOPMENT.md.
 override-dependencies = ["pillow==13.0.0"]

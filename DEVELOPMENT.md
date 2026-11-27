@@ -114,6 +114,10 @@ Keep the override until the pinned SDK accepts the patched series; do not change
 the Identity revision or suppress dependency audit findings to remove it. Run
 the complete backend tests, image checks, and `pip-audit` after dependency changes.
 
+The development-tool constraint also requires [virtualenv 21.14.13 or newer](https://pypi.org/project/virtualenv/21.14.13/)
+for the CI-reported `PYSEC-2026-4402` finding. This updates the pre-commit toolchain,
+not the runtime dependency set; retain the audit rather than suppressing the finding.
+
 The DNS and HTML-selector security floors are dnspython 2.9.2 and Soup Sieve
 4.1.1. The locked upgrade keeps Beautiful Soup and Identity at their existing
 versions. Soup Sieve 3+ requires Python 3.11.5 or newer because earlier 3.11
