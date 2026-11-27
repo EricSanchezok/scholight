@@ -6,6 +6,7 @@ import asyncio
 import threading
 import time
 from types import SimpleNamespace
+from typing import cast
 from unittest.mock import AsyncMock, Mock
 
 import grpc
@@ -19,7 +20,7 @@ from scholight.models.ingestion_target import IngestionTarget
 from scholight.scheduler import ingest_worker as worker
 
 
-class RpcFailure(grpc.RpcError):
+class RpcFailure(grpc.RpcError):  # type: ignore[misc]  # grpc.RpcError has no typing stubs.
     """Structured RPC status without a real connection or provider response."""
 
     def __init__(self, status: grpc.StatusCode) -> None:
@@ -305,7 +306,7 @@ async def test_stop_after_successful_verification_prevents_claim(boundary: Simpl
 @pytest.mark.asyncio
 async def test_stop_during_claim_releases_without_processing(boundary: SimpleNamespace) -> None:
     stop = asyncio.Event()
-    job = boundary.queue.claim.return_value
+    job = cast("IngestionJob", boundary.queue.claim.return_value)
 
     async def claim(*_args: object, **_kwargs: object) -> IngestionJob:
         stop.set()
