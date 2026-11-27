@@ -18,9 +18,12 @@ from pathlib import Path
 from typing import Any, Literal, ParamSpec, TypeVar
 
 import grpc
+import httpx
 import structlog
+from pymilvus.exceptions import MilvusException
 
 from scholight.config import require_full_runtime, settings
+from scholight.db.client import DBError
 from scholight.db.fulltext_install import target_install
 from scholight.db.ingestion import (
     IngestionJob,
@@ -65,6 +68,17 @@ _TARGET_VERIFICATION_ATTEMPTS = 3
 _TARGET_VERIFICATION_RPC_TIMEOUT = 5.0
 _TARGET_VERIFICATION_BUDGET = 45.0
 _TARGET_VERIFICATION_BACKOFF = 1.0
+_FAILURE_STAGES = frozenset(
+    {
+        "download",
+        "download_pdf",
+        "parse",
+        "embedding",
+        "prepare_including_embedding",
+        "install",
+        "install_resume",
+    }
+)
 _ERROR_SECRET = re.compile(
     r"(?i)((?:token|key|password|authorization)[\"']?\s*[=:]\s*)"
     r"(?:Bearer\s+)?(?:\"[^\"\r\n]*\"|'[^'\r\n]*'|[^\s,;&]+)"
@@ -83,11 +97,64 @@ class IngestLimits:
     parser: asyncio.Semaphore
 
 
+def _safe_failure_fields(exc: Exception) -> dict[str, str | int]:
+    """Only bounded types/statuses; never inspect messages, requests or paper data."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        fields: dict[str, str | int] = {"error_category": "http_status"}
+        with contextlib.suppress(Exception):
+            status = exc.response.status_code
+            if type(status) is int and 100 <= status <= 599:
+                fields["http_status"] = status
+        return fields
+    if isinstance(exc, grpc.RpcError):
+        fields = {"error_category": "grpc"}
+        with contextlib.suppress(Exception):
+            code = exc.code()
+            if isinstance(code, grpc.StatusCode):
+                fields["grpc_status"] = code.name
+        return fields
+    if isinstance(exc, MilvusException):
+        fields = {"error_category": "vector_error"}
+        with contextlib.suppress(Exception):
+            value = exc.code
+            if type(value) is int and 0 <= value <= 65535:
+                fields["vector_status"] = value
+        return fields
+    categories = (
+        (httpx.TimeoutException, "http_timeout"),
+        (httpx.TransportError, "http_transport"),
+        (InvalidIngestionJobError, "invalid_job"),
+        (IngestionSafetyError, "invalid_job"),
+        (ResourceTemporaryError, "source_temporary"),
+        (ResourceUnavailableError, "source_or_parse"),
+        (ResourceCorruptError, "source_or_parse"),
+        (LatexMdError, "source_or_parse"),
+        (PDFMdError, "source_or_parse"),
+        (DBError, "database_error"),
+        (ValueError, "value_error"),
+        (KeyError, "key_error"),
+        (TypeError, "type_error"),
+        (TimeoutError, "timeout"),
+        (RuntimeError, "runtime_error"),
+    )
+    for kind, category in categories:
+        if isinstance(exc, kind):
+            return {"error_category": category}
+    return {"error_category": "other"}
+
+
 @contextlib.contextmanager
 def _stage(job: IngestionJob, stage: str) -> Iterator[None]:
     started = time.monotonic()
     try:
         yield
+    except Exception as exc:
+        logger.warning(
+            "ingestion stage failed",
+            stage=stage if stage in _FAILURE_STAGES else "other",
+            **_safe_failure_fields(exc),
+        )
+        raise
     finally:
         logger.info(
             "ingestion stage finished",
@@ -595,6 +662,12 @@ async def run_worker_once(
             message=_safe_error(exc),
             retry_at=None,
         )
+        logger.warning(
+            "ingestion attempt failed",
+            failure_code="invalid_job",
+            outcome="dead",
+            **_safe_failure_fields(exc),
+        )
         emit_emf(
             service="paper-ingest",
             outcome="dead",
@@ -613,6 +686,12 @@ async def run_worker_once(
             message=_safe_error(exc),
             retry_at=retry_at,
         )
+        logger.warning(
+            "ingestion attempt failed",
+            failure_code="source_or_parse_failure",
+            outcome="retry" if retry_at is not None else "dead",
+            **_safe_failure_fields(exc),
+        )
         emit_emf(
             service="paper-ingest",
             outcome="retry" if retry_at is not None else "dead",
@@ -630,6 +709,12 @@ async def run_worker_once(
             code="temporary_failure",
             message=_safe_error(exc),
             retry_at=retry_at,
+        )
+        logger.warning(
+            "ingestion attempt failed",
+            failure_code="temporary_failure",
+            outcome="retry" if retry_at is not None else "dead",
+            **_safe_failure_fields(exc),
         )
         emit_emf(
             service="paper-ingest",

@@ -246,6 +246,17 @@ Exhaustion logs `outcome=dependency_unavailable` and fails the batch, without ma
 paper failed, dead or successful. Identity mismatch, permissions and other permanent
 errors still fail closed. This does not replay existing dead jobs or establish their cause.
 
+Ingest failure diagnostics use two ordinary structured-log events. `ingestion stage failed`
+contains only a fixed stage, error category and optional numeric HTTP/vector status or
+standard gRPC status. `ingestion attempt failed` adds only the existing failure code and
+retry/dead outcome after the failure record is saved. These new events contain no paper
+identifiers, content, provider messages, URLs, headers, response bodies or traceback data.
+Unknown exception types become `other`; status inspection cannot replace the original error.
+An exception can cross both embedding and its enclosing preparation stage, so stage-event
+counts are diagnostic exits, not distinct attempts. Count final attempt events or existing
+EMF outcomes separately; never add the two event families together. No new EMF metric or
+dimension is introduced, and retry/terminal-job policy is unchanged.
+
 Only the ingest task sets `net.ipv4.tcp_congestion_control=bbr` through ECS
 `SystemControls`. Its bridge network namespace isolates the setting from the host,
 online services, metadata sync, and other products; do not move this setting to
