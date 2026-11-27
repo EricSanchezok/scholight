@@ -234,6 +234,18 @@ Online service pools remain unchanged. Its role can only read/write the dedicate
 `recovery/des/` prefix; restoration objects and noncurrent versions expire after
 30 days. Ingest admission defaults to disabled until baseline and canary verification.
 
+Before each claim, ingest verifies both collection identities against the bound target.
+Connection setup and each collection RPC receive at most five seconds of the remaining
+verification budget. Only raw gRPC `DEADLINE_EXCEEDED` is retried by the worker: at most
+three attempts, with one- and two-second interruptible backoffs and a 45-second budget
+clipped to the batch's remaining time. Verification time is deducted from paper processing
+time; an expired slot cannot claim another paper. Cancellation joins the in-flight bounded
+RPC thread before propagating. SDK transport recovery may delay that join; it never starts
+an overlapping worker retry or allows an expired verification to claim work.
+Exhaustion logs `outcome=dependency_unavailable` and fails the batch, without marking a
+paper failed, dead or successful. Identity mismatch, permissions and other permanent
+errors still fail closed. This does not replay existing dead jobs or establish their cause.
+
 Only the ingest task sets `net.ipv4.tcp_congestion_control=bbr` through ECS
 `SystemControls`. Its bridge network namespace isolates the setting from the host,
 online services, metadata sync, and other products; do not move this setting to

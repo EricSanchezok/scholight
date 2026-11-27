@@ -5,6 +5,7 @@ from __future__ import annotations
 import atexit
 import contextlib
 import threading
+import time
 from collections.abc import Iterator
 from typing import TypeVar
 
@@ -61,7 +62,22 @@ def _auto_close() -> None:
         _client = None
 
 
-def connect() -> PyMilvusClient:
+@contextlib.contextmanager
+def _connection_lock(deadline: float | None) -> Iterator[None]:
+    if deadline is None:
+        with _lock:
+            yield
+        return
+    remaining = deadline - time.monotonic()
+    if remaining <= 0 or not _lock.acquire(timeout=remaining):
+        raise TimeoutError("Destination connection exceeded its deadline")
+    try:
+        yield
+    finally:
+        _lock.release()
+
+
+def connect(*, timeout: float = CONNECT_TIMEOUT, deadline: float | None = None) -> PyMilvusClient:
     """Initialise the Zilliz Cloud client singleton explicitly.
 
     Called automatically by :func:`get_client` on first use.
@@ -73,15 +89,21 @@ def connect() -> PyMilvusClient:
     if _client is not None:
         return _client
 
-    with _lock:
+    with _connection_lock(deadline):
         if _client is not None:
             return _client
 
+        if deadline is not None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("Destination connection exceeded its deadline")
+            timeout = min(timeout, remaining)
+
         uri = _resolve_uri()
         token = _resolve_token()
-        logger.info("connecting to zilliz", timeout=CONNECT_TIMEOUT)
+        logger.info("connecting to zilliz", timeout=timeout)
 
-        _client = PyMilvusClient(uri=uri, token=token, timeout=CONNECT_TIMEOUT)
+        _client = PyMilvusClient(uri=uri, token=token, timeout=timeout)
 
         if not _close_registered:
             atexit.register(_auto_close)
@@ -108,7 +130,9 @@ def close() -> None:
 # ── Public API ────────────────────────────────────────────────────────────────
 
 
-def get_client() -> PyMilvusClient:
+def get_client(
+    *, timeout: float = CONNECT_TIMEOUT, deadline: float | None = None
+) -> PyMilvusClient:
     """Return the global Zilliz Cloud client singleton, connecting lazily on first call.
 
     Thread-safe via double-checked locking.  Read-only operations (search/query)
@@ -119,10 +143,7 @@ def get_client() -> PyMilvusClient:
     if _client is not None:
         return _client
 
-    with _lock:
-        if _client is not None:
-            return _client
-        return connect()
+    return connect(timeout=timeout, deadline=deadline)
 
 
 def is_connected() -> bool:

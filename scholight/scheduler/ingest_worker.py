@@ -17,6 +17,7 @@ from functools import partial
 from pathlib import Path
 from typing import Any, Literal, ParamSpec, TypeVar
 
+import grpc
 import structlog
 
 from scholight.config import require_full_runtime, settings
@@ -60,6 +61,10 @@ from scholight.utils.text import truncate_utf8
 logger = structlog.get_logger(__name__)
 _SCRATCH_ROOT = Path("/data/ingestion")
 _POLL_SECONDS = 10
+_TARGET_VERIFICATION_ATTEMPTS = 3
+_TARGET_VERIFICATION_RPC_TIMEOUT = 5.0
+_TARGET_VERIFICATION_BUDGET = 45.0
+_TARGET_VERIFICATION_BACKOFF = 1.0
 _ERROR_SECRET = re.compile(
     r"(?i)((?:token|key|password|authorization)[\"']?\s*[=:]\s*)"
     r"(?:Bearer\s+)?(?:\"[^\"\r\n]*\"|'[^'\r\n]*'|[^\s,;&]+)"
@@ -428,6 +433,74 @@ async def _process_with_heartbeat(
         await heartbeat_task
 
 
+class IngestionTargetUnavailableError(RuntimeError):
+    """Destination verification failed before any paper was claimed."""
+
+
+async def _verify_target_before_claim(
+    stop_event: asyncio.Event | None, processing_deadline: float | None
+) -> bool:
+    deadline = time.monotonic() + _TARGET_VERIFICATION_BUDGET
+    if processing_deadline is not None:
+        deadline = min(deadline, processing_deadline)
+    for attempt in range(1, _TARGET_VERIFICATION_ATTEMPTS + 1):
+        if stop_event is not None and stop_event.is_set():
+            return False
+        if time.monotonic() >= deadline:
+            break
+        try:
+            await verified_sync_source(
+                deadline=deadline, rpc_timeout=_TARGET_VERIFICATION_RPC_TIMEOUT
+            )
+        except grpc.RpcError as exc:
+            # The pinned SDK rethrows this status without Python-level retries.
+            # Do not retry authentication, identity, schema or other RPC errors.
+            if exc.code() != grpc.StatusCode.DEADLINE_EXCEEDED:
+                raise
+            logger.warning(
+                "ingestion target verification timed out",
+                phase="target_verification",
+                rpc_code="DEADLINE_EXCEEDED",
+                attempt=attempt,
+                max_attempts=_TARGET_VERIFICATION_ATTEMPTS,
+            )
+        except TimeoutError:
+            if time.monotonic() < deadline:
+                raise
+            break
+        else:
+            if stop_event is not None and stop_event.is_set():
+                return False
+            if processing_deadline is not None and time.monotonic() >= processing_deadline:
+                return False
+            if time.monotonic() < deadline:
+                return True
+            break
+        if attempt == _TARGET_VERIFICATION_ATTEMPTS:
+            break
+        delay = min(
+            _TARGET_VERIFICATION_BACKOFF * 2 ** (attempt - 1),
+            max(deadline - time.monotonic(), 0.0),
+        )
+        if stop_event is None:
+            await asyncio.sleep(delay)
+        else:
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(stop_event.wait(), timeout=delay)
+    if stop_event is not None and stop_event.is_set():
+        return False
+    if processing_deadline is not None and time.monotonic() >= processing_deadline:
+        return False
+    logger.error(
+        "ingestion target verification unavailable",
+        phase="target_verification",
+        outcome="dependency_unavailable",
+    )
+    raise IngestionTargetUnavailableError(
+        "Destination verification unavailable after bounded retries"
+    )
+
+
 async def run_worker_once(
     worker_id: str,
     *,
@@ -440,13 +513,21 @@ async def run_worker_once(
     require_full_runtime("Background generation")
     if stop_event is not None and stop_event.is_set():
         return False
-    await verified_sync_source()
+    processing_deadline = (
+        time.monotonic() + max_processing_seconds if max_processing_seconds is not None else None
+    )
+    if not await _verify_target_before_claim(stop_event, processing_deadline):
+        return False
     job = await claim_ingestion_job(worker_id, settings.ingest_lease_seconds)
     if job is None:
         return False
     worker_id = job.lease_owner or worker_id
     interval = heartbeat_interval_seconds or min(60.0, settings.ingest_lease_seconds / 3)
     try:
+        if stop_event is not None and stop_event.is_set():
+            raise IngestionShutdownRequestedError
+        if processing_deadline is not None and time.monotonic() >= processing_deadline:
+            raise IngestionShutdownRequestedError
         processing = _process_with_heartbeat(
             job,
             worker_id,
@@ -455,10 +536,10 @@ async def run_worker_once(
             heartbeat_interval_seconds=interval,
             limits=limits,
         )
-        if max_processing_seconds is None:
+        if processing_deadline is None:
             outcome = await processing
         else:
-            deadline = asyncio.timeout(max_processing_seconds)
+            deadline = asyncio.timeout(max(processing_deadline - time.monotonic(), 0.001))
             try:
                 async with deadline:
                     outcome = await processing
